@@ -112,7 +112,7 @@ function CreatePage() {
       <div className="flex justify-center gap-4 mb-6">
         <button
           onClick={() => setIsStory(false)}
-          className={`px-4 py-2 rounded-full ${!isStory ? 'bg-black text-white' : 'bg-gray-100'}`}
+          className={`px-4 py-2 rounded-full transition-colors ${!isStory ? 'bg-text-primary text-white' : 'bg-gray-100 text-text-primary'}`}
         >
           Post
         </button>
@@ -125,7 +125,7 @@ function CreatePage() {
               setFilters([filters[0]]);
             }
           }}
-          className={`px-4 py-2 rounded-full ${isStory ? 'bg-black text-white' : 'bg-gray-100'}`}
+          className={`px-4 py-2 rounded-full transition-colors ${isStory ? 'bg-text-primary text-white' : 'bg-gray-100 text-text-primary'}`}
         >
           Story
         </button>
@@ -135,10 +135,10 @@ function CreatePage() {
         /* File selection */
         <div
           onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-border-gray rounded-lg p-12 text-center cursor-pointer hover:border-gray-400 transition-colors"
+          className="border-2 border-dashed border-border-gray rounded-lg p-12 text-center cursor-pointer hover:border-text-secondary transition-colors"
         >
           <svg
-            className="w-16 h-16 mx-auto mb-4 text-text-gray"
+            className="w-16 h-16 mx-auto mb-4 text-text-secondary"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -151,7 +151,7 @@ function CreatePage() {
             />
           </svg>
           <p className="text-xl mb-2">Drag photos and videos here</p>
-          <p className="text-text-gray mb-4">or click to select files</p>
+          <p className="text-text-secondary mb-4">or click to select files</p>
           <Button variant="primary">Select from computer</Button>
         </div>
       ) : (
@@ -264,7 +264,7 @@ function CreatePage() {
 
           {/* Submit */}
           <div className="p-4 border-t border-border-gray">
-            {error && <p className="text-red-500 text-sm text-center mb-3">{error}</p>}
+            {error && <p className="text-like-red text-sm text-center mb-3">{error}</p>}
             <Button
               onClick={handleSubmit}
               loading={loading}

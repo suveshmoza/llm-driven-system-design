@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,11 +12,13 @@
 
 body {
   font-family: 'Roboto', Arial, sans-serif;
-  background-color: #0f0f0f;
-  color: #fff;
+  background-color: #0F0F0F;
+  color: #FFFFFF;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - YouTube style */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -25,12 +29,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #555;
+  background: #717171;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #777;
+  background: #909090;
 }
 
 /* Video player styles */
@@ -39,6 +43,8 @@ body {
   width: 100%;
   padding-bottom: 56.25%; /* 16:9 aspect ratio */
   background: #000;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .video-container video {
@@ -49,7 +55,7 @@ body {
   height: 100%;
 }
 
-/* Video thumbnail hover effect */
+/* Video thumbnail hover effect - YouTube style */
 .video-thumbnail {
   position: relative;
   overflow: hidden;
@@ -66,7 +72,7 @@ body {
 }
 
 .video-thumbnail:hover img {
-  transform: scale(1.05);
+  transform: scale(1.02);
 }
 
 .video-duration {
@@ -75,48 +81,186 @@ body {
   right: 4px;
   background: rgba(0, 0, 0, 0.8);
   color: white;
-  padding: 2px 4px;
+  padding: 3px 4px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
-/* Button styles */
+/* Button styles - YouTube brand */
 .btn-primary {
-  @apply bg-yt-blue text-black font-medium px-4 py-2 rounded-full hover:bg-blue-400 transition-colors;
+  @apply bg-yt-blue text-white font-medium px-4 py-2 rounded-full hover:bg-blue-700 transition-colors;
 }
 
 .btn-secondary {
-  @apply bg-yt-dark-hover text-white font-medium px-4 py-2 rounded-full hover:bg-gray-600 transition-colors;
+  @apply bg-yt-dark-hover text-white font-medium px-4 py-2 rounded-full hover:bg-yt-dark-elevated transition-colors;
 }
 
+/* Subscribe button - YouTube red */
 .btn-subscribe {
-  @apply bg-white text-black font-medium px-4 py-2 rounded-full hover:bg-gray-200 transition-colors;
+  @apply bg-yt-red text-white font-medium px-4 py-2 rounded-full hover:bg-yt-red-hover transition-colors;
 }
 
+/* Subscribed button - gray */
 .btn-subscribed {
-  @apply bg-yt-dark-hover text-white font-medium px-4 py-2 rounded-full hover:bg-gray-600 transition-colors;
+  @apply bg-yt-dark-hover text-white font-medium px-4 py-2 rounded-full hover:bg-yt-dark-elevated transition-colors;
 }
 
 /* Input styles */
 .input-field {
-  @apply bg-yt-dark border border-gray-700 text-white px-4 py-2 rounded focus:border-yt-blue focus:outline-none;
+  @apply bg-yt-dark border border-gray-700 text-white px-4 py-2 rounded focus:border-yt-blue-light focus:outline-none;
 }
 
 /* Sidebar styles */
 .sidebar-item {
-  @apply flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-yt-dark-hover cursor-pointer transition-colors;
+  @apply flex items-center gap-5 px-3 py-2.5 rounded-lg hover:bg-yt-dark-hover cursor-pointer transition-colors text-sm;
 }
 
 .sidebar-item.active {
-  @apply bg-yt-dark-hover;
+  @apply bg-yt-dark-hover font-medium;
 }
 
 /* Modal overlay */
 .modal-overlay {
-  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
 }
 
 .modal-content {
-  @apply bg-yt-dark-lighter rounded-lg p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto;
+  @apply bg-yt-dark-secondary rounded-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl;
+}
+
+/* Like button active state */
+.like-active {
+  color: #065FD4;
+}
+
+/* Action buttons container - YouTube pill style */
+.action-pill {
+  @apply flex items-center bg-yt-dark-hover rounded-full overflow-hidden;
+}
+
+.action-pill button {
+  @apply flex items-center gap-2 px-4 py-2 hover:bg-yt-dark-elevated transition-colors;
+}
+
+.action-pill .divider {
+  @apply w-px h-6 bg-gray-600;
+}
+
+/* Video title typography */
+.video-title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.video-title-lg {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+/* Channel name typography */
+.channel-name {
+  font-size: 12px;
+  line-height: 18px;
+  color: #AAAAAA;
+}
+
+.channel-name:hover {
+  color: #FFFFFF;
+}
+
+/* View count and date */
+.video-meta {
+  font-size: 12px;
+  line-height: 18px;
+  color: #AAAAAA;
+}
+
+/* Progress bar - YouTube red accent */
+input[type="range"].yt-progress::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #FF0000;
+  cursor: pointer;
+}
+
+input[type="range"].yt-progress::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, #FF0000 var(--progress, 0%), #4d4d4d var(--progress, 0%));
+}
+
+/* Category chips */
+.category-chip {
+  @apply bg-yt-dark-hover px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap hover:bg-yt-dark-elevated transition-colors cursor-pointer;
+}
+
+.category-chip.active {
+  @apply bg-white text-black hover:bg-gray-200;
+}
+
+/* Notification dot */
+.notification-dot {
+  @apply absolute top-0 right-0 w-2 h-2 bg-yt-red rounded-full;
+}
+
+/* Icon button hover */
+.icon-btn {
+  @apply p-2 rounded-full hover:bg-yt-dark-hover transition-colors;
+}
+
+/* Search bar */
+.search-bar {
+  @apply flex items-center bg-yt-dark border border-gray-700 rounded-full overflow-hidden focus-within:border-yt-blue-light;
+}
+
+.search-bar input {
+  @apply flex-1 bg-transparent px-4 py-2 text-white placeholder-gray-500 focus:outline-none;
+}
+
+.search-bar button {
+  @apply px-6 py-2 bg-yt-dark-hover border-l border-gray-700 hover:bg-yt-dark-elevated transition-colors;
+}
+
+/* Avatar styles */
+.avatar {
+  @apply rounded-full object-cover;
+}
+
+.avatar-sm {
+  @apply w-6 h-6;
+}
+
+.avatar-md {
+  @apply w-9 h-9;
+}
+
+.avatar-lg {
+  @apply w-10 h-10;
+}
+
+.avatar-xl {
+  @apply w-20 h-20;
+}
+
+/* Description box */
+.description-box {
+  @apply bg-yt-dark-hover rounded-xl p-3 cursor-pointer hover:bg-yt-dark-elevated transition-colors;
+}
+
+/* Comment styles */
+.comment-input {
+  @apply w-full bg-transparent border-b border-gray-700 focus:border-white outline-none pb-2 text-sm;
+}
+
+/* Tooltips */
+.tooltip {
+  @apply absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity;
 }

@@ -144,7 +144,7 @@ function ProfilePage() {
     return (
       <div className="text-center py-12">
         <h2 className="text-xl font-semibold mb-2">User not found</h2>
-        <p className="text-text-gray">The user you're looking for doesn't exist.</p>
+        <p className="text-text-secondary">The user you're looking for doesn't exist.</p>
       </div>
     );
   }
@@ -206,7 +206,7 @@ function ProfilePage() {
           <button
             onClick={() => { setActiveTab('posts'); setPosts([]); }}
             className={`py-4 text-sm font-semibold tracking-wider uppercase flex items-center gap-1 border-t ${
-              activeTab === 'posts' ? 'border-black' : 'border-transparent text-text-gray'
+              activeTab === 'posts' ? 'border-text-primary text-text-primary' : 'border-transparent text-text-secondary'
             }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,7 +218,7 @@ function ProfilePage() {
             <button
               onClick={() => { setActiveTab('saved'); setPosts([]); }}
               className={`py-4 text-sm font-semibold tracking-wider uppercase flex items-center gap-1 border-t ${
-                activeTab === 'saved' ? 'border-black' : 'border-transparent text-text-gray'
+                activeTab === 'saved' ? 'border-text-primary text-text-primary' : 'border-transparent text-text-secondary'
               }`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -236,7 +236,7 @@ function ProfilePage() {
         {nextCursor && (
           <button
             onClick={() => activeTab === 'posts' ? loadPosts(nextCursor) : loadSavedPosts(nextCursor)}
-            className="w-full py-3 text-primary font-semibold"
+            className="w-full py-3 text-primary hover:text-primary-hover font-semibold transition-colors"
           >
             Load more
           </button>
@@ -261,7 +261,7 @@ function ProfilePage() {
               <Avatar src={follower.profilePictureUrl} alt={follower.username} size="md" />
               <div className="flex-1">
                 <p className="font-semibold text-sm">{follower.username}</p>
-                <p className="text-sm text-text-gray">{follower.displayName}</p>
+                <p className="text-sm text-text-secondary">{follower.displayName}</p>
               </div>
             </Link>
           ))}
@@ -286,7 +286,7 @@ function ProfilePage() {
               <Avatar src={followed.profilePictureUrl} alt={followed.username} size="md" />
               <div className="flex-1">
                 <p className="font-semibold text-sm">{followed.username}</p>
-                <p className="text-sm text-text-gray">{followed.displayName}</p>
+                <p className="text-sm text-text-secondary">{followed.displayName}</p>
               </div>
             </Link>
           ))}

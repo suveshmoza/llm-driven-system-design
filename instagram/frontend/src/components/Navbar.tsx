@@ -6,9 +6,9 @@ export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
 
   return (
-    <nav className="bg-white border-b border-border-gray sticky top-0 z-40">
+    <nav className="bg-white dark:bg-dark-bg border-b border-border-gray dark:border-border-dark sticky top-0 z-40">
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-        <Link to="/" className="text-2xl font-semibold">
+        <Link to="/" className="text-2xl instagram-logo dark:text-white">
           Instagram
         </Link>
 
@@ -72,7 +72,7 @@ export function Navbar() {
               </Link>
               <button
                 onClick={() => logout()}
-                className="text-sm text-text-gray hover:text-gray-600"
+                className="text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
                 Logout
               </button>
@@ -81,11 +81,11 @@ export function Navbar() {
             <>
               <Link
                 to="/login"
-                className="px-4 py-1.5 bg-primary text-white rounded font-semibold text-sm"
+                className="px-4 py-1.5 bg-primary hover:bg-primary-hover text-white rounded font-semibold text-sm transition-colors"
               >
                 Log In
               </Link>
-              <Link to="/register" className="text-primary font-semibold text-sm">
+              <Link to="/register" className="text-primary hover:text-primary-hover font-semibold text-sm transition-colors">
                 Sign Up
               </Link>
             </>

@@ -781,56 +781,348 @@ class GracefulDegradation {
 
 ## Database Schema
 
-```sql
--- API keys
-CREATE TABLE api_keys (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL,
-  key_hash VARCHAR(64) NOT NULL, -- SHA-256 of key
-  name VARCHAR(100),
-  tier VARCHAR(20) DEFAULT 'free',
-  scopes TEXT[],
-  rate_limit_override JSONB,
-  last_used TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW(),
-  expires_at TIMESTAMP,
-  revoked_at TIMESTAMP
-);
+### Entity-Relationship Diagram
 
-CREATE UNIQUE INDEX idx_api_keys_hash ON api_keys(key_hash);
-CREATE INDEX idx_api_keys_user ON api_keys(user_id);
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ENTITY RELATIONSHIP DIAGRAM                        │
+└─────────────────────────────────────────────────────────────────────────────┘
 
--- Request logs (for analytics, debugging)
-CREATE TABLE request_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  request_id VARCHAR(36) NOT NULL,
-  api_key_id UUID,
-  method VARCHAR(10) NOT NULL,
-  path VARCHAR(500) NOT NULL,
-  status_code INTEGER NOT NULL,
-  duration_ms INTEGER NOT NULL,
-  ip_address INET,
-  user_agent TEXT,
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+                              ┌──────────────────┐
+                              │      users       │
+                              ├──────────────────┤
+                              │ id (PK)          │
+                              │ email (UNIQUE)   │
+                              │ password_hash    │
+                              │ role             │
+                              │ tier             │
+                              │ created_at       │
+                              │ updated_at       │
+                              │ last_login       │
+                              └────────┬─────────┘
+                                       │
+           ┌───────────────────────────┼───────────────────────────┐
+           │                           │                           │
+           │ 1:N                       │ 1:N                       │ 1:N
+           ▼                           ▼                           ▼
+┌──────────────────┐      ┌───────────────────────┐     ┌──────────────────┐
+│    api_keys      │      │  rate_limit_configs   │     │    resources     │
+├──────────────────┤      ├───────────────────────┤     ├──────────────────┤
+│ id (PK)          │      │ id (PK)               │     │ id (PK)          │
+│ user_id (FK)     │──────│ identifier (UNIQUE)   │     │ name             │
+│ key_hash (UNIQUE)│      │ requests_per_minute   │     │ type             │
+│ name             │      │ burst_limit           │     │ content          │
+│ tier             │      │ reason                │     │ metadata (JSONB) │
+│ scopes[]         │      │ created_by (FK)  ─────┤     │ created_by (FK)  │
+│ rate_limit_override│    │ created_at            │     │ updated_by (FK)  │
+│ last_used        │      │ expires_at            │     │ created_at       │
+│ created_at       │      └───────────────────────┘     │ updated_at       │
+│ expires_at       │                                    └──────────────────┘
+│ revoked_at       │
+└────────┬─────────┘
+         │
+         │ 1:N (optional)
+         ▼
+┌───────────────────────────────────────────┐
+│           request_logs                     │
+│    (also: request_logs_partitioned)        │
+├───────────────────────────────────────────┤
+│ id (PK)                                    │
+│ request_id                                 │
+│ api_key_id (FK, optional)                  │
+│ user_id (FK, optional)                     │
+│ method                                     │
+│ path                                       │
+│ status_code                                │
+│ duration_ms                                │
+│ ip_address                                 │
+│ user_agent                                 │
+│ error_message                              │
+│ instance_id                                │
+│ created_at                                 │
+└───────────────────────────────────────────┘
 
--- Partition by time for efficient queries
-CREATE INDEX idx_request_logs_time ON request_logs(created_at);
-CREATE INDEX idx_request_logs_api_key ON request_logs(api_key_id, created_at);
+                    ┌───────────────────────────────────────────┐
+                    │           system_metrics                   │
+                    ├───────────────────────────────────────────┤
+                    │ id (PK, BIGSERIAL)                         │
+                    │ instance_id                                │
+                    │ metric_name                                │
+                    │ metric_value                               │
+                    │ labels (JSONB)                             │
+                    │ recorded_at                                │
+                    └───────────────────────────────────────────┘
+                    (standalone table - no foreign keys)
+```
 
--- Rate limit overrides
-CREATE TABLE rate_limit_configs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  identifier VARCHAR(200) NOT NULL, -- API key or IP
-  requests_per_minute INTEGER NOT NULL,
-  burst_limit INTEGER,
-  reason TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  expires_at TIMESTAMP
-);
+### Table Definitions
 
-CREATE UNIQUE INDEX idx_rate_limit_identifier ON rate_limit_configs(identifier);
+#### 1. users
+
+Primary table for user accounts. Central to authentication and authorization.
+
+| Column        | Type                     | Constraints                            | Description                                  |
+|---------------|--------------------------|----------------------------------------|----------------------------------------------|
+| id            | UUID                     | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique identifier                            |
+| email         | VARCHAR(255)             | UNIQUE, NOT NULL                       | User's email address (login identifier)      |
+| password_hash | VARCHAR(64)              | NOT NULL                               | SHA-256 hash of password                     |
+| role          | VARCHAR(20)              | DEFAULT 'user', CHECK IN ('user','admin') | User role for authorization              |
+| tier          | VARCHAR(20)              | DEFAULT 'free', CHECK IN ('free','pro','enterprise') | Subscription tier for rate limits |
+| created_at    | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Account creation timestamp                   |
+| updated_at    | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Last modification (auto-updated via trigger) |
+| last_login    | TIMESTAMP WITH TIME ZONE |                                        | Most recent login timestamp                  |
+
+**Indexes:**
+- `idx_users_email` on (email) - Fast lookup for authentication
+- `idx_users_role` on (role) - Filter users by role in admin queries
+
+#### 2. api_keys
+
+API keys for programmatic access. Each user can have multiple keys with different permissions.
+
+| Column              | Type                     | Constraints                            | Description                                     |
+|---------------------|--------------------------|----------------------------------------|-------------------------------------------------|
+| id                  | UUID                     | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique identifier                               |
+| user_id             | UUID                     | NOT NULL, FK -> users(id) ON DELETE CASCADE | Owning user                               |
+| key_hash            | VARCHAR(64)              | NOT NULL                               | SHA-256 hash of the API key (never store raw)   |
+| name                | VARCHAR(100)             |                                        | Human-readable name for the key                 |
+| tier                | VARCHAR(20)              | DEFAULT 'free', CHECK IN ('free','pro','enterprise') | Rate limit tier (can differ from user tier) |
+| scopes              | TEXT[]                   |                                        | Array of allowed API scopes                     |
+| rate_limit_override | JSONB                    |                                        | Custom rate limits: {"requests_per_minute": N}  |
+| last_used           | TIMESTAMP WITH TIME ZONE |                                        | Last API call with this key                     |
+| created_at          | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Key creation timestamp                          |
+| expires_at          | TIMESTAMP WITH TIME ZONE |                                        | Optional expiration (null = never expires)      |
+| revoked_at          | TIMESTAMP WITH TIME ZONE |                                        | Soft-delete timestamp (null = active)           |
+
+**Indexes:**
+- `idx_api_keys_hash` UNIQUE on (key_hash) - O(1) key lookup during authentication
+- `idx_api_keys_user` on (user_id) - List all keys for a user
+- `idx_api_keys_expires` on (expires_at) WHERE revoked_at IS NULL - Find expiring keys
+
+#### 3. request_logs
+
+API request logs for analytics, debugging, and auditing. For high-volume production, use the partitioned version.
+
+| Column        | Type                     | Constraints                            | Description                           |
+|---------------|--------------------------|----------------------------------------|---------------------------------------|
+| id            | UUID                     | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique identifier                     |
+| request_id    | VARCHAR(36)              | NOT NULL                               | Correlation ID (from X-Request-ID)    |
+| api_key_id    | UUID                     | FK -> api_keys(id)                     | API key used (null for session auth)  |
+| user_id       | UUID                     | FK -> users(id)                        | Authenticated user                    |
+| method        | VARCHAR(10)              | NOT NULL                               | HTTP method (GET, POST, etc.)         |
+| path          | VARCHAR(500)             | NOT NULL                               | Request path                          |
+| status_code   | INTEGER                  | NOT NULL                               | HTTP response status                  |
+| duration_ms   | INTEGER                  | NOT NULL                               | Request processing time in ms         |
+| ip_address    | INET                     |                                        | Client IP address                     |
+| user_agent    | TEXT                     |                                        | Client user agent string              |
+| error_message | TEXT                     |                                        | Error details (for 4xx/5xx responses) |
+| instance_id   | VARCHAR(50)              |                                        | Server instance that handled request  |
+| created_at    | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Request timestamp                     |
+
+**Indexes:**
+- `idx_request_logs_time` on (created_at) - Time-range queries
+- `idx_request_logs_api_key` on (api_key_id, created_at) - Usage by API key
+- `idx_request_logs_user` on (user_id, created_at) - Usage by user
+- `idx_request_logs_status` on (status_code, created_at) - Error analysis
+
+#### 4. request_logs_partitioned
+
+Partitioned version of request_logs for high-volume deployments. Same schema as request_logs but partitioned by month.
+
+**Partitioning Strategy:**
+- Partition by: `RANGE (created_at)` - monthly partitions
+- Partition naming: `request_logs_YYYY_MM` (e.g., `request_logs_2025_01`)
+- Auto-created: 12 months ahead at initialization
+
+**Why Partitioned?**
+- **Query Performance**: PostgreSQL only scans relevant partitions for time-bound queries
+- **Maintenance**: Dropping old partitions is O(1) vs. slow DELETE operations
+- **Archival**: Easy to detach, export, and drop old partitions
+
+**Indexes (inherited by partitions):**
+- `idx_request_logs_part_time` on (created_at)
+- `idx_request_logs_part_api_key` on (api_key_id, created_at)
+- `idx_request_logs_part_status` on (status_code, created_at)
+
+#### 5. rate_limit_configs
+
+Custom rate limit configurations for specific API keys or IP addresses.
+
+| Column              | Type                     | Constraints                            | Description                              |
+|---------------------|--------------------------|----------------------------------------|------------------------------------------|
+| id                  | UUID                     | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique identifier                        |
+| identifier          | VARCHAR(200)             | NOT NULL                               | Target: API key hash or IP address       |
+| requests_per_minute | INTEGER                  | NOT NULL                               | Allowed requests per minute              |
+| burst_limit         | INTEGER                  |                                        | Max requests in burst (token bucket)     |
+| reason              | TEXT                     |                                        | Admin note explaining the override       |
+| created_by          | UUID                     | FK -> users(id)                        | Admin who created the config             |
+| created_at          | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Config creation timestamp                |
+| expires_at          | TIMESTAMP WITH TIME ZONE |                                        | Optional auto-expiration                 |
+
+**Indexes:**
+- `idx_rate_limit_identifier` UNIQUE on (identifier) - Fast lookup during rate limit check
+
+#### 6. resources
+
+Demo resources table for testing CRUD operations through the API.
+
+| Column     | Type                     | Constraints                            | Description                        |
+|------------|--------------------------|----------------------------------------|------------------------------------|
+| id         | UUID                     | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique identifier                  |
+| name       | VARCHAR(255)             | NOT NULL                               | Resource name                      |
+| type       | VARCHAR(50)              | NOT NULL                               | Resource type (document, image, etc.) |
+| content    | TEXT                     |                                        | Resource content or description    |
+| metadata   | JSONB                    | DEFAULT '{}'                           | Flexible metadata storage          |
+| created_by | UUID                     | FK -> users(id)                        | User who created the resource      |
+| updated_by | UUID                     | FK -> users(id)                        | User who last modified             |
+| created_at | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Creation timestamp                 |
+| updated_at | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()                          | Last modification (auto-updated)   |
+
+**Indexes:**
+- `idx_resources_type` on (type) - Filter by resource type
+- `idx_resources_created` on (created_at) - Recent resources
+
+#### 7. system_metrics
+
+Time-series metrics for system monitoring and dashboard visualization.
+
+| Column       | Type                     | Constraints      | Description                          |
+|--------------|--------------------------|------------------|--------------------------------------|
+| id           | BIGSERIAL                | PRIMARY KEY      | Auto-incrementing identifier         |
+| instance_id  | VARCHAR(50)              | NOT NULL         | Server instance identifier           |
+| metric_name  | VARCHAR(100)             | NOT NULL         | Metric name (e.g., cpu_usage)        |
+| metric_value | DOUBLE PRECISION         | NOT NULL         | Numeric metric value                 |
+| labels       | JSONB                    | DEFAULT '{}'     | Additional dimensions/labels         |
+| recorded_at  | TIMESTAMP WITH TIME ZONE | DEFAULT NOW()    | Metric timestamp                     |
+
+**Indexes:**
+- `idx_metrics_instance` on (instance_id, recorded_at) - Metrics by instance
+- `idx_metrics_name` on (metric_name, recorded_at) - Metrics by type
+
+### Foreign Key Relationships and Cascade Behaviors
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    FOREIGN KEY RELATIONSHIPS                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+api_keys.user_id ────────────────────────────────────────► users.id
+    CASCADE on DELETE
+    Rationale: When a user is deleted, all their API keys become invalid.
+               Cascading deletion ensures no orphaned keys remain.
+
+request_logs.api_key_id ─────────────────────────────────► api_keys.id
+    NO ACTION (default) on DELETE
+    Rationale: Request logs are historical records and should persist
+               even after API key deletion for audit purposes.
+
+request_logs.user_id ────────────────────────────────────► users.id
+    NO ACTION (default) on DELETE
+    Rationale: Same as above - logs should persist for auditing.
+
+rate_limit_configs.created_by ───────────────────────────► users.id
+    NO ACTION (default) on DELETE
+    Rationale: Rate limit configs can exist independently of the admin
+               who created them. The config remains valid.
+
+resources.created_by ────────────────────────────────────► users.id
+    NO ACTION (default) on DELETE
+    Rationale: Resources should persist even if their creator is deleted.
+               The created_by serves as historical attribution.
+
+resources.updated_by ────────────────────────────────────► users.id
+    NO ACTION (default) on DELETE
+    Rationale: Same as created_by - historical attribution.
+```
+
+### Why Tables Are Structured This Way
+
+**1. users as Central Entity**
+- All authentication and authorization flows through users
+- Tier system enables tiered rate limiting without complex configuration
+- Role column enables simple RBAC without a separate roles table
+
+**2. api_keys with Independent Tier**
+- API keys can have different tiers than their owning user
+- Useful for providing limited access keys or premium programmatic access
+- Soft-delete (revoked_at) preserves audit trail
+
+**3. Denormalization in request_logs**
+- Both user_id and api_key_id are stored for flexible querying
+- instance_id enables debugging specific server instances
+- Trade-off: Slightly more storage for much faster queries
+
+**4. Partitioned request_logs**
+- High-volume table (potentially billions of rows)
+- Partition pruning dramatically speeds up time-range queries
+- Easy archival: `ALTER TABLE request_logs DETACH PARTITION request_logs_2024_01`
+
+**5. JSONB for Flexibility**
+- rate_limit_override: Allows custom rate limit shapes
+- resources.metadata: Extensible without schema changes
+- system_metrics.labels: Prometheus-style dimensional labels
+
+### Data Flow for Key Operations
+
+#### Authentication Flow
+
+```
+1. User submits API key in Authorization header
+2. System computes SHA-256 hash of provided key
+3. Query: SELECT * FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL
+4. Verify expires_at is null or in future
+5. UPDATE api_keys SET last_used = NOW() WHERE id = $1
+6. Return user_id for session context
+```
+
+#### Rate Limiting Flow
+
+```
+1. Extract identifier (API key hash or IP)
+2. Check rate_limit_configs for custom override:
+   SELECT * FROM rate_limit_configs WHERE identifier = $1 AND (expires_at IS NULL OR expires_at > NOW())
+3. If no override, use tier-based limits from api_keys.tier or users.tier
+4. Check/update Redis sliding window counter
+5. If limit exceeded, return 429 with Retry-After header
+```
+
+#### Request Logging Flow
+
+```
+1. Middleware captures request start time
+2. Request processes through handlers
+3. On response finish, extract metrics:
+   - method, path, status_code
+   - duration_ms = Date.now() - startTime
+   - api_key_id, user_id from auth context
+   - instance_id from environment
+4. INSERT INTO request_logs (async, non-blocking)
+5. For dashboard: aggregate queries on request_logs with time filters
+```
+
+#### Resource CRUD Flow
+
+```
+CREATE:
+1. Validate user permissions
+2. INSERT INTO resources (..., created_by = current_user_id)
+3. Invalidate cache: cache.invalidate('resources:list:*')
+
+READ:
+1. Check cache: cache.get('resources:${id}')
+2. If miss: SELECT * FROM resources WHERE id = $1
+3. Populate cache with configurable TTL
+
+UPDATE:
+1. Validate ownership or admin role
+2. UPDATE resources SET ..., updated_by = current_user_id WHERE id = $1
+3. Trigger auto-updates updated_at
+4. Invalidate cache for this resource and list caches
+
+DELETE:
+1. Validate ownership or admin role
+2. DELETE FROM resources WHERE id = $1
+3. Invalidate cache
 ```
 
 ---

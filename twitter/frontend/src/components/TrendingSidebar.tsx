@@ -27,11 +27,15 @@ export function TrendingSidebar() {
 
   if (isLoading) {
     return (
-      <div className="bg-twitter-background rounded-xl p-4">
-        <h2 className="text-xl font-bold mb-4">Trends for you</h2>
-        <div className="animate-pulse space-y-4">
+      <div className="bg-twitter-background rounded-2xl">
+        <h2 className="text-xl font-extrabold p-4 text-twitter-dark">Trends for you</h2>
+        <div className="animate-pulse space-y-4 px-4 pb-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-12 bg-gray-200 rounded"></div>
+            <div key={i} className="space-y-2">
+              <div className="h-3 bg-twitter-border rounded w-24"></div>
+              <div className="h-4 bg-twitter-border rounded w-32"></div>
+              <div className="h-3 bg-twitter-border rounded w-20"></div>
+            </div>
           ))}
         </div>
       </div>
@@ -40,33 +44,33 @@ export function TrendingSidebar() {
 
   if (trends.length === 0) {
     return (
-      <div className="bg-twitter-background rounded-xl p-4">
-        <h2 className="text-xl font-bold mb-4">Trends for you</h2>
-        <p className="text-twitter-gray">No trends available</p>
+      <div className="bg-twitter-background rounded-2xl p-4">
+        <h2 className="text-xl font-extrabold text-twitter-dark">Trends for you</h2>
+        <p className="text-twitter-gray mt-4 text-[15px]">No trends available</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-twitter-background rounded-xl overflow-hidden">
-      <h2 className="text-xl font-bold p-4">Trends for you</h2>
+    <div className="bg-twitter-background rounded-2xl overflow-hidden">
+      <h2 className="text-xl font-extrabold p-4 text-twitter-dark">Trends for you</h2>
       <div>
         {trends.map((trend, index) => (
           <Link
             key={trend.hashtag}
             to={`/hashtag/${trend.hashtag}`}
-            className="block p-4 hover:bg-gray-100 transition-colors"
+            className="block px-4 py-3 hover:bg-twitter-dark/5 transition-colors"
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs text-twitter-gray">{index + 1} · Trending</p>
-                <p className="font-bold text-twitter-dark">#{trend.hashtag}</p>
-                <p className="text-xs text-twitter-gray">
+                <p className="text-[13px] text-twitter-gray">{index + 1} · Trending</p>
+                <p className="font-bold text-twitter-dark text-[15px]">#{trend.hashtag}</p>
+                <p className="text-[13px] text-twitter-gray">
                   {formatNumber(trend.tweetCount)} tweets
                 </p>
               </div>
               {trend.isRising && (
-                <span className="text-green-500 text-xs flex items-center gap-1">
+                <span className="text-twitter-retweet text-[13px] flex items-center gap-1">
                   <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
                   </svg>
@@ -77,6 +81,12 @@ export function TrendingSidebar() {
           </Link>
         ))}
       </div>
+      <Link
+        to="/explore"
+        className="block px-4 py-4 text-twitter-blue text-[15px] hover:bg-twitter-dark/5 transition-colors"
+      >
+        Show more
+      </Link>
     </div>
   );
 }

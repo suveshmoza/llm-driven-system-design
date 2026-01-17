@@ -183,150 +183,461 @@ For learning and testing, target these baseline metrics:
 
 ## Data Model
 
-### PostgreSQL Schema
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                         │
+│    ┌──────────────┐         ┌──────────────────┐         ┌──────────────────┐          │
+│    │    users     │         │  subscriptions   │         │     videos       │          │
+│    ├──────────────┤         ├──────────────────┤         ├──────────────────┤          │
+│    │ id (PK)      │◄───┐    │ subscriber_id(PK)│────────►│ id (PK)          │          │
+│    │ username     │    │    │ channel_id (PK)  │────┐    │ channel_id (FK)  │──────┐   │
+│    │ email        │    │    │ notifications    │    │    │ title            │      │   │
+│    │ password_hash│    │    │ created_at       │    │    │ description      │      │   │
+│    │ channel_name │    │    └──────────────────┘    │    │ status           │      │   │
+│    │ channel_desc │    │                            │    │ visibility       │      │   │
+│    │ avatar_url   │    │         ┌──────────────────┘    │ view_count       │      │   │
+│    │ subscriber_  │◄───┼─────────┘                       │ like_count       │      │   │
+│    │   count      │    │                                 │ published_at     │      │   │
+│    │ role         │    │                                 └─────────┬────────┘      │   │
+│    │ created_at   │    │                                           │               │   │
+│    │ updated_at   │    │    ┌──────────────────────────────────────┘               │   │
+│    └───────┬──────┘    │    │                                                      │   │
+│            │           │    │    ┌──────────────────┐    ┌──────────────────┐      │   │
+│            │           │    │    │ video_resolutions│    │ video_reactions  │      │   │
+│            │           │    │    ├──────────────────┤    ├──────────────────┤      │   │
+│            │           │    └───►│ video_id (PK,FK) │    │ user_id (PK,FK)  │◄─────┤   │
+│            │           │         │ resolution (PK)  │    │ video_id (PK,FK) │◄─────┼───┘
+│            │           │         │ manifest_url     │    │ reaction_type    │      │
+│            │           │         │ bitrate          │    │ created_at       │      │
+│            │           │         │ width/height     │    └──────────────────┘      │
+│            │           │         └──────────────────┘                              │
+│            │           │                                                            │
+│    ┌───────┼───────────┼────────────────────────────────────────────────────────┐  │
+│    │       │           │                                                        │  │
+│    │       ▼           │    ┌──────────────────┐    ┌──────────────────┐       │  │
+│    │  ┌────────────┐   │    │    comments      │    │  comment_likes   │       │  │
+│    │  │  watch_    │   │    ├──────────────────┤    ├──────────────────┤       │  │
+│    │  │  history   │   │    │ id (PK)          │◄───┤ comment_id(PK,FK)│       │  │
+│    │  ├────────────┤   │    │ video_id (FK)    │────┤ user_id (PK,FK)  │◄──┐   │  │
+│    │  │ id (PK)    │   │    │ user_id (FK)     │────┤ created_at       │   │   │  │
+│    │  │ user_id(FK)│◄──┘    │ parent_id (FK)   │◄──┐└──────────────────┘   │   │  │
+│    │  │ video_id   │───────►│ text             │   │                       │   │  │
+│    │  │   (FK)     │        │ like_count       │   │ (self-reference       │   │  │
+│    │  │ watch_dur  │        │ is_edited        │   │  for replies)         │   │  │
+│    │  │ watch_pct  │        │ created_at       │───┘                       │   │  │
+│    │  │ position   │        └──────────────────┘                           │   │  │
+│    │  │ watched_at │                                                       │   │  │
+│    │  └────────────┘                                                       │   │  │
+│    │                                                                        │   │  │
+│    └────────────────────────────────────────────────────────────────────────┼───┘  │
+│                                                                              │      │
+│    ┌──────────────────┐                                                     │      │
+│    │ upload_sessions  │                                                     │      │
+│    ├──────────────────┤                                                     │      │
+│    │ id (PK)          │                                                     │      │
+│    │ user_id (FK)     │◄────────────────────────────────────────────────────┘      │
+│    │ filename         │                                                            │
+│    │ file_size        │                                                            │
+│    │ total_chunks     │                                                            │
+│    │ uploaded_chunks  │                                                            │
+│    │ status           │                                                            │
+│    │ minio_upload_id  │                                                            │
+│    │ expires_at       │                                                            │
+│    └──────────────────┘                                                            │
+│                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Table Relationships Summary
+
+| Parent Table | Child Table | Relationship | FK Column | Cascade Behavior |
+|--------------|-------------|--------------|-----------|------------------|
+| users | videos | 1:N | channel_id | ON DELETE CASCADE |
+| users | comments | 1:N | user_id | ON DELETE CASCADE |
+| users | subscriptions | N:M (subscriber) | subscriber_id | ON DELETE CASCADE |
+| users | subscriptions | N:M (channel) | channel_id | ON DELETE CASCADE |
+| users | video_reactions | 1:N | user_id | ON DELETE CASCADE |
+| users | comment_likes | 1:N | user_id | ON DELETE CASCADE |
+| users | watch_history | 1:N | user_id | ON DELETE CASCADE |
+| users | upload_sessions | 1:N | user_id | ON DELETE CASCADE |
+| videos | video_resolutions | 1:N | video_id | ON DELETE CASCADE |
+| videos | comments | 1:N | video_id | ON DELETE CASCADE |
+| videos | video_reactions | 1:N | video_id | ON DELETE CASCADE |
+| videos | watch_history | 1:N | video_id | ON DELETE CASCADE |
+| comments | comments | 1:N (self-ref) | parent_id | ON DELETE CASCADE |
+| comments | comment_likes | 1:N | comment_id | ON DELETE CASCADE |
+
+### Complete Database Schema
+
+The following schema is implemented in `/backend/db/init.sql`:
 
 ```sql
--- Users table
+-- Enable UUID generation
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- =============================================================================
+-- USERS TABLE
+-- =============================================================================
+-- Users serve as both viewers and channel owners. Each user has an optional
+-- channel (channel_name, channel_description) that becomes active when they
+-- upload videos.
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    display_name VARCHAR(100),
-    avatar_url VARCHAR(500),
-    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'creator', 'admin')),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    username VARCHAR(50) UNIQUE NOT NULL,           -- Login identifier
+    email VARCHAR(255) UNIQUE NOT NULL,             -- Contact and recovery
+    password_hash VARCHAR(255) NOT NULL,            -- bcrypt hash
+    channel_name VARCHAR(100),                      -- Display name for channel
+    channel_description TEXT,                       -- Channel about section
+    avatar_url TEXT,                                -- Profile image URL
+    subscriber_count BIGINT DEFAULT 0,              -- Denormalized for fast display
+    role VARCHAR(20) DEFAULT 'user',                -- 'user', 'creator', 'admin'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_role ON users(role);
 
--- Channels table
-CREATE TABLE channels (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    handle VARCHAR(50) UNIQUE NOT NULL,
-    description TEXT,
-    banner_url VARCHAR(500),
-    subscriber_count INTEGER DEFAULT 0,
-    video_count INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-CREATE INDEX idx_channels_user_id ON channels(user_id);
-CREATE INDEX idx_channels_handle ON channels(handle);
-
--- Videos table
+-- =============================================================================
+-- VIDEOS TABLE
+-- =============================================================================
+-- Core content entity using YouTube-style 11-char IDs for shareable URLs.
+-- Status workflow: uploading -> processing -> ready/failed -> blocked
 CREATE TABLE videos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    title VARCHAR(200) NOT NULL,
+    id VARCHAR(11) PRIMARY KEY,                     -- YouTube-style short ID
+    channel_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(100) NOT NULL,
     description TEXT,
     duration_seconds INTEGER,
-    status VARCHAR(20) DEFAULT 'processing'
-        CHECK (status IN ('uploading', 'processing', 'ready', 'failed', 'deleted')),
-    visibility VARCHAR(20) DEFAULT 'public'
-        CHECK (visibility IN ('public', 'unlisted', 'private')),
-    thumbnail_url VARCHAR(500),
-    hls_manifest_url VARCHAR(500),
-    resolutions JSONB DEFAULT '[]',
-    tags TEXT[],
-    view_count INTEGER DEFAULT 0,
-    like_count INTEGER DEFAULT 0,
-    dislike_count INTEGER DEFAULT 0,
-    comment_count INTEGER DEFAULT 0,
-    raw_file_key VARCHAR(500),
-    file_size_bytes BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    status VARCHAR(20) DEFAULT 'processing',        -- workflow state
+    visibility VARCHAR(20) DEFAULT 'public',        -- public/unlisted/private
+    view_count BIGINT DEFAULT 0,
+    like_count BIGINT DEFAULT 0,
+    dislike_count BIGINT DEFAULT 0,
+    comment_count BIGINT DEFAULT 0,
+    categories TEXT[] DEFAULT '{}',
+    tags TEXT[] DEFAULT '{}',
+    thumbnail_url TEXT,
+    raw_video_key TEXT,                             -- MinIO key for original
     published_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-CREATE INDEX idx_videos_channel_id ON videos(channel_id);
+
+CREATE INDEX idx_videos_channel ON videos(channel_id, published_at DESC);
+CREATE INDEX idx_videos_published ON videos(published_at DESC) WHERE status = 'ready';
 CREATE INDEX idx_videos_status ON videos(status);
-CREATE INDEX idx_videos_visibility ON videos(visibility);
-CREATE INDEX idx_videos_published_at ON videos(published_at DESC);
-CREATE INDEX idx_videos_view_count ON videos(view_count DESC);
+CREATE INDEX idx_videos_visibility ON videos(visibility) WHERE visibility = 'public';
 CREATE INDEX idx_videos_tags ON videos USING GIN(tags);
+CREATE INDEX idx_videos_categories ON videos USING GIN(categories);
 
--- Full-text search index
-ALTER TABLE videos ADD COLUMN search_vector tsvector
-    GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(description, '')), 'B')
-    ) STORED;
-CREATE INDEX idx_videos_search ON videos USING GIN(search_vector);
+-- =============================================================================
+-- VIDEO RESOLUTIONS TABLE
+-- =============================================================================
+-- Transcoded variants for adaptive bitrate streaming
+CREATE TABLE video_resolutions (
+    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
+    resolution VARCHAR(10) NOT NULL,                -- '1080p', '720p', etc.
+    manifest_url TEXT,
+    video_url TEXT,
+    bitrate INTEGER,
+    width INTEGER,
+    height INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (video_id, resolution)
+);
 
--- Comments table
+-- =============================================================================
+-- COMMENTS TABLE
+-- =============================================================================
+-- Threaded comments with self-referential parent_id for replies
 CREATE TABLE comments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     parent_id UUID REFERENCES comments(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
+    text TEXT NOT NULL,
     like_count INTEGER DEFAULT 0,
-    dislike_count INTEGER DEFAULT 0,
-    reply_count INTEGER DEFAULT 0,
     is_edited BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-CREATE INDEX idx_comments_video_id ON comments(video_id);
-CREATE INDEX idx_comments_user_id ON comments(user_id);
-CREATE INDEX idx_comments_parent_id ON comments(parent_id);
-CREATE INDEX idx_comments_created_at ON comments(created_at DESC);
 
--- Subscriptions table
+CREATE INDEX idx_comments_video ON comments(video_id, created_at DESC);
+CREATE INDEX idx_comments_parent ON comments(parent_id);
+CREATE INDEX idx_comments_user ON comments(user_id, created_at DESC);
+
+-- =============================================================================
+-- SUBSCRIPTIONS TABLE
+-- =============================================================================
+-- Many-to-many: users subscribe to channels (other users)
 CREATE TABLE subscriptions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
-    notification_enabled BOOLEAN DEFAULT TRUE,
+    subscriber_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    channel_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    notifications_enabled BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, channel_id)
+    PRIMARY KEY (subscriber_id, channel_id)
 );
-CREATE INDEX idx_subscriptions_user_id ON subscriptions(user_id);
-CREATE INDEX idx_subscriptions_channel_id ON subscriptions(channel_id);
 
--- Reactions table (videos and comments)
-CREATE TABLE reactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    target_type VARCHAR(20) NOT NULL CHECK (target_type IN ('video', 'comment')),
-    target_id UUID NOT NULL,
-    reaction_type VARCHAR(20) NOT NULL CHECK (reaction_type IN ('like', 'dislike')),
+CREATE INDEX idx_subscriptions_channel ON subscriptions(channel_id);
+CREATE INDEX idx_subscriptions_subscriber ON subscriptions(subscriber_id);
+
+-- =============================================================================
+-- VIDEO REACTIONS TABLE
+-- =============================================================================
+-- Likes/dislikes on videos (one per user per video)
+CREATE TABLE video_reactions (
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
+    reaction_type VARCHAR(10) NOT NULL,             -- 'like' or 'dislike'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, target_type, target_id)
+    PRIMARY KEY (user_id, video_id)
 );
-CREATE INDEX idx_reactions_target ON reactions(target_type, target_id);
-CREATE INDEX idx_reactions_user ON reactions(user_id);
 
--- Watch history table
+CREATE INDEX idx_video_reactions_video ON video_reactions(video_id, reaction_type);
+
+-- =============================================================================
+-- COMMENT LIKES TABLE
+-- =============================================================================
+-- Only likes on comments (no dislikes per YouTube model)
+CREATE TABLE comment_likes (
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (user_id, comment_id)
+);
+
+CREATE INDEX idx_comment_likes_comment ON comment_likes(comment_id);
+
+-- =============================================================================
+-- WATCH HISTORY TABLE
+-- =============================================================================
+-- Tracks viewing for recommendations and resume playback
 CREATE TABLE watch_history (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    watched_seconds INTEGER DEFAULT 0,
-    completed BOOLEAN DEFAULT FALSE,
-    last_watched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, video_id)
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
+    watch_duration_seconds INTEGER DEFAULT 0,
+    watch_percentage DECIMAL(5,2) DEFAULT 0,
+    last_position_seconds INTEGER DEFAULT 0,
+    watched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-CREATE INDEX idx_watch_history_user ON watch_history(user_id, last_watched_at DESC);
 
--- Transcode jobs table (for tracking and debugging)
-CREATE TABLE transcode_jobs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'pending'
-        CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-    progress INTEGER DEFAULT 0,
-    error_message TEXT,
-    started_at TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+CREATE INDEX idx_watch_history_user ON watch_history(user_id, watched_at DESC);
+CREATE INDEX idx_watch_history_video ON watch_history(video_id);
+CREATE INDEX idx_watch_history_user_video ON watch_history(user_id, video_id);
+
+-- =============================================================================
+-- UPLOAD SESSIONS TABLE
+-- =============================================================================
+-- Chunked upload state for large files with 24-hour expiry
+CREATE TABLE upload_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    file_size BIGINT NOT NULL,
+    content_type VARCHAR(100),
+    total_chunks INTEGER NOT NULL,
+    uploaded_chunks INTEGER DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'active',
+    minio_upload_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '24 hours'
 );
-CREATE INDEX idx_transcode_jobs_video_id ON transcode_jobs(video_id);
-CREATE INDEX idx_transcode_jobs_status ON transcode_jobs(status);
+
+CREATE INDEX idx_upload_sessions_user ON upload_sessions(user_id, status);
+CREATE INDEX idx_upload_sessions_expires ON upload_sessions(expires_at) WHERE status = 'active';
+```
+
+### Foreign Key Relationships and Cascade Rationale
+
+All foreign keys use `ON DELETE CASCADE` for the following reasons:
+
+| Relationship | Cascade Rationale |
+|--------------|-------------------|
+| **users -> videos** | When a user/channel is deleted, their videos should be removed. Orphaned videos without an owner cannot be managed or moderated. |
+| **users -> comments** | User deletion should remove their comments. Preserving anonymous comments creates moderation challenges. |
+| **users -> subscriptions** | Both sides cascade: subscriber deletion removes their subscriptions; channel deletion removes all subscriptions to it. |
+| **users -> video_reactions** | Reactions are meaningless without the user who made them. Deletion ensures accurate counts. |
+| **users -> comment_likes** | Same reasoning as video_reactions. |
+| **users -> watch_history** | Watch history is personal data that should be deleted with the user account (GDPR compliance). |
+| **users -> upload_sessions** | Abandoned uploads from deleted users should be cleaned up. |
+| **videos -> video_resolutions** | Transcoded files are derived from the source; deleting video should remove all versions. |
+| **videos -> comments** | Comments on deleted videos have no context and should be removed. |
+| **videos -> video_reactions** | Reactions to deleted videos are meaningless. |
+| **videos -> watch_history** | Historical viewing of deleted content has limited value for recommendations. |
+| **comments -> comments** | Replies to deleted comments lose context and should be removed (cascade through parent_id). |
+| **comments -> comment_likes** | Likes on deleted comments should be removed. |
+
+**Why not use ON DELETE SET NULL?**
+
+SET NULL would be appropriate if we wanted to preserve orphaned data (e.g., keeping comments but showing "[deleted user]"). However, for this learning project:
+1. CASCADE simplifies cleanup and prevents orphaned data
+2. GDPR-style "right to be forgotten" is easier to implement
+3. Referential integrity is strictly maintained
+4. No need for complex null-handling in application code
+
+### Index Strategy
+
+| Index | Type | Purpose | Query Pattern |
+|-------|------|---------|---------------|
+| `idx_videos_channel` | B-tree composite | Channel page videos | `WHERE channel_id = ? ORDER BY published_at DESC` |
+| `idx_videos_published` | Partial B-tree | Home feed | `WHERE status = 'ready' ORDER BY published_at DESC` |
+| `idx_videos_status` | B-tree | Admin moderation | `WHERE status = 'processing'` |
+| `idx_videos_visibility` | Partial B-tree | Public listings | `WHERE visibility = 'public'` |
+| `idx_videos_tags` | GIN | Tag search | `WHERE tags @> ARRAY['gaming']` |
+| `idx_comments_video` | B-tree composite | Video comments | `WHERE video_id = ? ORDER BY created_at DESC` |
+| `idx_comments_parent` | B-tree | Reply threads | `WHERE parent_id = ?` |
+| `idx_subscriptions_channel` | B-tree | Subscriber count | `WHERE channel_id = ?` |
+| `idx_watch_history_user` | B-tree composite | Continue watching | `WHERE user_id = ? ORDER BY watched_at DESC` |
+
+### Why Tables Are Structured This Way
+
+#### 1. Users with Embedded Channel Data
+Instead of a separate `channels` table, channel data is embedded in `users`. This simplifies queries and works well when:
+- Every channel has exactly one owner (1:1 relationship)
+- Channel-specific data is small (name, description, avatar)
+- Local development scale doesn't require separate scaling
+
+For production with millions of channels, a separate `channels` table with its own sharding strategy would be preferable.
+
+#### 2. YouTube-Style Short Video IDs
+Videos use `VARCHAR(11)` primary keys instead of UUIDs because:
+- Short, memorable URLs (youtube.com/watch?v=dQw4w9WgXcQ)
+- URL-safe characters only (alphanumeric + underscore + hyphen)
+- Still provides ~73 trillion unique IDs (62^11)
+- Trade-off: Slightly more storage than integer, but much better UX
+
+#### 3. Separate Reaction Tables
+Video reactions and comment likes are in separate tables because:
+- Different cardinality (many more video reactions than comment likes)
+- Different query patterns (video reactions need type filtering, comments only have likes)
+- Simpler indexes without polymorphic type columns
+
+#### 4. Non-Unique Watch History
+Unlike some schemas where watch history is unique per (user, video), this schema allows multiple entries because:
+- Tracks separate viewing sessions for analytics
+- Enables "watch again" pattern detection
+- More accurate engagement metrics
+
+#### 5. Denormalized Counters
+`subscriber_count`, `view_count`, `like_count`, etc. are denormalized because:
+- These are read millions of times (every page view)
+- Computing via COUNT(*) would be expensive
+- Trigger-based updates maintain accuracy
+- Acceptable eventual consistency for display purposes
+
+### Data Flow for Key Operations
+
+#### Video Upload Flow
+
+```
+1. Client initiates upload
+   └─> INSERT INTO upload_sessions (user_id, filename, file_size, total_chunks)
+       Returns: upload_session_id
+
+2. Client uploads chunks (parallel)
+   └─> UPDATE upload_sessions SET uploaded_chunks = uploaded_chunks + 1
+       WHERE id = ? AND uploaded_chunks < total_chunks
+
+3. Client completes upload
+   └─> Transaction:
+       a. UPDATE upload_sessions SET status = 'completed'
+       b. INSERT INTO videos (id, channel_id, title, status='processing')
+       c. Publish job to RabbitMQ
+
+4. Transcode worker processes
+   └─> Transaction:
+       a. INSERT INTO video_resolutions (video_id, resolution, ...)
+          FOR EACH quality level (1080p, 720p, 480p, 360p)
+       b. UPDATE videos SET status = 'ready', duration_seconds = ?, published_at = NOW()
+```
+
+#### Subscription Feed Query
+
+```sql
+-- Get videos from subscribed channels, sorted by recency
+SELECT v.*
+FROM videos v
+INNER JOIN subscriptions s ON s.channel_id = v.channel_id
+WHERE s.subscriber_id = :user_id
+  AND v.status = 'ready'
+  AND v.visibility = 'public'
+ORDER BY v.published_at DESC
+LIMIT 20 OFFSET :offset;
+
+-- Uses: idx_subscriptions_subscriber, idx_videos_channel
+```
+
+#### Comment Thread Loading
+
+```sql
+-- Get top-level comments
+SELECT c.*, u.username, u.avatar_url
+FROM comments c
+JOIN users u ON u.id = c.user_id
+WHERE c.video_id = :video_id
+  AND c.parent_id IS NULL
+ORDER BY c.like_count DESC, c.created_at DESC
+LIMIT 20;
+
+-- Get replies for expanded comment
+SELECT c.*, u.username, u.avatar_url
+FROM comments c
+JOIN users u ON u.id = c.user_id
+WHERE c.parent_id = :parent_comment_id
+ORDER BY c.created_at ASC;
+
+-- Uses: idx_comments_video, idx_comments_parent
+```
+
+#### Like/Dislike Toggle
+
+```sql
+-- Upsert reaction with counter update
+WITH old_reaction AS (
+    SELECT reaction_type FROM video_reactions
+    WHERE user_id = :user_id AND video_id = :video_id
+),
+new_reaction AS (
+    INSERT INTO video_reactions (user_id, video_id, reaction_type)
+    VALUES (:user_id, :video_id, :reaction_type)
+    ON CONFLICT (user_id, video_id)
+    DO UPDATE SET reaction_type = :reaction_type
+    RETURNING reaction_type
+)
+UPDATE videos
+SET like_count = like_count
+    + CASE WHEN :reaction_type = 'like' THEN 1 ELSE 0 END
+    - CASE WHEN (SELECT reaction_type FROM old_reaction) = 'like' THEN 1 ELSE 0 END,
+    dislike_count = dislike_count
+    + CASE WHEN :reaction_type = 'dislike' THEN 1 ELSE 0 END
+    - CASE WHEN (SELECT reaction_type FROM old_reaction) = 'dislike' THEN 1 ELSE 0 END
+WHERE id = :video_id;
+```
+
+#### Watch History for Recommendations
+
+```sql
+-- Get user's watch patterns for recommendation engine
+SELECT
+    v.categories,
+    v.tags,
+    v.channel_id,
+    AVG(wh.watch_percentage) as avg_completion,
+    COUNT(*) as watch_count
+FROM watch_history wh
+JOIN videos v ON v.id = wh.video_id
+WHERE wh.user_id = :user_id
+  AND wh.watched_at > NOW() - INTERVAL '30 days'
+GROUP BY v.categories, v.tags, v.channel_id
+ORDER BY watch_count DESC, avg_completion DESC
+LIMIT 50;
+
+-- Uses: idx_watch_history_user, then aggregates
 ```
 
 ### Storage Strategy

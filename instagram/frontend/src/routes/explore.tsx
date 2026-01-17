@@ -74,7 +74,7 @@ function ExplorePage() {
           className="w-full px-4 py-2 bg-gray-100 rounded-lg outline-none focus:bg-white focus:ring-1 focus:ring-border-gray"
         />
         <svg
-          className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-gray"
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-secondary"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -91,9 +91,9 @@ function ExplorePage() {
         {searchQuery.length >= 2 && (
           <div className="absolute top-full left-0 right-0 bg-white border border-border-gray rounded-lg mt-1 shadow-lg z-10 max-h-80 overflow-y-auto">
             {searchLoading ? (
-              <div className="p-4 text-center text-text-gray">Searching...</div>
+              <div className="p-4 text-center text-text-secondary">Searching...</div>
             ) : searchResults.length === 0 ? (
-              <div className="p-4 text-center text-text-gray">No results found</div>
+              <div className="p-4 text-center text-text-secondary">No results found</div>
             ) : (
               searchResults.map((user) => (
                 <Link
@@ -106,7 +106,7 @@ function ExplorePage() {
                   <Avatar src={user.profilePictureUrl} alt={user.username} size="md" />
                   <div>
                     <p className="font-semibold text-sm">{user.username}</p>
-                    <p className="text-sm text-text-gray">{user.displayName}</p>
+                    <p className="text-sm text-text-secondary">{user.displayName}</p>
                   </div>
                 </Link>
               ))
@@ -123,7 +123,7 @@ function ExplorePage() {
         <button
           onClick={() => loadExplore(nextCursor)}
           disabled={loading}
-          className="w-full py-3 mt-4 text-primary font-semibold disabled:opacity-50"
+          className="w-full py-3 mt-4 text-primary hover:text-primary-hover font-semibold disabled:opacity-50 transition-colors"
         >
           {loading ? 'Loading...' : 'Load more'}
         </button>

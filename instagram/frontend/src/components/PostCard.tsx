@@ -79,7 +79,7 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
           <div>
             <p className="font-semibold text-sm">{post.username}</p>
             {post.location && (
-              <p className="text-xs text-text-gray">{post.location}</p>
+              <p className="text-xs text-text-secondary">{post.location}</p>
             )}
           </div>
         </Link>
@@ -109,7 +109,7 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
         {showLikeAnimation && (
           <div className="absolute inset-0 flex items-center justify-center">
             <svg
-              className="w-24 h-24 text-white like-animation"
+              className="w-24 h-24 text-like-red like-animation"
               fill="currentColor"
               viewBox="0 0 24 24"
             >
@@ -162,7 +162,7 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
           <div className="flex items-center gap-4">
             <button onClick={handleLike}>
               <svg
-                className={`w-6 h-6 ${isLiked ? 'text-red-500 fill-current' : ''}`}
+                className={`w-6 h-6 ${isLiked ? 'text-like-red fill-current' : ''}`}
                 fill={isLiked ? 'currentColor' : 'none'}
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -237,14 +237,14 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
           <Link
             to="/post/$postId"
             params={{ postId: post.id }}
-            className="text-sm text-text-gray mb-1 block"
+            className="text-sm text-text-secondary mb-1 block hover:text-text-primary transition-colors"
           >
             View all {post.commentCount} comments
           </Link>
         )}
 
         {/* Timestamp */}
-        <p className="text-xs text-text-gray uppercase">
+        <p className="text-xs text-text-secondary uppercase">
           {formatTimeAgo(post.createdAt)}
         </p>
 
@@ -260,7 +260,7 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
             />
             <button
               disabled={!commentText.trim()}
-              className="text-primary font-semibold text-sm disabled:opacity-50"
+              className="text-primary font-semibold text-sm disabled:opacity-50 hover:text-primary-hover transition-colors"
             >
               Post
             </button>

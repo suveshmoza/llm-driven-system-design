@@ -17,14 +17,14 @@ function HashtagPage() {
 
   return (
     <div>
-      <header className="sticky top-0 bg-white/80 backdrop-blur border-b border-twitter-extraLightGray z-10">
-        <div className="flex items-center gap-4 p-4">
-          <Link to="/" className="p-2 hover:bg-gray-100 rounded-full">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <header className="sticky top-0 bg-white/85 backdrop-blur-md border-b border-twitter-border z-10">
+        <div className="flex items-center gap-6 px-4 py-3">
+          <Link to="/" className="p-2 -ml-2 hover:bg-twitter-dark/10 rounded-full transition-colors">
+            <svg className="w-5 h-5 text-twitter-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </Link>
-          <h1 className="text-xl font-bold">#{tag}</h1>
+          <h1 className="text-xl font-bold text-twitter-dark">#{tag}</h1>
         </div>
       </header>
 

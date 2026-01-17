@@ -16,8 +16,8 @@ function ExplorePage() {
 
   return (
     <div>
-      <header className="sticky top-0 bg-white/80 backdrop-blur border-b border-twitter-extraLightGray z-10">
-        <h1 className="text-xl font-bold p-4">Explore</h1>
+      <header className="sticky top-0 bg-white/85 backdrop-blur-md border-b border-twitter-border z-10">
+        <h1 className="text-xl font-bold px-4 py-3 text-twitter-dark">Explore</h1>
       </header>
 
       <Timeline

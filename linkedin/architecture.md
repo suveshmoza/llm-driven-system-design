@@ -176,65 +176,595 @@ function jobMatchScore(job, candidate) {
 
 ## Database Schema
 
+This section documents the complete PostgreSQL schema for the LinkedIn system, including all tables, relationships, indexes, and the rationale behind key design decisions.
+
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    LINKEDIN DATABASE SCHEMA                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+                                    ┌─────────────┐
+                                    │  companies  │
+                                    ├─────────────┤
+                                    │ id (PK)     │
+                                    │ name        │
+                                    │ slug (UQ)   │
+                                    │ industry    │
+                                    │ size        │
+                                    │ location    │
+                                    └──────┬──────┘
+                                           │
+              ┌────────────────────────────┼────────────────────────────┐
+              │                            │                            │
+              ▼ 1:N                        ▼ 1:N                        ▼ 1:N
+    ┌─────────────────┐          ┌─────────────────┐          ┌─────────────────┐
+    │   experiences   │          │      jobs       │          │      jobs       │
+    ├─────────────────┤          ├─────────────────┤          │ (posted_by_user)│
+    │ id (PK)         │          │ id (PK)         │          └────────┬────────┘
+    │ user_id (FK)    │          │ company_id (FK) │                   │
+    │ company_id (FK) │          │ posted_by (FK)──┼───────────────────┤
+    │ title           │          │ title           │                   │
+    │ is_current      │          │ status          │                   │
+    └────────┬────────┘          └────────┬────────┘                   │
+             │                            │                            │
+             │                            ├─────────────┐              │
+             │                            │             │              │
+             │                            ▼ M:N         ▼ 1:N          │
+             │                   ┌─────────────────┐  ┌──────────────┐ │
+             │                   │   job_skills    │  │    job_      │ │
+             │                   ├─────────────────┤  │ applications │ │
+             │                   │ job_id (PK,FK)  │  ├──────────────┤ │
+             │                   │ skill_id (PK,FK)│  │ id (PK)      │ │
+             │                   │ is_required     │  │ job_id (FK)  │ │
+             │                   └────────┬────────┘  │ user_id (FK) │ │
+             │                            │           │ status       │ │
+             │                            │           │ match_score  │ │
+             │                            ▼           └──────┬───────┘ │
+             │                   ┌─────────────────┐         │         │
+             │                   │     skills      │         │         │
+             │                   ├─────────────────┤         │         │
+             │                   │ id (PK)         │         │         │
+             │                   │ name (UQ)       │         │         │
+             │                   └────────┬────────┘         │         │
+             │                            │                  │         │
+             │                            ▼ M:N              │         │
+             │                   ┌─────────────────┐         │         │
+             │                   │   user_skills   │         │         │
+             │                   ├─────────────────┤         │         │
+             │                   │ user_id (PK,FK) │         │         │
+             │                   │ skill_id (PK,FK)│         │         │
+             │                   │ endorsement_cnt │         │         │
+             │                   └────────┬────────┘         │         │
+             │                            │                  │         │
+             ▼                            ▼                  ▼         ▼
+    ┌─────────────────────────────────────────────────────────────────────────────┐
+    │                                   users                                      │
+    ├─────────────────────────────────────────────────────────────────────────────┤
+    │ id (PK) │ email (UQ) │ first_name │ last_name │ headline │ role │ location │
+    └─────────────────────────────────────────────────────────────────────────────┘
+             │                   │                            │
+             │                   │                            │
+    ┌────────┴────────┐ ┌───────┴───────┐           ┌────────┴────────┐
+    │                 │ │               │           │                 │
+    ▼ 1:N             ▼ 1:N             ▼ M:N       ▼ 1:N             ▼ 1:N
+┌───────────┐   ┌───────────┐   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│ education │   │   posts   │   │ connections │ │ connection_ │ │ audit_logs  │
+├───────────┤   ├───────────┤   ├─────────────┤ │  requests   │ ├─────────────┤
+│ id (PK)   │   │ id (PK)   │   │user_id(PK,FK│ ├─────────────┤ │ id (PK)     │
+│ user_id   │   │ user_id   │   │connected_to │ │ id (PK)     │ │ event_type  │
+│school_name│   │ content   │   │ (PK,FK)     │ │from_user_id │ │ actor_id(FK)│
+│ degree    │   │like_count │   │ CHECK:      │ │ to_user_id  │ │ target_type │
+│ field     │   │comment_cnt│   │user<connected│ │ status     │ │ details     │
+└───────────┘   └─────┬─────┘   └─────────────┘ └─────────────┘ └─────────────┘
+                      │
+         ┌────────────┴────────────┐
+         │                         │
+         ▼ 1:N                     ▼ M:N
+    ┌───────────────┐       ┌───────────────┐
+    │ post_comments │       │  post_likes   │
+    ├───────────────┤       ├───────────────┤
+    │ id (PK)       │       │ user_id(PK,FK)│
+    │ post_id (FK)  │       │ post_id(PK,FK)│
+    │ user_id (FK)  │       │ created_at    │
+    │ content       │       └───────────────┘
+    └───────────────┘
+
+Legend: PK = Primary Key, FK = Foreign Key, UQ = Unique, M:N = Many-to-Many
+```
+
+### Complete Table Definitions
+
+#### 1. Core Entities
+
+**companies** - Organizations where users work or have worked
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| name | VARCHAR(255) | NOT NULL | Company display name |
+| slug | VARCHAR(255) | UNIQUE NOT NULL | URL-friendly identifier |
+| description | TEXT | | Company description/about |
+| industry | VARCHAR(100) | | Industry category |
+| size | VARCHAR(50) | | Employee count range (e.g., '51-200') |
+| location | VARCHAR(100) | | Headquarters location |
+| website | VARCHAR(255) | | Company website URL |
+| logo_url | VARCHAR(500) | | Company logo image URL |
+| created_at | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last modification timestamp |
+
+**users** - Core user profile information
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| email | VARCHAR(255) | UNIQUE NOT NULL | Login email address |
+| password_hash | VARCHAR(255) | NOT NULL | bcrypt hashed password |
+| first_name | VARCHAR(100) | NOT NULL | User's first name |
+| last_name | VARCHAR(100) | NOT NULL | User's last name |
+| headline | VARCHAR(200) | | Professional tagline (e.g., "Software Engineer at Google") |
+| summary | TEXT | | About section / bio |
+| location | VARCHAR(100) | | Current location |
+| industry | VARCHAR(100) | | Primary industry |
+| profile_image_url | VARCHAR(500) | | Profile photo URL |
+| banner_image_url | VARCHAR(500) | | Profile banner URL |
+| connection_count | INTEGER | DEFAULT 0 | Denormalized 1st-degree connection count |
+| role | VARCHAR(20) | DEFAULT 'user' | Role: 'user', 'recruiter', 'admin' |
+| created_at | TIMESTAMP | DEFAULT NOW() | Account creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last profile update timestamp |
+
+#### 2. Skills (Normalized)
+
+**skills** - Master list of skills for standardization
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| name | VARCHAR(100) | UNIQUE NOT NULL | Skill name (e.g., "Python", "Machine Learning") |
+| created_at | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+
+**user_skills** - Junction table for user-skill relationships
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| user_id | INTEGER | PK, FK -> users(id) | User who has this skill |
+| skill_id | INTEGER | PK, FK -> skills(id) | Skill the user has |
+| endorsement_count | INTEGER | DEFAULT 0 | Number of endorsements from connections |
+
+#### 3. Professional History
+
+**experiences** - Work history
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| user_id | INTEGER | FK -> users(id) | User this experience belongs to |
+| company_id | INTEGER | FK -> companies(id) | Link to company (if in system) |
+| company_name | VARCHAR(255) | NOT NULL | Denormalized company name |
+| title | VARCHAR(200) | NOT NULL | Job title |
+| location | VARCHAR(100) | | Job location |
+| start_date | DATE | NOT NULL | Employment start date |
+| end_date | DATE | | Employment end date (NULL if current) |
+| description | TEXT | | Role description |
+| is_current | BOOLEAN | DEFAULT FALSE | Currently employed here |
+| created_at | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last modification timestamp |
+
+**education** - Academic history
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| user_id | INTEGER | FK -> users(id) | User this education belongs to |
+| school_name | VARCHAR(255) | NOT NULL | Institution name |
+| degree | VARCHAR(100) | | Degree type (e.g., "Bachelor of Science") |
+| field_of_study | VARCHAR(100) | | Major/field (e.g., "Computer Science") |
+| start_year | INTEGER | | Year started |
+| end_year | INTEGER | | Year completed |
+| description | TEXT | | Additional details |
+| created_at | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last modification timestamp |
+
+#### 4. Connections (Social Graph)
+
+**connections** - Bidirectional connection relationships
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| user_id | INTEGER | PK, FK -> users(id) | First user in connection (lower ID) |
+| connected_to | INTEGER | PK, FK -> users(id) | Second user in connection (higher ID) |
+| connected_at | TIMESTAMP | DEFAULT NOW() | When connection was formed |
+
+*Note: The CHECK constraint `user_id < connected_to` ensures each connection is stored exactly once.*
+
+**connection_requests** - Pending connection invitations
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| from_user_id | INTEGER | FK -> users(id) | User sending the request |
+| to_user_id | INTEGER | FK -> users(id) | User receiving the request |
+| message | TEXT | | Optional personalized message |
+| status | VARCHAR(20) | DEFAULT 'pending' | Status: 'pending', 'accepted', 'declined', 'withdrawn' |
+| created_at | TIMESTAMP | DEFAULT NOW() | Request sent timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last status change timestamp |
+
+*Note: UNIQUE(from_user_id, to_user_id) prevents duplicate requests.*
+
+#### 5. Feed and Content
+
+**posts** - User-generated content
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| user_id | INTEGER | FK -> users(id) | Post author |
+| content | TEXT | NOT NULL | Post text content |
+| image_url | VARCHAR(500) | | Optional attached image |
+| like_count | INTEGER | DEFAULT 0 | Denormalized like count |
+| comment_count | INTEGER | DEFAULT 0 | Denormalized comment count |
+| share_count | INTEGER | DEFAULT 0 | Denormalized share count |
+| created_at | TIMESTAMP | DEFAULT NOW() | Post creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last edit timestamp |
+
+**post_likes** - Tracks which users liked which posts
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| user_id | INTEGER | PK, FK -> users(id) | User who liked |
+| post_id | INTEGER | PK, FK -> posts(id) | Post that was liked |
+| created_at | TIMESTAMP | DEFAULT NOW() | When like occurred |
+
+**post_comments** - Comments on posts
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| post_id | INTEGER | FK -> posts(id) | Parent post |
+| user_id | INTEGER | FK -> users(id) | Comment author |
+| content | TEXT | NOT NULL | Comment text |
+| created_at | TIMESTAMP | DEFAULT NOW() | Comment timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last edit timestamp |
+
+#### 6. Jobs and Applications
+
+**jobs** - Job postings
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| company_id | INTEGER | FK -> companies(id) | Hiring company |
+| posted_by_user_id | INTEGER | FK -> users(id) | Recruiter who posted |
+| title | VARCHAR(200) | NOT NULL | Job title |
+| description | TEXT | NOT NULL | Full job description |
+| location | VARCHAR(100) | | Job location |
+| is_remote | BOOLEAN | DEFAULT FALSE | Remote work allowed |
+| employment_type | VARCHAR(50) | | 'full-time', 'part-time', 'contract', 'internship' |
+| experience_level | VARCHAR(50) | | 'entry', 'associate', 'mid-senior', 'director', 'executive' |
+| years_required | INTEGER | | Minimum years of experience |
+| salary_min | INTEGER | | Minimum salary (annual) |
+| salary_max | INTEGER | | Maximum salary (annual) |
+| status | VARCHAR(20) | DEFAULT 'active' | 'active', 'closed', 'filled', 'draft' |
+| created_at | TIMESTAMP | DEFAULT NOW() | Posted timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last edit timestamp |
+
+**job_skills** - Required skills for jobs
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| job_id | INTEGER | PK, FK -> jobs(id) | Job posting |
+| skill_id | INTEGER | PK, FK -> skills(id) | Required skill |
+| is_required | BOOLEAN | DEFAULT TRUE | TRUE = required, FALSE = nice-to-have |
+
+**job_applications** - User applications to jobs
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| job_id | INTEGER | FK -> jobs(id) | Job applied to |
+| user_id | INTEGER | FK -> users(id) | Applicant |
+| resume_url | VARCHAR(500) | | Uploaded resume URL |
+| cover_letter | TEXT | | Application cover letter |
+| status | VARCHAR(20) | DEFAULT 'pending' | 'pending', 'reviewed', 'interviewing', 'offered', 'rejected', 'withdrawn' |
+| match_score | INTEGER | | AI-computed fit score (0-100) |
+| created_at | TIMESTAMP | DEFAULT NOW() | Application timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last status change |
+
+*Note: UNIQUE(job_id, user_id) ensures one application per user per job.*
+
+#### 7. Audit and Security
+
+**audit_logs** - Security-sensitive operation tracking
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing identifier |
+| event_type | VARCHAR(100) | NOT NULL | Event category (e.g., 'auth.login.success') |
+| actor_id | INTEGER | FK -> users(id) | User who performed action |
+| actor_ip | INET | | IP address of actor |
+| target_type | VARCHAR(50) | | Entity type: 'user', 'profile', 'connection', 'post', 'job', 'session' |
+| target_id | INTEGER | | ID of entity acted upon |
+| action | VARCHAR(50) | NOT NULL | Short action description |
+| details | JSONB | DEFAULT '{}' | Event-specific data |
+| created_at | TIMESTAMP | DEFAULT NOW() | Event timestamp |
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| Parent Table | Child Table | FK Column | ON DELETE | Rationale |
+|--------------|-------------|-----------|-----------|-----------|
+| users | user_skills | user_id | CASCADE | Skills meaningless without user |
+| skills | user_skills | skill_id | CASCADE | Remove user-skill links when skill deleted |
+| users | experiences | user_id | CASCADE | Work history belongs to user |
+| companies | experiences | company_id | SET NULL | Keep experience record even if company deleted |
+| users | education | user_id | CASCADE | Education belongs to user |
+| users | connections | user_id | CASCADE | Remove connection when user deleted |
+| users | connections | connected_to | CASCADE | Remove connection when user deleted |
+| users | connection_requests | from_user_id | CASCADE | Request meaningless without sender |
+| users | connection_requests | to_user_id | CASCADE | Request meaningless without recipient |
+| users | posts | user_id | CASCADE | Posts belong to author |
+| users | post_likes | user_id | CASCADE | Like records removed with user |
+| posts | post_likes | post_id | CASCADE | Like records removed with post |
+| posts | post_comments | post_id | CASCADE | Comments removed with post |
+| users | post_comments | user_id | CASCADE | Comments removed with author |
+| companies | jobs | company_id | CASCADE | Jobs belong to company |
+| users | jobs | posted_by_user_id | SET NULL | Keep job even if recruiter leaves |
+| jobs | job_skills | job_id | CASCADE | Skill requirements belong to job |
+| skills | job_skills | skill_id | CASCADE | Remove requirement when skill deleted |
+| jobs | job_applications | job_id | CASCADE | Applications belong to job |
+| users | job_applications | user_id | CASCADE | Applications belong to applicant |
+| users | audit_logs | actor_id | SET NULL | Keep audit trail even if user deleted |
+
+**Rationale for Cascade Choices:**
+
+1. **CASCADE for user-owned data**: When a user deletes their account, their posts, comments, connections, and applications should be removed to respect data deletion requests (GDPR compliance).
+
+2. **SET NULL for references that should persist**:
+   - `experiences.company_id`: A user's work history should remain visible even if the company profile is deleted from the system.
+   - `jobs.posted_by_user_id`: Job listings should remain active even if the recruiter who posted them leaves the company.
+   - `audit_logs.actor_id`: Security audit trails must persist for compliance, even after user account deletion.
+
+3. **CASCADE for junction tables**: Many-to-many relationship records (user_skills, job_skills, post_likes) have no meaning without both sides of the relationship.
+
+### Indexes
+
 ```sql
--- Users
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  first_name VARCHAR(100),
-  last_name VARCHAR(100),
-  headline VARCHAR(200),
-  location VARCHAR(100),
-  industry VARCHAR(100),
-  connection_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+-- User lookups
+CREATE INDEX idx_users_email ON users(email);
 
--- Experience
-CREATE TABLE experiences (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  company_id INTEGER REFERENCES companies(id),
-  title VARCHAR(200),
-  start_date DATE,
-  end_date DATE,
-  description TEXT,
-  is_current BOOLEAN DEFAULT FALSE
-);
+-- Experience queries (profile view, company employee lists)
+CREATE INDEX idx_experiences_user_id ON experiences(user_id);
+CREATE INDEX idx_experiences_company_id ON experiences(company_id);
 
--- Connections
-CREATE TABLE connections (
-  user_id INTEGER REFERENCES users(id),
-  connected_to INTEGER REFERENCES users(id),
-  connected_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, connected_to)
-);
+-- Education queries (profile view)
+CREATE INDEX idx_education_user_id ON education(user_id);
 
--- Skills
-CREATE TABLE skills (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(100) UNIQUE
-);
+-- Feed queries (posts by user, chronological feed)
+CREATE INDEX idx_posts_user_id ON posts(user_id);
+CREATE INDEX idx_posts_created_at ON posts(created_at DESC);
 
-CREATE TABLE user_skills (
-  user_id INTEGER REFERENCES users(id),
-  skill_id INTEGER REFERENCES skills(id),
-  endorsement_count INTEGER DEFAULT 0,
-  PRIMARY KEY (user_id, skill_id)
-);
+-- Job search and listing
+CREATE INDEX idx_jobs_company_id ON jobs(company_id);
+CREATE INDEX idx_jobs_status ON jobs(status);
 
--- Jobs
-CREATE TABLE jobs (
-  id SERIAL PRIMARY KEY,
-  company_id INTEGER REFERENCES companies(id),
-  title VARCHAR(200),
-  description TEXT,
-  location VARCHAR(100),
-  is_remote BOOLEAN DEFAULT FALSE,
-  years_required INTEGER,
-  required_skills INTEGER[],
-  posted_at TIMESTAMP DEFAULT NOW()
-);
+-- Application tracking
+CREATE INDEX idx_job_applications_user_id ON job_applications(user_id);
+CREATE INDEX idx_job_applications_job_id ON job_applications(job_id);
+
+-- Connection request notifications
+CREATE INDEX idx_connection_requests_to_user ON connection_requests(to_user_id, status);
+
+-- Audit log queries
+CREATE INDEX idx_audit_logs_actor ON audit_logs(actor_id, created_at);
+CREATE INDEX idx_audit_logs_target ON audit_logs(target_type, target_id, created_at);
+CREATE INDEX idx_audit_logs_event ON audit_logs(event_type, created_at);
+CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
+
+-- Partial index for admin action compliance queries
+CREATE INDEX idx_audit_logs_admin ON audit_logs(created_at)
+  WHERE event_type LIKE 'admin.%';
+```
+
+### Design Rationale
+
+#### Why Normalize Skills?
+
+Skills are normalized into a separate `skills` table rather than stored as arrays or JSON because:
+
+1. **Standardization**: Ensures "JavaScript", "javascript", and "JS" map to a single canonical skill
+2. **Searchability**: Enables efficient skill-based user and job search
+3. **Matching**: Powers job-candidate matching algorithms by comparing skill IDs
+4. **Analytics**: Allows trending skills analysis and skill gap identification
+
+#### Why Store Connections Once with CHECK Constraint?
+
+The `connections` table uses `CHECK (user_id < connected_to)` to store each bidirectional connection exactly once:
+
+```sql
+-- Alice (id=5) connects with Bob (id=10)
+-- Stored as: (5, 10) regardless of who initiated
+-- NOT stored: (10, 5) - would violate CHECK constraint
+```
+
+Benefits:
+- **50% storage reduction**: One row per connection instead of two
+- **No duplicates**: Constraint prevents accidental duplicate entries
+- **Consistent queries**: Finding connections requires checking both directions:
+  ```sql
+  SELECT connected_to FROM connections WHERE user_id = $1
+  UNION
+  SELECT user_id FROM connections WHERE connected_to = $1
+  ```
+
+#### Why Denormalize Counts?
+
+Several tables include denormalized counts (`connection_count`, `like_count`, `comment_count`):
+
+1. **Performance**: Avoids COUNT(*) queries on every profile/post view
+2. **Scale**: At LinkedIn scale (billions of connections), counting is expensive
+3. **Trade-off**: Requires maintaining counts via triggers or application logic
+
+Count updates use atomic operations:
+```sql
+UPDATE posts SET like_count = like_count + 1 WHERE id = $1;
+```
+
+#### Why company_name in Experiences?
+
+The `experiences` table includes both `company_id` (FK) and `company_name` (VARCHAR):
+
+1. **company_id**: Links to company profile for rich display (logo, link to company page)
+2. **company_name**: Denormalized copy for cases where:
+   - Company doesn't exist in system (small/defunct companies)
+   - Company is deleted but experience should persist
+   - Fast display without JOINs
+
+### Data Flow for Key Operations
+
+#### 1. Sending a Connection Request
+
+```
+User A clicks "Connect" on User B's profile
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│ INSERT INTO connection_requests         │
+│ (from_user_id, to_user_id, message)     │
+│ VALUES (A, B, 'Hi, let''s connect!')    │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│ INSERT INTO audit_logs                  │
+│ (event_type, actor_id, target_type,     │
+│  target_id, action, details)            │
+│ VALUES ('connection.request', A,         │
+│  'user', B, 'sent', '{}')               │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+         Queue notification for User B
+```
+
+#### 2. Accepting a Connection Request
+
+```
+User B accepts User A's request
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│ BEGIN TRANSACTION                       │
+├─────────────────────────────────────────┤
+│ UPDATE connection_requests              │
+│ SET status = 'accepted'                 │
+│ WHERE from_user_id = A AND to_user_id = B│
+├─────────────────────────────────────────┤
+│ INSERT INTO connections                 │
+│ (user_id, connected_to)                 │
+│ VALUES (MIN(A,B), MAX(A,B))             │
+├─────────────────────────────────────────┤
+│ UPDATE users SET connection_count =     │
+│   connection_count + 1 WHERE id IN (A,B)│
+├─────────────────────────────────────────┤
+│ COMMIT                                  │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+         Queue PYMK recalculation for A and B
+         Queue notification for User A
+```
+
+#### 3. Creating a Post
+
+```
+User creates post with content
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│ INSERT INTO posts                       │
+│ (user_id, content, image_url)           │
+│ VALUES ($userId, $content, $imageUrl)   │
+│ RETURNING id                            │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│ Index post in Elasticsearch             │
+│ for content search                      │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│ Queue: feed.generate                    │
+│ Fanout to all connections' feeds        │
+│ (async via RabbitMQ)                    │
+└─────────────────────────────────────────┘
+```
+
+#### 4. Applying for a Job
+
+```
+User applies to job posting
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│ INSERT INTO job_applications            │
+│ (job_id, user_id, resume_url,           │
+│  cover_letter, status)                  │
+│ VALUES ($jobId, $userId, $resumeUrl,    │
+│  $coverLetter, 'pending')               │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│ Queue: jobs.match                       │
+│ Calculate match_score based on:         │
+│ - User skills vs job_skills             │
+│ - Years experience vs years_required    │
+│ - Location compatibility                │
+│ - Education match                       │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│ UPDATE job_applications                 │
+│ SET match_score = $calculatedScore      │
+│ WHERE id = $applicationId               │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+         Notify recruiter of new application
+```
+
+#### 5. Feed Generation (Query)
+
+```
+User loads their feed
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│ -- Get posts from 1st-degree connections                    │
+│ WITH user_connections AS (                                  │
+│   SELECT connected_to AS conn_id FROM connections           │
+│   WHERE user_id = $userId                                   │
+│   UNION                                                     │
+│   SELECT user_id AS conn_id FROM connections                │
+│   WHERE connected_to = $userId                              │
+│ )                                                           │
+│ SELECT p.*, u.first_name, u.last_name, u.headline,          │
+│        u.profile_image_url,                                 │
+│        -- Ranking score                                     │
+│        (p.like_count * 0.3 +                                │
+│         p.comment_count * 0.5 +                             │
+│         EXTRACT(EPOCH FROM NOW() - p.created_at) / -3600    │
+│        ) AS rank_score                                      │
+│ FROM posts p                                                │
+│ JOIN users u ON p.user_id = u.id                            │
+│ WHERE p.user_id IN (SELECT conn_id FROM user_connections)   │
+│    OR p.user_id = $userId                                   │
+│ ORDER BY rank_score DESC                                    │
+│ LIMIT 20 OFFSET $offset                                     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---

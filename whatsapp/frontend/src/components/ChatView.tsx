@@ -184,26 +184,31 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
     switch (status) {
       case 'sending':
         return (
-          <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="w-4 h-4 text-whatsapp-single-tick" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" />
           </svg>
         );
       case 'sent':
+        // Single gray check
         return (
-          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          <svg className="w-4 h-4 text-whatsapp-single-tick" viewBox="0 0 16 15" fill="currentColor">
+            <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z" />
           </svg>
         );
       case 'delivered':
+        // Double gray checks
         return (
-          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7M5 13l4 4L19 7" />
+          <svg className="w-4 h-4 text-whatsapp-single-tick" viewBox="0 0 16 15" fill="currentColor">
+            <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z" />
+            <path d="M11.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L4.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z" />
           </svg>
         );
       case 'read':
+        // Double blue checks (WhatsApp signature blue ticks)
         return (
-          <svg className="w-4 h-4 text-whatsapp-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7M5 13l4 4L19 7" />
+          <svg className="w-4 h-4 text-whatsapp-blue-tick" viewBox="0 0 16 15" fill="currentColor">
+            <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z" />
+            <path d="M11.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L4.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.064-.512z" />
           </svg>
         );
       default:
@@ -243,11 +248,11 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-whatsapp-chat-bg">
+    <div className="flex flex-col h-full whatsapp-chat-bg">
       {/* Header */}
-      <div className="p-3 bg-whatsapp-teal-green text-white flex items-center space-x-3">
+      <div className="px-4 py-2 bg-whatsapp-header text-white flex items-center space-x-3">
         {onBack && (
-          <button onClick={onBack} className="p-1 hover:bg-whatsapp-dark-green rounded">
+          <button onClick={onBack} className="p-1 hover:bg-whatsapp-teal rounded transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -255,14 +260,14 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
         )}
         <div
           className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
-            conversation?.is_group ? 'bg-gray-400' : 'bg-whatsapp-dark-green'
+            conversation?.is_group ? 'bg-gray-400' : 'bg-whatsapp-teal'
           }`}
         >
           {getConversationName().charAt(0).toUpperCase()}
         </div>
         <div className="flex-1">
-          <div className="font-medium">{getConversationName()}</div>
-          <div className="text-xs text-gray-200">
+          <div className="font-medium text-contact">{getConversationName()}</div>
+          <div className="text-timestamp text-green-100">
             {getTypingNames() || getOnlineStatus()}
           </div>
         </div>
@@ -287,29 +292,29 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               <div key={message.id}>
                 {shouldShowDate(message, prevMessage) && (
                   <div className="flex justify-center my-4">
-                    <span className="px-3 py-1 bg-white rounded-lg text-xs text-gray-500 shadow">
+                    <span className="px-3 py-1 bg-white rounded-lg text-timestamp text-whatsapp-text-secondary shadow-sm">
                       {formatDate(message.created_at)}
                     </span>
                   </div>
                 )}
                 <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[70%] rounded-lg px-3 py-2 shadow ${
+                    className={`max-w-[65%] rounded-lg px-3 py-1.5 shadow-sm ${
                       isOwn
-                        ? 'bg-whatsapp-message-out rounded-tr-none'
-                        : 'bg-whatsapp-message-in rounded-tl-none'
+                        ? 'bg-whatsapp-message-out message-out-tail'
+                        : 'bg-whatsapp-message-in message-in-tail'
                     }`}
                   >
                     {conversation?.is_group && !isOwn && (
-                      <div className="text-xs font-medium text-whatsapp-dark-green mb-1">
+                      <div className="text-timestamp font-medium text-whatsapp-teal mb-0.5">
                         {message.sender?.display_name}
                       </div>
                     )}
-                    <div className="text-gray-800 whitespace-pre-wrap break-words">
+                    <div className="text-message text-whatsapp-text-primary whitespace-pre-wrap break-words">
                       {message.content}
                     </div>
-                    <div className="flex items-center justify-end space-x-1 mt-1">
-                      <span className="text-xs text-gray-500">
+                    <div className="flex items-center justify-end space-x-1 -mb-0.5">
+                      <span className="text-timestamp text-whatsapp-text-secondary">
                         {formatMessageTime(message.created_at)}
                       </span>
                       {isOwn && renderMessageStatus(message.status)}
@@ -324,7 +329,7 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-3 bg-gray-100 flex items-center space-x-3">
+      <form onSubmit={handleSubmit} className="px-4 py-2 bg-whatsapp-input-bg flex items-center space-x-3">
         <div className="flex-1 relative">
           <input
             type="text"
@@ -334,21 +339,16 @@ export function ChatView({ conversationId, onBack }: ChatViewProps) {
               handleTyping();
             }}
             placeholder="Type a message"
-            className="w-full py-2 px-4 rounded-full border-none focus:outline-none focus:ring-2 focus:ring-whatsapp-green"
+            className="w-full py-2.5 px-4 rounded-lg bg-white border-none focus:outline-none text-message text-whatsapp-text-primary placeholder:text-whatsapp-text-secondary"
           />
         </div>
         <button
           type="submit"
           disabled={!inputValue.trim()}
-          className="p-2 bg-whatsapp-green text-white rounded-full hover:bg-whatsapp-dark-green disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2.5 bg-whatsapp-header text-white rounded-full hover:bg-whatsapp-teal transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-            />
+          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M1.101 21.757L23.8 12.028 1.101 2.3l.011 7.912 13.623 1.816-13.623 1.817-.011 7.912z" />
           </svg>
         </button>
       </form>

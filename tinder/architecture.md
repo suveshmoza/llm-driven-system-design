@@ -77,12 +77,100 @@ A location-based matching and recommendation system that enables users to discov
 
 ## Data Model
 
-### Database Schema
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              TINDER DATABASE SCHEMA                              │
+│                              Entity Relationships                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+                                    ┌─────────────────┐
+                                    │    sessions     │
+                                    │─────────────────│
+                                    │ sid (PK)        │
+                                    │ sess            │
+                                    │ expire          │
+                                    └─────────────────┘
+                                    (standalone - no FK)
+
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│                              ┌─────────────────┐                                │
+│                              │     users       │                                │
+│                              │─────────────────│                                │
+│                              │ id (PK)         │◄─────────────────────────────┐ │
+│                              │ email           │                              │ │
+│                              │ password_hash   │                              │ │
+│                              │ name            │                              │ │
+│                              │ birthdate       │                              │ │
+│                              │ gender          │                              │ │
+│                              │ bio             │                              │ │
+│                              │ job_title       │                              │ │
+│                              │ company         │                              │ │
+│                              │ school          │                              │ │
+│                              │ latitude        │                              │ │
+│                              │ longitude       │                              │ │
+│                              │ location        │                              │ │
+│                              │ last_active     │                              │ │
+│                              │ created_at      │                              │ │
+│                              │ is_admin        │                              │ │
+│                              └────────┬────────┘                              │ │
+│                                       │                                        │ │
+│           ┌───────────────────────────┼───────────────────────────┐           │ │
+│           │                           │                           │           │ │
+│           ▼ 1:1                       ▼ 1:N                       ▼ 1:N       │ │
+│  ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐  │ │
+│  │user_preferences │         │     photos      │         │     swipes      │  │ │
+│  │─────────────────│         │─────────────────│         │─────────────────│  │ │
+│  │ user_id (PK,FK) │         │ id (PK)         │         │ id (PK)         │  │ │
+│  │ interested_in   │         │ user_id (FK)────┼─────────│ swiper_id (FK)──┼──┘ │
+│  │ age_min         │         │ url             │         │ swiped_id (FK)──┼────┤
+│  │ age_max         │         │ position        │         │ direction       │    │
+│  │ distance_km     │         │ is_primary      │         │ idempotency_key │    │
+│  │ show_me         │         │ created_at      │         │ created_at      │    │
+│  └─────────────────┘         └─────────────────┘         │ updated_at      │    │
+│                                                          └─────────────────┘    │
+│                                                          UNIQUE(swiper,swiped)   │
+│                                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                            │  │
+│  │    ┌─────────────────┐                      ┌─────────────────┐           │  │
+│  │    │    matches      │                      │   messages      │           │  │
+│  │    │─────────────────│                      │─────────────────│           │  │
+│  │    │ id (PK)         │◄─────────────────────│ match_id (FK)   │           │  │
+│  │    │ user1_id (FK)───┼──────────────────────│ sender_id (FK)──┼───────────┼──┤
+│  │    │ user2_id (FK)───┼──────────────────────┼─────────────────┼───────────┼──┘
+│  │    │ matched_at      │         1:N          │ id (PK)         │           │
+│  │    │ last_message_at │                      │ content         │           │
+│  │    │ unmatched_at    │                      │ sent_at         │           │
+│  │    └─────────────────┘                      │ read_at         │           │
+│  │    UNIQUE(user1,user2)                      └─────────────────┘           │
+│  │                                                                            │
+│  └───────────────────────────────────────────────────────────────────────────┘
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+LEGEND:
+  ─────►  Foreign Key Reference (arrow points to referenced table)
+  1:1     One-to-One relationship
+  1:N     One-to-Many relationship
+  (PK)    Primary Key
+  (FK)    Foreign Key
+```
+
+### Complete Database Schema
 
 ```sql
--- Users
+-- ============================================================================
+-- USERS TABLE
+-- ============================================================================
+-- Core user profile data including authentication, personal info, and location.
+-- Location is stored both as lat/lng (for API use) and as PostGIS geography
+-- (for efficient geospatial queries with GIST indexing).
+
 CREATE TABLE users (
-    id              UUID PRIMARY KEY,
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email           VARCHAR(255) UNIQUE NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     name            VARCHAR(100) NOT NULL,
@@ -94,58 +182,440 @@ CREATE TABLE users (
     school          VARCHAR(100),
     latitude        DOUBLE PRECISION,
     longitude       DOUBLE PRECISION,
-    location        GEOGRAPHY(Point, 4326),
-    last_active     TIMESTAMP,
+    location        GEOGRAPHY(Point, 4326),  -- PostGIS geography for geo queries
+    last_active     TIMESTAMP DEFAULT NOW(),
+    created_at      TIMESTAMP DEFAULT NOW(),
     is_admin        BOOLEAN DEFAULT false
 );
 
--- Discovery preferences
+-- ============================================================================
+-- USER PREFERENCES TABLE
+-- ============================================================================
+-- Discovery preferences for filtering potential matches.
+-- 1:1 relationship with users table, created when user completes onboarding.
+
 CREATE TABLE user_preferences (
-    user_id         UUID PRIMARY KEY,
-    interested_in   TEXT[],
+    user_id         UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    interested_in   TEXT[] DEFAULT ARRAY['male', 'female'],
     age_min         INTEGER DEFAULT 18,
     age_max         INTEGER DEFAULT 100,
     distance_km     INTEGER DEFAULT 50,
     show_me         BOOLEAN DEFAULT true
 );
 
--- Photos
+-- ============================================================================
+-- PHOTOS TABLE
+-- ============================================================================
+-- User profile photos with ordering support.
+-- Each user can have multiple photos; position determines display order.
+
 CREATE TABLE photos (
-    id              UUID PRIMARY KEY,
-    user_id         UUID NOT NULL,
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     url             VARCHAR(512) NOT NULL,
     position        INTEGER NOT NULL,
-    is_primary      BOOLEAN DEFAULT false
+    is_primary      BOOLEAN DEFAULT false,
+    created_at      TIMESTAMP DEFAULT NOW()
 );
 
--- Swipes
+-- ============================================================================
+-- SWIPES TABLE
+-- ============================================================================
+-- Records of user swipe actions (like/pass).
+-- Unique constraint prevents duplicate swipes on the same user.
+-- Idempotency key enables safe client retries.
+
 CREATE TABLE swipes (
-    id              UUID PRIMARY KEY,
-    swiper_id       UUID NOT NULL,
-    swiped_id       UUID NOT NULL,
-    direction       VARCHAR(10) NOT NULL,
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    swiper_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    swiped_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    direction       VARCHAR(10) NOT NULL CHECK (direction IN ('like', 'pass')),
+    idempotency_key VARCHAR(64),
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW(),
     UNIQUE(swiper_id, swiped_id)
 );
 
--- Matches
+-- ============================================================================
+-- MATCHES TABLE
+-- ============================================================================
+-- Mutual matches between two users (both liked each other).
+-- user1_id and user2_id are ordered to prevent duplicate match records.
+
 CREATE TABLE matches (
-    id              UUID PRIMARY KEY,
-    user1_id        UUID NOT NULL,
-    user2_id        UUID NOT NULL,
-    matched_at      TIMESTAMP,
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user1_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user2_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    matched_at      TIMESTAMP DEFAULT NOW(),
     last_message_at TIMESTAMP,
+    unmatched_at    TIMESTAMP,  -- NULL if active; set when unmatched
     UNIQUE(user1_id, user2_id)
 );
 
--- Messages
+-- ============================================================================
+-- MESSAGES TABLE
+-- ============================================================================
+-- Chat messages between matched users.
+-- Messages belong to a match, ensuring only matched users can message.
+
 CREATE TABLE messages (
-    id              UUID PRIMARY KEY,
-    match_id        UUID NOT NULL,
-    sender_id       UUID NOT NULL,
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    match_id        UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    sender_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content         TEXT NOT NULL,
-    sent_at         TIMESTAMP,
+    sent_at         TIMESTAMP DEFAULT NOW(),
     read_at         TIMESTAMP
 );
+
+-- ============================================================================
+-- SESSIONS TABLE
+-- ============================================================================
+-- Session storage for express-session middleware.
+
+CREATE TABLE sessions (
+    sid             VARCHAR(255) PRIMARY KEY,
+    sess            JSON NOT NULL,
+    expire          TIMESTAMP NOT NULL
+);
+```
+
+### Table Descriptions and Rationale
+
+| Table | Purpose | Row Growth | Retention |
+|-------|---------|------------|-----------|
+| `users` | Core user profiles with auth and location data | Low (user signups) | Indefinite |
+| `user_preferences` | Discovery filtering settings | 1:1 with users | Tied to user lifecycle |
+| `photos` | Profile images with ordering | ~5 per user | Until user deletes |
+| `swipes` | Swipe history for deduplication | High (main activity) | 90 days (cleanup) |
+| `matches` | Mutual matches | Medium (subset of swipes) | Indefinite |
+| `messages` | Chat conversations | High (active matches) | 365 days after unmatch |
+| `sessions` | Login sessions | Transient | Auto-expire |
+
+### Indexes and Performance Optimizations
+
+```sql
+-- USERS: Geospatial and filtering indexes
+CREATE INDEX idx_users_location ON users USING GIST (location);
+CREATE INDEX idx_users_gender ON users(gender);
+CREATE INDEX idx_users_birthdate ON users(birthdate);
+CREATE INDEX idx_users_last_active ON users(last_active);
+
+-- PHOTOS: Fetch user's photos in order
+CREATE INDEX idx_photos_user ON photos(user_id);
+CREATE INDEX idx_photos_position ON photos(user_id, position);
+
+-- SWIPES: Query patterns for discovery and match detection
+CREATE INDEX idx_swipes_swiper ON swipes(swiper_id);
+CREATE INDEX idx_swipes_swiped ON swipes(swiped_id);
+CREATE INDEX idx_swipes_direction ON swipes(swiper_id, direction);
+CREATE INDEX idx_swipes_idempotency_key ON swipes(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;  -- Partial index
+
+-- MATCHES: Find user's matches and sort by activity
+CREATE INDEX idx_matches_user1 ON matches(user1_id);
+CREATE INDEX idx_matches_user2 ON matches(user2_id);
+CREATE INDEX idx_matches_last_message ON matches(last_message_at);
+CREATE INDEX idx_matches_unmatched_at ON matches(unmatched_at)
+    WHERE unmatched_at IS NOT NULL;  -- Partial index for cleanup
+
+-- MESSAGES: Conversation retrieval and timeline
+CREATE INDEX idx_messages_match ON messages(match_id);
+CREATE INDEX idx_messages_sent ON messages(sent_at);
+
+-- SESSIONS: Cleanup expired sessions
+CREATE INDEX idx_sessions_expire ON sessions(expire);
+```
+
+### Index Rationale
+
+| Index | Query Pattern | Why Needed |
+|-------|---------------|------------|
+| `idx_users_location` | `ST_DWithin(location, ...)` | GIST index enables fast geo queries (find users within X km) |
+| `idx_users_gender` | `WHERE gender = 'female'` | Filter candidates by gender preference |
+| `idx_users_birthdate` | `WHERE calculate_age(birthdate) BETWEEN 25 AND 35` | Age range filtering in discovery |
+| `idx_users_last_active` | `ORDER BY last_active DESC` | Rank active users higher in deck |
+| `idx_swipes_swiper` | `WHERE swiper_id = ?` | "Who have I already swiped on?" (deck deduplication) |
+| `idx_swipes_swiped` | `WHERE swiped_id = ?` | "Who has liked me?" (Likes You feature) |
+| `idx_swipes_direction` | `WHERE swiper_id = ? AND direction = 'like'` | Match detection: check if target liked me back |
+| `idx_swipes_idempotency_key` | `WHERE idempotency_key = ?` | Fast duplicate request detection |
+| `idx_matches_user1/user2` | `WHERE user1_id = ? OR user2_id = ?` | Get all matches for a user |
+| `idx_matches_last_message` | `ORDER BY last_message_at DESC` | Sort matches by recent activity |
+| `idx_messages_match` | `WHERE match_id = ?` | Load conversation history |
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| FK Constraint | Cascade Behavior | Rationale |
+|---------------|------------------|-----------|
+| `user_preferences.user_id -> users.id` | `ON DELETE CASCADE` | Preferences are meaningless without the user; delete together |
+| `photos.user_id -> users.id` | `ON DELETE CASCADE` | Photos belong to user; no orphan photos allowed |
+| `swipes.swiper_id -> users.id` | `ON DELETE CASCADE` | If user is deleted, their swipe history should be removed |
+| `swipes.swiped_id -> users.id` | `ON DELETE CASCADE` | If swiped user is deleted, remove the swipe record |
+| `matches.user1_id -> users.id` | `ON DELETE CASCADE` | Match invalid if either user is deleted |
+| `matches.user2_id -> users.id` | `ON DELETE CASCADE` | Match invalid if either user is deleted |
+| `messages.match_id -> matches.id` | `ON DELETE CASCADE` | Messages belong to match; delete conversation with match |
+| `messages.sender_id -> users.id` | `ON DELETE CASCADE` | If sender is deleted, remove their messages |
+
+**Why CASCADE for all relationships:**
+- Tinder is a dating app where user deletion should completely remove their footprint
+- No legal requirement to retain data after user requests deletion (GDPR compliance)
+- Orphaned records (photos without users, messages without matches) serve no purpose
+- Simplifies data management and prevents ghost data accumulating
+
+**Alternative considered:** `ON DELETE SET NULL` for messages.sender_id
+- Would allow keeping messages after sender deletion
+- Rejected because it creates confusing UX ("message from deleted user")
+- Privacy-first approach: when someone unmatches/deletes, conversation disappears
+
+### Database Triggers and Functions
+
+```sql
+-- AUTO-SYNC LOCATION GEOGRAPHY FROM LAT/LNG
+-- Ensures PostGIS geography column stays in sync when lat/lng are updated
+CREATE OR REPLACE FUNCTION update_user_location()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
+        NEW.location := ST_SetSRID(ST_MakePoint(NEW.longitude, NEW.latitude), 4326)::geography;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_user_location
+    BEFORE INSERT OR UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION update_user_location();
+
+-- CALCULATE AGE FROM BIRTHDATE
+-- Utility function for age-based filtering in discovery queries
+CREATE OR REPLACE FUNCTION calculate_age(birthdate DATE)
+RETURNS INTEGER AS $$
+BEGIN
+    RETURN EXTRACT(YEAR FROM AGE(birthdate));
+END;
+$$ LANGUAGE plpgsql;
+
+-- AUTO-UPDATE SWIPE TIMESTAMP
+-- Tracks when swipes are modified (e.g., changing direction)
+CREATE OR REPLACE FUNCTION update_swipe_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_swipe_timestamp
+    BEFORE UPDATE ON swipes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_swipe_timestamp();
+```
+
+### Data Flow for Key Operations
+
+#### 1. User Registration Flow
+```
+┌─────────────┐
+│ POST /auth/ │
+│  register   │
+└──────┬──────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ INSERT INTO users (email, password_hash, name, ...)  │
+│ RETURNING id                                          │
+└──────┬───────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ INSERT INTO user_preferences (user_id)                │
+│ -- Creates default preferences for new user          │
+└──────┬───────────────────────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│ Sync to Elasticsearch (async)                         │
+│ -- User becomes discoverable by others               │
+└──────────────────────────────────────────────────────┘
+```
+
+#### 2. Discovery Deck Generation Flow
+```
+┌─────────────────┐
+│ GET /discovery/ │
+│      deck       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. Get user's location and preferences                               │
+│    SELECT u.latitude, u.longitude, p.*                               │
+│    FROM users u JOIN user_preferences p ON u.id = p.user_id         │
+│    WHERE u.id = ?                                                    │
+└────────┬────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 2. Get users already swiped on (Redis cache or DB fallback)         │
+│    SMEMBERS swipes:{user_id}:liked                                   │
+│    SMEMBERS swipes:{user_id}:passed                                  │
+│    -- OR from PostgreSQL --                                          │
+│    SELECT swiped_id FROM swipes WHERE swiper_id = ?                 │
+└────────┬────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. Query Elasticsearch for candidates                                │
+│    - geo_distance filter (within distance_km)                        │
+│    - gender filter (matches interested_in)                           │
+│    - age filter (between age_min and age_max)                        │
+│    - exclude already swiped users                                    │
+│    - exclude users with show_me = false                              │
+│    - sort by: distance + last_active + likes_received               │
+└────────┬────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 4. Fetch full profiles with photos                                   │
+│    SELECT u.*, array_agg(p.*) as photos                              │
+│    FROM users u LEFT JOIN photos p ON u.id = p.user_id              │
+│    WHERE u.id IN (candidate_ids)                                     │
+│    GROUP BY u.id                                                     │
+│    ORDER BY array_position(candidate_ids, u.id)                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3. Swipe and Match Detection Flow
+```
+┌────────────────────┐
+│ POST /discovery/   │
+│      swipe         │
+│ { userId, "like" } │
+└─────────┬──────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. Check rate limit (Redis)                                          │
+│    INCR rate_limit:{user_id}:swipes                                  │
+│    -- 429 if exceeded --                                             │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 2. Check idempotency (if key provided)                               │
+│    SELECT * FROM swipes WHERE idempotency_key = ?                    │
+│    -- Return cached result if exists --                              │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. Record swipe in PostgreSQL                                        │
+│    INSERT INTO swipes (swiper_id, swiped_id, direction, ...)         │
+│    ON CONFLICT (swiper_id, swiped_id) DO UPDATE                      │
+│    SET direction = EXCLUDED.direction, updated_at = NOW()           │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 4. Update Redis cache                                                │
+│    SADD swipes:{user_id}:liked {swiped_id}                          │
+│    EXPIRE swipes:{user_id}:liked 86400                               │
+│    SADD likes:received:{swiped_id} {user_id}                        │
+│    EXPIRE likes:received:{swiped_id} 604800                          │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 5. Check for mutual match (only if direction = 'like')               │
+│    SISMEMBER swipes:{swiped_id}:liked {swiper_id}                    │
+│    -- OR from PostgreSQL --                                          │
+│    SELECT 1 FROM swipes                                              │
+│    WHERE swiper_id = ? AND swiped_id = ? AND direction = 'like'     │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ├─── No mutual like ───► Return { matched: false }
+          │
+          ▼ Mutual like found!
+┌─────────────────────────────────────────────────────────────────────┐
+│ 6. Create match record                                               │
+│    INSERT INTO matches (user1_id, user2_id, matched_at)              │
+│    VALUES (LEAST(a,b), GREATEST(a,b), NOW())                         │
+│    -- Ordering ensures no duplicate matches --                       │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 7. Send real-time notifications                                      │
+│    PUBLISH match:{user1_id} { matchId, otherUser }                  │
+│    PUBLISH match:{user2_id} { matchId, otherUser }                  │
+│    -- WebSocket gateway delivers to connected users --               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4. Messaging Flow
+```
+┌────────────────────────┐
+│ POST /matches/:id/     │
+│      messages          │
+│ { content: "Hey!" }    │
+└───────────┬────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. Verify sender is part of match                                    │
+│    SELECT * FROM matches                                             │
+│    WHERE id = ? AND (user1_id = ? OR user2_id = ?)                  │
+│    AND unmatched_at IS NULL                                          │
+└───────────┬─────────────────────────────────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 2. Insert message                                                    │
+│    INSERT INTO messages (match_id, sender_id, content)               │
+│    RETURNING id, sent_at                                             │
+└───────────┬─────────────────────────────────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. Update match last_message_at (denormalized for sorting)           │
+│    UPDATE matches SET last_message_at = NOW() WHERE id = ?          │
+└───────────┬─────────────────────────────────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 4. Notify recipient via WebSocket                                    │
+│    PUBLISH message:{recipient_id} { matchId, message }              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 5. Unmatch Flow
+```
+┌────────────────────┐
+│ DELETE /matches/   │
+│       :id          │
+└─────────┬──────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. Soft-delete match (set unmatched_at, don't hard delete)           │
+│    UPDATE matches SET unmatched_at = NOW() WHERE id = ?             │
+│    -- Messages retained for 365 days per retention policy --         │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 2. Remove from active matches cache                                  │
+│    -- Match no longer appears in either user's match list --        │
+└─────────┬───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. Cleanup job (runs periodically)                                   │
+│    DELETE FROM messages WHERE match_id IN (                          │
+│      SELECT id FROM matches                                          │
+│      WHERE unmatched_at < NOW() - INTERVAL '365 days'               │
+│    )                                                                 │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Elasticsearch Index

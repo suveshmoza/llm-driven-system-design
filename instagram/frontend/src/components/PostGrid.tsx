@@ -20,7 +20,7 @@ export function PostGrid({ posts, loading }: PostGridProps) {
 
   if (posts.length === 0) {
     return (
-      <div className="text-center py-12 text-text-gray">
+      <div className="text-center py-12 text-text-secondary">
         <svg
           className="w-16 h-16 mx-auto mb-4"
           fill="none"

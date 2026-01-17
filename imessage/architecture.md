@@ -484,62 +484,458 @@ class OfflineManager {
 
 ## Database Schema
 
-```sql
--- Conversations
-CREATE TABLE conversations (
-  id UUID PRIMARY KEY,
-  type VARCHAR(20), -- 'direct', 'group'
-  name VARCHAR(200),
-  participants UUID[],
-  created_at TIMESTAMP DEFAULT NOW()
-);
+### Complete Schema Overview
 
--- Messages (encrypted)
-CREATE TABLE messages (
-  id UUID PRIMARY KEY,
-  conversation_id UUID REFERENCES conversations(id),
-  sender_id UUID NOT NULL,
-  encrypted_content BYTEA NOT NULL,
-  iv BYTEA NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+The database schema is designed around three core principles:
+1. **Per-device encryption**: Each device has independent keys for security isolation
+2. **Forward secrecy**: One-time prekeys prevent retroactive message decryption
+3. **Offline-first sync**: Cursors and receipts enable efficient delta synchronization
 
--- Per-device message keys
-CREATE TABLE message_keys (
-  message_id UUID REFERENCES messages(id),
-  device_id UUID NOT NULL,
-  encrypted_key BYTEA NOT NULL,
-  ephemeral_public_key BYTEA NOT NULL,
-  PRIMARY KEY (message_id, device_id)
-);
+Full schema is located at: `/backend/db/init.sql`
 
--- Device Keys (public)
-CREATE TABLE device_keys (
-  device_id UUID PRIMARY KEY,
-  user_id UUID NOT NULL,
-  identity_public_key BYTEA NOT NULL,
-  signing_public_key BYTEA NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+### Entity-Relationship Diagram
 
--- Prekeys (one-time use)
-CREATE TABLE prekeys (
-  id BIGSERIAL PRIMARY KEY,
-  device_id UUID REFERENCES device_keys(device_id),
-  prekey_id INTEGER NOT NULL,
-  public_key BYTEA NOT NULL,
-  used BOOLEAN DEFAULT FALSE
-);
-
--- Read Receipts
-CREATE TABLE read_receipts (
-  user_id UUID NOT NULL,
-  conversation_id UUID REFERENCES conversations(id),
-  last_read_message_id UUID,
-  updated_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, conversation_id)
-);
 ```
+                                    ┌──────────────────┐
+                                    │      users       │
+                                    ├──────────────────┤
+                                    │ id (PK)          │
+                                    │ username         │
+                                    │ email            │
+                                    │ password_hash    │
+                                    │ display_name     │
+                                    │ avatar_url       │
+                                    │ status           │
+                                    │ role             │
+                                    │ last_seen        │
+                                    │ created_at       │
+                                    │ updated_at       │
+                                    └────────┬─────────┘
+                                             │
+                    ┌────────────────────────┼────────────────────────┐
+                    │                        │                        │
+                    │ 1:N                    │ 1:N                    │ M:N
+                    ▼                        ▼                        ▼
+         ┌──────────────────┐    ┌──────────────────┐    ┌───────────────────────────┐
+         │     devices      │    │    sessions      │    │ conversation_participants │
+         ├──────────────────┤    ├──────────────────┤    ├───────────────────────────┤
+         │ id (PK)          │    │ id (PK)          │    │ conversation_id (PK,FK)   │
+         │ user_id (FK)     │    │ user_id (FK)     │    │ user_id (PK,FK)           │
+         │ device_name      │    │ device_id (FK)   │    │ role                      │
+         │ device_type      │    │ token            │    │ joined_at                 │
+         │ push_token       │    │ expires_at       │    │ left_at                   │
+         │ is_active        │    │ created_at       │    │ muted                     │
+         │ last_active      │    └──────────────────┘    └─────────────┬─────────────┘
+         │ created_at       │                                          │
+         └────────┬─────────┘                                          │
+                  │                                                    │
+    ┌─────────────┼─────────────┐                                      │
+    │ 1:1         │ 1:N         │                                      │
+    ▼             ▼             │                                      ▼
+┌─────────────┐ ┌─────────────┐ │                           ┌──────────────────┐
+│ device_keys │ │   prekeys   │ │                           │  conversations   │
+├─────────────┤ ├─────────────┤ │                           ├──────────────────┤
+│ device_id   │ │ id (PK)     │ │                           │ id (PK)          │
+│ (PK,FK)     │ │ device_id   │ │                           │ type             │
+│ identity_   │ │ (FK)        │ │                           │ name             │
+│ public_key  │ │ prekey_id   │ │                           │ avatar_url       │
+│ signing_    │ │ public_key  │ │                           │ created_by (FK)  │
+│ public_key  │ │ used        │ │                           │ created_at       │
+│ created_at  │ │ created_at  │ │                           │ updated_at       │
+└─────────────┘ └─────────────┘ │                           └────────┬─────────┘
+                                │                                    │
+                                │                                    │ 1:N
+                                ▼                                    ▼
+                  ┌─────────────────────────────────────────────────────────────┐
+                  │                          messages                            │
+                  ├─────────────────────────────────────────────────────────────┤
+                  │ id (PK)          │ conversation_id (FK)  │ sender_id (FK)   │
+                  │ content          │ content_type          │ encrypted_content│
+                  │ iv               │ reply_to_id (FK,self) │ edited_at        │
+                  │ deleted_at       │ created_at            │                  │
+                  └──────────────────┴───────────┬───────────┴──────────────────┘
+                                                 │
+                        ┌────────────────────────┼────────────────────────┐
+                        │ 1:N                    │ 1:N                    │ 1:N
+                        ▼                        ▼                        ▼
+             ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+             │   attachments    │    │   message_keys   │    │    reactions     │
+             ├──────────────────┤    ├──────────────────┤    ├──────────────────┤
+             │ id (PK)          │    │ message_id       │    │ id (PK)          │
+             │ message_id (FK)  │    │ (PK,FK)          │    │ message_id (FK)  │
+             │ file_name        │    │ device_id        │    │ user_id (FK)     │
+             │ file_type        │    │ (PK,FK)          │    │ reaction         │
+             │ file_size        │    │ encrypted_key    │    │ created_at       │
+             │ file_url         │    │ ephemeral_       │    │ UNIQUE(msg,usr,  │
+             │ thumbnail_url    │    │ public_key       │    │        reaction) │
+             │ width/height     │    └──────────────────┘    └──────────────────┘
+             │ duration         │
+             │ created_at       │
+             └──────────────────┘
+
+                     ┌───────────────────────────────────────────────┐
+                     │              SYNC & DELIVERY TABLES           │
+                     └───────────────────────────────────────────────┘
+
+┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+│    read_receipts     │  │  delivery_receipts   │  │    sync_cursors      │
+├──────────────────────┤  ├──────────────────────┤  ├──────────────────────┤
+│ user_id (PK,FK)      │  │ message_id (PK,FK)   │  │ device_id (PK,FK)    │
+│ device_id (PK,FK)    │  │ device_id (PK,FK)    │  │ conversation_id      │
+│ conversation_id      │  │ delivered_at         │  │ (PK,FK)              │
+│ (PK,FK)              │  └──────────────────────┘  │ last_synced_         │
+│ last_read_message_id │                            │ message_id (FK)      │
+│ last_read_at         │                            │ last_synced_at       │
+└──────────────────────┘                            └──────────────────────┘
+
+┌──────────────────────┐
+│   idempotency_keys   │
+├──────────────────────┤
+│ key (PK)             │
+│ user_id (FK)         │
+│ result_id            │
+│ status               │
+│ created_at           │
+└──────────────────────┘
+```
+
+### Table Definitions
+
+#### Core User Management
+
+**users** - Core identity for the messaging platform
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK, DEFAULT gen_random_uuid() | Primary identifier |
+| username | VARCHAR(50) | UNIQUE, NOT NULL | Unique handle for discovery |
+| email | VARCHAR(255) | UNIQUE, NOT NULL | Login identifier |
+| password_hash | VARCHAR(255) | NOT NULL | bcrypt hashed password |
+| display_name | VARCHAR(100) | | Human-readable name in UI |
+| avatar_url | TEXT | | Profile picture URL |
+| status | VARCHAR(20) | DEFAULT 'offline' | Presence status |
+| role | VARCHAR(20) | DEFAULT 'user', CHECK | Authorization role |
+| last_seen | TIMESTAMP | DEFAULT NOW() | Last activity |
+| created_at | TIMESTAMP | DEFAULT NOW() | Account creation |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last modification |
+
+#### Device & Key Management
+
+**devices** - Multi-device support with per-device encryption
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Device identifier |
+| user_id | UUID | FK -> users(id) ON DELETE CASCADE | Owner |
+| device_name | VARCHAR(100) | NOT NULL | User-assigned name |
+| device_type | VARCHAR(50) | | Platform (iphone, ipad, mac, web) |
+| push_token | TEXT | | APNs/FCM token |
+| is_active | BOOLEAN | DEFAULT true | Can send/receive? |
+| last_active | TIMESTAMP | DEFAULT NOW() | Last sync time |
+| created_at | TIMESTAMP | DEFAULT NOW() | Registration time |
+
+**device_keys** - Public keys for E2E encryption (X3DH protocol)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| device_id | UUID | PK, FK -> devices(id) ON DELETE CASCADE | Device reference |
+| identity_public_key | TEXT | NOT NULL | ECDSA P-256 identity key |
+| signing_public_key | TEXT | NOT NULL | ECDSA P-256 signing key |
+| created_at | TIMESTAMP | DEFAULT NOW() | Key generation time |
+
+**prekeys** - One-time keys for forward secrecy
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | BIGSERIAL | PK | Internal sequence |
+| device_id | UUID | FK -> devices(id) ON DELETE CASCADE | Owner device |
+| prekey_id | INTEGER | NOT NULL | Client-assigned ID |
+| public_key | TEXT | NOT NULL | ECDH P-256 public key |
+| used | BOOLEAN | DEFAULT FALSE | Consumed flag |
+| created_at | TIMESTAMP | DEFAULT NOW() | Generation time |
+
+#### Conversations & Participants
+
+**conversations** - Container for messages
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Conversation identifier |
+| type | VARCHAR(20) | NOT NULL, CHECK | 'direct' or 'group' |
+| name | VARCHAR(200) | | Group name (null for direct) |
+| avatar_url | TEXT | | Group avatar |
+| created_by | UUID | FK -> users(id) | Creator |
+| created_at | TIMESTAMP | DEFAULT NOW() | Creation time |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last update |
+
+**conversation_participants** - Membership junction table
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| conversation_id | UUID | PK, FK -> conversations(id) ON DELETE CASCADE | Conversation |
+| user_id | UUID | PK, FK -> users(id) ON DELETE CASCADE | Member |
+| role | VARCHAR(20) | DEFAULT 'member', CHECK | 'admin' or 'member' |
+| joined_at | TIMESTAMP | DEFAULT NOW() | Join time |
+| left_at | TIMESTAMP | | Soft leave (null = active) |
+| muted | BOOLEAN | DEFAULT FALSE | Notifications muted? |
+
+#### Messages & Content
+
+**messages** - Core message storage (encrypted client-side)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Message identifier |
+| conversation_id | UUID | FK -> conversations(id) ON DELETE CASCADE, NOT NULL | Container |
+| sender_id | UUID | FK -> users(id) ON DELETE SET NULL | Author |
+| content | TEXT | | Plaintext (legacy/system) |
+| content_type | VARCHAR(50) | DEFAULT 'text', CHECK | text/image/video/file/system |
+| encrypted_content | TEXT | | E2E encrypted body |
+| iv | TEXT | | AES-GCM initialization vector |
+| reply_to_id | UUID | FK -> messages(id) | Thread parent |
+| edited_at | TIMESTAMP | | Edit timestamp (null if never) |
+| deleted_at | TIMESTAMP | | Soft delete tombstone |
+| created_at | TIMESTAMP | DEFAULT NOW() | Send time |
+
+**message_keys** - Per-device encrypted message keys
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| message_id | UUID | PK, FK -> messages(id) ON DELETE CASCADE | Message |
+| device_id | UUID | PK, FK -> devices(id) ON DELETE CASCADE | Target device |
+| encrypted_key | TEXT | NOT NULL | AES key wrapped with device key |
+| ephemeral_public_key | TEXT | NOT NULL | Sender's ephemeral ECDH key |
+
+**attachments** - Media and file metadata
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Attachment identifier |
+| message_id | UUID | FK -> messages(id) ON DELETE CASCADE, NOT NULL | Parent message |
+| file_name | VARCHAR(255) | NOT NULL | Original filename |
+| file_type | VARCHAR(100) | NOT NULL | MIME type |
+| file_size | BIGINT | NOT NULL | Size in bytes |
+| file_url | TEXT | NOT NULL | CDN/MinIO URL |
+| thumbnail_url | TEXT | | Preview URL |
+| width | INTEGER | | Pixels (images/videos) |
+| height | INTEGER | | Pixels (images/videos) |
+| duration | INTEGER | | Seconds (video/audio) |
+| created_at | TIMESTAMP | DEFAULT NOW() | Upload time |
+
+**reactions** - Emoji reactions ("tapbacks")
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Reaction identifier |
+| message_id | UUID | FK -> messages(id) ON DELETE CASCADE, NOT NULL | Target message |
+| user_id | UUID | FK -> users(id) ON DELETE CASCADE, NOT NULL | Reactor |
+| reaction | VARCHAR(50) | NOT NULL | Emoji or tapback type |
+| created_at | TIMESTAMP | DEFAULT NOW() | Reaction time |
+| | | UNIQUE(message_id, user_id, reaction) | One per type |
+
+#### Delivery & Read Tracking
+
+**read_receipts** - Per-device read state
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| user_id | UUID | PK, FK -> users(id) ON DELETE CASCADE | Reader |
+| device_id | UUID | PK, FK -> devices(id) ON DELETE CASCADE | Device |
+| conversation_id | UUID | PK, FK -> conversations(id) ON DELETE CASCADE | Conversation |
+| last_read_message_id | UUID | FK -> messages(id) | Last read message |
+| last_read_at | TIMESTAMP | DEFAULT NOW() | Read timestamp |
+
+**delivery_receipts** - Per-device delivery confirmation
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| message_id | UUID | PK, FK -> messages(id) ON DELETE CASCADE | Message |
+| device_id | UUID | PK, FK -> devices(id) ON DELETE CASCADE | Receiver device |
+| delivered_at | TIMESTAMP | DEFAULT NOW() | Delivery time |
+
+**sync_cursors** - Per-device sync progress
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| device_id | UUID | PK, FK -> devices(id) ON DELETE CASCADE | Device |
+| conversation_id | UUID | PK, FK -> conversations(id) ON DELETE CASCADE | Conversation |
+| last_synced_message_id | UUID | FK -> messages(id) | Sync point |
+| last_synced_at | TIMESTAMP | DEFAULT NOW() | Sync time |
+
+#### Authentication & Reliability
+
+**sessions** - Login session tracking
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Session identifier |
+| user_id | UUID | FK -> users(id) ON DELETE CASCADE, NOT NULL | User |
+| device_id | UUID | FK -> devices(id) ON DELETE SET NULL | Device |
+| token | VARCHAR(255) | UNIQUE, NOT NULL | Session token |
+| expires_at | TIMESTAMP | NOT NULL | Expiration |
+| created_at | TIMESTAMP | DEFAULT NOW() | Creation time |
+
+**idempotency_keys** - Prevent duplicate messages on retry
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| key | VARCHAR(255) | PK | Format: {userId}:{convId}:{clientMsgId} |
+| user_id | UUID | FK -> users(id) ON DELETE CASCADE, NOT NULL | Creator |
+| result_id | UUID | | Created message ID |
+| status | VARCHAR(50) | DEFAULT 'completed', CHECK | pending/completed/failed |
+| created_at | TIMESTAMP | DEFAULT NOW() | Creation time |
+
+### Foreign Key Relationships & Cascade Behaviors
+
+| Relationship | Cascade Behavior | Rationale |
+|--------------|------------------|-----------|
+| devices.user_id -> users.id | ON DELETE CASCADE | When a user is deleted, all their devices are removed |
+| device_keys.device_id -> devices.id | ON DELETE CASCADE | Keys are meaningless without the device |
+| prekeys.device_id -> devices.id | ON DELETE CASCADE | Prekeys belong to a specific device |
+| conversation_participants -> conversations | ON DELETE CASCADE | Membership is per-conversation |
+| conversation_participants -> users | ON DELETE CASCADE | User deletion removes from all conversations |
+| messages.conversation_id -> conversations | ON DELETE CASCADE | Deleting conversation removes all messages |
+| messages.sender_id -> users | ON DELETE SET NULL | Preserve messages even if sender deleted |
+| messages.reply_to_id -> messages | No action | Allow orphaned replies (thread parent deleted) |
+| message_keys -> messages | ON DELETE CASCADE | Keys are per-message |
+| message_keys -> devices | ON DELETE CASCADE | Keys are per-device |
+| attachments.message_id -> messages | ON DELETE CASCADE | Attachments belong to messages |
+| reactions -> messages | ON DELETE CASCADE | Reactions are per-message |
+| reactions -> users | ON DELETE CASCADE | Remove user's reactions when deleted |
+| read_receipts -> users/devices/conversations | ON DELETE CASCADE | Cleanup on any parent deletion |
+| delivery_receipts -> messages/devices | ON DELETE CASCADE | Cleanup on deletion |
+| sync_cursors -> devices/conversations | ON DELETE CASCADE | Cursors are per-device-conversation |
+| sessions.user_id -> users | ON DELETE CASCADE | Logout on user deletion |
+| sessions.device_id -> devices | ON DELETE SET NULL | Keep session record, device link severed |
+| idempotency_keys.user_id -> users | ON DELETE CASCADE | Cleanup with user |
+
+### Indexes
+
+| Table | Index | Type | Purpose |
+|-------|-------|------|---------|
+| devices | idx_devices_user_id | B-tree | Find all devices for a user |
+| prekeys | idx_prekeys_device_id | B-tree | Find prekeys for a device |
+| prekeys | idx_prekeys_unused | Partial | Efficiently find unused prekeys |
+| conversation_participants | idx_participants_user_id | B-tree | Find user's conversations |
+| conversation_participants | idx_participants_active | Partial | Find active members only |
+| messages | idx_messages_conversation_id | B-tree | Messages by conversation |
+| messages | idx_messages_sender_id | B-tree | Messages by sender |
+| messages | idx_messages_created_at | B-tree | Chronological ordering |
+| messages | idx_messages_conversation_created | Composite | Paginated conversation fetch |
+| messages | idx_messages_deleted | Partial | Sync deleted messages |
+| attachments | idx_attachments_message_id | B-tree | Find message attachments |
+| reactions | idx_reactions_message_id | B-tree | Find message reactions |
+| sessions | idx_sessions_token | B-tree | Token lookup |
+| sessions | idx_sessions_user_id | B-tree | User's sessions |
+| sessions | idx_sessions_expired | Partial | Find expired sessions |
+| idempotency_keys | idx_idempotency_created | B-tree | Cleanup old keys |
+| idempotency_keys | idx_idempotency_user | B-tree | User's pending operations |
+
+### Data Flow for Key Operations
+
+#### 1. Sending a Message (Direct Chat)
+
+```
+1. Client generates message with clientMessageId (UUID)
+2. Client encrypts message content with AES-256-GCM, generating IV
+3. For each recipient device:
+   a. Fetch device's identity_public_key and one unused prekey
+   b. Perform X3DH key agreement with ephemeral key
+   c. Wrap message key using derived shared secret
+4. API call: POST /messages with idempotency key
+
+Server Flow:
+├── Check idempotency_keys for duplicate
+├── Verify sender is in conversation_participants
+├── BEGIN TRANSACTION
+│   ├── INSERT INTO messages (encrypted_content, iv, ...)
+│   ├── INSERT INTO message_keys for each device
+│   ├── INSERT INTO attachments (if media)
+│   ├── INSERT INTO idempotency_keys
+│   └── UPDATE conversations.updated_at
+├── COMMIT
+├── Publish to message queue for delivery
+└── Return message_id
+```
+
+#### 2. Syncing Messages (Device Comes Online)
+
+```
+1. Device fetches last sync_cursors.last_synced_message_id
+2. Query messages WHERE created_at > cursor
+3. For each message:
+   a. Find message_keys WHERE device_id = this_device
+   b. Decrypt message key using device's private key
+   c. Decrypt message content using message key + IV
+4. Update sync_cursors with latest message_id
+5. Fetch updated read_receipts for other devices
+```
+
+#### 3. Adding a Member to Group
+
+```
+1. Verify requester is admin in conversation_participants
+2. BEGIN TRANSACTION
+│   ├── INSERT INTO conversation_participants (role='member')
+│   ├── INSERT system message INTO messages
+│   └── For each existing member:
+│       └── Distribute sender keys to new member's devices
+├── COMMIT
+└── Notify all group devices via WebSocket
+```
+
+#### 4. Device Registration
+
+```
+1. Authenticate user session
+2. Generate device identity keypair locally
+3. Generate 100 prekeys locally
+4. API call: POST /devices/register
+
+Server Flow:
+├── INSERT INTO devices
+├── INSERT INTO device_keys (public keys only)
+├── Bulk INSERT INTO prekeys (100 one-time keys)
+└── Return device_id
+
+Note: Private keys NEVER leave the device
+```
+
+#### 5. Read Receipt Sync
+
+```
+When user reads a message:
+1. Client updates local read state
+2. API call: POST /read-receipts
+
+Server Flow:
+├── UPSERT INTO read_receipts
+│   ON CONFLICT (user_id, device_id, conversation_id)
+│   DO UPDATE SET last_read_message_id, last_read_at
+│   WHERE updated_at < new.updated_at (LWW conflict resolution)
+└── Broadcast to user's other devices via WebSocket
+
+Other devices:
+├── Receive WebSocket notification
+├── Query read_receipts for this conversation
+└── Update local UI (blue checkmarks, etc.)
+```
+
+### Why Tables Are Structured This Way
+
+1. **Separate device_keys from devices**: Keys can be rotated without changing device metadata. Also enables fetching just public keys (hot path) without loading device info.
+
+2. **prekeys as separate table**: One-time keys are consumed and marked `used`. Partial index on `used=FALSE` makes finding available prekeys O(1).
+
+3. **message_keys junction table**: Each message is encrypted once, but the message key is wrapped separately for each recipient device. This is the core of per-device E2E encryption.
+
+4. **Three-column primary key on read_receipts**: Each device tracks its own read state independently. This enables accurate "read by N devices" indicators without conflicts.
+
+5. **Soft deletes (deleted_at) on messages**: Clients need to sync deletions across devices. Tombstones enable this without losing referential integrity.
+
+6. **sync_cursors per device-conversation**: Each device independently tracks where it last synced. A new device starts from scratch, while existing devices do delta syncs.
+
+7. **idempotency_keys with TTL**: Network failures cause retries. Client-generated keys prevent duplicate messages while 24h TTL bounds storage.
 
 ---
 

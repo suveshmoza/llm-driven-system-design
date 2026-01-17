@@ -88,7 +88,7 @@ function SettingsPage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="text-primary font-semibold text-sm"
+              className="text-primary hover:text-primary-hover font-semibold text-sm transition-colors"
             >
               Change profile photo
             </button>
@@ -111,7 +111,7 @@ function SettingsPage() {
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Name"
           />
-          <p className="text-xs text-text-gray mt-1">
+          <p className="text-xs text-text-secondary mt-1">
             Help people discover your account by using the name you're known by.
           </p>
         </div>
@@ -125,9 +125,9 @@ function SettingsPage() {
             placeholder="Bio"
             maxLength={150}
             rows={3}
-            className="w-full px-3 py-2 border border-border-gray rounded bg-gray-bg text-sm focus:outline-none focus:border-gray-400 resize-none"
+            className="w-full px-3 py-2 border border-border-gray rounded bg-gray-bg text-sm focus:outline-none focus:border-text-secondary resize-none"
           />
-          <p className="text-xs text-text-gray text-right">{bio.length}/150</p>
+          <p className="text-xs text-text-secondary text-right">{bio.length}/150</p>
         </div>
 
         {/* Private account */}
@@ -141,13 +141,13 @@ function SettingsPage() {
             />
             <span className="text-sm">Private account</span>
           </label>
-          <p className="text-xs text-text-gray mt-1 ml-7">
+          <p className="text-xs text-text-secondary mt-1 ml-7">
             When your account is private, only people you approve can see your photos and videos.
           </p>
         </div>
 
         {/* Messages */}
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        {error && <p className="text-like-red text-sm mb-4">{error}</p>}
         {success && <p className="text-green-500 text-sm mb-4">{success}</p>}
 
         {/* Submit */}

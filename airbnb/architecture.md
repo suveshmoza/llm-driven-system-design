@@ -232,53 +232,564 @@ async function getReviews(bookingId) {
 
 ## Database Schema
 
-```sql
--- Listings
-CREATE TABLE listings (
-  id SERIAL PRIMARY KEY,
-  host_id INTEGER REFERENCES users(id),
-  title VARCHAR(200) NOT NULL,
-  description TEXT,
-  location GEOGRAPHY(POINT, 4326),
-  address JSONB,
-  property_type VARCHAR(50),
-  max_guests INTEGER,
-  bedrooms INTEGER,
-  beds INTEGER,
-  bathrooms DECIMAL(2, 1),
-  amenities TEXT[],
-  price_per_night DECIMAL(10, 2),
-  cleaning_fee DECIMAL(10, 2),
-  rating DECIMAL(2, 1),
-  review_count INTEGER DEFAULT 0,
-  instant_book BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+The complete schema is located at: `backend/db/init.sql`
 
--- Bookings
-CREATE TABLE bookings (
-  id SERIAL PRIMARY KEY,
-  listing_id INTEGER REFERENCES listings(id),
-  guest_id INTEGER REFERENCES users(id),
-  check_in DATE NOT NULL,
-  check_out DATE NOT NULL,
-  guests INTEGER,
-  total_price DECIMAL(10, 2),
-  status VARCHAR(20) DEFAULT 'pending',
-  created_at TIMESTAMP DEFAULT NOW()
-);
+### Entity-Relationship Diagram
 
--- Reviews (two-sided)
-CREATE TABLE reviews (
-  id SERIAL PRIMARY KEY,
-  booking_id INTEGER REFERENCES bookings(id),
-  author_id INTEGER REFERENCES users(id),
-  author_type VARCHAR(10), -- 'host' or 'guest'
-  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-  content TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
 ```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                        AIRBNB DATABASE ER DIAGRAM                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+                                    ┌─────────────────┐
+                                    │     users       │
+                                    ├─────────────────┤
+                                    │ PK id           │
+                                    │    email        │
+                                    │    password_hash│
+                                    │    name         │
+                                    │    is_host      │
+                                    │    is_verified  │
+                                    │    role         │
+                                    │    response_rate│
+                                    └────────┬────────┘
+                                             │
+             ┌───────────────────────────────┼───────────────────────────────┐
+             │                               │                               │
+             │ host_id                       │ guest_id                      │ user_id
+             ▼                               ▼                               ▼
+    ┌─────────────────┐             ┌─────────────────┐             ┌─────────────────┐
+    │    listings     │             │   bookings      │             │   sessions      │
+    ├─────────────────┤             ├─────────────────┤             ├─────────────────┤
+    │ PK id           │◄────────────│ FK listing_id   │             │ PK id           │
+    │ FK host_id      │             │ FK guest_id     │             │ FK user_id      │
+    │    title        │             │    check_in     │             │    data (JSONB) │
+    │    location     │             │    check_out    │             │    expires_at   │
+    │    property_type│             │    total_price  │             └─────────────────┘
+    │    room_type    │             │    status       │
+    │    price/night  │             │    nights       │
+    │    rating       │             └────────┬────────┘
+    │    review_count │                      │
+    └────────┬────────┘                      │
+             │                               │
+    ┌────────┼────────┐                      │
+    │        │        │                      │
+    ▼        ▼        ▼                      ▼
+┌──────────┐ ┌────────────────────┐    ┌─────────────────┐
+│listing_  │ │availability_blocks │    │    reviews      │
+│photos    │ ├────────────────────┤    ├─────────────────┤
+├──────────┤ │ PK id              │    │ PK id           │
+│ PK id    │ │ FK listing_id      │    │ FK booking_id   │
+│ FK list_ │ │ FK booking_id ─────┼────│ FK author_id    │
+│   ing_id │ │    start_date      │    │    author_type  │
+│    url   │ │    end_date        │    │    rating       │
+│    order │ │    status          │    │    is_public    │
+└──────────┘ │    price/night     │    └─────────────────┘
+             └────────────────────┘
+
+                    ┌─────────────────┐
+                    │  conversations  │
+                    ├─────────────────┤
+                    │ PK id           │
+                    │ FK listing_id   │────► listings
+                    │ FK booking_id   │────► bookings
+                    │ FK host_id      │────► users (host)
+                    │ FK guest_id     │────► users (guest)
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │    messages     │
+                    ├─────────────────┤
+                    │ PK id           │
+                    │ FK conversation_│
+                    │    id           │
+                    │ FK sender_id    │────► users
+                    │    content      │
+                    │    is_read      │
+                    └─────────────────┘
+
+                    ┌─────────────────┐
+                    │   audit_logs    │
+                    ├─────────────────┤
+                    │ PK id           │
+                    │ FK user_id      │────► users (optional)
+                    │    event_type   │
+                    │    resource_type│
+                    │    resource_id  │
+                    │    action       │
+                    │    before_state │
+                    │    after_state  │
+                    └─────────────────┘
+```
+
+### Complete Table Specifications
+
+#### 1. users
+
+**Purpose:** Central user table for both guests and hosts.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| email | VARCHAR(255) | NO | - | Unique email address |
+| password_hash | VARCHAR(255) | NO | - | Bcrypt hashed password |
+| name | VARCHAR(100) | NO | - | Display name |
+| avatar_url | TEXT | YES | NULL | Profile photo URL |
+| bio | TEXT | YES | NULL | User biography |
+| phone | VARCHAR(20) | YES | NULL | Phone number |
+| is_host | BOOLEAN | NO | FALSE | TRUE when user creates a listing |
+| is_verified | BOOLEAN | NO | FALSE | Email/phone verification status |
+| role | VARCHAR(20) | NO | 'user' | CHECK: 'user', 'admin' |
+| response_rate | DECIMAL(3,2) | NO | 1.00 | Host response rate (0.00-1.00) |
+| created_at | TIMESTAMP | NO | NOW() | Account creation time |
+| updated_at | TIMESTAMP | NO | NOW() | Last modification (auto-updated) |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- UNIQUE on `email`
+
+**Trigger:** `update_users_updated_at` - Auto-updates `updated_at` on row modification
+
+---
+
+#### 2. listings
+
+**Purpose:** Core property listing with geographic location.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| host_id | INTEGER | YES | - | FK to users(id) |
+| title | VARCHAR(200) | NO | - | Listing title |
+| description | TEXT | YES | NULL | Full description |
+| location | GEOGRAPHY(POINT,4326) | YES | NULL | PostGIS point (lon, lat) |
+| address_line1 | VARCHAR(255) | YES | NULL | Street address |
+| address_line2 | VARCHAR(255) | YES | NULL | Apt/Suite number |
+| city | VARCHAR(100) | YES | NULL | City name |
+| state | VARCHAR(100) | YES | NULL | State/Province |
+| country | VARCHAR(100) | YES | NULL | Country |
+| postal_code | VARCHAR(20) | YES | NULL | ZIP/Postal code |
+| property_type | VARCHAR(50) | YES | NULL | CHECK: apartment, house, room, studio, villa, cabin, cottage, loft |
+| room_type | VARCHAR(50) | YES | NULL | CHECK: entire_place, private_room, shared_room |
+| max_guests | INTEGER | NO | 1 | Maximum guest count |
+| bedrooms | INTEGER | YES | 0 | Number of bedrooms |
+| beds | INTEGER | YES | 0 | Number of beds |
+| bathrooms | DECIMAL(2,1) | YES | 1 | Bathroom count (supports 1.5) |
+| amenities | TEXT[] | YES | '{}' | Array of amenity names |
+| house_rules | TEXT | YES | NULL | House rules text |
+| price_per_night | DECIMAL(10,2) | NO | - | Base nightly price |
+| cleaning_fee | DECIMAL(10,2) | YES | 0 | One-time cleaning fee |
+| service_fee_percent | DECIMAL(4,2) | YES | 10.00 | Platform fee percentage |
+| rating | DECIMAL(2,1) | YES | NULL | Average rating (trigger-updated) |
+| review_count | INTEGER | YES | 0 | Public review count (trigger-updated) |
+| instant_book | BOOLEAN | NO | FALSE | TRUE = no host approval needed |
+| minimum_nights | INTEGER | YES | 1 | Minimum stay requirement |
+| maximum_nights | INTEGER | YES | 365 | Maximum stay limit |
+| cancellation_policy | VARCHAR(50) | YES | 'flexible' | CHECK: flexible, moderate, strict |
+| is_active | BOOLEAN | NO | TRUE | FALSE = hidden from search |
+| created_at | TIMESTAMP | NO | NOW() | Creation timestamp |
+| updated_at | TIMESTAMP | NO | NOW() | Last modification (auto-updated) |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- GIST on `location` (spatial index for geo queries)
+- BTREE on `host_id` (find host's listings)
+- BTREE on `price_per_night` (price filtering)
+- BTREE on `is_active` (active listings filter)
+
+**Trigger:** `update_listings_updated_at` - Auto-updates `updated_at` on modification
+
+---
+
+#### 3. listing_photos
+
+**Purpose:** Multiple photos per listing with ordering.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| listing_id | INTEGER | YES | - | FK to listings(id) |
+| url | TEXT | NO | - | Image URL (MinIO/S3) |
+| caption | VARCHAR(255) | YES | NULL | Photo caption |
+| display_order | INTEGER | YES | 0 | Display sequence (0 = primary) |
+| created_at | TIMESTAMP | NO | NOW() | Upload timestamp |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `listing_id`
+
+---
+
+#### 4. availability_blocks
+
+**Purpose:** Date-range based availability tracking (more efficient than day-by-day).
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| listing_id | INTEGER | YES | - | FK to listings(id) |
+| start_date | DATE | NO | - | Block start (inclusive) |
+| end_date | DATE | NO | - | Block end (exclusive) |
+| status | VARCHAR(20) | NO | - | CHECK: available, blocked, booked |
+| price_per_night | DECIMAL(10,2) | YES | NULL | Custom pricing (NULL = use listing default) |
+| booking_id | INTEGER | YES | NULL | FK to bookings(id) when status='booked' |
+| created_at | TIMESTAMP | NO | NOW() | Creation timestamp |
+
+**Constraints:**
+- `valid_dates`: CHECK (end_date > start_date)
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `(listing_id, start_date, end_date)` (date range queries)
+- BTREE on `status`
+
+---
+
+#### 5. bookings
+
+**Purpose:** Reservations linking guests to listings for specific dates.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| listing_id | INTEGER | YES | - | FK to listings(id) |
+| guest_id | INTEGER | YES | - | FK to users(id) |
+| check_in | DATE | NO | - | Check-in date |
+| check_out | DATE | NO | - | Check-out date |
+| guests | INTEGER | NO | 1 | Number of guests |
+| nights | INTEGER | NO | - | Stay duration (denormalized) |
+| price_per_night | DECIMAL(10,2) | NO | - | Captured at booking time |
+| cleaning_fee | DECIMAL(10,2) | YES | 0 | Captured at booking time |
+| service_fee | DECIMAL(10,2) | YES | 0 | Calculated service fee |
+| total_price | DECIMAL(10,2) | NO | - | Total amount |
+| status | VARCHAR(20) | YES | 'pending' | CHECK: pending, confirmed, cancelled, completed, declined |
+| guest_message | TEXT | YES | NULL | Initial message from guest |
+| host_response | TEXT | YES | NULL | Host reply |
+| cancelled_by | VARCHAR(10) | YES | NULL | CHECK: guest, host, NULL |
+| cancelled_at | TIMESTAMP | YES | NULL | Cancellation timestamp |
+| created_at | TIMESTAMP | NO | NOW() | Booking creation |
+| updated_at | TIMESTAMP | NO | NOW() | Last modification |
+
+**Constraints:**
+- `valid_booking_dates`: CHECK (check_out > check_in)
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `listing_id`
+- BTREE on `guest_id`
+- BTREE on `(check_in, check_out)`
+- BTREE on `status`
+
+**Trigger:** `update_bookings_updated_at` - Auto-updates `updated_at` on modification
+
+---
+
+#### 6. reviews
+
+**Purpose:** Two-sided reviews (guest reviews listing, host reviews guest).
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| booking_id | INTEGER | YES | - | FK to bookings(id) |
+| author_id | INTEGER | YES | - | FK to users(id) |
+| author_type | VARCHAR(10) | NO | - | CHECK: 'host', 'guest' |
+| rating | INTEGER | NO | - | Overall rating 1-5 |
+| cleanliness_rating | INTEGER | YES | NULL | CHECK 1-5 (guest reviews only) |
+| communication_rating | INTEGER | YES | NULL | CHECK 1-5 (guest reviews only) |
+| location_rating | INTEGER | YES | NULL | CHECK 1-5 (guest reviews only) |
+| value_rating | INTEGER | YES | NULL | CHECK 1-5 (guest reviews only) |
+| content | TEXT | YES | NULL | Review text |
+| is_public | BOOLEAN | NO | FALSE | TRUE when both parties reviewed |
+| created_at | TIMESTAMP | NO | NOW() | Review submission time |
+
+**Constraints:**
+- UNIQUE on `(booking_id, author_type)` - One review per party per booking
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `booking_id`
+- BTREE on `author_id`
+
+**Triggers:**
+- `check_publish_reviews_trigger` - Sets `is_public = TRUE` when both parties review
+- `update_listing_rating_trigger` - Updates listing.rating and listing.review_count when guest review becomes public
+
+---
+
+#### 7. conversations
+
+**Purpose:** Message threads between hosts and guests.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| listing_id | INTEGER | YES | NULL | FK to listings(id) |
+| booking_id | INTEGER | YES | NULL | FK to bookings(id) |
+| host_id | INTEGER | YES | NULL | FK to users(id) |
+| guest_id | INTEGER | YES | NULL | FK to users(id) |
+| created_at | TIMESTAMP | NO | NOW() | Thread creation |
+| updated_at | TIMESTAMP | NO | NOW() | Last message time |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `host_id`
+- BTREE on `guest_id`
+
+**Trigger:** `update_conversations_updated_at` - Auto-updates `updated_at` on modification
+
+---
+
+#### 8. messages
+
+**Purpose:** Individual messages within conversation threads.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| conversation_id | INTEGER | YES | - | FK to conversations(id) |
+| sender_id | INTEGER | YES | - | FK to users(id) |
+| content | TEXT | NO | - | Message content |
+| is_read | BOOLEAN | NO | FALSE | Read status |
+| created_at | TIMESTAMP | NO | NOW() | Send timestamp |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `conversation_id`
+- BTREE on `sender_id`
+
+---
+
+#### 9. sessions
+
+**Purpose:** Server-side session storage for authentication.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | VARCHAR(255) | NO | - | Primary key (session token) |
+| user_id | INTEGER | YES | - | FK to users(id) |
+| data | JSONB | YES | NULL | Session data |
+| expires_at | TIMESTAMP | NO | - | Session expiration |
+| created_at | TIMESTAMP | NO | NOW() | Session creation |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `user_id`
+- BTREE on `expires_at` (cleanup queries)
+
+---
+
+#### 10. audit_logs
+
+**Purpose:** Comprehensive audit trail for all sensitive operations.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| id | SERIAL | NO | auto | Primary key |
+| event_type | VARCHAR(100) | NO | - | e.g., 'booking.created' |
+| user_id | INTEGER | YES | NULL | FK to users(id) |
+| resource_type | VARCHAR(50) | NO | - | e.g., 'booking', 'listing' |
+| resource_id | INTEGER | YES | NULL | ID of affected resource |
+| action | VARCHAR(50) | NO | - | e.g., 'create', 'update', 'cancel' |
+| outcome | VARCHAR(20) | NO | 'success' | CHECK: success, failure, denied |
+| ip_address | VARCHAR(45) | YES | NULL | IPv4 or IPv6 |
+| user_agent | TEXT | YES | NULL | Browser/client info |
+| session_id | VARCHAR(255) | YES | NULL | Session reference |
+| request_id | VARCHAR(255) | YES | NULL | Distributed trace ID |
+| metadata | JSONB | YES | '{}' | Additional context |
+| before_state | JSONB | YES | NULL | State before change |
+| after_state | JSONB | YES | NULL | State after change |
+| created_at | TIMESTAMP | NO | NOW() | Event timestamp |
+
+**Indexes:**
+- PRIMARY KEY on `id`
+- BTREE on `event_type`
+- BTREE on `user_id`
+- BTREE on `(resource_type, resource_id)`
+- BTREE on `created_at` (time-range queries)
+- BTREE on `request_id` (trace correlation)
+
+---
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| Parent Table | Child Table | FK Column | ON DELETE | Rationale |
+|--------------|-------------|-----------|-----------|-----------|
+| users | listings | host_id | CASCADE | Delete host's listings when account deleted |
+| users | bookings | guest_id | SET NULL | Preserve booking history for accounting |
+| users | reviews | author_id | SET NULL | Keep reviews visible even if author deleted |
+| users | conversations | host_id, guest_id | SET NULL | Preserve conversation history |
+| users | messages | sender_id | SET NULL | Keep message history |
+| users | sessions | user_id | CASCADE | Clean up sessions when user deleted |
+| users | audit_logs | user_id | SET NULL | Preserve audit trail |
+| listings | bookings | listing_id | SET NULL | Preserve booking history if listing deleted |
+| listings | listing_photos | listing_id | CASCADE | Delete photos when listing deleted |
+| listings | availability_blocks | listing_id | CASCADE | Clean up availability data |
+| listings | conversations | listing_id | SET NULL | Preserve message history |
+| bookings | reviews | booking_id | CASCADE | Reviews meaningless without booking |
+| bookings | availability_blocks | booking_id | SET NULL | Keep availability structure |
+| bookings | conversations | booking_id | SET NULL | Preserve message history |
+| conversations | messages | conversation_id | CASCADE | Delete messages with conversation |
+
+**Cascade Behavior Rationale:**
+
+1. **CASCADE** - Used when child data is meaningless without parent:
+   - Listing photos without listing
+   - Availability blocks without listing
+   - Sessions without user
+   - Messages without conversation
+
+2. **SET NULL** - Used to preserve historical records:
+   - Bookings when listing/guest deleted (financial records)
+   - Reviews when author deleted (trust data)
+   - Audit logs (compliance requirement)
+   - Conversations/messages (communication history)
+
+---
+
+### Data Flow for Key Operations
+
+#### 1. Creating a Booking
+
+```
+┌─────────────┐     ┌─────────────┐     ┌────────────────────┐     ┌─────────────┐
+│   Guest     │────►│  Bookings   │────►│ Availability_blocks│────►│  Listings   │
+│   (users)   │     │  (INSERT)   │     │     (INSERT)       │     │ (SELECT     │
+│             │     │             │     │  status='booked'   │     │  FOR UPDATE)│
+└─────────────┘     └─────────────┘     └────────────────────┘     └─────────────┘
+       │                   │                                              │
+       │                   │                                              │
+       ▼                   ▼                                              │
+┌─────────────┐     ┌─────────────┐                                       │
+│ Audit_logs  │◄────│Conversations│◄──────────────────────────────────────┘
+│  (INSERT)   │     │  (INSERT)   │
+└─────────────┘     └─────────────┘
+
+Transaction Flow:
+1. BEGIN TRANSACTION
+2. SELECT listing FOR UPDATE (row lock prevents double-booking)
+3. Check availability_blocks for conflicts using OVERLAPS
+4. INSERT booking record
+5. INSERT availability_block with status='booked'
+6. CREATE conversation between host and guest
+7. INSERT audit_log entry
+8. COMMIT TRANSACTION
+```
+
+#### 2. Submitting Reviews (Two-Sided)
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ Guest       │────►│  Reviews    │────►│  Trigger:   │────►│  Reviews    │
+│ submits     │     │ (INSERT     │     │  check_and_ │     │ is_public   │
+│ review      │     │ is_public   │     │  publish_   │     │ = TRUE      │
+│             │     │ = FALSE)    │     │  reviews    │     │ (for both)  │
+└─────────────┘     └─────────────┘     └──────┬──────┘     └──────┬──────┘
+                                               │                   │
+                                               │ Both parties     │
+                                               │ reviewed?        │
+                                               ▼                   ▼
+                                        ┌─────────────┐     ┌─────────────┐
+                                        │  Trigger:   │────►│  Listings   │
+                                        │  update_    │     │  rating,    │
+                                        │  listing_   │     │ review_count│
+                                        │  rating     │     │  updated    │
+                                        └─────────────┘     └─────────────┘
+
+Flow:
+1. Guest or Host submits review → is_public = FALSE
+2. Trigger checks if both parties have reviewed
+3. If both reviewed → SET is_public = TRUE for both
+4. If guest review now public → update listing.rating and listing.review_count
+```
+
+#### 3. Geographic Search with Availability
+
+```
+┌─────────────┐     ┌─────────────┐     ┌────────────────────┐     ┌─────────────┐
+│   Search    │────►│  Listings   │────►│ Availability_blocks│────►│  Results    │
+│   Request   │     │ (PostGIS    │     │  (check OVERLAPS)  │     │  (ranked)   │
+│  lat/lon,   │     │ ST_DWithin) │     │                    │     │             │
+│  dates      │     │             │     │                    │     │             │
+└─────────────┘     └─────────────┘     └────────────────────┘     └─────────────┘
+
+Query Flow:
+1. Filter by geography: ST_DWithin(location, point, radius)
+2. Filter by active: is_active = TRUE
+3. Filter by capacity: max_guests >= requested_guests
+4. Filter by price: price_per_night <= max_price
+5. Check availability: No conflicting availability_blocks with status != 'available'
+6. Rank by: distance, rating, price, instant_book
+```
+
+#### 4. Message Flow
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌─────────────┐
+│   Sender    │────►│  Conversations  │────►│  Messages   │
+│   (users)   │     │  (find/create)  │     │  (INSERT)   │
+└─────────────┘     └─────────────────┘     └─────────────┘
+       │                    │                      │
+       │                    ▼                      ▼
+       │            ┌─────────────────┐     ┌─────────────┐
+       └───────────►│   Recipient     │◄────│ Notification│
+                    │   (users)       │     │  (async)    │
+                    └─────────────────┘     └─────────────┘
+
+Flow:
+1. Find or create conversation for (host, guest, listing)
+2. Insert message with sender_id
+3. Update conversation.updated_at
+4. Publish notification event to message queue
+5. Notification worker sends push/email to recipient
+```
+
+---
+
+### Why Tables Are Structured This Way
+
+#### Single Users Table for Both Roles
+- Most users are both guests AND hosts
+- Simplifies authentication and profile management
+- `is_host` flag tracks role capability
+- Avoids complex inheritance patterns
+
+#### Date Ranges vs Day-by-Day Availability
+- 10M listings x 365 days = 3.65 billion rows (day-by-day)
+- Date ranges: ~200M rows (18x reduction)
+- PostgreSQL OVERLAPS operator handles range queries efficiently
+- Trade-off: Requires split/merge logic for partial updates
+
+#### Denormalized Rating/Review Count
+- Listing rating is read on every search result
+- Calculating average on-the-fly would require JOIN on every search
+- Trigger-based updates maintain consistency
+- Trade-off: Slightly slower writes for much faster reads
+
+#### Separate Photos Table
+- Supports multiple images per listing
+- Allows ordering with `display_order`
+- Enables lazy loading of images
+- CASCADE delete keeps data consistent
+
+#### PostGIS Geography Type
+- Native spatial indexing (GIST)
+- Efficient radius queries (ST_DWithin)
+- Uses WGS84 (SRID 4326) - standard lat/long
+- Keeps all data in single database (no Elasticsearch sync)
+
+#### Two-Sided Review Visibility
+- Reviews hidden until both submit prevents retaliation
+- Encourages honest feedback
+- Trigger automates the publication logic
+- Industry-standard approach (Airbnb, Uber, Lyft)
+
+#### Audit Logs with Before/After State
+- Full change history for dispute resolution
+- Captures who, what, when, from where
+- request_id links to distributed traces
+- JSONB for flexible metadata
 
 ---
 

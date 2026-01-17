@@ -39,13 +39,13 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
     <div className="w-full max-w-md">
       <div className="bg-white rounded-lg shadow-lg p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-whatsapp-teal-green">WhatsApp</h1>
-          <p className="text-gray-600 mt-2">Sign in to continue</p>
+          <h1 className="text-3xl font-bold text-whatsapp-header">WhatsApp</h1>
+          <p className="text-whatsapp-text-secondary mt-2">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
               {error}
               <button
                 type="button"
@@ -58,7 +58,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
           )}
 
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="username" className="block text-sm font-medium text-whatsapp-text-primary">
               Username
             </label>
             <input
@@ -66,13 +66,13 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
               id="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-whatsapp-green focus:border-whatsapp-green"
+              className="mt-1 block w-full px-3 py-2.5 border border-whatsapp-divider rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-whatsapp-header focus:border-whatsapp-header text-whatsapp-text-primary"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="password" className="block text-sm font-medium text-whatsapp-text-primary">
               Password
             </label>
             <input
@@ -80,7 +80,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-whatsapp-green focus:border-whatsapp-green"
+              className="mt-1 block w-full px-3 py-2.5 border border-whatsapp-divider rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-whatsapp-header focus:border-whatsapp-header text-whatsapp-text-primary"
               required
             />
           </div>
@@ -88,25 +88,25 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-whatsapp-green hover:bg-whatsapp-dark-green focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-whatsapp-green disabled:opacity-50"
+            className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-whatsapp-header hover:bg-whatsapp-teal focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-whatsapp-header disabled:opacity-50 transition-colors"
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
         <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-whatsapp-text-secondary">
             Don't have an account?{' '}
             <button
               onClick={onSwitchToRegister}
-              className="font-medium text-whatsapp-green hover:text-whatsapp-dark-green"
+              className="font-medium text-whatsapp-header hover:text-whatsapp-teal transition-colors"
             >
               Sign up
             </button>
           </p>
         </div>
 
-        <div className="mt-4 text-center text-xs text-gray-500">
+        <div className="mt-4 text-center text-xs text-whatsapp-text-secondary">
           <p>Demo accounts: alice / bob / charlie</p>
           <p>Password: password123</p>
         </div>

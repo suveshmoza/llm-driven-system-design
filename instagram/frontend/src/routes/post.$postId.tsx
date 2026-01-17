@@ -121,7 +121,7 @@ function PostPage() {
     return (
       <div className="text-center py-12">
         <h2 className="text-xl font-semibold mb-2">Post not found</h2>
-        <p className="text-text-gray">This post may have been deleted.</p>
+        <p className="text-text-secondary">This post may have been deleted.</p>
       </div>
     );
   }
@@ -220,7 +220,7 @@ function PostPage() {
                     </Link>
                     {post.caption}
                   </p>
-                  <p className="text-xs text-text-gray mt-1">{formatTimeAgo(post.createdAt)}</p>
+                  <p className="text-xs text-text-secondary mt-1">{formatTimeAgo(post.createdAt)}</p>
                 </div>
               </div>
             )}
@@ -242,7 +242,7 @@ function PostPage() {
                     </Link>
                     {comment.content}
                   </p>
-                  <div className="flex items-center gap-3 text-xs text-text-gray mt-1">
+                  <div className="flex items-center gap-3 text-xs text-text-secondary mt-1">
                     <span>{formatTimeAgo(comment.createdAt)}</span>
                     {comment.likeCount > 0 && (
                       <span>{formatNumber(comment.likeCount)} likes</span>
@@ -250,7 +250,7 @@ function PostPage() {
                     {(comment.userId === user?.id || post.userId === user?.id) && (
                       <button
                         onClick={() => handleDeleteComment(comment.id)}
-                        className="opacity-0 group-hover:opacity-100 text-red-500"
+                        className="opacity-0 group-hover:opacity-100 text-like-red transition-opacity"
                       >
                         Delete
                       </button>
@@ -267,7 +267,7 @@ function PostPage() {
               <div className="flex items-center gap-4">
                 <button onClick={handleLike}>
                   <svg
-                    className={`w-6 h-6 ${isLiked ? 'text-red-500 fill-current' : ''}`}
+                    className={`w-6 h-6 ${isLiked ? 'text-like-red fill-current' : ''}`}
                     fill={isLiked ? 'currentColor' : 'none'}
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -311,7 +311,7 @@ function PostPage() {
             <p className="font-semibold text-sm mb-1">
               {formatNumber(likeCount)} {likeCount === 1 ? 'like' : 'likes'}
             </p>
-            <p className="text-xs text-text-gray uppercase">{formatTimeAgo(post.createdAt)}</p>
+            <p className="text-xs text-text-secondary uppercase">{formatTimeAgo(post.createdAt)}</p>
           </div>
 
           {/* Comment input */}
@@ -327,7 +327,7 @@ function PostPage() {
               <button
                 type="submit"
                 disabled={!commentText.trim() || submittingComment}
-                className="text-primary font-semibold text-sm disabled:opacity-50"
+                className="text-primary hover:text-primary-hover font-semibold text-sm disabled:opacity-50 transition-colors"
               >
                 Post
               </button>

@@ -40,10 +40,10 @@ export function ChatLayout() {
   };
 
   return (
-    <div className="h-screen flex">
+    <div className="h-screen flex bg-whatsapp-chat-bg">
       {/* Sidebar - always visible on desktop, hidden on mobile when chat selected */}
       <div
-        className={`w-full md:w-96 flex-shrink-0 border-r border-gray-200 ${
+        className={`w-full md:w-96 flex-shrink-0 border-r border-whatsapp-divider ${
           selectedConversationId ? 'hidden md:block' : 'block'
         }`}
       >
@@ -54,10 +54,10 @@ export function ChatLayout() {
           />
 
           {/* Logout button */}
-          <div className="p-4 border-t bg-gray-50">
+          <div className="p-3 border-t border-whatsapp-divider bg-whatsapp-sidebar-bg">
             <button
               onClick={handleLogout}
-              className="w-full py-2 px-4 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              className="w-full py-2 px-4 text-whatsapp-text-secondary hover:bg-whatsapp-hover rounded-lg transition-colors flex items-center justify-center space-x-2"
             >
               <svg
                 className="w-5 h-5"
@@ -90,10 +90,10 @@ export function ChatLayout() {
             onBack={() => setSelectedConversationId(null)}
           />
         ) : (
-          <div className="h-full flex items-center justify-center bg-gray-100">
-            <div className="text-center text-gray-500">
+          <div className="h-full flex items-center justify-center whatsapp-chat-bg">
+            <div className="text-center text-whatsapp-text-secondary">
               <svg
-                className="w-24 h-24 mx-auto mb-4 text-gray-300"
+                className="w-24 h-24 mx-auto mb-4 text-whatsapp-text-secondary opacity-50"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -105,8 +105,8 @@ export function ChatLayout() {
                   d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                 />
               </svg>
-              <h2 className="text-xl font-semibold mb-2">WhatsApp Web</h2>
-              <p>Select a conversation or start a new chat</p>
+              <h2 className="text-xl font-light text-whatsapp-text-primary mb-2">WhatsApp Web</h2>
+              <p className="text-sm">Select a conversation or start a new chat</p>
             </div>
           </div>
         )}

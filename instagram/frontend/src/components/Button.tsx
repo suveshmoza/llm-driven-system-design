@@ -18,10 +18,10 @@ export function Button({
   const baseClasses = 'font-semibold rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
   const variantClasses = {
-    primary: 'bg-primary text-white hover:bg-blue-600',
-    secondary: 'bg-gray-100 text-black hover:bg-gray-200 border border-border-gray',
-    text: 'bg-transparent text-primary hover:text-blue-700',
-    danger: 'bg-red-500 text-white hover:bg-red-600',
+    primary: 'bg-primary text-white hover:bg-primary-hover',
+    secondary: 'bg-gray-100 text-text-primary hover:bg-gray-200 border border-border-gray',
+    text: 'bg-transparent text-primary hover:text-primary-hover',
+    danger: 'bg-like-red text-white hover:opacity-90',
   };
 
   const sizeClasses = {

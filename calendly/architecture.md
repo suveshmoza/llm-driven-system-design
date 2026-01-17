@@ -153,100 +153,443 @@ A meeting scheduling platform that allows users to share their availability and 
 
 ## Data Model
 
-### Database Schema
+### Entity-Relationship Diagram
 
-**Users Table**
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  time_zone VARCHAR(50) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           CALENDLY DATABASE SCHEMA                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────┐
+│        users         │
+├──────────────────────┤
+│ PK id (UUID)         │
+│    email (UNIQUE)    │
+│    password_hash     │
+│    name              │
+│    time_zone         │
+│    role              │
+│    created_at        │
+│    updated_at        │
+└──────────┬───────────┘
+           │
+           │ 1:N (CASCADE DELETE)
+           │
+     ┌─────┴─────┬─────────────────┐
+     │           │                 │
+     ▼           ▼                 ▼
+┌────────────┐ ┌───────────────┐ ┌────────────────┐
+│ meeting_   │ │ availability_ │ │   bookings     │
+│   types    │ │    rules      │ │  (as host)     │
+├────────────┤ ├───────────────┤ ├────────────────┤
+│ PK id      │ │ PK id         │ │ PK id          │
+│ FK user_id │ │ FK user_id    │ │ FK meeting_    │
+│    name    │ │    day_of_week│ │    type_id     │
+│    slug    │ │    start_time │ │ FK host_user_id│
+│    desc    │ │    end_time   │ │    invitee_    │
+│    duration│ │    is_active  │ │    name/email  │
+│    buffer_*│ │    created_at │ │    start_time  │
+│    max_    │ └───────────────┘ │    end_time    │
+│    bookings│                   │    status      │
+│    color   │                   │    version     │
+│    is_     │                   │    idempotency_│
+│    active  │                   │    key         │
+│    created_│                   │    notes       │
+│    updated_│                   │    created_at  │
+└─────┬──────┘                   │    updated_at  │
+      │                          └───────┬────────┘
+      │ 1:N (CASCADE DELETE)             │
+      │                                  │ 1:N (CASCADE DELETE)
+      └──────────────────────────────────┤
+                                         ▼
+                               ┌──────────────────────┐
+                               │ email_notifications  │
+                               ├──────────────────────┤
+                               │ PK id                │
+                               │ FK booking_id        │
+                               │    recipient_email   │
+                               │    notification_type │
+                               │    subject           │
+                               │    body              │
+                               │    sent_at           │
+                               │    status            │
+                               └──────────────────────┘
+
+┌──────────────────────┐     ┌──────────────────────┐
+│  bookings_archive    │     │      sessions        │
+├──────────────────────┤     ├──────────────────────┤
+│ PK id                │     │ PK sid               │
+│    meeting_type_id   │     │    sess (JSON)       │
+│    host_user_id      │     │    expire            │
+│    (same as bookings)│     └──────────────────────┘
+│    archived_at       │
+│    idempotency_key   │     (Standalone table for
+└──────────────────────┘      express-session fallback)
+
+(Archive table intentionally
+ has NO foreign keys to allow
+ parent record deletion)
 ```
 
-**Meeting Types Table**
-```sql
-CREATE TABLE meeting_types (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  name VARCHAR(255) NOT NULL,
-  duration_minutes INTEGER NOT NULL,
-  buffer_before_minutes INTEGER DEFAULT 0,
-  buffer_after_minutes INTEGER DEFAULT 0,
-  max_bookings_per_day INTEGER,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+### Complete Database Schema
+
+All times are stored in UTC. The schema is consolidated from `init.sql` and migrations `001_add_bookings_archive.sql` and `002_add_idempotency_key.sql`.
+
+---
+
+#### **users** - User Accounts
+
+Stores all user accounts including meeting hosts and administrators.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique user identifier |
+| `email` | VARCHAR(255) | UNIQUE, NOT NULL | User's email for login and notifications |
+| `password_hash` | VARCHAR(255) | NOT NULL | bcrypt-hashed password |
+| `name` | VARCHAR(255) | NOT NULL | Display name |
+| `time_zone` | VARCHAR(50) | NOT NULL, DEFAULT 'UTC' | IANA time zone (e.g., 'America/New_York') |
+| `role` | VARCHAR(20) | NOT NULL, DEFAULT 'user' | Either 'user' or 'admin' |
+| `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Account creation timestamp |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Last modification timestamp |
+
+**Design Rationale:**
+- `time_zone` stored as IANA identifier for accurate DST handling
+- `role` kept simple (user/admin) to avoid over-engineering; expand to RBAC if needed
+- `password_hash` uses bcrypt with cost factor 10 for security/performance balance
+
+---
+
+#### **meeting_types** - Meeting Templates
+
+Defines different meeting templates a user can offer to invitees.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique meeting type identifier |
+| `user_id` | UUID | NOT NULL, FK -> users(id) ON DELETE CASCADE | Owner of this meeting type |
+| `name` | VARCHAR(255) | NOT NULL | Display name (e.g., "30 Minute Consultation") |
+| `slug` | VARCHAR(255) | NOT NULL | URL-friendly identifier (e.g., "30-min-call") |
+| `description` | TEXT | | Long-form description shown to invitees |
+| `duration_minutes` | INTEGER | NOT NULL, DEFAULT 30 | Meeting length in minutes |
+| `buffer_before_minutes` | INTEGER | NOT NULL, DEFAULT 0 | Prep time before meeting |
+| `buffer_after_minutes` | INTEGER | NOT NULL, DEFAULT 0 | Buffer time after meeting |
+| `max_bookings_per_day` | INTEGER | | Optional daily booking limit |
+| `color` | VARCHAR(7) | DEFAULT '#3B82F6' | Hex color for UI display |
+| `is_active` | BOOLEAN | DEFAULT true | Whether this type accepts new bookings |
+| `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Creation timestamp |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Last modification timestamp |
+
+**Constraints:**
+- `UNIQUE(user_id, slug)` - Ensures unique URLs per user
+
+**Design Rationale:**
+- `slug` enables clean booking URLs: `/user/demo/30-min-call`
+- Buffer times prevent back-to-back meetings and allow for travel/prep
+- `max_bookings_per_day` prevents host burnout
+- `ON DELETE CASCADE` ensures meeting types are deleted when user is deleted
+
+---
+
+#### **availability_rules** - Weekly Schedule
+
+Defines recurring weekly availability windows for each user.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique rule identifier |
+| `user_id` | UUID | NOT NULL, FK -> users(id) ON DELETE CASCADE | User who owns this rule |
+| `day_of_week` | INTEGER | NOT NULL, CHECK (0-6) | 0=Sunday through 6=Saturday |
+| `start_time` | TIME | NOT NULL | Start of availability window |
+| `end_time` | TIME | NOT NULL | End of availability window |
+| `is_active` | BOOLEAN | DEFAULT true | Whether this rule is currently active |
+| `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Creation timestamp |
+
+**Constraints:**
+- `CHECK (day_of_week >= 0 AND day_of_week <= 6)` - Valid day values
+- `CHECK (end_time > start_time)` - End must be after start
+
+**Indexes:**
+- `idx_availability_user_day(user_id, day_of_week, is_active)` - Fast lookup by user and day
+
+**Design Rationale:**
+- TIME type (not TIMESTAMP) because these are recurring patterns, not specific dates
+- Multiple rules per day supported (e.g., 9-12 and 14-17 with lunch break)
+- `is_active` allows temporarily disabling rules without deletion
+- `ON DELETE CASCADE` cleans up rules when user is deleted
+
+---
+
+#### **bookings** - Active Meeting Bookings
+
+Stores confirmed and active meeting bookings between hosts and invitees.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique booking identifier |
+| `meeting_type_id` | UUID | NOT NULL, FK -> meeting_types(id) ON DELETE CASCADE | Which meeting type was booked |
+| `host_user_id` | UUID | NOT NULL, FK -> users(id) ON DELETE CASCADE | The meeting host |
+| `invitee_name` | VARCHAR(255) | NOT NULL | Invitee's display name |
+| `invitee_email` | VARCHAR(255) | NOT NULL | Invitee's email for notifications |
+| `start_time` | TIMESTAMP WITH TIME ZONE | NOT NULL | Meeting start (stored in UTC) |
+| `end_time` | TIMESTAMP WITH TIME ZONE | NOT NULL | Meeting end (stored in UTC) |
+| `invitee_timezone` | VARCHAR(50) | NOT NULL | Invitee's time zone for display |
+| `status` | VARCHAR(20) | NOT NULL, DEFAULT 'confirmed' | One of: confirmed, cancelled, rescheduled |
+| `cancellation_reason` | TEXT | | Reason if cancelled/rescheduled |
+| `notes` | TEXT | | Optional notes from invitee |
+| `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Booking creation timestamp |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Last modification timestamp |
+| `version` | INTEGER | DEFAULT 1 | Optimistic locking version number |
+| `idempotency_key` | VARCHAR(255) | | Client-provided or auto-generated key |
+
+**Constraints:**
+- `CHECK (end_time > start_time)` - Valid time range
+
+**Indexes:**
+- `idx_bookings_no_double(host_user_id, start_time) WHERE status = 'confirmed'` - **UNIQUE partial index** prevents double-booking
+- `idx_bookings_host_time(host_user_id, start_time, end_time)` - Fast availability queries
+- `idx_bookings_status(status)` - Filter by status
+- `idx_bookings_meeting_type(meeting_type_id)` - Join optimization
+- `idx_bookings_idempotency_key(idempotency_key) WHERE idempotency_key IS NOT NULL` - **UNIQUE partial index** for duplicate prevention
+
+**Design Rationale:**
+- `host_user_id` duplicates data from meeting_type but enables faster queries and survives meeting type deletion
+- `invitee_timezone` stored for correct email/calendar display even if invitee's location changes
+- `version` field enables optimistic locking to detect concurrent modifications
+- `idempotency_key` prevents duplicate bookings from network retries (see Implementation Notes)
+- Partial unique index on `(host_user_id, start_time)` only for confirmed status allows cancelled bookings to exist at same time
+- `ON DELETE CASCADE` on both FKs means deleting a user or meeting type removes all related bookings
+
+---
+
+#### **bookings_archive** - Historical Booking Archive
+
+Stores completed/cancelled bookings moved from the active table after 90 days.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Original booking ID (preserved) |
+| `meeting_type_id` | UUID | NOT NULL | Original meeting type (no FK) |
+| `host_user_id` | UUID | NOT NULL | Original host user (no FK) |
+| `invitee_name` | VARCHAR(255) | NOT NULL | Invitee's name |
+| `invitee_email` | VARCHAR(255) | NOT NULL | Invitee's email |
+| `start_time` | TIMESTAMP WITH TIME ZONE | NOT NULL | Meeting start time |
+| `end_time` | TIMESTAMP WITH TIME ZONE | NOT NULL | Meeting end time |
+| `invitee_timezone` | VARCHAR(50) | NOT NULL | Invitee's time zone |
+| `status` | VARCHAR(20) | NOT NULL | Final status at archival |
+| `cancellation_reason` | TEXT | | Cancellation reason if applicable |
+| `notes` | TEXT | | Original notes |
+| `created_at` | TIMESTAMP WITH TIME ZONE | | Original creation time |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | | Last update before archival |
+| `version` | INTEGER | DEFAULT 1 | Final version number |
+| `idempotency_key` | VARCHAR(255) | | Original idempotency key |
+| `archived_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | When booking was archived |
+
+**Indexes:**
+- `idx_bookings_archive_host_time(host_user_id, start_time)` - Query archived bookings by host
+- `idx_bookings_archive_archived_at(archived_at)` - Cleanup queries
+
+**Design Rationale:**
+- **No foreign keys** - Allows archival to survive parent record deletion
+- Same structure as `bookings` plus `archived_at` for easy data movement
+- Keeps active `bookings` table small for fast queries
+- Supports legal/audit requirements (2-year retention)
+- Can restore bookings if needed for support cases
+
+---
+
+#### **email_notifications** - Email Audit Log
+
+Tracks all email notifications sent for booking events.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique notification ID |
+| `booking_id` | UUID | FK -> bookings(id) ON DELETE CASCADE | Related booking |
+| `recipient_email` | VARCHAR(255) | NOT NULL | Email recipient address |
+| `notification_type` | VARCHAR(50) | NOT NULL | One of: confirmation, reminder, cancellation, reschedule |
+| `subject` | VARCHAR(500) | NOT NULL | Email subject line |
+| `body` | TEXT | NOT NULL | Full email body content |
+| `sent_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | When email was sent |
+| `status` | VARCHAR(20) | NOT NULL, DEFAULT 'sent' | Either 'sent' or 'failed' |
+
+**Indexes:**
+- `idx_email_booking(booking_id)` - Find all emails for a booking
+
+**Design Rationale:**
+- Audit trail for all communications
+- `ON DELETE CASCADE` removes notification history when booking is deleted
+- `status` field tracks delivery success for retry/debugging
+
+---
+
+#### **sessions** - Express Session Fallback
+
+Stores HTTP sessions when Redis is unavailable (fallback only).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `sid` | VARCHAR(255) | PRIMARY KEY | Session ID |
+| `sess` | JSON | NOT NULL | Serialized session data |
+| `expire` | TIMESTAMP WITH TIME ZONE | NOT NULL | Session expiration time |
+
+**Indexes:**
+- `idx_sessions_expire(expire)` - Fast cleanup of expired sessions
+
+**Design Rationale:**
+- Fallback for development when Redis/Valkey is not running
+- Production should use Redis for session storage
+
+---
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| Parent Table | Child Table | FK Column | Cascade Behavior | Rationale |
+|--------------|-------------|-----------|------------------|-----------|
+| users | meeting_types | user_id | ON DELETE CASCADE | When a user is deleted, their meeting types become invalid |
+| users | availability_rules | user_id | ON DELETE CASCADE | User's schedule belongs only to them |
+| users | bookings | host_user_id | ON DELETE CASCADE | If host leaves, their bookings are cancelled |
+| meeting_types | bookings | meeting_type_id | ON DELETE CASCADE | If meeting type is removed, related bookings are removed |
+| bookings | email_notifications | booking_id | ON DELETE CASCADE | Email history is only relevant with booking context |
+
+**Why CASCADE DELETE everywhere?**
+- Simplifies cleanup: No orphaned records
+- Atomic operations: Deleting a user removes all their data in one transaction
+- GDPR compliance: Easy "right to erasure" implementation
+
+**Why no CASCADE on bookings_archive?**
+- Archive serves as historical record
+- Must survive deletion of users/meeting types
+- Data can exist without active parent records
+
+---
+
+### Data Flow for Key Operations
+
+#### 1. Creating a Booking
+
+```
+Client                  API Server              Database                Redis
+   │                        │                       │                     │
+   │──POST /api/bookings───▶│                       │                     │
+   │   (idempotency_key)    │                       │                     │
+   │                        │──Check idempotency───▶│                     │
+   │                        │   key in Redis        │                     │
+   │                        │◀─────────────────────▶│                     │
+   │                        │                       │                     │
+   │                        │──BEGIN TRANSACTION───▶│                     │
+   │                        │                       │                     │
+   │                        │──SELECT availability_rules                  │
+   │                        │   WHERE user_id = ?   │                     │
+   │                        │◀─────────────────────▶│                     │
+   │                        │                       │                     │
+   │                        │──SELECT bookings      │                     │
+   │                        │   WHERE host_user_id  │                     │
+   │                        │   AND status='confirmed'                    │
+   │                        │   FOR UPDATE          │  (Row-level lock)   │
+   │                        │◀─────────────────────▶│                     │
+   │                        │                       │                     │
+   │                        │──INSERT INTO bookings─▶│                     │
+   │                        │   (uses partial unique index)               │
+   │                        │◀─────────────────────▶│                     │
+   │                        │                       │                     │
+   │                        │──COMMIT──────────────▶│                     │
+   │                        │                       │                     │
+   │                        │──Cache idempotency───▶│                     │
+   │                        │   result (1 hour TTL) │                     │
+   │                        │◀─────────────────────▶│                     │
+   │                        │                       │                     │
+   │                        │──Queue email notification                   │
+   │                        │   (via RabbitMQ)      │                     │
+   │                        │                       │                     │
+   │◀─────201 Created───────│                       │                     │
 ```
 
-**Availability Rules Table**
-```sql
-CREATE TABLE availability_rules (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  day_of_week INTEGER NOT NULL, -- 0-6 (Sunday-Saturday)
-  start_time TIME NOT NULL,
-  end_time TIME NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+**Double-Booking Prevention (Multi-Layer):**
+1. **Optimistic**: Check available slots before attempting insert
+2. **Pessimistic**: `SELECT FOR UPDATE` locks conflicting rows during transaction
+3. **Database Constraint**: Partial unique index `(host_user_id, start_time) WHERE status = 'confirmed'`
+4. **Idempotency**: Same request with same key returns cached result
+
+#### 2. Checking Availability
+
+```
+Client                  API Server              Database                Valkey/Redis
+   │                        │                       │                     │
+   │──GET /availability────▶│                       │                     │
+   │   ?meeting_type=X      │                       │                     │
+   │   &date=2024-01-15     │                       │                     │
+   │                        │──Check cache─────────▶│                     │
+   │                        │   (availability:X:    │                     │
+   │                        │    2024-01-15)        │                     │
+   │                        │                       │                     │
+   │                        │  (If cache miss)      │                     │
+   │                        │──SELECT meeting_types▶│                     │
+   │                        │   WHERE id = X        │                     │
+   │                        │                       │                     │
+   │                        │──SELECT availability_▶│                     │
+   │                        │   rules WHERE user_id │                     │
+   │                        │   AND day_of_week = ? │                     │
+   │                        │   (uses idx_availability_user_day)          │
+   │                        │                       │                     │
+   │                        │──SELECT bookings─────▶│                     │
+   │                        │   WHERE host_user_id  │                     │
+   │                        │   AND start_time      │                     │
+   │                        │   BETWEEN ? AND ?     │                     │
+   │                        │   (uses idx_bookings_host_time)             │
+   │                        │                       │                     │
+   │                        │  [Calculate slots]    │                     │
+   │                        │  - Merge busy periods │                     │
+   │                        │  - Apply buffers      │                     │
+   │                        │  - Generate slots     │                     │
+   │                        │                       │                     │
+   │                        │──Cache result────────▶│                     │
+   │                        │   (5 min TTL)         │                     │
+   │                        │                       │                     │
+   │◀─────Available slots───│                       │                     │
 ```
 
-**Bookings Table**
-```sql
-CREATE TABLE bookings (
-  id UUID PRIMARY KEY,
-  meeting_type_id UUID REFERENCES meeting_types(id),
-  host_user_id UUID REFERENCES users(id),
-  invitee_name VARCHAR(255) NOT NULL,
-  invitee_email VARCHAR(255) NOT NULL,
-  start_time TIMESTAMP NOT NULL,
-  end_time TIMESTAMP NOT NULL,
-  time_zone VARCHAR(50) NOT NULL,
-  status VARCHAR(20) NOT NULL, -- confirmed, cancelled, rescheduled
-  cancellation_reason TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(host_user_id, start_time) -- Prevent double bookings
-);
+#### 3. Archiving Old Bookings
 
-CREATE INDEX idx_bookings_host_time ON bookings(host_user_id, start_time);
-CREATE INDEX idx_bookings_status ON bookings(status);
+```
+Cron Job (daily)        Database
+   │                        │
+   │──BEGIN TRANSACTION────▶│
+   │                        │
+   │──INSERT INTO bookings_▶│
+   │   archive SELECT *     │
+   │   FROM bookings        │
+   │   WHERE status IN      │
+   │   ('completed',        │
+   │    'cancelled')        │
+   │   AND end_time <       │
+   │   NOW() - 90 days      │
+   │                        │
+   │──DELETE FROM bookings─▶│
+   │   WHERE (same filter)  │
+   │                        │
+   │──COMMIT───────────────▶│
+   │                        │
+   │◀─────Rows affected─────│
 ```
 
-**Calendar Integrations Table**
-```sql
-CREATE TABLE calendar_integrations (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  provider VARCHAR(50) NOT NULL, -- google, outlook, etc.
-  access_token TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  token_expires_at TIMESTAMP NOT NULL,
-  calendar_id VARCHAR(255),
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
+---
 
-**Calendar Events Cache Table**
-```sql
-CREATE TABLE calendar_events_cache (
-  id UUID PRIMARY KEY,
-  calendar_integration_id UUID REFERENCES calendar_integrations(id),
-  external_event_id VARCHAR(255) NOT NULL,
-  start_time TIMESTAMP NOT NULL,
-  end_time TIMESTAMP NOT NULL,
-  summary TEXT,
-  cached_at TIMESTAMP DEFAULT NOW(),
-  expires_at TIMESTAMP NOT NULL
-);
+### Indexes Summary
 
-CREATE INDEX idx_calendar_cache_integration_time ON calendar_events_cache(calendar_integration_id, start_time, end_time);
-```
+| Index Name | Table | Columns | Type | Purpose |
+|------------|-------|---------|------|---------|
+| `idx_availability_user_day` | availability_rules | (user_id, day_of_week, is_active) | B-tree | Fast availability lookup by user and day |
+| `idx_bookings_no_double` | bookings | (host_user_id, start_time) WHERE status='confirmed' | Unique Partial | Prevent double-booking |
+| `idx_bookings_host_time` | bookings | (host_user_id, start_time, end_time) | B-tree | Range queries for availability |
+| `idx_bookings_status` | bookings | (status) | B-tree | Filter by booking status |
+| `idx_bookings_meeting_type` | bookings | (meeting_type_id) | B-tree | Join with meeting_types |
+| `idx_bookings_idempotency_key` | bookings | (idempotency_key) WHERE NOT NULL | Unique Partial | Duplicate request prevention |
+| `idx_bookings_archive_host_time` | bookings_archive | (host_user_id, start_time) | B-tree | Historical queries |
+| `idx_bookings_archive_archived_at` | bookings_archive | (archived_at) | B-tree | Cleanup/retention queries |
+| `idx_email_booking` | email_notifications | (booking_id) | B-tree | Find emails by booking |
+| `idx_sessions_expire` | sessions | (expire) | B-tree | Session cleanup |
+
+---
 
 ### Storage Strategy
 

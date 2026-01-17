@@ -199,84 +199,407 @@ function controversialScore(ups, downs) {
 
 ## Database Schema
 
-```sql
--- Users
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  username VARCHAR(50) UNIQUE NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  karma_post INTEGER DEFAULT 0,
-  karma_comment INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+### Entity-Relationship Diagram
 
--- Subreddits
-CREATE TABLE subreddits (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(50) UNIQUE NOT NULL,
-  title VARCHAR(255),
-  description TEXT,
-  created_by INTEGER REFERENCES users(id),
-  subscriber_count INTEGER DEFAULT 0,
-  is_private BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Subscriptions
-CREATE TABLE subscriptions (
-  user_id INTEGER REFERENCES users(id),
-  subreddit_id INTEGER REFERENCES subreddits(id),
-  subscribed_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, subreddit_id)
-);
-
--- Posts
-CREATE TABLE posts (
-  id SERIAL PRIMARY KEY,
-  subreddit_id INTEGER REFERENCES subreddits(id),
-  author_id INTEGER REFERENCES users(id),
-  title VARCHAR(300) NOT NULL,
-  content TEXT,
-  url VARCHAR(2048),
-  score INTEGER DEFAULT 0,
-  upvotes INTEGER DEFAULT 0,
-  downvotes INTEGER DEFAULT 0,
-  comment_count INTEGER DEFAULT 0,
-  hot_score DOUBLE PRECISION DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Comments (materialized path)
-CREATE TABLE comments (
-  id SERIAL PRIMARY KEY,
-  post_id INTEGER REFERENCES posts(id),
-  author_id INTEGER REFERENCES users(id),
-  parent_id INTEGER REFERENCES comments(id),
-  path VARCHAR(255) NOT NULL,
-  depth INTEGER DEFAULT 0,
-  content TEXT NOT NULL,
-  score INTEGER DEFAULT 0,
-  upvotes INTEGER DEFAULT 0,
-  downvotes INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_comments_path ON comments(path varchar_pattern_ops);
-CREATE INDEX idx_comments_post ON comments(post_id);
-
--- Votes
-CREATE TABLE votes (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  post_id INTEGER REFERENCES posts(id),
-  comment_id INTEGER REFERENCES comments(id),
-  direction SMALLINT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  CONSTRAINT unique_post_vote UNIQUE(user_id, post_id),
-  CONSTRAINT unique_comment_vote UNIQUE(user_id, comment_id)
-);
 ```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              REDDIT CLONE - DATABASE SCHEMA                              │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌──────────────┐
+    │    users     │
+    ├──────────────┤         ┌───────────────┐
+    │ id (PK)      │─────────│   sessions    │
+    │ username     │    1:N  ├───────────────┤
+    │ email        │         │ id (PK)       │
+    │ password_hash│         │ user_id (FK)  │──┐
+    │ karma_post   │         │ expires_at    │  │
+    │ karma_comment│         │ created_at    │  │
+    │ role         │         └───────────────┘  │ CASCADE DELETE
+    │ created_at   │                            │ (user deleted = sessions deleted)
+    └──────────────┘◄───────────────────────────┘
+           │
+           │
+    ┌──────┴──────┬─────────────────────────────────────────────┐
+    │             │                                              │
+    │ 1:N         │ 1:N                                          │ 1:N
+    │ (created_by)│ (author_id)                                  │ (author_id)
+    ▼             │                                              │
+┌──────────────┐  │                                              │
+│  subreddits  │  │    ┌──────────────┐         ┌──────────────┐ │
+├──────────────┤  │    │    posts     │         │   comments   │ │
+│ id (PK)      │  │    ├──────────────┤         ├──────────────┤ │
+│ name         │  │    │ id (PK)      │    1:N  │ id (PK)      │ │
+│ title        │  │    │ subreddit_id │◄────────│ post_id (FK) │ │
+│ description  │  │    │ author_id    │◄───┐    │ author_id    │◄┘
+│ created_by   │──┘    │ title        │    │    │ parent_id    │──┐ SELF-REF
+│ subscriber_  │       │ content      │    │    │ path         │◄─┘ (tree structure)
+│   count      │       │ url          │    │    │ depth        │
+│ is_private   │       │ score        │    │    │ content      │
+│ created_at   │       │ upvotes      │    │    │ score        │
+└──────────────┘       │ downvotes    │    │    │ upvotes      │
+       │               │ comment_count│    │    │ downvotes    │
+       │               │ hot_score    │    │    │ is_archived  │
+       │ 1:N           │ is_archived  │    │    │ archived_at  │
+       │               │ archived_at  │    │    │ created_at   │
+       ▼               │ created_at   │    │    └──────────────┘
+┌──────────────┐       └──────────────┘    │           │
+│subscriptions │              │            │           │
+├──────────────┤              │            │           │
+│ user_id (PK) │◄─────────┐   │            │           │
+│ subreddit_id │          │   │ 1:N        │ 1:N       │ 1:N
+│ subscribed_at│          │   │            │           │
+└──────────────┘          │   ▼            │           ▼
+       ▲                  │ ┌──────────────┐           │
+       │                  │ │    votes     │           │
+       │ CASCADE DELETE   │ ├──────────────┤           │
+       │ (both directions)│ │ id (PK)      │           │
+       │                  │ │ user_id (FK) │───────────┘
+       │                  │ │ post_id (FK) │◄──────────┤
+       │                  │ │ comment_id   │◄──────────┘
+┌──────┴───────┐          │ │ direction    │
+│    users     │◄─────────┘ │ created_at   │
+│  (user_id)   │            └──────────────┘
+└──────────────┘                  │
+                                  │ XOR CONSTRAINT:
+                                  │ Either post_id OR comment_id
+                                  │ must be set, not both
+                                  ▼
+                         ┌──────────────┐
+                         │  audit_logs  │
+                         ├──────────────┤
+                         │ id (PK)      │
+                         │ timestamp    │
+                         │ actor_id (FK)│──────► users (SET NULL on delete)
+                         │ actor_ip     │
+                         │ action       │
+                         │ target_type  │
+                         │ target_id    │
+                         │ details      │
+                         │ subreddit_id │──────► subreddits (SET NULL on delete)
+                         └──────────────┘
+```
+
+### Complete Table Definitions
+
+#### 1. users
+The core user account table storing authentication and karma information.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing user identifier |
+| username | VARCHAR(50) | UNIQUE, NOT NULL | Display name for the user |
+| email | VARCHAR(255) | UNIQUE, NOT NULL | Email for authentication and notifications |
+| password_hash | VARCHAR(255) | NOT NULL | Bcrypt-hashed password |
+| karma_post | INTEGER | DEFAULT 0 | Accumulated karma from post votes |
+| karma_comment | INTEGER | DEFAULT 0 | Accumulated karma from comment votes |
+| role | VARCHAR(20) | DEFAULT 'user' | User role ('user', 'moderator', 'admin') |
+| created_at | TIMESTAMP | DEFAULT NOW() | Account creation timestamp |
+
+**Design Rationale**: Separate karma for posts and comments allows for richer user profiles and enables different karma thresholds for different actions (e.g., posting in certain subreddits).
+
+#### 2. sessions
+Session-based authentication storage for logged-in users.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | VARCHAR(255) | PRIMARY KEY | Session token (UUID or secure random) |
+| user_id | INTEGER | FK -> users(id) ON DELETE CASCADE | Owner of this session |
+| expires_at | TIMESTAMP | NOT NULL | When the session becomes invalid |
+| created_at | TIMESTAMP | DEFAULT NOW() | Session creation time |
+
+**Design Rationale**: Session-based auth is simpler than JWT for this learning project. ON DELETE CASCADE ensures orphaned sessions are cleaned up when users are deleted.
+
+#### 3. subreddits
+Communities where users post and engage in discussions.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing subreddit identifier |
+| name | VARCHAR(50) | UNIQUE, NOT NULL | URL-friendly name (e.g., "programming") |
+| title | VARCHAR(255) | - | Human-readable title |
+| description | TEXT | - | Community rules and description |
+| created_by | INTEGER | FK -> users(id) | Original creator (no cascade - preserve history) |
+| subscriber_count | INTEGER | DEFAULT 0 | Denormalized count for display |
+| is_private | BOOLEAN | DEFAULT FALSE | Whether the subreddit requires approval to join |
+| created_at | TIMESTAMP | DEFAULT NOW() | Community creation timestamp |
+
+**Design Rationale**: `subscriber_count` is denormalized to avoid COUNT(*) on every page load. The `created_by` foreign key has no ON DELETE to preserve subreddit history even if the creator's account is deleted.
+
+#### 4. subscriptions
+Many-to-many relationship linking users to their subscribed subreddits.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| user_id | INTEGER | PK, FK -> users(id) ON DELETE CASCADE | Subscribing user |
+| subreddit_id | INTEGER | PK, FK -> subreddits(id) ON DELETE CASCADE | Target subreddit |
+| subscribed_at | TIMESTAMP | DEFAULT NOW() | When the subscription was created |
+
+**Design Rationale**: Composite primary key prevents duplicate subscriptions. CASCADE DELETE on both foreign keys ensures clean removal when either the user or subreddit is deleted.
+
+#### 5. posts
+Content submissions within subreddits.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing post identifier |
+| subreddit_id | INTEGER | FK -> subreddits(id) ON DELETE CASCADE | Target community |
+| author_id | INTEGER | FK -> users(id) ON DELETE SET NULL | Post author |
+| title | VARCHAR(300) | NOT NULL | Post title (Reddit limit is 300 chars) |
+| content | TEXT | - | Text post content (null for link posts) |
+| url | VARCHAR(2048) | - | Link URL (null for text posts) |
+| score | INTEGER | DEFAULT 0 | Net score (upvotes - downvotes) |
+| upvotes | INTEGER | DEFAULT 0 | Total upvote count |
+| downvotes | INTEGER | DEFAULT 0 | Total downvote count |
+| comment_count | INTEGER | DEFAULT 0 | Denormalized comment count |
+| hot_score | DOUBLE PRECISION | DEFAULT 0 | Precomputed hot ranking score |
+| is_archived | BOOLEAN | DEFAULT FALSE | Whether the post is archived |
+| archived_at | TIMESTAMP | - | When the post was archived |
+| created_at | TIMESTAMP | DEFAULT NOW() | Post submission timestamp |
+
+**Indexes**:
+- `idx_posts_subreddit` - Filter by subreddit
+- `idx_posts_author` - User profile queries
+- `idx_posts_hot_score` - Hot feed sorting
+- `idx_posts_created_at` - New feed sorting
+- `idx_posts_score` - Top feed sorting
+- `idx_posts_not_archived` - Partial index excluding archived posts
+
+**Design Rationale**:
+- `ON DELETE CASCADE` for subreddit: If a subreddit is deleted, all its posts go too
+- `ON DELETE SET NULL` for author: Posts survive user deletion (shows as "[deleted]")
+- Denormalized `score`, `upvotes`, `downvotes`, `comment_count` avoid expensive aggregations
+- `hot_score` is precomputed by background worker to avoid CPU-intensive calculations on read
+
+#### 6. comments
+Nested comment threads using the materialized path pattern.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing comment identifier |
+| post_id | INTEGER | FK -> posts(id) ON DELETE CASCADE | Parent post |
+| author_id | INTEGER | FK -> users(id) ON DELETE SET NULL | Comment author |
+| parent_id | INTEGER | FK -> comments(id) ON DELETE CASCADE | Parent comment (null for top-level) |
+| path | VARCHAR(255) | NOT NULL | Materialized path (e.g., "1.5.23") |
+| depth | INTEGER | DEFAULT 0 | Nesting level (0 = top-level) |
+| content | TEXT | NOT NULL | Comment body |
+| score | INTEGER | DEFAULT 0 | Net score |
+| upvotes | INTEGER | DEFAULT 0 | Total upvotes |
+| downvotes | INTEGER | DEFAULT 0 | Total downvotes |
+| is_archived | BOOLEAN | DEFAULT FALSE | Whether the comment is archived |
+| archived_at | TIMESTAMP | - | When the comment was archived |
+| created_at | TIMESTAMP | DEFAULT NOW() | Comment submission timestamp |
+
+**Indexes**:
+- `idx_comments_path` (varchar_pattern_ops) - Subtree queries with LIKE 'path.%'
+- `idx_comments_post` - All comments for a post
+- `idx_comments_parent` - Direct children of a comment
+- `idx_comments_not_archived` - Partial index for active comments
+
+**Design Rationale**:
+- Materialized path enables single-query subtree fetching: `WHERE path LIKE '1.5.%'`
+- Self-referential `parent_id` with CASCADE DELETE removes entire subtrees when parent is deleted
+- `varchar_pattern_ops` index enables efficient LIKE prefix queries
+- `depth` is redundant (derivable from path) but avoids string parsing for depth limits
+
+#### 7. votes
+Voting records for both posts and comments with mutual exclusion.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing vote identifier |
+| user_id | INTEGER | FK -> users(id) ON DELETE CASCADE | Voter |
+| post_id | INTEGER | FK -> posts(id) ON DELETE CASCADE | Voted post (null if comment vote) |
+| comment_id | INTEGER | FK -> comments(id) ON DELETE CASCADE | Voted comment (null if post vote) |
+| direction | SMALLINT | NOT NULL | Vote direction: 1 (up), -1 (down) |
+| created_at | TIMESTAMP | DEFAULT NOW() | When vote was cast |
+
+**Constraints**:
+- `unique_post_vote` UNIQUE(user_id, post_id) - One vote per user per post
+- `unique_comment_vote` UNIQUE(user_id, comment_id) - One vote per user per comment
+- `vote_target` CHECK - Ensures exactly one of post_id or comment_id is set
+
+**Indexes**:
+- `idx_votes_user` - User's voting history
+- `idx_votes_post` - All votes on a post
+- `idx_votes_comment` - All votes on a comment
+
+**Design Rationale**:
+- Single votes table for both posts and comments reduces schema complexity
+- XOR constraint ensures data integrity (can't vote on nothing or both)
+- Separate upvotes/downvotes in posts/comments tables enable fuzzing for anti-brigade
+- Full vote history enables fraud detection and karma recalculation
+
+#### 8. audit_logs
+Security and moderation event tracking.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing log identifier |
+| timestamp | TIMESTAMP | DEFAULT NOW() | When the event occurred |
+| actor_id | INTEGER | FK -> users(id) ON DELETE SET NULL | User who performed the action |
+| actor_ip | INET | - | IP address of the actor |
+| action | VARCHAR(50) | NOT NULL | Action type (e.g., 'post.delete', 'user.ban') |
+| target_type | VARCHAR(20) | - | Entity type ('post', 'comment', 'user', 'subreddit') |
+| target_id | INTEGER | - | ID of the affected entity |
+| details | JSONB | - | Additional context (before/after values, reasons) |
+| subreddit_id | INTEGER | FK -> subreddits(id) ON DELETE SET NULL | Context subreddit |
+
+**Indexes**:
+- `idx_audit_timestamp` - Chronological queries
+- `idx_audit_actor` - Actions by specific user
+- `idx_audit_action` - Filter by action type
+- `idx_audit_target` - Find all actions on an entity
+- `idx_audit_subreddit` - Subreddit moderation history
+- `idx_audit_recent` - Partial index for last 90 days (most common queries)
+
+**Design Rationale**:
+- SET NULL on foreign keys preserves audit history when users/subreddits are deleted
+- JSONB for details allows flexible schema per action type
+- INET type for IPs enables network-based queries
+- Partial index on recent events optimizes common time-range queries
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| From Table | Column | To Table | On Delete | Rationale |
+|------------|--------|----------|-----------|-----------|
+| sessions | user_id | users | CASCADE | Sessions meaningless without user |
+| subreddits | created_by | users | (none) | Preserve subreddit even if creator deleted |
+| subscriptions | user_id | users | CASCADE | Subscriptions meaningless without user |
+| subscriptions | subreddit_id | subreddits | CASCADE | Subscriptions meaningless without subreddit |
+| posts | subreddit_id | subreddits | CASCADE | Posts belong to subreddit lifecycle |
+| posts | author_id | users | SET NULL | Preserve post content, show as "[deleted]" |
+| comments | post_id | posts | CASCADE | Comments belong to post lifecycle |
+| comments | author_id | users | SET NULL | Preserve comment content, show as "[deleted]" |
+| comments | parent_id | comments | CASCADE | Delete entire reply subtree |
+| votes | user_id | users | CASCADE | Vote history doesn't survive user deletion |
+| votes | post_id | posts | CASCADE | Votes on deleted posts are meaningless |
+| votes | comment_id | comments | CASCADE | Votes on deleted comments are meaningless |
+| audit_logs | actor_id | users | SET NULL | Preserve audit trail with null actor |
+| audit_logs | subreddit_id | subreddits | SET NULL | Preserve audit trail with null subreddit |
+
+### Data Flow for Key Operations
+
+#### Creating a Post
+
+```
+1. User submits post
+   └─► INSERT INTO posts (subreddit_id, author_id, title, content, ...)
+
+2. Background worker calculates hot_score
+   └─► UPDATE posts SET hot_score = calculated_value WHERE id = ?
+
+3. Post appears in feeds based on indexes:
+   - Hot: idx_posts_hot_score
+   - New: idx_posts_created_at
+   - Top: idx_posts_score
+```
+
+#### Casting a Vote
+
+```
+1. User votes on post
+   └─► INSERT INTO votes (user_id, post_id, direction)
+       ON CONFLICT (user_id, post_id) DO UPDATE SET direction = ?
+
+2. Background aggregation worker (every 5-30 seconds):
+   └─► SELECT post_id, SUM(direction) as score,
+              SUM(CASE WHEN direction = 1 THEN 1 ELSE 0 END) as upvotes,
+              SUM(CASE WHEN direction = -1 THEN 1 ELSE 0 END) as downvotes
+       FROM votes WHERE post_id IN (recently_voted_posts)
+       GROUP BY post_id
+
+   └─► UPDATE posts SET score = ?, upvotes = ?, downvotes = ?
+       WHERE id = ?
+
+3. Karma calculation:
+   └─► UPDATE users SET karma_post = (
+         SELECT COALESCE(SUM(v.direction), 0)
+         FROM votes v
+         JOIN posts p ON v.post_id = p.id
+         WHERE p.author_id = users.id
+       ) WHERE id = author_id
+```
+
+#### Fetching Comment Thread
+
+```
+1. Fetch all comments for a post in tree order:
+   └─► SELECT * FROM comments
+       WHERE post_id = ? AND is_archived = FALSE
+       ORDER BY path
+
+2. Client reconstructs tree using parent_id and depth
+
+3. For a subtree (e.g., "load more replies"):
+   └─► SELECT * FROM comments
+       WHERE path LIKE '1.5.%'
+       ORDER BY path
+```
+
+#### User Deletion Flow
+
+```
+1. User requests account deletion
+   └─► BEGIN TRANSACTION
+
+2. Cascaded deletions:
+   └─► sessions: CASCADE (deleted automatically)
+   └─► subscriptions: CASCADE (deleted automatically)
+   └─► votes: CASCADE (deleted automatically)
+
+3. Preserved with SET NULL:
+   └─► posts: author_id = NULL (content preserved)
+   └─► comments: author_id = NULL (content preserved)
+   └─► audit_logs: actor_id = NULL (history preserved)
+
+4. Final deletion:
+   └─► DELETE FROM users WHERE id = ?
+
+5. Recalculate karma for affected post authors (optional):
+   └─► Background job triggers karma recalculation
+
+   └─► COMMIT
+```
+
+### Why Tables Are Structured This Way
+
+#### Denormalization Strategy
+
+The schema intentionally denormalizes:
+- `subscriber_count` in subreddits (avoids COUNT on subscriptions)
+- `score`, `upvotes`, `downvotes` in posts/comments (avoids SUM on votes)
+- `comment_count` in posts (avoids COUNT on comments)
+- `hot_score` precomputed (avoids complex calculation on every read)
+
+This trades storage space for read performance, which is appropriate for a read-heavy social platform where writes are batched via background workers.
+
+#### Separation of Votes Table
+
+Instead of storing only the current score, individual votes are preserved to:
+1. Detect and prevent vote manipulation
+2. Allow karma recalculation when needed
+3. Enable vote undo/change functionality
+4. Support future analytics on voting patterns
+
+#### Materialized Path for Comments
+
+The `path` column (e.g., "1.5.23.102") enables:
+- Single-query subtree fetching: `WHERE path LIKE '1.5.%'`
+- Efficient sorting within subtrees
+- Depth limiting without recursion: `WHERE depth <= 5`
+- No recursive CTEs needed (which can be slow on deep trees)
+
+Trade-off: Moving comments requires updating all descendant paths, but comment moves are extremely rare on Reddit-like platforms.
+
+#### Audit Logs as Immutable History
+
+The audit_logs table uses SET NULL instead of CASCADE to ensure:
+- Moderation actions remain visible after user deletion
+- Legal compliance for content moderation audits
+- Investigation capability for security incidents
+
+The JSONB `details` field provides flexibility for action-specific data without schema changes.
 
 ---
 

@@ -21,10 +21,10 @@ export function Timeline({
   if (error) {
     return (
       <div className="p-8 text-center">
-        <p className="text-red-500">{error}</p>
+        <p className="text-twitter-like text-[15px]">{error}</p>
         <button
           onClick={() => window.location.reload()}
-          className="mt-4 px-4 py-2 bg-twitter-blue text-white rounded-full hover:bg-blue-600"
+          className="mt-4 px-5 py-2 bg-twitter-blue text-white rounded-full font-bold text-[15px] hover:bg-twitter-blueHover transition-colors"
         >
           Try again
         </button>
@@ -36,14 +36,14 @@ export function Timeline({
     return (
       <div className="p-8 text-center">
         <div className="inline-block w-8 h-8 border-4 border-twitter-blue border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-twitter-gray">Loading tweets...</p>
+        <p className="mt-4 text-twitter-gray text-[15px]">Loading tweets...</p>
       </div>
     );
   }
 
   if (tweets.length === 0) {
     return (
-      <div className="p-8 text-center text-twitter-gray">
+      <div className="p-8 text-center text-twitter-gray text-[15px]">
         <p>{emptyMessage}</p>
       </div>
     );
@@ -56,13 +56,13 @@ export function Timeline({
       ))}
 
       {hasMore && onLoadMore && (
-        <div className="p-4 text-center">
+        <div className="p-4 text-center border-b border-twitter-border">
           <button
             onClick={onLoadMore}
             disabled={isLoading}
-            className="px-6 py-2 text-twitter-blue hover:bg-blue-50 rounded-full transition-colors disabled:opacity-50"
+            className="px-6 py-2 text-twitter-blue hover:bg-twitter-blue/10 rounded-full transition-colors disabled:opacity-50 font-medium text-[15px]"
           >
-            {isLoading ? 'Loading...' : 'Load more'}
+            {isLoading ? 'Loading...' : 'Show more'}
           </button>
         </div>
       )}

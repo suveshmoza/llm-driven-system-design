@@ -99,7 +99,7 @@ function HomePage() {
       ) : posts.length === 0 ? (
         <div className="text-center py-12 bg-white border border-border-gray rounded-lg">
           <svg
-            className="w-16 h-16 mx-auto mb-4 text-text-gray"
+            className="w-16 h-16 mx-auto mb-4 text-text-secondary"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -112,7 +112,7 @@ function HomePage() {
             />
           </svg>
           <h2 className="text-xl font-light mb-2">Welcome to Instagram</h2>
-          <p className="text-text-gray">
+          <p className="text-text-secondary">
             Follow people to see their photos and videos here.
           </p>
         </div>
@@ -125,7 +125,7 @@ function HomePage() {
             <button
               onClick={() => loadFeed(nextCursor)}
               disabled={loading}
-              className="w-full py-3 text-primary font-semibold disabled:opacity-50"
+              className="w-full py-3 text-primary hover:text-primary-hover font-semibold disabled:opacity-50 transition-colors"
             >
               {loading ? 'Loading...' : 'Load more'}
             </button>

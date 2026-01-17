@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Instagram brand font - Billabong-like script for logo */
+@font-face {
+  font-family: 'Instagram';
+  src: local('Billabong'), local('Grand Hotel');
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -9,8 +16,23 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #fafafa;
+  background-color: #FAFAFA;
   color: #262626;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Dark mode */
+.dark body,
+body.dark {
+  background-color: #000000;
+  color: #FAFAFA;
+}
+
+/* Instagram Logo Text Style */
+.instagram-logo {
+  font-family: 'Grand Hotel', 'Billabong', cursive, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.5px;
 }
 
 /* CSS Filters for Instagram-style effects */
@@ -62,17 +84,45 @@ body {
   filter: contrast(1.1) brightness(1.25);
 }
 
-/* Story ring gradient */
+/* Instagram Story Ring Gradient - authentic gradient direction */
 .story-ring {
-  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  background: linear-gradient(45deg, #FCAF45, #FD1D1D, #833AB4);
   padding: 3px;
   border-radius: 50%;
 }
 
 .story-ring-seen {
-  background: #dbdbdb;
+  background: #DBDBDB;
   padding: 2px;
   border-radius: 50%;
+}
+
+/* Instagram gradient for buttons and accents */
+.instagram-gradient {
+  background: linear-gradient(45deg, #833AB4, #FD1D1D, #FCB045);
+}
+
+.instagram-gradient-text {
+  background: linear-gradient(45deg, #833AB4, #FD1D1D, #FCB045);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Primary button with Instagram gradient on hover */
+.btn-instagram {
+  background-color: #0095F6;
+  color: white;
+  transition: background-color 0.2s ease;
+}
+
+.btn-instagram:hover {
+  background-color: #1877F2;
+}
+
+.btn-instagram:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Hide scrollbar for story tray */
@@ -97,14 +147,28 @@ body {
 
 @keyframes skeleton-loading {
   0% {
-    background-color: #e2e2e2;
+    background-color: #E2E2E2;
   }
   100% {
-    background-color: #f3f3f3;
+    background-color: #F3F3F3;
   }
 }
 
-/* Heart animation on double click */
+/* Dark mode skeleton */
+.dark .skeleton {
+  animation: skeleton-loading-dark 1s linear infinite alternate;
+}
+
+@keyframes skeleton-loading-dark {
+  0% {
+    background-color: #262626;
+  }
+  100% {
+    background-color: #363636;
+  }
+}
+
+/* Heart animation on double click - uses Instagram like red */
 @keyframes like-heart {
   0% {
     transform: scale(0);
@@ -122,4 +186,55 @@ body {
 
 .like-animation {
   animation: like-heart 0.8s ease-in-out forwards;
+  color: #ED4956;
+}
+
+/* Liked heart color */
+.heart-liked {
+  color: #ED4956;
+  fill: #ED4956;
+}
+
+/* Dark mode specific styles */
+.dark .bg-white {
+  background-color: #000000;
+}
+
+.dark .border-border-gray {
+  border-color: #262626;
+}
+
+.dark .text-text-gray,
+.dark .text-gray-500 {
+  color: #A8A8A8;
+}
+
+/* Focus ring for accessibility */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #0095F6;
+}
+
+/* Instagram-style input focus */
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #A8A8A8;
+}
+
+/* Link styles */
+a.instagram-link {
+  color: #0095F6;
+  text-decoration: none;
+}
+
+a.instagram-link:hover {
+  text-decoration: underline;
+}
+
+/* Add new story button gradient ring */
+.add-story-ring {
+  background: linear-gradient(45deg, #0095F6, #0095F6);
+  padding: 2px;
+  border-radius: 50%;
 }

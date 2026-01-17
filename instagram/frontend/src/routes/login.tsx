@@ -39,7 +39,7 @@ function LoginPage() {
   return (
     <div className="max-w-sm mx-auto pt-8">
       <div className="bg-white border border-border-gray p-10 mb-4">
-        <h1 className="text-4xl font-semibold text-center mb-8">Instagram</h1>
+        <h1 className="text-4xl instagram-logo text-center mb-8">Instagram</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
@@ -56,7 +56,7 @@ function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          {error && <p className="text-like-red text-sm text-center">{error}</p>}
           <Button
             type="submit"
             loading={loading}
@@ -69,11 +69,11 @@ function LoginPage() {
 
         <div className="flex items-center my-6">
           <div className="flex-1 h-px bg-border-gray" />
-          <span className="px-4 text-sm text-text-gray font-semibold">OR</span>
+          <span className="px-4 text-sm text-text-secondary font-semibold">OR</span>
           <div className="flex-1 h-px bg-border-gray" />
         </div>
 
-        <p className="text-center text-sm text-text-gray">
+        <p className="text-center text-sm text-text-secondary">
           Forgot password?
         </p>
       </div>
@@ -81,7 +81,7 @@ function LoginPage() {
       <div className="bg-white border border-border-gray p-6 text-center">
         <p className="text-sm">
           Don't have an account?{' '}
-          <Link to="/register" className="text-primary font-semibold">
+          <Link to="/register" className="text-primary hover:text-primary-hover font-semibold transition-colors">
             Sign up
           </Link>
         </p>

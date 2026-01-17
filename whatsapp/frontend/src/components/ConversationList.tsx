@@ -108,25 +108,25 @@ export function ConversationList({ onSelectConversation, onNewChat }: Conversati
 
   if (isLoadingConversations) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500">Loading conversations...</div>
+      <div className="flex items-center justify-center h-full bg-whatsapp-sidebar-bg">
+        <div className="text-whatsapp-text-secondary">Loading conversations...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-whatsapp-sidebar-bg">
       {/* Header */}
-      <div className="p-4 bg-whatsapp-teal-green text-white flex items-center justify-between">
+      <div className="px-4 py-2 bg-whatsapp-header text-white flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-600 font-bold">
+          <div className="w-10 h-10 bg-whatsapp-teal rounded-full flex items-center justify-center text-white font-bold">
             {user?.display_name?.charAt(0).toUpperCase() || 'U'}
           </div>
           <span className="font-medium">{user?.display_name}</span>
         </div>
         <button
           onClick={onNewChat}
-          className="p-2 hover:bg-whatsapp-dark-green rounded-full transition-colors"
+          className="p-2 hover:bg-whatsapp-teal rounded-full transition-colors"
           title="New Chat"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,15 +136,15 @@ export function ConversationList({ onSelectConversation, onNewChat }: Conversati
       </div>
 
       {/* Search bar */}
-      <div className="p-2 bg-gray-100">
+      <div className="px-3 py-2 bg-whatsapp-sidebar-bg">
         <div className="relative">
           <input
             type="text"
             placeholder="Search or start new chat"
-            className="w-full py-2 pl-10 pr-4 bg-white rounded-lg border-none focus:outline-none focus:ring-2 focus:ring-whatsapp-green"
+            className="w-full py-2 pl-10 pr-4 bg-whatsapp-search-bg rounded-lg border-none focus:outline-none text-message text-whatsapp-text-primary placeholder:text-whatsapp-text-secondary"
           />
           <svg
-            className="absolute left-3 top-2.5 w-5 h-5 text-gray-400"
+            className="absolute left-3 top-2.5 w-5 h-5 text-whatsapp-text-secondary"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -162,7 +162,7 @@ export function ConversationList({ onSelectConversation, onNewChat }: Conversati
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500 p-4">
+          <div className="flex flex-col items-center justify-center h-full text-whatsapp-text-secondary p-4">
             <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
@@ -174,7 +174,7 @@ export function ConversationList({ onSelectConversation, onNewChat }: Conversati
             <p>No conversations yet</p>
             <button
               onClick={onNewChat}
-              className="mt-4 px-4 py-2 bg-whatsapp-green text-white rounded-lg hover:bg-whatsapp-dark-green"
+              className="mt-4 px-4 py-2 bg-whatsapp-header text-white rounded-lg hover:bg-whatsapp-teal transition-colors"
             >
               Start a new chat
             </button>
@@ -187,15 +187,15 @@ export function ConversationList({ onSelectConversation, onNewChat }: Conversati
               <div
                 key={conversation.id}
                 onClick={() => onSelectConversation(conversation.id)}
-                className={`flex items-center p-3 cursor-pointer hover:bg-gray-100 border-b border-gray-100 ${
-                  currentConversationId === conversation.id ? 'bg-gray-200' : ''
+                className={`flex items-center px-3 py-3 cursor-pointer hover:bg-whatsapp-hover border-b border-whatsapp-divider ${
+                  currentConversationId === conversation.id ? 'bg-whatsapp-selected' : ''
                 }`}
               >
                 {/* Avatar */}
                 <div className="relative">
                   <div
                     className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold ${
-                      conversation.is_group ? 'bg-gray-400' : 'bg-whatsapp-dark-green'
+                      conversation.is_group ? 'bg-gray-400' : 'bg-whatsapp-teal'
                     }`}
                   >
                     {getConversationAvatar(conversation)}
@@ -208,23 +208,23 @@ export function ConversationList({ onSelectConversation, onNewChat }: Conversati
                 {/* Content */}
                 <div className="flex-1 ml-3 min-w-0">
                   <div className="flex justify-between items-baseline">
-                    <span className="font-medium text-gray-900 truncate">
+                    <span className="font-medium text-contact text-whatsapp-text-primary truncate">
                       {getConversationName(conversation)}
                     </span>
-                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                    <span className="text-timestamp text-whatsapp-text-secondary ml-2 flex-shrink-0">
                       {formatTime(conversation.last_message?.created_at)}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center mt-0.5">
                     <span
                       className={`text-sm truncate ${
-                        typingText ? 'text-whatsapp-green italic' : 'text-gray-500'
+                        typingText ? 'text-whatsapp-green italic' : 'text-whatsapp-text-secondary'
                       }`}
                     >
                       {typingText || conversation.last_message?.content || 'No messages yet'}
                     </span>
                     {conversation.unread_count && conversation.unread_count > 0 && (
-                      <span className="ml-2 px-2 py-0.5 bg-whatsapp-green text-white text-xs rounded-full flex-shrink-0">
+                      <span className="ml-2 min-w-[20px] h-5 px-1.5 bg-whatsapp-green text-white text-xs rounded-full flex items-center justify-center flex-shrink-0">
                         {conversation.unread_count}
                       </span>
                     )}

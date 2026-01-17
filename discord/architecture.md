@@ -340,52 +340,661 @@ class HistoryBuffer {
 - **Cassandra**: Overkill for <1MB dataset, complex operations (join room)
 - **Redis**: Not durable by default, would need RDB snapshots
 
+---
+
+### Complete Database Schema
+
+The schema is defined in `/backend/src/db/init.sql` and consists of four core tables plus supporting indexes and functions.
+
+#### Table: `users`
+
+Stores registered chat users with unique nicknames.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | `PRIMARY KEY` | Auto-incrementing unique identifier |
+| `nickname` | `VARCHAR(50)` | `UNIQUE NOT NULL` | Display name, must be unique across system |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Account creation timestamp |
+
+**Design Rationale:**
+- `SERIAL` provides simple auto-incrementing IDs (sufficient for educational scale)
+- `VARCHAR(50)` limits nickname length to prevent abuse and ensure UI compatibility
+- `UNIQUE` constraint on nickname enforces global uniqueness for mentions/lookups
+- Timezone-aware timestamp (`WITH TIME ZONE`) ensures consistent time handling across distributed instances
+
 ```sql
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    nickname VARCHAR(50) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+---
+
+#### Table: `rooms`
+
+Stores chat rooms (channels) with creator attribution.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | `PRIMARY KEY` | Auto-incrementing unique identifier |
+| `name` | `VARCHAR(100)` | `UNIQUE NOT NULL` | Room name, must be unique |
+| `created_by` | `INTEGER` | `REFERENCES users(id) ON DELETE SET NULL` | User who created the room |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Room creation timestamp |
+
+**Design Rationale:**
+- `VARCHAR(100)` allows descriptive room names while preventing excessive length
+- `UNIQUE` on name ensures users can reference rooms unambiguously
+- `ON DELETE SET NULL` for `created_by`: Rooms persist even if creator account is deleted (rooms have independent lifecycle from creators)
+
+```sql
+CREATE TABLE IF NOT EXISTS rooms (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+---
+
+#### Table: `room_members`
+
+Junction table implementing many-to-many relationship between users and rooms.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `room_id` | `INTEGER` | `REFERENCES rooms(id) ON DELETE CASCADE` | Room being joined |
+| `user_id` | `INTEGER` | `REFERENCES users(id) ON DELETE CASCADE` | User joining the room |
+| `joined_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | When user joined this room |
+
+**Composite Primary Key:** `(room_id, user_id)`
+
+**Design Rationale:**
+- Composite primary key prevents duplicate memberships (same user joining same room twice)
+- `ON DELETE CASCADE` for both FKs: When a room is deleted, all memberships are automatically removed; when a user is deleted, their memberships are cleaned up
+- `joined_at` enables features like "member since" display and ordered member lists
+
+```sql
+CREATE TABLE IF NOT EXISTS room_members (
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (room_id, user_id)
+);
+```
+
+---
+
+#### Table: `messages`
+
+Stores chat messages with room and author attribution.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `SERIAL` | `PRIMARY KEY` | Auto-incrementing unique identifier |
+| `room_id` | `INTEGER` | `REFERENCES rooms(id) ON DELETE CASCADE` | Room where message was sent |
+| `user_id` | `INTEGER` | `REFERENCES users(id) ON DELETE SET NULL` | Author of the message |
+| `content` | `TEXT` | `NOT NULL` | Message text content |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | When message was sent |
+
+**Design Rationale:**
+- `TEXT` type for content allows messages of any reasonable length (no arbitrary truncation)
+- `ON DELETE CASCADE` for `room_id`: When a room is deleted, all its messages are deleted (messages have no meaning outside their room context)
+- `ON DELETE SET NULL` for `user_id`: Messages persist even if author account is deleted (historical record preserved, shows as "[deleted user]")
+- `NOT NULL` on content prevents empty messages
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+---
+
+### Indexes
+
+#### `idx_messages_room_time`
+
+**Purpose:** Efficient retrieval of recent messages per room (the most common query pattern).
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_messages_room_time ON messages(room_id, created_at DESC);
+```
+
+**Query Pattern Optimized:**
+```sql
+SELECT * FROM messages WHERE room_id = ? ORDER BY created_at DESC LIMIT 10;
+```
+
+**Rationale:**
+- Composite index on `(room_id, created_at DESC)` enables index-only scans for room history queries
+- Descending order on `created_at` matches the typical "most recent first" access pattern
+- Critical for performance as message volume grows
+
+---
+
+#### `idx_users_nickname`
+
+**Purpose:** Fast user lookup by nickname.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
+```
+
+**Query Patterns Optimized:**
+- User authentication/lookup: `SELECT * FROM users WHERE nickname = ?`
+- Nickname availability check: `SELECT EXISTS(SELECT 1 FROM users WHERE nickname = ?)`
+
+**Rationale:**
+- Although `nickname` has a UNIQUE constraint (which creates an implicit index), explicit indexing documents the intent and ensures optimal lookup performance
+- Essential for login/session establishment which happens on every connection
+
+---
+
+#### `idx_rooms_name`
+
+**Purpose:** Fast room lookup by name.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_rooms_name ON rooms(name);
+```
+
+**Query Patterns Optimized:**
+- Join room by name: `SELECT * FROM rooms WHERE name = ?`
+- Room existence check: `SELECT EXISTS(SELECT 1 FROM rooms WHERE name = ?)`
+
+**Rationale:**
+- Similar to `idx_users_nickname`, the UNIQUE constraint creates an implicit index
+- Explicit index documents intent for `/join <room>` command performance
+
+---
+
+### Functions
+
+#### `cleanup_old_messages()`
+
+**Purpose:** Enforce 10-message history limit per room to prevent unbounded storage growth.
+
+```sql
+CREATE OR REPLACE FUNCTION cleanup_old_messages() RETURNS void AS $$
+BEGIN
+    DELETE FROM messages m
+    WHERE m.id NOT IN (
+        SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY created_at DESC) as rn
+            FROM messages
+        ) ranked
+        WHERE rn <= 10
+    );
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**Algorithm:**
+1. Window function (`ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY created_at DESC)`) assigns rank 1-N to messages in each room, ordered newest-first
+2. Keep messages with rank <= 10 (the 10 most recent per room)
+3. Delete all other messages
+
+**Invocation:**
+- Manual: `SELECT cleanup_old_messages();`
+- Scheduled: Via `pg_cron` or application-level scheduler (every 5 minutes recommended)
+- Triggered: Could be enhanced to run after message inserts (not implemented to avoid write latency)
+
+**Rationale:**
+- Keeps storage bounded regardless of message volume
+- Aligns with in-memory ring buffer (10 messages per room)
+- Educational: Demonstrates server-side data lifecycle management
+
+---
+
+### Seed Data
+
+The init script creates a default "general" room for first-time users:
+
+```sql
+INSERT INTO users (nickname) VALUES ('system') ON CONFLICT (nickname) DO NOTHING;
+INSERT INTO rooms (name, created_by)
+SELECT 'general', id FROM users WHERE nickname = 'system'
+ON CONFLICT (name) DO NOTHING;
+```
+
+**Rationale:**
+- `system` user serves as a placeholder for system-created resources
+- `general` room provides an immediate landing spot (like Discord's default channel)
+- `ON CONFLICT DO NOTHING` ensures idempotent initialization (safe to run multiple times)
+
+---
+
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ENTITY-RELATIONSHIP DIAGRAM                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                              ┌───────────────────┐
+                              │       users       │
+                              ├───────────────────┤
+                              │ PK id             │
+                              │    nickname       │
+                              │    created_at     │
+                              └─────────┬─────────┘
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    │                   │                   │
+                    │ 1                 │ 1                 │ 0..1
+                    │                   │                   │
+                    ▼                   ▼                   ▼
+           ┌────────────────┐  ┌────────────────┐  ┌───────────────────┐
+           │  room_members  │  │   messages     │  │      rooms        │
+           ├────────────────┤  ├────────────────┤  ├───────────────────┤
+           │ PK,FK room_id  │  │ PK id          │  │ PK id             │
+           │ PK,FK user_id  │  │ FK room_id     │  │    name           │
+           │    joined_at   │  │ FK user_id     │  │ FK created_by ────┘
+           └───────┬────────┘  │    content     │  │    created_at     │
+                   │           │    created_at  │  └─────────┬─────────┘
+                   │           └───────┬────────┘            │
+                   │                   │                     │
+                   │ N                 │ N                   │ 1
+                   │                   │                     │
+                   └───────────────────┴─────────────────────┘
+                                       │
+                                       ▼
+                              ┌───────────────────┐
+                              │       rooms       │
+                              │  (same as above)  │
+                              └───────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           RELATIONSHIP SUMMARY                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  users (1) ────────< (N) room_members (N) >──────── (1) rooms
+       │                      │
+       │  "User can be        │  "Many-to-many: users can join
+       │   member of many     │   multiple rooms, rooms can have
+       │   rooms"             │   multiple members"
+       │
+       │
+  users (1) ────────< (N) messages
+       │                  │
+       │  "User can       │
+       │   author many    │
+       │   messages"      │
+       │
+       │
+  users (0..1) ──────────> (1) rooms
+       │                        │
+       │  "User optionally      │  "Room has optional creator
+       │   creates rooms"       │   (SET NULL if deleted)"
+       │
+       │
+  rooms (1) ────────< (N) messages
+       │                  │
+       │  "Room contains  │
+       │   many messages" │
+       │
+       │
+  rooms (1) ────────< (N) room_members
+                          │
+       "Room has many     │
+        member records"
+```
+
+---
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| Source Table | Source Column | Target Table | Target Column | On Delete | Rationale |
+|--------------|---------------|--------------|---------------|-----------|-----------|
+| `rooms` | `created_by` | `users` | `id` | `SET NULL` | Rooms should persist independently of their creator. If a user deletes their account, rooms they created remain usable but show no creator. |
+| `room_members` | `room_id` | `rooms` | `id` | `CASCADE` | Memberships are meaningless without the room. Deleting a room automatically removes all membership records. |
+| `room_members` | `user_id` | `users` | `id` | `CASCADE` | Memberships are tied to user existence. Deleting a user removes them from all rooms automatically. |
+| `messages` | `room_id` | `rooms` | `id` | `CASCADE` | Messages belong to rooms. Deleting a room deletes all its messages (no orphaned messages). |
+| `messages` | `user_id` | `users` | `id` | `SET NULL` | Messages are historical records. If a user is deleted, their messages remain but author shows as null (UI displays "[deleted user]"). |
+
+---
+
+### Why Tables Are Structured This Way
+
+#### Normalization Level: Third Normal Form (3NF)
+
+The schema follows 3NF principles:
+1. **1NF**: All columns contain atomic values (no arrays or nested structures)
+2. **2NF**: All non-key columns depend on the entire primary key (no partial dependencies)
+3. **3NF**: No transitive dependencies (non-key columns don't depend on other non-key columns)
+
+**Why not denormalize?**
+- Educational: Demonstrates proper relational design
+- Scale: At Baby Discord's scale (<1MB data), normalization overhead is negligible
+- Flexibility: Easier to add features (e.g., user profiles, room settings) without restructuring
+
+---
+
+#### Why Separate `room_members` Junction Table?
+
+**Alternative considered:** Store member list as JSON array in `rooms` table
+
+```sql
+-- NOT USED: Denormalized approach
+rooms.members = '["alice", "bob", "charlie"]'
+```
+
+**Problems with denormalized approach:**
+1. No referential integrity (users could be deleted but remain in array)
+2. Inefficient queries ("find all rooms user X is in" requires scanning all rooms)
+3. Concurrent updates cause conflicts (two users join simultaneously)
+4. No metadata per membership (can't store `joined_at`)
+
+**Junction table benefits:**
+- Referential integrity via foreign keys
+- Efficient queries in both directions (rooms→users and users→rooms)
+- Atomic updates (no read-modify-write race conditions)
+- Extensible (can add `role`, `muted_until`, etc.)
+
+---
+
+#### Why `SET NULL` vs `CASCADE` for Different Relationships?
+
+**Principle:** Choose based on entity lifecycle semantics.
+
+| Relationship | On Delete | Reasoning |
+|--------------|-----------|-----------|
+| `messages.user_id` | `SET NULL` | Messages are historical artifacts. Deleting a user shouldn't erase chat history. Shows as "[deleted user]" in UI. |
+| `rooms.created_by` | `SET NULL` | Rooms have independent value from their creator. A busy room shouldn't disappear because one person left. |
+| `room_members.*` | `CASCADE` | Memberships are pure relationships. They exist only to link users and rooms. No independent value. |
+| `messages.room_id` | `CASCADE` | Messages exist within room context. Orphaned messages (no room) have no meaning. Delete room = delete its messages. |
+
+---
+
+### Data Flow for Key Operations
+
+#### Operation: User Connects and Sends First Message
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FLOW: New User Connection and First Message                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. USER CONNECTS (TCP or HTTP)
+   ┌─────────────┐
+   │   Client    │ ──────────────────────────────────────────────────────────►
+   └─────────────┘     /nick alice
+
+2. CHECK IF USER EXISTS
+   ┌─────────────┐     SELECT * FROM users WHERE nickname = 'alice'
+   │   users     │ ◄─────────────────────────────────────────────────────────
+   └─────────────┘
+        │
+        ▼ (not found)
+
+3. CREATE USER
+   ┌─────────────┐     INSERT INTO users (nickname) VALUES ('alice') RETURNING *
+   │   users     │ ◄─────────────────────────────────────────────────────────
+   └─────────────┘
+        │
+        └──► Returns: {id: 42, nickname: 'alice', created_at: ...}
+
+4. JOIN DEFAULT ROOM
+   ┌─────────────┐     SELECT * FROM rooms WHERE name = 'general'
+   │   rooms     │ ◄─────────────────────────────────────────────────────────
+   └─────────────┘
+        │
+        └──► Returns: {id: 1, name: 'general', ...}
+
+5. CREATE MEMBERSHIP
+   ┌─────────────┐     INSERT INTO room_members (room_id, user_id)
+   │room_members │ ◄───VALUES (1, 42)
+   └─────────────┘     ON CONFLICT (room_id, user_id) DO NOTHING
+
+6. LOAD MESSAGE HISTORY
+   ┌─────────────┐     SELECT m.*, u.nickname FROM messages m
+   │  messages   │ ◄───LEFT JOIN users u ON m.user_id = u.id
+   └─────────────┘     WHERE m.room_id = 1
+                       ORDER BY m.created_at DESC LIMIT 10
+        │
+        └──► Returns: Last 10 messages (populates HistoryBuffer)
+
+7. USER SENDS MESSAGE
+   ┌─────────────┐     /say Hello everyone!
+   │   Client    │ ──────────────────────────────────────────────────────────►
+   └─────────────┘
+
+8. PERSIST MESSAGE
+   ┌─────────────┐     INSERT INTO messages (room_id, user_id, content)
+   │  messages   │ ◄───VALUES (1, 42, 'Hello everyone!') RETURNING *
+   └─────────────┘
+        │
+        └──► Also: Publish to Valkey room:general channel for other instances
+```
+
+---
+
+#### Operation: Room Deletion (Cascade Effect)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FLOW: Room Deletion and Cascade                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Admin runs: DELETE FROM rooms WHERE name = 'old-room'
+
+BEFORE:
+┌──────────┐     ┌────────────────┐     ┌────────────┐
+│  rooms   │     │  room_members  │     │  messages  │
+├──────────┤     ├────────────────┤     ├────────────┤
+│ id: 5    │◄────│ room_id: 5     │     │ room_id: 5 │
+│ old-room │     │ user_id: 10    │     │ id: 100    │
+└──────────┘     │ user_id: 20    │     │ id: 101    │
+                 │ user_id: 30    │     │ id: 102    │
+                 └────────────────┘     └────────────┘
+
+CASCADE SEQUENCE:
+1. PostgreSQL detects FK room_id in room_members references rooms(id)
+2. room_members rows with room_id=5 are AUTOMATICALLY DELETED
+3. PostgreSQL detects FK room_id in messages references rooms(id)
+4. messages rows with room_id=5 are AUTOMATICALLY DELETED
+5. rooms row with id=5 is deleted
+
+AFTER:
+┌──────────┐     ┌────────────────┐     ┌────────────┐
+│  rooms   │     │  room_members  │     │  messages  │
+├──────────┤     ├────────────────┤     ├────────────┤
+│ (empty)  │     │ (3 rows gone)  │     │ (3 rows    │
+└──────────┘     └────────────────┘     │  gone)     │
+                                        └────────────┘
+
+WHY THIS DESIGN:
+- Single DELETE statement cleans up all related data
+- No orphaned memberships or messages
+- Application code doesn't need to manage cleanup
+- Transactional: All deletes succeed or none do
+```
+
+---
+
+#### Operation: User Deletion (Mixed Cascade/SET NULL)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FLOW: User Deletion - Preserving History                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+User runs: DELETE FROM users WHERE nickname = 'alice' (user_id = 42)
+
+BEFORE:
+┌──────────┐     ┌────────────────┐     ┌────────────┐     ┌──────────┐
+│  users   │     │  room_members  │     │  messages  │     │  rooms   │
+├──────────┤     ├────────────────┤     ├────────────┤     ├──────────┤
+│ id: 42   │◄────│ user_id: 42    │     │ user_id:42 │     │created_by│
+│ alice    │     │ room_id: 1     │     │ id: 200    │     │   : 42   │
+└──────────┘     │ room_id: 2     │     │ id: 201    │     │ fun-room │
+                 └────────────────┘     └────────────┘     └──────────┘
+
+ACTION SEQUENCE:
+1. room_members.user_id → CASCADE
+   → Rows with user_id=42 are DELETED (alice leaves all rooms)
+
+2. messages.user_id → SET NULL
+   → Rows with user_id=42 get user_id=NULL (messages preserved, author unknown)
+
+3. rooms.created_by → SET NULL
+   → Rows with created_by=42 get created_by=NULL (room exists, creator unknown)
+
+4. users row with id=42 is deleted
+
+AFTER:
+┌──────────┐     ┌────────────────┐     ┌────────────┐     ┌──────────┐
+│  users   │     │  room_members  │     │  messages  │     │  rooms   │
+├──────────┤     ├────────────────┤     ├────────────┤     ├──────────┤
+│ (alice   │     │ (2 rows gone)  │     │ user_id:   │     │created_by│
+│  gone)   │     │                │     │   NULL     │     │ : NULL   │
+└──────────┘     └────────────────┘     │ id: 200    │     │ fun-room │
+                                        │ id: 201    │     └──────────┘
+                                        └────────────┘
+
+UI IMPACT:
+- Messages from alice now display as "[deleted user]"
+- fun-room still exists but shows "Created by: Unknown"
+- alice is no longer in any room member lists
+```
+
+---
+
+#### Operation: Message Cleanup (Retention Enforcement)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FLOW: cleanup_old_messages() Execution                                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Scheduler runs: SELECT cleanup_old_messages()
+
+BEFORE (room_id = 1 has 15 messages):
+┌────────────────────────────────────────────────────────────────┐
+│  messages (room_id = 1)                                        │
+├────────────────────────────────────────────────────────────────┤
+│  id  │ created_at           │ content         │ rank (window) │
+├──────┼──────────────────────┼─────────────────┼───────────────┤
+│  115 │ 2024-01-15 10:15:00  │ "newest msg"    │ 1  ◄ KEEP     │
+│  114 │ 2024-01-15 10:14:00  │ "..."           │ 2  ◄ KEEP     │
+│  113 │ 2024-01-15 10:13:00  │ "..."           │ 3  ◄ KEEP     │
+│  112 │ 2024-01-15 10:12:00  │ "..."           │ 4  ◄ KEEP     │
+│  111 │ 2024-01-15 10:11:00  │ "..."           │ 5  ◄ KEEP     │
+│  110 │ 2024-01-15 10:10:00  │ "..."           │ 6  ◄ KEEP     │
+│  109 │ 2024-01-15 10:09:00  │ "..."           │ 7  ◄ KEEP     │
+│  108 │ 2024-01-15 10:08:00  │ "..."           │ 8  ◄ KEEP     │
+│  107 │ 2024-01-15 10:07:00  │ "..."           │ 9  ◄ KEEP     │
+│  106 │ 2024-01-15 10:06:00  │ "..."           │ 10 ◄ KEEP     │
+│  105 │ 2024-01-15 10:05:00  │ "..."           │ 11 ◄ DELETE   │
+│  104 │ 2024-01-15 10:04:00  │ "..."           │ 12 ◄ DELETE   │
+│  103 │ 2024-01-15 10:03:00  │ "..."           │ 13 ◄ DELETE   │
+│  102 │ 2024-01-15 10:02:00  │ "..."           │ 14 ◄ DELETE   │
+│  101 │ 2024-01-15 10:01:00  │ "oldest msg"    │ 15 ◄ DELETE   │
+└──────┴──────────────────────┴─────────────────┴───────────────┘
+
+ALGORITHM:
+1. ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY created_at DESC)
+   → Assigns rank 1 (newest) to N (oldest) per room
+
+2. Keep rows where rank <= 10
+   → IDs 106-115 are preserved
+
+3. Delete rows where rank > 10
+   → IDs 101-105 are deleted
+
+AFTER:
+┌────────────────────────────────────────────────────────────────┐
+│  messages (room_id = 1) - Only 10 messages remain              │
+├────────────────────────────────────────────────────────────────┤
+│  id  │ created_at           │ content                          │
+├──────┼──────────────────────┼──────────────────────────────────┤
+│  115 │ 2024-01-15 10:15:00  │ "newest msg"                     │
+│  ...                        │ (8 more rows)                    │
+│  106 │ 2024-01-15 10:06:00  │ "now the oldest"                 │
+└──────┴──────────────────────┴──────────────────────────────────┘
+
+SYNCHRONIZATION:
+- After cleanup, HistoryBuffer remains valid (buffer always has <= 10)
+- No notification needed (buffer was already bounded)
+- Metrics: babydiscord_messages_deleted_total incremented by 5
+```
+
+---
+
+### Complete SQL Schema (Consolidated)
+
+For reference, here is the complete schema from `/backend/src/db/init.sql`:
+
+```sql
+-- Baby Discord Database Schema
+-- This file is executed on database initialization
+
 -- Users table
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  nickname VARCHAR(50) UNIQUE NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    nickname VARCHAR(50) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Rooms table
-CREATE TABLE rooms (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(100) UNIQUE NOT NULL,
-  created_by INTEGER REFERENCES users(id),
-  created_at TIMESTAMP DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS rooms (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Room membership (many-to-many)
-CREATE TABLE room_members (
-  room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  joined_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (room_id, user_id)
+CREATE TABLE IF NOT EXISTS room_members (
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (room_id, user_id)
 );
 
--- Messages (partitioned by room for efficiency)
-CREATE TABLE messages (
-  id SERIAL PRIMARY KEY,
-  room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
-  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  content TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
+-- Messages table
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_messages_room_time ON messages(room_id, created_at DESC);
+-- Index for efficient message retrieval by room and time
+CREATE INDEX IF NOT EXISTS idx_messages_room_time ON messages(room_id, created_at DESC);
 
--- Cleanup old messages (keep only last 10 per room)
--- Runs periodically via background job
+-- Index for user nickname lookup
+CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname);
+
+-- Index for room name lookup
+CREATE INDEX IF NOT EXISTS idx_rooms_name ON rooms(name);
+
+-- Create a default "general" room
+INSERT INTO users (nickname) VALUES ('system') ON CONFLICT (nickname) DO NOTHING;
+INSERT INTO rooms (name, created_by)
+SELECT 'general', id FROM users WHERE nickname = 'system'
+ON CONFLICT (name) DO NOTHING;
+
+-- Function to cleanup old messages (keep only last 10 per room)
 CREATE OR REPLACE FUNCTION cleanup_old_messages() RETURNS void AS $$
 BEGIN
-  DELETE FROM messages m
-  WHERE m.id NOT IN (
-    SELECT id FROM messages
-    WHERE room_id = m.room_id
-    ORDER BY created_at DESC
-    LIMIT 10
-  );
+    DELETE FROM messages m
+    WHERE m.id NOT IN (
+        SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY created_at DESC) as rn
+            FROM messages
+        ) ranked
+        WHERE rn <= 10
+    );
 END;
 $$ LANGUAGE plpgsql;
 ```

@@ -41,8 +41,8 @@ function RegisterPage() {
   return (
     <div className="max-w-sm mx-auto pt-8">
       <div className="bg-white border border-border-gray p-10 mb-4">
-        <h1 className="text-4xl font-semibold text-center mb-4">Instagram</h1>
-        <p className="text-center text-text-gray font-semibold mb-6">
+        <h1 className="text-4xl instagram-logo text-center mb-4">Instagram</h1>
+        <p className="text-center text-text-secondary font-semibold mb-6">
           Sign up to see photos and videos from your friends.
         </p>
 
@@ -75,7 +75,7 @@ function RegisterPage() {
             required
             minLength={6}
           />
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          {error && <p className="text-like-red text-sm text-center">{error}</p>}
           <Button
             type="submit"
             loading={loading}
@@ -86,7 +86,7 @@ function RegisterPage() {
           </Button>
         </form>
 
-        <p className="text-xs text-center text-text-gray mt-4">
+        <p className="text-xs text-center text-text-secondary mt-4">
           By signing up, you agree to our Terms, Privacy Policy and Cookies Policy.
         </p>
       </div>
@@ -94,7 +94,7 @@ function RegisterPage() {
       <div className="bg-white border border-border-gray p-6 text-center">
         <p className="text-sm">
           Have an account?{' '}
-          <Link to="/login" className="text-primary font-semibold">
+          <Link to="/login" className="text-primary hover:text-primary-hover font-semibold transition-colors">
             Log in
           </Link>
         </p>

@@ -101,11 +101,11 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="text-lg font-semibold">New Chat</h2>
+        <div className="px-4 py-3 bg-whatsapp-header text-white flex items-center justify-between rounded-t-lg">
+          <h2 className="text-lg font-medium">New Chat</h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded"
+            className="p-1 hover:bg-whatsapp-teal rounded transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -114,27 +114,27 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
         </div>
 
         {/* Mode toggle */}
-        <div className="p-4 border-b">
+        <div className="p-4 border-b border-whatsapp-divider">
           <div className="flex space-x-2">
             <button
               onClick={() => {
                 setMode('direct');
                 setSelectedUsers([]);
               }}
-              className={`flex-1 py-2 px-4 rounded-lg ${
+              className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
                 mode === 'direct'
-                  ? 'bg-whatsapp-green text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-whatsapp-header text-white'
+                  : 'bg-whatsapp-search-bg text-whatsapp-text-primary hover:bg-whatsapp-hover'
               }`}
             >
               Direct Message
             </button>
             <button
               onClick={() => setMode('group')}
-              className={`flex-1 py-2 px-4 rounded-lg ${
+              className={`flex-1 py-2 px-4 rounded-lg transition-colors ${
                 mode === 'group'
-                  ? 'bg-whatsapp-green text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-whatsapp-header text-white'
+                  : 'bg-whatsapp-search-bg text-whatsapp-text-primary hover:bg-whatsapp-hover'
               }`}
             >
               New Group
@@ -144,30 +144,30 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
 
         {/* Group name input */}
         {mode === 'group' && (
-          <div className="p-4 border-b">
+          <div className="p-4 border-b border-whatsapp-divider">
             <input
               type="text"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="Group name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-whatsapp-green"
+              className="w-full px-3 py-2.5 bg-whatsapp-search-bg border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-whatsapp-header text-whatsapp-text-primary placeholder:text-whatsapp-text-secondary"
             />
           </div>
         )}
 
         {/* Selected users */}
         {mode === 'group' && selectedUsers.length > 0 && (
-          <div className="p-4 border-b">
+          <div className="p-4 border-b border-whatsapp-divider">
             <div className="flex flex-wrap gap-2">
               {selectedUsers.map((selectedUser) => (
                 <div
                   key={selectedUser.id}
-                  className="flex items-center space-x-1 bg-whatsapp-green text-white px-2 py-1 rounded-full text-sm"
+                  className="flex items-center space-x-1 bg-whatsapp-header text-white px-2 py-1 rounded-full text-sm"
                 >
                   <span>{selectedUser.display_name}</span>
                   <button
                     onClick={() => handleRemoveUser(selectedUser.id)}
-                    className="hover:bg-whatsapp-dark-green rounded-full p-0.5"
+                    className="hover:bg-whatsapp-teal rounded-full p-0.5 transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -180,22 +180,22 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
         )}
 
         {/* Search */}
-        <div className="p-4 border-b">
+        <div className="p-4 border-b border-whatsapp-divider">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search users..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-whatsapp-green"
+            className="w-full px-3 py-2.5 bg-whatsapp-search-bg border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-whatsapp-header text-whatsapp-text-primary placeholder:text-whatsapp-text-secondary"
           />
         </div>
 
         {/* User list */}
         <div className="flex-1 overflow-y-auto">
           {isSearching ? (
-            <div className="p-4 text-center text-gray-500">Searching...</div>
+            <div className="p-4 text-center text-whatsapp-text-secondary">Searching...</div>
           ) : users.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
+            <div className="p-4 text-center text-whatsapp-text-secondary">
               {searchQuery ? 'No users found' : 'Type to search for users'}
             </div>
           ) : (
@@ -206,21 +206,21 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
                 <div
                   key={user.id}
                   onClick={() => !isSelected && !isLoading && handleSelectUser(user)}
-                  className={`flex items-center p-3 border-b cursor-pointer ${
+                  className={`flex items-center px-4 py-3 border-b border-whatsapp-divider cursor-pointer ${
                     isSelected
-                      ? 'bg-gray-100 cursor-default'
-                      : 'hover:bg-gray-50'
+                      ? 'bg-whatsapp-selected cursor-default'
+                      : 'hover:bg-whatsapp-hover'
                   }`}
                 >
-                  <div className="w-10 h-10 bg-whatsapp-dark-green rounded-full flex items-center justify-center text-white font-bold">
+                  <div className="w-10 h-10 bg-whatsapp-teal rounded-full flex items-center justify-center text-white font-bold">
                     {user.display_name.charAt(0).toUpperCase()}
                   </div>
                   <div className="ml-3 flex-1">
-                    <div className="font-medium">{user.display_name}</div>
-                    <div className="text-sm text-gray-500">@{user.username}</div>
+                    <div className="font-medium text-whatsapp-text-primary">{user.display_name}</div>
+                    <div className="text-sm text-whatsapp-text-secondary">@{user.username}</div>
                   </div>
                   {isSelected && (
-                    <svg className="w-5 h-5 text-whatsapp-green" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-5 h-5 text-whatsapp-header" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   )}
@@ -232,11 +232,11 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
 
         {/* Create group button */}
         {mode === 'group' && (
-          <div className="p-4 border-t">
+          <div className="p-4 border-t border-whatsapp-divider">
             <button
               onClick={handleCreateGroup}
               disabled={!groupName.trim() || selectedUsers.length === 0 || isLoading}
-              className="w-full py-2 px-4 bg-whatsapp-green text-white rounded-lg hover:bg-whatsapp-dark-green disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-2.5 px-4 bg-whatsapp-header text-white rounded-lg hover:bg-whatsapp-teal disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isLoading ? 'Creating...' : 'Create Group'}
             </button>
@@ -244,8 +244,8 @@ export function NewChatDialog({ onClose, onChatCreated }: NewChatDialogProps) {
         )}
 
         {isLoading && mode === 'direct' && (
-          <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center">
-            <div className="text-gray-500">Creating conversation...</div>
+          <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+            <div className="text-whatsapp-text-secondary">Creating conversation...</div>
           </div>
         )}
       </div>

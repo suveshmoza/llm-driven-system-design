@@ -27,12 +27,18 @@ function IndexPage() {
 
   // Otherwise show login/register
   return (
-    <div className="min-h-screen bg-gradient-to-b from-whatsapp-teal-green to-whatsapp-dark-green flex items-center justify-center p-4">
-      {isRegistering ? (
-        <RegisterForm onSwitchToLogin={() => setIsRegistering(false)} />
-      ) : (
-        <LoginForm onSwitchToRegister={() => setIsRegistering(true)} />
-      )}
+    <div className="min-h-screen bg-whatsapp-header flex flex-col">
+      {/* Top banner like WhatsApp Web */}
+      <div className="h-52 bg-whatsapp-header"></div>
+      <div className="flex-1 bg-whatsapp-chat-bg -mt-8 flex items-start justify-center pt-0">
+        <div className="-mt-44">
+          {isRegistering ? (
+            <RegisterForm onSwitchToLogin={() => setIsRegistering(false)} />
+          ) : (
+            <LoginForm onSwitchToRegister={() => setIsRegistering(true)} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

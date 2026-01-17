@@ -3,7 +3,7 @@ import { Navbar } from '../components/Navbar';
 
 export const Route = createRootRoute({
   component: () => (
-    <div className="min-h-screen bg-gray-bg">
+    <div className="min-h-screen bg-gray-bg dark:bg-dark-bg">
       <Navbar />
       <main className="max-w-5xl mx-auto px-4 py-6">
         <Outlet />
