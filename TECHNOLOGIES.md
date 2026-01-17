@@ -754,6 +754,73 @@ const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
 
 ---
 
+### Time-Series Analytics (OLAP)
+
+#### ClickHouse (v23.8)
+**What it is:** Open-source columnar database for real-time analytics and OLAP workloads.
+
+**Why we use it:**
+- Columnar storage with 10-100x compression
+- Blazing fast analytical queries (billions of rows per second)
+- Materialized views for automatic aggregation
+- MergeTree engine family optimized for time-series data
+- TTL for automatic data expiration
+- Designed for high-volume ingestion (millions of events per second)
+
+**Where it's used:** ad-click-aggregator (time-series analytics)
+
+**Client library: @clickhouse/client**
+
+**Example:**
+```typescript
+import { createClient } from '@clickhouse/client';
+
+const client = createClient({
+  url: 'http://localhost:8123',
+  database: 'adclick',
+});
+
+// Insert events (async insert for high throughput)
+await client.insert({
+  table: 'click_events',
+  values: [{ click_id: '...', campaign_id: '...', timestamp: new Date() }],
+  format: 'JSONEachRow',
+});
+
+// Query aggregates (automatic MV aggregation)
+const result = await client.query({
+  query: `
+    SELECT toStartOfMinute(timestamp) as minute, count() as clicks
+    FROM click_events
+    WHERE campaign_id = '123'
+    GROUP BY minute
+    ORDER BY minute DESC
+  `,
+  format: 'JSONEachRow',
+});
+```
+
+**Key features used:**
+| Feature | Purpose |
+|---------|---------|
+| MergeTree | Ordered storage with partition pruning |
+| SummingMergeTree | Automatic summing on merge |
+| Materialized Views | Real-time aggregation on insert |
+| LowCardinality | Optimized storage for enum-like columns |
+| TTL | Automatic data expiration |
+| Async Insert | High-throughput ingestion |
+
+**Alternatives:**
+| Alternative | Trade-offs |
+|-------------|------------|
+| **Apache Druid** | More complex, real-time streaming focus |
+| **TimescaleDB** | PostgreSQL extension, easier adoption, less performance |
+| **Apache Pinot** | LinkedIn-backed, more complex setup |
+| **InfluxDB** | Time-series focused, different query language |
+| **QuestDB** | Faster ingestion, smaller ecosystem |
+
+---
+
 ### Search Engine
 
 #### Elasticsearch (v8)
@@ -1096,7 +1163,8 @@ logger.info({ userId: 123 }, 'User logged in');
 | **Styling** | Tailwind CSS | CSS Modules for traditional |
 | **Backend Runtime** | Node.js + Express | Go/Rust for performance-critical |
 | **TypeScript Execution** | tsx | ts-node for legacy |
-| **Database** | PostgreSQL | MySQL for simpler needs |
+| **Relational DB** | PostgreSQL | MySQL for simpler needs |
+| **Time-Series/OLAP** | ClickHouse | TimescaleDB for PostgreSQL ecosystem |
 | **Cache** | Redis/ioredis | Valkey for open-source purity |
 | **Search** | Elasticsearch | PostgreSQL FTS for smaller scale |
 | **Message Queue** | RabbitMQ + amqplib | Kafka for event streaming |
@@ -1117,6 +1185,7 @@ Key package versions used across projects (as of 2025):
 | TypeScript | 5.x | 5.5+ for best ESM support |
 | Express | 4.x - 5.x | Express 5 in newer projects |
 | PostgreSQL | 16 | Via Docker |
+| ClickHouse | 23.8 | Via Docker, for OLAP analytics |
 | Redis | 7 | Via Docker |
 | Elasticsearch | 8.x | Via Docker |
 

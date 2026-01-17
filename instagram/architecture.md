@@ -442,6 +442,111 @@ async function cleanupExpiredStories() {
 | **Image Processing** | Sharp | Fastest Node.js image library, WebP support |
 | **Load Balancer** | nginx | Proven, simple config, WebSocket support for future DMs |
 
+## Frontend Brand Identity
+
+Matching the original Instagram brand identity is intentional and serves important purposes for a system design learning project:
+
+### Why Brand Fidelity Matters
+
+1. **Familiarity reduces cognitive load**: Users already know Instagram's patterns. Matching the visual language means they instantly understand how the app works without a learning curve. This lets learners focus on the technical implementation rather than UX design.
+
+2. **Battle-tested UX patterns**: Instagram's interface has been refined through billions of user interactions. Their story ring placement, double-tap to like, and grid layouts represent mature solutions to common social media UX problems.
+
+3. **Realistic system design context**: In interviews and real-world scenarios, you often build systems that need to match existing brands or work alongside established products. Practicing with authentic styling prepares you for these constraints.
+
+4. **Visual feedback validates functionality**: When the app looks like Instagram and behaves like Instagram, it is immediately obvious when something is wrong. Misaligned colors or broken layouts become apparent because users have strong expectations.
+
+### Brand Colors
+
+| Usage | Color | Hex Code |
+|-------|-------|----------|
+| Story ring gradient (start) | Purple | `#833AB4` |
+| Story ring gradient (middle) | Red | `#FD1D1D` |
+| Story ring gradient (end) | Orange/Yellow | `#FCB045` |
+| Background (light mode) | Off-white | `#FAFAFA` |
+| Background (dark mode) | True black | `#000000` |
+| Primary text | Dark gray | `#262626` |
+| Secondary text | Medium gray | `#8E8E8E` |
+| Links and buttons | Instagram blue | `#0095F6` |
+| Heart/like icon | Instagram red | `#ED4956` |
+
+### Typography
+
+**Font stack** (matching Instagram's system fonts):
+```css
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+```
+
+- **Logo**: Script/cursive style reminiscent of Instagram's wordmark
+- **Body text**: 14px base size, clean and readable
+- **Usernames**: Semi-bold weight for emphasis
+- **Timestamps**: Secondary text color, smaller size
+
+### Key UI Elements
+
+#### Story Ring Gradient
+
+The signature Instagram story indicator uses a conic gradient around profile pictures:
+
+```css
+.story-ring {
+  background: conic-gradient(
+    from 180deg,
+    #833AB4,  /* Purple */
+    #FD1D1D,  /* Red */
+    #FCB045,  /* Orange */
+    #833AB4   /* Back to purple for seamless loop */
+  );
+  border-radius: 50%;
+  padding: 3px;
+}
+```
+
+#### Photo Card Layout
+
+- Clean, photo-focused design with minimal chrome
+- Full-width images with consistent aspect ratios
+- Action buttons (like, comment, share, save) positioned below image
+- Like count and caption below action bar
+
+#### Dark Mode Support
+
+- True black background (`#000000`) for OLED power savings
+- Inverted text colors maintaining contrast ratios
+- Gradient elements remain consistent across themes
+- Seamless toggle without page refresh
+
+#### Interactive Elements
+
+- **Primary buttons**: Instagram blue (`#0095F6`) with white text
+- **Secondary buttons**: Outlined style with blue border
+- **Like animation**: Heart scales up briefly when tapped
+- **Follow button**: Blue when not following, outlined when following
+
+### Tailwind CSS Configuration
+
+The brand colors are configured in `tailwind.config.js` for consistent usage:
+
+```javascript
+colors: {
+  instagram: {
+    blue: '#0095F6',
+    red: '#ED4956',
+    purple: '#833AB4',
+    orange: '#FCB045',
+    background: '#FAFAFA',
+    text: '#262626',
+    'text-secondary': '#8E8E8E',
+  }
+}
+```
+
+Usage in components:
+```jsx
+<button className="bg-instagram-blue text-white">Follow</button>
+<span className="text-instagram-text-secondary">2 hours ago</span>
+```
+
 ## Security Considerations
 
 ### Authentication and Authorization

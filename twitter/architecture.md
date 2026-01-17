@@ -1318,6 +1318,119 @@ twitter_circuit_breaker_state{circuit_name="redis-fanout"} 0
 
 ---
 
+## Frontend Brand Identity
+
+### Why Brand Identity Matters for System Design Learning
+
+Matching the original Twitter brand identity serves several educational purposes:
+
+1. **Authenticity in Learning**: When building a system design project that mimics Twitter, the frontend should feel like Twitter. This creates a more immersive learning experience and helps students understand the full product, not just the backend systems.
+
+2. **Design as Documentation**: The visual design communicates product intent. A properly styled timeline immediately conveys "this is a microblogging platform" without explanation, making the system design more intuitive to understand.
+
+3. **Real-World Constraints**: Production systems must consider brand consistency. Understanding how design tokens (colors, typography, spacing) propagate through a large codebase is itself a system design lesson in maintainability and consistency.
+
+4. **Demo Quality**: When presenting system design work in interviews or portfolios, a polished UI demonstrates attention to detail and full-stack awareness. It shows you understand that system design serves user-facing products.
+
+### Twitter Brand Colors Applied
+
+| Color Role | Hex Value | Usage |
+|------------|-----------|-------|
+| Primary Blue | `#1DA1F2` | Classic Twitter blue for primary actions, links, active states |
+| Background (Light) | `#FFFFFF` | Main content area background |
+| Background (Dark) | `#15202B` | Dark mode background (future) |
+| Secondary Background | `#F7F9FA` | Sidebar, hover states, input backgrounds |
+| Primary Text | `#0F1419` | Main body text in light mode |
+| Secondary Text | `#536471` | Timestamps, metadata, placeholders |
+| Borders | `#EFF3F4` | Card borders, dividers |
+| Like Heart | `#F91880` | Pink heart for like action |
+| Retweet | `#00BA7C` | Green for retweet action |
+
+### Typography
+
+**Font Stack**:
+```css
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+```
+
+This system font stack ensures:
+- Native feel on all platforms (Apple devices use SF Pro, Windows uses Segoe UI)
+- Fast loading (no web font downloads)
+- Optimal legibility at all sizes
+
+**Key Sizes**:
+| Element | Size | Weight |
+|---------|------|--------|
+| Tweet text | 15px | 400 (normal) |
+| Display names | 15px | 700 (bold) |
+| Usernames/handles | 15px | 400 |
+| Timestamps | 14px | 400 |
+| Action button labels | 13px | 400 |
+
+### Key UI Elements
+
+1. **Signature Twitter Blue**: The `#1DA1F2` primary blue is used for:
+   - "Tweet" button background
+   - Active navigation items
+   - Links within tweets
+   - Follow button (outline style for "Following", filled for "Follow")
+
+2. **Card-Based Timeline Layout**:
+   - Each tweet is a distinct card with subtle borders
+   - Consistent padding (16px) around content
+   - Avatar positioned left, content flows right
+   - Clear visual separation between tweets
+
+3. **Action Button Colors**:
+   - Reply: Default gray, blue on hover/active
+   - Retweet: Default gray, green (`#00BA7C`) when retweeted
+   - Like: Default gray, pink (`#F91880`) when liked
+   - Share: Default gray, blue on hover
+
+4. **Clean, Minimal Design**:
+   - Generous whitespace between elements
+   - Minimal use of borders and shadows
+   - Content-first approach with UI chrome receding
+   - Consistent 4px/8px spacing rhythm
+
+### Tailwind CSS Configuration
+
+The brand colors are configured in `tailwind.config.js`:
+
+```javascript
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        twitter: {
+          blue: '#1DA1F2',
+          darkBlue: '#1A91DA',
+          black: '#0F1419',
+          gray: '#536471',
+          lightGray: '#EFF3F4',
+          extraLightGray: '#F7F9FA',
+          like: '#F91880',
+          retweet: '#00BA7C',
+        }
+      }
+    }
+  }
+}
+```
+
+Usage in components:
+```jsx
+<button className="bg-twitter-blue hover:bg-twitter-darkBlue text-white">
+  Tweet
+</button>
+
+<button className="text-twitter-gray hover:text-twitter-like">
+  <HeartIcon />
+</button>
+```
+
+---
+
 ## Future Optimizations
 
 1. **GraphQL** for flexible client queries

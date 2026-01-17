@@ -98,6 +98,68 @@ Use these unless there's a compelling reason to deviate (document justification 
 3. **Both user personas** - Implement end-user AND admin interfaces when applicable
 4. **Justify deviations** - Document why in the project's `claude.md` if straying from defaults
 
+## Frontend Best Practices
+
+### SVG Icon Organization
+
+**Never inline SVG code directly into components.** Instead, create separate icon components:
+
+```
+frontend/src/components/icons/
+├── index.ts              # Barrel export for all icons
+├── HeartIcon.tsx         # Individual icon component
+├── HomeIcon.tsx
+├── SearchIcon.tsx
+├── ShareIcon.tsx
+└── ...
+```
+
+**Why this matters:**
+- **Readability**: Component code stays focused on logic, not SVG paths
+- **Reusability**: Icons can be imported anywhere without duplication
+- **Maintainability**: Update an icon in one place, changes everywhere
+- **Bundle optimization**: Tree-shaking can exclude unused icons
+
+**Example icon component:**
+```tsx
+// src/components/icons/HeartIcon.tsx
+interface HeartIconProps {
+  className?: string;
+  filled?: boolean;
+}
+
+export function HeartIcon({ className = "w-6 h-6", filled = false }: HeartIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+    </svg>
+  );
+}
+```
+
+**Usage in components:**
+```tsx
+// Clean, readable component code
+import { HeartIcon, ShareIcon, CommentIcon } from '@/components/icons';
+
+function PostActions() {
+  return (
+    <div className="flex gap-4">
+      <button><HeartIcon filled={isLiked} className="w-5 h-5 text-red-500" /></button>
+      <button><CommentIcon /></button>
+      <button><ShareIcon /></button>
+    </div>
+  );
+}
+```
+
+### Other Frontend Guidelines
+
+- **Component size**: If a component exceeds ~150 lines, consider splitting it
+- **Tailwind classes**: Use `@apply` in CSS for frequently repeated class combinations
+- **State management**: Prefer Zustand for global state, React state for local UI state
+- **API calls**: Centralize in a `services/` or `api/` directory
+
 ## Backend Architecture Pattern
 
 Implemented projects follow a microservices structure under `src/`:

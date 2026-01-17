@@ -849,6 +849,149 @@ POST   /api/v1/admin/transcode-jobs/:id/retry  Retry failed job
 | **Processing** | FFmpeg | Video transcoding (or simulated for learning) |
 | **Reverse Proxy** | Nginx | Static files, HLS caching, load balancing |
 
+## Frontend Brand Identity
+
+This section documents the visual design system implemented in the frontend, matching YouTube's brand identity as closely as possible.
+
+### Why Brand Authenticity Matters for System Design Learning
+
+Matching the original platform's brand identity serves several important purposes in a system design learning project:
+
+1. **Realistic User Experience Testing**: When the UI looks and feels like the real product, testers and learners interact with it more naturally. This reveals actual UX challenges (information density, visual hierarchy, accessibility) that wouldn't surface with a generic Bootstrap interface.
+
+2. **Design System Understanding**: Implementing a specific brand forces you to understand how large-scale design systems work---color tokens, typography scales, component states, and dark mode theming. These patterns are essential for production frontends.
+
+3. **Attention to Detail**: System design isn't just about databases and APIs. Production systems include pixel-perfect UIs. Learning to implement brand guidelines develops the precision needed for professional work.
+
+4. **Portfolio Presentation**: A project that looks like YouTube demonstrates both backend architecture skills AND frontend polish. Generic-looking projects don't showcase the same range of abilities.
+
+5. **Component State Complexity**: YouTube's UI has nuanced states (subscribed vs. not, liked vs. neutral vs. disliked, live vs. premiere vs. regular video). Implementing these correctly reveals the data requirements that flow back to the API and database design.
+
+### YouTube Brand Colors
+
+The following color palette matches YouTube's official brand guidelines:
+
+| Color Purpose | Light Mode | Dark Mode | CSS Variable |
+|---------------|------------|-----------|--------------|
+| **Primary Red** | `#FF0000` | `#FF0000` | `--yt-red` |
+| **Subscribe Button** | `#CC0000` | `#CC0000` | `--yt-subscribe` |
+| **Background Primary** | `#FFFFFF` | `#0F0F0F` | `--yt-bg-primary` |
+| **Background Secondary** | `#F9F9F9` | `#212121` | `--yt-bg-secondary` |
+| **Text Primary** | `#0F0F0F` | `#FFFFFF` | `--yt-text-primary` |
+| **Text Secondary** | `#606060` | `#AAAAAA` | `--yt-text-secondary` |
+| **Like Active (Blue)** | `#065FD4` | `#3EA6FF` | `--yt-like-active` |
+| **Subscribed (Gray)** | `#909090` | `#909090` | `--yt-subscribed` |
+| **Border/Divider** | `#E5E5E5` | `#3F3F3F` | `--yt-border` |
+| **Hover State** | `#F2F2F2` | `#3F3F3F` | `--yt-hover` |
+
+**Color Usage Guidelines:**
+- Primary red (`#FF0000`) is used sparingly: the logo, progress bar in video player, and unsubscribed subscribe button
+- Subscribe button transitions from red (`#CC0000`) to gray (`#909090`) when subscribed
+- Like button turns blue (`#065FD4`) when active, following YouTube's interaction pattern
+- Dark mode uses pure black (`#0F0F0F`) as the primary background, not a dark gray
+
+### Typography
+
+YouTube uses the Roboto font family throughout its interface:
+
+```css
+font-family: 'Roboto', Arial, sans-serif;
+```
+
+| Element | Size | Weight | Line Height |
+|---------|------|--------|-------------|
+| Video Title (card) | 14px | 500 (medium) | 1.4 |
+| Video Title (watch page) | 18-20px | 600 (semi-bold) | 1.3 |
+| Channel Name | 12-13px | 500 (medium) | 1.3 |
+| Metadata (views, date) | 12px | 400 (regular) | 1.3 |
+| Comment Text | 14px | 400 (regular) | 1.4 |
+| Button Text | 14px | 500 (medium) | 1.0 |
+| Section Headers | 16px | 500 (medium) | 1.3 |
+
+**Typography Guidelines:**
+- Roboto is loaded from Google Fonts for consistency
+- Text truncation with ellipsis is used for long video titles (2-line max on cards)
+- Channel names are single-line truncated
+- Metadata text uses secondary color for visual hierarchy
+
+### Key UI Components
+
+#### Video Thumbnail Grid
+- Aspect ratio: 16:9 for thumbnails
+- Rounded corners: 12px on thumbnails
+- Grid gap: 16px horizontal, 24px vertical
+- Hover state: No thumbnail transform, shows duration badge
+
+#### Video Player
+- Red progress bar (`#FF0000`) on the seek bar
+- Gray buffered progress indicator
+- Circular red scrubber handle
+- Black letterboxing for non-16:9 content
+
+#### Subscribe Button
+- **Unsubscribed state**: Red background (`#CC0000`), white text, "Subscribe"
+- **Subscribed state**: Gray background (`#909090`), white text, "Subscribed"
+- **Hover on subscribed**: Shows "Unsubscribe" text
+- Pill-shaped (fully rounded corners)
+- Height: 36px, padding: 0 16px
+
+#### Like/Dislike Buttons
+- Pill-shaped container with border
+- Icons use outlined style when inactive
+- Like icon fills blue (`#065FD4`) when active
+- Dislike icon fills with text color when active
+- Vertical divider between like and dislike
+- Count displays next to like icon only
+
+#### Channel Avatar
+- Circular avatar image
+- Size varies by context: 24px (comment), 36px (video card), 48px (channel header), 80px (channel page)
+- Fallback: First letter of channel name on colored background
+
+#### Navigation Sidebar
+- Fixed width: 240px (expanded), 72px (collapsed)
+- Active item: Light gray background with bold text
+- Icons: YouTube's custom icon set (replicated with similar styling)
+
+### Dark Mode Implementation
+
+The frontend supports both light and dark themes, matching YouTube's theme options:
+
+```css
+/* Light mode (default) */
+:root {
+  --yt-bg-primary: #FFFFFF;
+  --yt-bg-secondary: #F9F9F9;
+  --yt-text-primary: #0F0F0F;
+  --yt-text-secondary: #606060;
+}
+
+/* Dark mode */
+[data-theme="dark"] {
+  --yt-bg-primary: #0F0F0F;
+  --yt-bg-secondary: #212121;
+  --yt-text-primary: #FFFFFF;
+  --yt-text-secondary: #AAAAAA;
+}
+```
+
+**Dark Mode Considerations:**
+- Theme preference is stored in localStorage and respects `prefers-color-scheme` media query
+- Red elements (`#FF0000`) remain unchanged between themes
+- Blue like button lightens in dark mode (`#3EA6FF`) for better visibility
+- Video thumbnails have no border in either mode
+- Modal overlays use semi-transparent black backdrop
+
+### Responsive Breakpoints
+
+| Breakpoint | Grid Columns | Sidebar State |
+|------------|--------------|---------------|
+| < 500px | 1 column | Hidden |
+| 500-900px | 2 columns | Collapsed (icons only) |
+| 900-1200px | 3 columns | Collapsed |
+| 1200-1600px | 4 columns | Expanded |
+| > 1600px | 5-6 columns | Expanded |
+
 ## Security
 
 ### Authentication and Authorization

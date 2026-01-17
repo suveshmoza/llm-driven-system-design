@@ -13,6 +13,7 @@ import analyticsRouter from './routes/analytics.js';
 import adminRouter from './routes/admin.js';
 import { testConnection as testDbConnection } from './services/database.js';
 import { testConnection as testRedisConnection, getMemoryUsage } from './services/redis.js';
+import { initClickHouse, closeClickHouse, getClickHouseClient } from './services/clickhouse.js';
 import { logger, createRequestLogger, logHelpers } from './shared/logger.js';
 import {
   getMetrics,
@@ -133,18 +134,29 @@ app.get('/health', (_req: Request, res: Response) => {
 app.get('/health/ready', async (_req: Request, res: Response) => {
   const startTime = Date.now();
 
+  // Test ClickHouse connection
+  let clickhouseHealthy = false;
+  try {
+    const ch = getClickHouseClient();
+    const result = await ch.ping();
+    clickhouseHealthy = result.success;
+  } catch {
+    clickhouseHealthy = false;
+  }
+
   const [dbHealthy, redisHealthy] = await Promise.all([
     testDbConnection(),
     testRedisConnection(),
   ]);
 
-  const allHealthy = dbHealthy && redisHealthy;
+  const allHealthy = dbHealthy && redisHealthy && clickhouseHealthy;
   const status = allHealthy ? 'ready' : 'not_ready';
   const statusCode = allHealthy ? 200 : 503;
 
   // Update health metrics
   healthMetrics.status.set({ component: 'database' }, dbHealthy ? 1 : 0);
   healthMetrics.status.set({ component: 'redis' }, redisHealthy ? 1 : 0);
+  healthMetrics.status.set({ component: 'clickhouse' }, clickhouseHealthy ? 1 : 0);
   healthMetrics.status.set({ component: 'overall' }, allHealthy ? 1 : 0);
 
   if (allHealthy) {
@@ -158,6 +170,7 @@ app.get('/health/ready', async (_req: Request, res: Response) => {
     services: {
       database: dbHealthy ? 'connected' : 'disconnected',
       redis: redisHealthy ? 'connected' : 'disconnected',
+      clickhouse: clickhouseHealthy ? 'connected' : 'disconnected',
     },
     slo: {
       availabilityTarget: SLO_TARGETS.AVAILABILITY_TARGET,
@@ -165,7 +178,11 @@ app.get('/health/ready', async (_req: Request, res: Response) => {
     },
   };
 
-  logHelpers.healthCheck(logger, allHealthy, { database: dbHealthy, redis: redisHealthy });
+  logHelpers.healthCheck(logger, allHealthy, {
+    database: dbHealthy,
+    redis: redisHealthy,
+    clickhouse: clickhouseHealthy,
+  });
 
   res.status(statusCode).json(response);
 });
@@ -218,20 +235,46 @@ app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(
-    {
-      port: PORT,
-      env: ENV_CONFIG.NODE_ENV,
-      version: ENV_CONFIG.SERVICE_VERSION,
-    },
-    `Ad Click Aggregator backend started`
-  );
+// Start server with async initialization
+async function startServer() {
+  try {
+    // Initialize ClickHouse connection
+    await initClickHouse();
+    logger.info('ClickHouse initialized successfully');
 
-  logger.info(`Health check: http://localhost:${PORT}/health/ready`);
-  logger.info(`Metrics: http://localhost:${PORT}/metrics`);
-  logger.info(`API Base URL: http://localhost:${PORT}/api/v1`);
-});
+    const server = app.listen(PORT, () => {
+      logger.info(
+        {
+          port: PORT,
+          env: ENV_CONFIG.NODE_ENV,
+          version: ENV_CONFIG.SERVICE_VERSION,
+        },
+        `Ad Click Aggregator backend started`
+      );
+
+      logger.info(`Health check: http://localhost:${PORT}/health/ready`);
+      logger.info(`Metrics: http://localhost:${PORT}/metrics`);
+      logger.info(`API Base URL: http://localhost:${PORT}/api/v1`);
+    });
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      logger.info('Shutting down gracefully...');
+      server.close(async () => {
+        await closeClickHouse();
+        logger.info('Server closed');
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  } catch (error) {
+    logger.error({ error }, 'Failed to start server');
+    process.exit(1);
+  }
+}
+
+startServer();
 
 export default app;

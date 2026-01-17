@@ -8,6 +8,7 @@
  * - Idempotency: Prevents duplicate click counting via Redis + PostgreSQL UPSERT
  * - Metrics: Prometheus counters/histograms for monitoring ingestion throughput
  * - Structured logging: JSON logs for debugging and auditing
+ * - ClickHouse: Time-series storage with auto-aggregation via materialized views
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -22,7 +23,7 @@ import {
   setIdempotencyKey,
 } from './redis.js';
 import { detectFraud } from './fraud-detection.js';
-import { updateAggregates } from './aggregation.js';
+import { insertClickEvent as insertClickHouseEvent } from './clickhouse.js';
 import { logger, logHelpers } from '../shared/logger.js';
 import { clickMetrics, aggregationMetrics, timeAsync } from '../shared/metrics.js';
 import { IDEMPOTENCY_CONFIG } from '../shared/config.js';
@@ -168,12 +169,28 @@ export async function processClickEvent(
     await trackUniqueUser(clickEvent.ad_id, clickEvent.user_id, timeBucket);
   }
 
-  // Update aggregation tables with metrics
+  // Insert into ClickHouse for analytics (materialized views handle aggregation)
   await timeAsync(
     aggregationMetrics.latency,
     { granularity: 'all' },
     async () => {
-      await updateAggregates(clickEvent);
+      await insertClickHouseEvent({
+        click_id: clickEvent.click_id,
+        ad_id: clickEvent.ad_id,
+        campaign_id: clickEvent.campaign_id,
+        advertiser_id: clickEvent.advertiser_id,
+        user_id: clickEvent.user_id || null,
+        timestamp: clickEvent.timestamp,
+        device_type: clickEvent.device_type || 'unknown',
+        os: clickEvent.os || 'unknown',
+        browser: clickEvent.browser || 'unknown',
+        country: clickEvent.country || 'unknown',
+        region: clickEvent.region || null,
+        ip_hash: clickEvent.ip_hash || null,
+        is_fraudulent: clickEvent.is_fraudulent ? 1 : 0,
+        fraud_reason: clickEvent.fraud_reason || null,
+      });
+      // ClickHouse materialized views auto-aggregate at minute, hour, and day granularities
       aggregationMetrics.updates.inc({ granularity: 'minute' });
       aggregationMetrics.updates.inc({ granularity: 'hour' });
       aggregationMetrics.updates.inc({ granularity: 'day' });

@@ -40,9 +40,15 @@ For production scale targeting 10,000 clicks/second:
                     ┌────────────┴────────────┐
                     ▼                         ▼
           ┌─────────────────┐      ┌─────────────────┐
-          │   Raw Storage   │      │   Aggregation   │
-          │  (PostgreSQL)   │      │   Tables (PG)   │
-          └─────────────────┘      └─────────────────┘
+          │   Raw Storage   │      │   ClickHouse    │
+          │  (PostgreSQL)   │      │  (Analytics)    │
+          └─────────────────┘      └────────┬────────┘
+                                            │
+                                   ┌────────┴────────┐
+                                   │ Materialized    │
+                                   │ Views (Auto-    │
+                                   │ Aggregation)    │
+                                   └────────┬────────┘
                                             │
                                             ▼
                                  ┌─────────────────┐
@@ -65,7 +71,8 @@ For production scale targeting 10,000 clicks/second:
    - Enriches with server timestamp
    - Checks for duplicates via Redis
    - Runs fraud detection
-   - Stores to database and updates aggregates
+   - Stores raw events to PostgreSQL for audit trail
+   - Inserts into ClickHouse for real-time analytics
 
 2. **Redis Cache Layer**
    - Deduplication: SETEX with 5-minute TTL for click IDs
@@ -73,17 +80,24 @@ For production scale targeting 10,000 clicks/second:
    - HyperLogLog: PFADD for unique user counting
    - Real-time counters: HSET for dashboard metrics
 
-3. **PostgreSQL Storage**
-   - Raw click events table for debugging/reconciliation
-   - Aggregation tables (minute, hour, day granularity)
-   - Uses UPSERT for atomic counter updates
+3. **PostgreSQL Storage** (Relational Data)
+   - Advertisers, campaigns, and ads (business entities)
+   - Raw click events table for debugging/reconciliation/billing disputes
+   - User accounts and authentication (future)
 
-4. **Query Service** (Analytics API)
+4. **ClickHouse Storage** (Time-Series Analytics)
+   - Raw click events with columnar storage
+   - Materialized views for automatic aggregation
+   - Pre-computed minute, hour, and day aggregates
+   - Optimized for high-write throughput and OLAP queries
+
+5. **Query Service** (Analytics API)
+   - Queries ClickHouse materialized views
    - Flexible aggregation queries
    - Filtering by campaign, ad, time range
    - Grouping by country, device type
 
-5. **Dashboard** (React + Recharts)
+6. **Dashboard** (React + Recharts)
    - Real-time metrics display
    - Time-series charts
    - Campaign analytics
@@ -276,6 +290,84 @@ CREATE INDEX idx_agg_day_created_at ON click_aggregates_day(created_at);
 | Partial | Efficient for sparse data | `WHERE is_fraudulent = true` |
 | Unique partial | Nullable deduplication | `idempotency_key WHERE NOT NULL`
 
+### ClickHouse Schema (Time-Series Analytics)
+
+ClickHouse stores click events and auto-aggregates via materialized views. The schema is defined in `/backend/db/clickhouse-init.sql`.
+
+#### Click Events Table
+
+```sql
+-- Raw click events with columnar storage
+-- MergeTree engine with monthly partitioning for efficient pruning
+CREATE TABLE click_events (
+    click_id String,
+    ad_id String,
+    campaign_id String,
+    advertiser_id String,
+    user_id Nullable(String),
+    timestamp DateTime64(3),
+    device_type LowCardinality(String) DEFAULT 'unknown',
+    os LowCardinality(String) DEFAULT 'unknown',
+    browser LowCardinality(String) DEFAULT 'unknown',
+    country LowCardinality(String) DEFAULT 'unknown',
+    region Nullable(String),
+    ip_hash Nullable(String),
+    is_fraudulent UInt8 DEFAULT 0,
+    fraud_reason Nullable(String),
+    processed_at DateTime64(3) DEFAULT now64(3)
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (campaign_id, ad_id, timestamp, click_id)
+TTL timestamp + INTERVAL 90 DAY
+SETTINGS index_granularity = 8192;
+```
+
+#### Aggregation Tables with Materialized Views
+
+```sql
+-- Minute aggregation (auto-populated via materialized view)
+CREATE TABLE click_aggregates_minute (
+    time_bucket DateTime,
+    ad_id String,
+    campaign_id String,
+    advertiser_id String,
+    country LowCardinality(String),
+    device_type LowCardinality(String),
+    click_count UInt64,
+    unique_users UInt64,
+    fraud_count UInt64
+) ENGINE = SummingMergeTree((click_count, fraud_count))
+PARTITION BY toYYYYMM(time_bucket)
+ORDER BY (time_bucket, ad_id, campaign_id, country, device_type)
+TTL time_bucket + INTERVAL 7 DAY;
+
+-- Materialized view for auto-aggregation
+CREATE MATERIALIZED VIEW click_aggregates_minute_mv
+TO click_aggregates_minute
+AS SELECT
+    toStartOfMinute(timestamp) AS time_bucket,
+    ad_id, campaign_id, advertiser_id, country, device_type,
+    count() AS click_count,
+    uniqExact(user_id) AS unique_users,
+    countIf(is_fraudulent = 1) AS fraud_count
+FROM click_events
+GROUP BY time_bucket, ad_id, campaign_id, advertiser_id, country, device_type;
+
+-- Similar tables and views exist for hour and day granularity
+```
+
+#### ClickHouse Design Rationale
+
+| Feature | Benefit |
+|---------|---------|
+| Columnar storage | 10-100x compression, faster analytics |
+| MergeTree engine | Ordered data, efficient range queries |
+| SummingMergeTree | Automatic aggregation during merges |
+| Materialized views | Real-time aggregation on insert |
+| LowCardinality | Optimized storage for enum-like columns |
+| TTL | Automatic data expiration |
+| Partitioning | Efficient partition pruning for time-range queries |
+
 ## API Design
 
 ### Click Ingestion
@@ -341,19 +433,32 @@ Response:
 
 ### 3. Storage Strategy
 
-**PostgreSQL chosen over ClickHouse for:**
-- Simpler local development setup
-- Familiar SQL interface
-- Built-in UPSERT for aggregation updates
+**Hybrid PostgreSQL + ClickHouse Architecture:**
 
-**Trade-off:**
-- ClickHouse would be 10-20x faster for analytics at scale
-- Consider migration path for production
+| Data Type | Storage | Rationale |
+|-----------|---------|-----------|
+| Business entities (advertisers, campaigns, ads) | PostgreSQL | Relational data with joins, referential integrity |
+| Raw click events | PostgreSQL + ClickHouse | PostgreSQL for audit/billing disputes, ClickHouse for analytics |
+| Aggregations | ClickHouse (MVs) | Automatic aggregation via materialized views, columnar storage |
+
+**PostgreSQL for:**
+- ACID transactions for business entity updates
+- Referential integrity between advertisers → campaigns → ads
+- Audit trail for billing disputes (raw clicks)
+- User authentication (future)
+
+**ClickHouse for:**
+- High-volume click event ingestion (10K+ writes/sec)
+- Real-time aggregation via materialized views
+- OLAP queries with 10-100x faster analytics
+- Time-series data with automatic TTL
+- Columnar storage with 10-100x compression
 
 ## Technology Stack
 
 - **Application Layer**: Node.js + Express + TypeScript
-- **Data Layer**: PostgreSQL 16
+- **Relational Data**: PostgreSQL 16
+- **Time-Series Analytics**: ClickHouse 23.8
 - **Caching Layer**: Redis 7
 - **Frontend**: React 19 + Vite + TanStack Router + Zustand + Tailwind CSS
 - **Charts**: Recharts
@@ -369,14 +474,15 @@ Response:
 ### Future Enhancements
 
 1. **Kafka**: Add for async event processing and higher throughput
-2. **ClickHouse**: Migrate aggregations for better analytics performance
+2. ~~**ClickHouse**: Migrate aggregations for better analytics performance~~ ✅ Implemented
 3. **Flink/Spark**: Stream processing for complex aggregations
 
 ## Trade-offs and Alternatives
 
 | Decision | Chosen | Alternative | Why |
 |----------|--------|-------------|-----|
-| Database | PostgreSQL | ClickHouse | Simpler setup, UPSERT support |
+| Analytics DB | ClickHouse | PostgreSQL only | 10-100x faster OLAP, auto-aggregation via MVs |
+| Relational DB | PostgreSQL | ClickHouse for all | ACID for business entities, referential integrity |
 | Cache | Redis | In-memory | Persistence, distributed ready |
 | Processing | Sync | Kafka+Flink | Simpler for learning |
 | Frontend | React | Vue | Ecosystem, TanStack Router |
@@ -397,7 +503,8 @@ GET /health
   "status": "healthy",
   "services": {
     "database": "connected",
-    "redis": "connected"
+    "redis": "connected",
+    "clickhouse": "connected"
   }
 }
 ```

@@ -683,6 +683,112 @@ GET    /api/v1/media/:id         Download file (via MinIO presigned URL)
 
 ---
 
+## Frontend Brand Identity
+
+### Why Authentic Brand Styling Matters
+
+For a system design learning project, matching the original WhatsApp visual identity serves several important purposes:
+
+1. **Recognition and Context**: Users (and interviewers) immediately understand what system is being replicated, making it easier to discuss design decisions in the context of a familiar product.
+
+2. **Attention to Detail**: Demonstrating ability to replicate a production UI shows frontend competency and attention to detail - skills that translate directly to professional work.
+
+3. **Complete System Understanding**: System design is not just backend architecture. The frontend is part of the system, and understanding how UI decisions (like color-coded read receipts) map to backend features (delivery status tracking) shows full-stack thinking.
+
+4. **Realistic Testing**: A visually authentic interface makes it easier to mentally simulate real user flows during testing and demos, helping identify UX issues that might affect architecture decisions.
+
+### WhatsApp Brand Colors
+
+| Purpose | Color | Hex Code | Usage |
+|---------|-------|----------|-------|
+| **Primary Green** | WhatsApp Green | `#25D366` | Logo, primary actions, accents |
+| **Header Teal** | Dark Teal | `#008069` | Header background |
+| **Header Teal (Lighter)** | Teal | `#00A884` | Header text, active states |
+| **Outgoing Message** | Light Green | `#DCF8C6` | Sent message bubbles |
+| **Incoming Message** | White | `#FFFFFF` | Received message bubbles |
+| **Chat Background** | Beige/Cream | `#ECE5DD` | Chat area background |
+| **Primary Text** | Dark Gray | `#111B21` | Main text content |
+| **Secondary Text** | Gray | `#667781` | Timestamps, metadata, single tick |
+| **Read Receipts** | Blue | `#53BDEB` | Double-check marks (read) |
+| **Unread Badge** | Green | `#25D366` | Conversation unread count |
+
+### Typography
+
+WhatsApp uses a system font stack for cross-platform consistency:
+
+```css
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+```
+
+| Element | Size | Weight | Notes |
+|---------|------|--------|-------|
+| Message text | 14.2px | 400 | Optimized for readability |
+| Contact names | 16-17px | 500-600 | Slightly larger for hierarchy |
+| Timestamps | 11px | 400 | Subdued, secondary information |
+| Input placeholder | 14px | 400 | Matches message text |
+
+### Key UI Components
+
+#### Header Bar
+- **Background**: Teal gradient (`#008069` to `#00A884`)
+- **Elements**: Back button, avatar, contact name, status
+- **Height**: ~60px on mobile, ~52px on desktop
+
+#### Message Bubbles
+- **Outgoing**: Light green (`#DCF8C6`) with tail pointing right
+- **Incoming**: White (`#FFFFFF`) with tail pointing left
+- **Border radius**: 7.5px
+- **Max width**: 65% of chat area
+- **Padding**: 6px 7px 8px 9px (asymmetric for tail)
+
+#### Message Bubble Tails
+Distinctive triangular tails that point to the sender:
+- Outgoing messages: tail on right side
+- Incoming messages: tail on left side
+- Implemented via CSS borders or SVG
+
+#### Delivery Status Indicators
+| Status | Icon | Color | Meaning |
+|--------|------|-------|---------|
+| Sent | Single check | `#667781` | Message reached server |
+| Delivered | Double check | `#667781` | Message reached recipient device |
+| Read | Double check | `#53BDEB` | Recipient opened conversation |
+
+#### Chat Background
+- Base color: `#ECE5DD` (beige/cream)
+- Optional: Subtle doodle pattern overlay
+- Provides visual separation from message bubbles
+
+### Implementation Notes
+
+The frontend applies these styles in `/frontend/src/`:
+
+```
+├── index.css              # Global styles, CSS variables for brand colors
+├── components/
+│   ├── ChatHeader.tsx     # Teal header with contact info
+│   ├── MessageBubble.tsx  # Green/white bubbles with tails
+│   ├── MessageStatus.tsx  # Tick marks with appropriate colors
+│   └── ConversationList.tsx # Sidebar with unread badges
+```
+
+CSS variables for easy theming:
+```css
+:root {
+  --whatsapp-primary: #25D366;
+  --whatsapp-teal-dark: #008069;
+  --whatsapp-teal-light: #00A884;
+  --whatsapp-outgoing: #DCF8C6;
+  --whatsapp-incoming: #FFFFFF;
+  --whatsapp-chat-bg: #ECE5DD;
+  --whatsapp-text-primary: #111B21;
+  --whatsapp-text-secondary: #667781;
+  --whatsapp-read-receipt: #53BDEB;
+}
+```
+
+---
+
 ## Security
 
 ### Authentication
