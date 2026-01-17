@@ -1,13 +1,13 @@
 # Codex Opinion
 
-Detailed, actionable critique for each system design architecture document.
+Detailed, actionable critiques for each system design architecture document.
 
 ## 20forms-20designs
 - Strengths:
   - Clear monorepo + iframe-based isolation design with detailed component breakdown and build orchestration.
   - Tradeoff analysis for isolation approaches (iframe vs Shadow DOM vs CSS modules).
 - Actionable gaps:
-  - Define hosting/CDN strategy for static assets (cache headers, versioning, edge TTLs) plus rollback for 42-app builds.
+  - Define hosting/CDN strategy for static assets (cache headers, versioning, edge TTLs) plus rollback for 42 app builds.
   - Set performance budgets (bundle size, load time) and add real-user monitoring/error tracking to validate them.
   - Document build pipeline resilience (parallel build retries, artifact storage, CI/CD) and cost tradeoffs for hosting.
 
@@ -670,7 +670,7 @@ Detailed, actionable critique for each system design architecture document.
 
 ## youtube-top-k
 - Strengths:
-  - Defines core data schemas and ties them to Postgres, PostgreSQL for persistence.
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
   - Includes an async processing path via Pub/Sub for ingestion and background work.
 - Actionable gaps:
   - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
