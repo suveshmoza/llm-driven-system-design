@@ -3,23 +3,48 @@ import { persist } from 'zustand/middleware';
 import type { User, Profile } from '../types';
 import { authApi } from '../services/api';
 
+/**
+ * Authentication state interface for the auth store.
+ * Manages user authentication, profile selection, and session state.
+ */
 interface AuthState {
+  /** Currently authenticated user or null if not logged in */
   user: User | null;
+  /** List of profiles associated with the current user account */
   profiles: Profile[];
+  /** Currently selected profile for personalized content */
   currentProfile: Profile | null;
+  /** Loading state for async authentication operations */
   isLoading: boolean;
+  /** Error message from last failed operation */
   error: string | null;
 
+  /** Authenticates user with email and password */
   login: (email: string, password: string) => Promise<void>;
+  /** Creates a new user account */
   register: (email: string, password: string, name: string) => Promise<void>;
+  /** Ends the current session and clears auth state */
   logout: () => Promise<void>;
+  /** Validates existing session and refreshes user data */
   checkAuth: () => Promise<void>;
+  /** Sets the active profile for the session */
   selectProfile: (profile: Profile) => Promise<void>;
+  /** Creates a new profile under the current account */
   createProfile: (name: string, isKids: boolean) => Promise<void>;
+  /** Removes a profile from the account */
   deleteProfile: (profileId: string) => Promise<void>;
+  /** Clears the current error state */
   clearError: () => void;
 }
 
+/**
+ * Authentication store using Zustand with persistence.
+ * Manages user sessions, multi-profile support, and authentication state.
+ * The currentProfile is persisted to localStorage to restore profile selection on page reload.
+ *
+ * Multi-profile support allows different family members to have separate
+ * watch histories, watchlists, and personalized recommendations.
+ */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({

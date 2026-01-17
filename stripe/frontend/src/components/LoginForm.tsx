@@ -1,11 +1,34 @@
+/**
+ * Login Form Component
+ *
+ * Authentication form for merchant login and registration.
+ * Supports two modes: signing in with an existing API key,
+ * or creating a new merchant account.
+ *
+ * @module components/LoginForm
+ */
+
 import { useState } from 'react';
 import { useMerchantStore } from '@/stores';
 import { createMerchant, getMerchant } from '@/services/api';
 
+/**
+ * Props for the LoginForm component.
+ */
 interface LoginFormProps {
+  /** Callback invoked after successful authentication */
   onSuccess?: () => void;
 }
 
+/**
+ * Login and registration form component.
+ * Provides a tabbed interface for existing merchants to sign in with their API key,
+ * or new merchants to create an account and receive their API key.
+ *
+ * @param props - Component props
+ * @param props.onSuccess - Optional callback after successful login/registration
+ * @returns The login/registration form UI
+ */
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const { setCredentials } = useMerchantStore();
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -15,6 +38,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  /**
+   * Handles login form submission.
+   * Validates the API key by fetching merchant details,
+   * then stores credentials in the merchant store.
+   */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -35,6 +63,10 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     }
   };
 
+  /**
+   * Handles registration form submission.
+   * Creates a new merchant account and stores the returned API key.
+   */
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');

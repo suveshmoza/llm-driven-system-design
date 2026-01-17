@@ -206,6 +206,15 @@ export async function addExperience(
   return exp!;
 }
 
+/**
+ * Updates an existing work experience entry.
+ * Only the owner (userId) can modify their experiences.
+ *
+ * @param id - The experience record ID
+ * @param userId - The user's ID (for ownership verification)
+ * @param data - Partial experience data to update
+ * @returns The updated experience, or null if not found/unauthorized
+ */
 export async function updateExperience(
   id: number,
   userId: number,
@@ -243,6 +252,14 @@ export async function updateExperience(
   );
 }
 
+/**
+ * Deletes a work experience entry from a user's profile.
+ * Only the owner can delete their experiences.
+ *
+ * @param id - The experience record ID
+ * @param userId - The user's ID (for ownership verification)
+ * @returns True if deleted, false if not found or unauthorized
+ */
 export async function deleteExperience(id: number, userId: number): Promise<boolean> {
   const count = await execute(
     `DELETE FROM experiences WHERE id = $1 AND user_id = $2`,
@@ -251,6 +268,13 @@ export async function deleteExperience(id: number, userId: number): Promise<bool
   return count > 0;
 }
 
+/**
+ * Retrieves all work experiences for a user.
+ * Includes company details if linked, ordered by recency.
+ *
+ * @param userId - The user's unique identifier
+ * @returns Array of experience records, current jobs first
+ */
 export async function getUserExperiences(userId: number): Promise<Experience[]> {
   return query<Experience>(
     `SELECT e.*, c.name as company_display_name, c.logo_url as company_logo
@@ -262,7 +286,13 @@ export async function getUserExperiences(userId: number): Promise<Experience[]> 
   );
 }
 
-// Education functions
+/**
+ * Adds an education entry to a user's profile.
+ *
+ * @param userId - The user's unique identifier
+ * @param data - Education details including school, degree, and years
+ * @returns The newly created education record
+ */
 export async function addEducation(
   userId: number,
   data: {
@@ -291,6 +321,13 @@ export async function addEducation(
   return edu!;
 }
 
+/**
+ * Retrieves all education entries for a user.
+ * Ordered by most recent graduation year first.
+ *
+ * @param userId - The user's unique identifier
+ * @returns Array of education records
+ */
 export async function getUserEducation(userId: number): Promise<Education[]> {
   return query<Education>(
     `SELECT * FROM education WHERE user_id = $1 ORDER BY end_year DESC NULLS FIRST, start_year DESC`,
@@ -298,6 +335,13 @@ export async function getUserEducation(userId: number): Promise<Education[]> {
   );
 }
 
+/**
+ * Deletes an education entry from a user's profile.
+ *
+ * @param id - The education record ID
+ * @param userId - The user's ID (for ownership verification)
+ * @returns True if deleted, false if not found or unauthorized
+ */
 export async function deleteEducation(id: number, userId: number): Promise<boolean> {
   const count = await execute(
     `DELETE FROM education WHERE id = $1 AND user_id = $2`,
@@ -306,7 +350,13 @@ export async function deleteEducation(id: number, userId: number): Promise<boole
   return count > 0;
 }
 
-// Skills functions
+/**
+ * Gets or creates a skill by name, normalizing case for deduplication.
+ * Skills are shared across users to enable skill-based matching.
+ *
+ * @param name - The skill name to find or create
+ * @returns The skill's unique identifier
+ */
 export async function getOrCreateSkill(name: string): Promise<number> {
   const normalized = name.toLowerCase().trim();
   let skill = await queryOne<{ id: number }>(`SELECT id FROM skills WHERE LOWER(name) = $1`, [normalized]);
@@ -321,6 +371,13 @@ export async function getOrCreateSkill(name: string): Promise<number> {
   return skill!.id;
 }
 
+/**
+ * Adds a skill to a user's profile.
+ * Creates the skill if it does not exist. Ignores duplicates.
+ *
+ * @param userId - The user's unique identifier
+ * @param skillName - The name of the skill to add
+ */
 export async function addUserSkill(userId: number, skillName: string): Promise<void> {
   const skillId = await getOrCreateSkill(skillName);
   await execute(
@@ -329,6 +386,13 @@ export async function addUserSkill(userId: number, skillName: string): Promise<v
   );
 }
 
+/**
+ * Removes a skill from a user's profile.
+ *
+ * @param userId - The user's unique identifier
+ * @param skillId - The skill ID to remove
+ * @returns True if removed, false if skill was not on profile
+ */
 export async function removeUserSkill(userId: number, skillId: number): Promise<boolean> {
   const count = await execute(
     `DELETE FROM user_skills WHERE user_id = $1 AND skill_id = $2`,
@@ -337,6 +401,13 @@ export async function removeUserSkill(userId: number, skillId: number): Promise<
   return count > 0;
 }
 
+/**
+ * Retrieves all skills for a user with endorsement counts.
+ * Ordered by endorsements (most endorsed first), then alphabetically.
+ *
+ * @param userId - The user's unique identifier
+ * @returns Array of user skills with names and endorsement counts
+ */
 export async function getUserSkills(userId: number): Promise<UserSkill[]> {
   return query<UserSkill>(
     `SELECT us.*, s.name as skill_name
@@ -348,6 +419,13 @@ export async function getUserSkills(userId: number): Promise<UserSkill[]> {
   );
 }
 
+/**
+ * Increments the endorsement count for a user's skill.
+ * Endorsements from connections increase skill credibility.
+ *
+ * @param userId - The user whose skill is being endorsed
+ * @param skillId - The skill to endorse
+ */
 export async function endorseSkill(userId: number, skillId: number): Promise<void> {
   await execute(
     `UPDATE user_skills SET endorsement_count = endorsement_count + 1 WHERE user_id = $1 AND skill_id = $2`,

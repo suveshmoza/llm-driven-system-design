@@ -3,10 +3,26 @@ import { useNavigate } from '@tanstack/react-router';
 import { useSearchStore } from '@/stores/searchStore';
 import { getDefaultCheckIn, getDefaultCheckOut } from '@/utils';
 
+/**
+ * Props for the SearchBar component.
+ */
 interface SearchBarProps {
+  /** Display variant: 'hero' for homepage, 'compact' for search results page */
   variant?: 'hero' | 'compact';
 }
 
+/**
+ * Hotel search form component with destination, dates, and guest inputs.
+ * Persists search parameters to the global search store and navigates to results.
+ *
+ * Two variants are available:
+ * - 'hero': Large, prominent form for the homepage with expanded layout
+ * - 'compact': Smaller inline form for the search results page header
+ *
+ * @param props - Component props
+ * @param props.variant - Display variant (default: 'hero')
+ * @returns Search form with city, dates, guests, and rooms inputs
+ */
 export function SearchBar({ variant = 'hero' }: SearchBarProps) {
   const navigate = useNavigate();
   const { params, setParams } = useSearchStore();

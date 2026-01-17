@@ -1,10 +1,23 @@
+/**
+ * Event routes for browsing and managing events.
+ * Endpoints:
+ * - GET / - List events with filtering and pagination
+ * - GET /:id - Get single event details
+ * - POST /:id/generate-seats - Admin: Generate seats for an event
+ * - PATCH /:id/status - Admin: Update event status
+ */
 import { Router, Request, Response } from 'express';
 import { eventService } from '../services/event.service.js';
 import { authMiddleware, adminMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
+/** Express router for event endpoints */
 const router = Router();
 
-// Get all events
+/**
+ * GET /
+ * Lists all events with optional filtering by category, status, and search.
+ * Supports pagination via page and limit query parameters.
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { category, status, search, page, limit } = req.query;
@@ -31,7 +44,11 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get single event
+/**
+ * GET /:id
+ * Retrieves details for a single event by ID.
+ * Includes venue information.
+ */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const event = await eventService.getEventById(req.params.id);
@@ -48,7 +65,11 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Generate seats for an event (admin only)
+/**
+ * POST /:id/generate-seats
+ * Admin endpoint to generate seat inventory for an event.
+ * Creates seats based on venue section configuration.
+ */
 router.post(
   '/:id/generate-seats',
   authMiddleware,
@@ -76,7 +97,11 @@ router.post(
   }
 );
 
-// Update event status (admin only)
+/**
+ * PATCH /:id/status
+ * Admin endpoint to update an event's status.
+ * Valid statuses: upcoming, on_sale, sold_out, cancelled, completed.
+ */
 router.patch(
   '/:id/status',
   authMiddleware,

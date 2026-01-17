@@ -2,11 +2,21 @@ import { Router, Request, Response } from 'express';
 import pool from '../utils/db.js';
 import { authenticate } from '../middleware/auth.js';
 
+/**
+ * Suggestions router for "suggesting mode" edits (like Google Docs).
+ * Allows users with edit permission to propose changes without directly modifying content.
+ * Document owner can accept or reject suggestions.
+ */
 const router = Router();
 
 /**
  * GET /api/documents/:id/suggestions
- * List all suggestions for a document
+ * Lists all suggestions for a document.
+ * Includes pending, accepted, and rejected suggestions.
+ * Requires at least view permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @returns {ApiResponse<{suggestions: Suggestion[]}>} List of suggestions with author info
  */
 router.get('/:id/suggestions', authenticate, async (req: Request, res: Response) => {
   try {
@@ -68,7 +78,18 @@ router.get('/:id/suggestions', authenticate, async (req: Request, res: Response)
 
 /**
  * POST /api/documents/:id/suggestions
- * Create a suggestion
+ * Creates a new edit suggestion on the document.
+ * Suggestions can be insert, delete, or replace operations.
+ * Requires edit permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.body.suggestion_type - Type: 'insert', 'delete', or 'replace'
+ * @param req.body.anchor_start - Start position of affected text
+ * @param req.body.anchor_end - End position of affected text
+ * @param req.body.anchor_version - Document version when suggestion was made
+ * @param req.body.original_text - Original text being modified (for replace/delete)
+ * @param req.body.suggested_text - New text being proposed (for insert/replace)
+ * @returns {ApiResponse<{suggestion: Suggestion}>} Created suggestion
  */
 router.post('/:id/suggestions', authenticate, async (req: Request, res: Response) => {
   try {
@@ -129,7 +150,13 @@ router.post('/:id/suggestions', authenticate, async (req: Request, res: Response
 
 /**
  * POST /api/documents/:id/suggestions/:suggestionId/accept
- * Accept a suggestion
+ * Accepts a pending suggestion, marking it for application.
+ * The actual document modification would be handled by the collaboration service.
+ * Requires edit permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.suggestionId - Suggestion UUID to accept
+ * @returns {ApiResponse<{suggestion: Suggestion}>} Updated suggestion with 'accepted' status
  */
 router.post('/:id/suggestions/:suggestionId/accept', authenticate, async (req: Request, res: Response) => {
   try {
@@ -186,7 +213,12 @@ router.post('/:id/suggestions/:suggestionId/accept', authenticate, async (req: R
 
 /**
  * POST /api/documents/:id/suggestions/:suggestionId/reject
- * Reject a suggestion
+ * Rejects a pending suggestion, discarding the proposed change.
+ * Requires edit permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.suggestionId - Suggestion UUID to reject
+ * @returns {ApiResponse<{suggestion: Suggestion}>} Updated suggestion with 'rejected' status
  */
 router.post('/:id/suggestions/:suggestionId/reject', authenticate, async (req: Request, res: Response) => {
   try {
@@ -239,7 +271,12 @@ router.post('/:id/suggestions/:suggestionId/reject', authenticate, async (req: R
 
 /**
  * DELETE /api/documents/:id/suggestions/:suggestionId
- * Delete a suggestion
+ * Permanently deletes a suggestion.
+ * Only the suggestion author or document owner can delete.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.suggestionId - Suggestion UUID to delete
+ * @returns {ApiResponse<void>} Success message
  */
 router.delete('/:id/suggestions/:suggestionId', authenticate, async (req: Request, res: Response) => {
   try {
@@ -280,4 +317,5 @@ router.delete('/:id/suggestions/:suggestionId', authenticate, async (req: Reques
   }
 });
 
+/** Exports the suggestions router for mounting in the main application */
 export default router;

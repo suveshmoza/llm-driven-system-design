@@ -1,7 +1,21 @@
+/**
+ * Chat Store
+ *
+ * Manages messaging state using Zustand including:
+ * - Conversation list and current selection
+ * - Message history per conversation
+ * - Typing indicators and user presence
+ * - Pending message tracking for optimistic updates
+ */
+
 import { create } from 'zustand';
 import { Conversation, Message, MessageStatus, PresenceInfo } from '../types';
 import { conversationsApi, messagesApi } from '../services/api';
 
+/**
+ * Chat state interface.
+ * Centralizes all messaging-related state and actions.
+ */
 interface ChatState {
   conversations: Conversation[];
   currentConversationId: string | null;
@@ -26,6 +40,10 @@ interface ChatState {
   updateConversationLastMessage: (conversationId: string, message: Message) => void;
 }
 
+/**
+ * Zustand store for chat state management.
+ * Provides reactive updates for real-time messaging UI.
+ */
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversationId: null,

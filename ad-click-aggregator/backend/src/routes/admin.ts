@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Admin API routes for system management and monitoring.
+ * Provides endpoints for listing entities, viewing system stats,
+ * and monitoring recent click activity including fraud detection.
+ */
+
 import { Router, Request, Response } from 'express';
 import { query } from '../services/database.js';
 
@@ -5,7 +11,8 @@ const router = Router();
 
 /**
  * GET /api/v1/admin/ads
- * List all ads
+ * Lists all ads with their associated campaign and advertiser names.
+ * Ordered by creation date (newest first).
  */
 router.get('/ads', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -25,7 +32,8 @@ router.get('/ads', async (_req: Request, res: Response): Promise<void> => {
 
 /**
  * GET /api/v1/admin/campaigns
- * List all campaigns
+ * Lists all campaigns with their associated advertiser names.
+ * Ordered by creation date (newest first).
  */
 router.get('/campaigns', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -44,7 +52,8 @@ router.get('/campaigns', async (_req: Request, res: Response): Promise<void> => 
 
 /**
  * GET /api/v1/admin/advertisers
- * List all advertisers
+ * Lists all advertisers in the system.
+ * Ordered by creation date (newest first).
  */
 router.get('/advertisers', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -60,7 +69,8 @@ router.get('/advertisers', async (_req: Request, res: Response): Promise<void> =
 
 /**
  * GET /api/v1/admin/stats
- * Get overall system statistics
+ * Returns overall system statistics for the admin dashboard.
+ * Includes total counts, fraud rates, and recent activity metrics.
  */
 router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -109,7 +119,11 @@ router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
 
 /**
  * GET /api/v1/admin/recent-clicks
- * Get recent click events for monitoring
+ * Returns recent click events for monitoring and debugging.
+ * Supports filtering to show only fraudulent clicks.
+ *
+ * @query limit - Maximum number of clicks to return (1-1000, default: 100)
+ * @query fraud_only - Set to 'true' to filter for fraudulent clicks only
  */
 router.get('/recent-clicks', async (req: Request, res: Response): Promise<void> => {
   try {

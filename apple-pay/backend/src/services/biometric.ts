@@ -4,8 +4,26 @@ import redis from '../db/redis.js';
 import { generateChallenge } from '../utils/crypto.js';
 import { BiometricSession } from '../types/index.js';
 
+/**
+ * Service responsible for biometric authentication management.
+ * Handles Face ID, Touch ID, and passcode verification flows for
+ * authorizing payment transactions. Implements a challenge-response
+ * pattern where the device's Secure Enclave signs a challenge to
+ * prove biometric verification occurred on-device.
+ */
 export class BiometricService {
-  // Initiate biometric authentication
+  /**
+   * Initiates a biometric authentication session.
+   * Creates a cryptographic challenge that must be signed by the
+   * device's Secure Enclave after successful biometric verification.
+   * Sessions expire after 5 minutes if not verified.
+   *
+   * @param userId - The user's unique identifier
+   * @param deviceId - The device performing the authentication
+   * @param authType - The type of biometric auth (face_id, touch_id, or passcode)
+   * @returns Object with session ID and challenge for the device to sign
+   * @throws Error if device is invalid or inactive
+   */
   async initiateAuth(
     userId: string,
     deviceId: string,
@@ -48,8 +66,16 @@ export class BiometricService {
     return { sessionId, challenge };
   }
 
-  // Verify biometric authentication
-  // In a real implementation, this would verify the signature from the Secure Enclave
+  /**
+   * Verifies a biometric authentication response.
+   * In a real implementation, this would verify the cryptographic
+   * signature from the Secure Enclave. The response must include
+   * the challenge to prove it was generated for this specific session.
+   *
+   * @param sessionId - The session ID from initiateAuth
+   * @param response - The signed response from the device
+   * @returns Object indicating success or failure with error message
+   */
   async verifyAuth(
     sessionId: string,
     response: string
@@ -101,7 +127,13 @@ export class BiometricService {
     return { success: true };
   }
 
-  // Update session status
+  /**
+   * Updates the status of a biometric session in the database.
+   * Sets the verified_at timestamp when status is 'verified'.
+   *
+   * @param sessionId - The session's unique identifier
+   * @param status - The new status ('verified' or 'failed')
+   */
   private async updateSessionStatus(
     sessionId: string,
     status: 'verified' | 'failed'
@@ -114,7 +146,13 @@ export class BiometricService {
     );
   }
 
-  // Get session status
+  /**
+   * Retrieves the current status of a biometric session.
+   * First checks Redis cache, then falls back to database.
+   *
+   * @param sessionId - The session's unique identifier
+   * @returns The session if found, null otherwise
+   */
   async getSessionStatus(sessionId: string): Promise<BiometricSession | null> {
     const redisData = await redis.get(`biometric:${sessionId}`);
 
@@ -130,7 +168,14 @@ export class BiometricService {
     return result.rows[0] || null;
   }
 
-  // Simulate Face ID / Touch ID authentication (for demo purposes)
+  /**
+   * Simulates successful biometric authentication for demo purposes.
+   * Bypasses the actual cryptographic verification by calling verifyAuth
+   * with a pre-approved response. Use only for testing/demonstration.
+   *
+   * @param sessionId - The session ID to mark as verified
+   * @returns Object indicating success or failure with error message
+   */
   async simulateBiometricSuccess(
     sessionId: string
   ): Promise<{ success: boolean; error?: string }> {
@@ -138,4 +183,5 @@ export class BiometricService {
   }
 }
 
+/** Singleton instance of the BiometricService */
 export const biometricService = new BiometricService();

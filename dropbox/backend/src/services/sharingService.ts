@@ -1,9 +1,29 @@
+/**
+ * File and folder sharing service.
+ * Supports two sharing models:
+ * 1. Shared links - public URLs with optional password, expiration, and download limits
+ * 2. Folder shares - direct sharing with specific users by email
+ * @module services/sharingService
+ */
+
 import { query, queryOne } from '../utils/database.js';
 import { SharedLink, FolderShare, FileItem, User } from '../types/index.js';
 import { generateToken } from '../utils/chunking.js';
 import bcrypt from 'bcrypt';
 
-// Create shared link
+/**
+ * Creates a shareable link for a file.
+ * Links can be password-protected, time-limited, and download-limited.
+ * @param userId - ID of user creating the link (must own the file)
+ * @param fileId - ID of file to share
+ * @param options - Optional sharing restrictions
+ * @param options.accessLevel - Permission level (view, download, or edit)
+ * @param options.password - Password to protect the link
+ * @param options.expiresInHours - Hours until link expires
+ * @param options.maxDownloads - Maximum number of downloads allowed
+ * @returns Created shared link with URL token
+ * @throws Error if file not found or not owned by user
+ */
 export async function createSharedLink(
   userId: string,
   fileId: string,
@@ -43,7 +63,11 @@ export async function createSharedLink(
   return result[0];
 }
 
-// Get shared link by token
+/**
+ * Retrieves a shared link by its public URL token.
+ * @param urlToken - The unique token from the shared URL
+ * @returns Shared link details or null if not found
+ */
 export async function getSharedLinkByToken(urlToken: string): Promise<SharedLink | null> {
   return queryOne<SharedLink>(
     `SELECT id, file_id as "fileId", created_by as "createdBy", url_token as "urlToken",
@@ -55,7 +79,13 @@ export async function getSharedLinkByToken(urlToken: string): Promise<SharedLink
   );
 }
 
-// Validate shared link access
+/**
+ * Validates access to a shared link.
+ * Checks expiration, download limits, and password if required.
+ * @param urlToken - The shared link token to validate
+ * @param password - Password attempt if the link is protected
+ * @returns Validation result with file on success or error message on failure
+ */
 export async function validateSharedLink(
   urlToken: string,
   password?: string
@@ -103,7 +133,11 @@ export async function validateSharedLink(
   return { valid: true, file };
 }
 
-// Increment download count
+/**
+ * Increments the download counter for a shared link.
+ * Called when a file is downloaded via shared link.
+ * @param urlToken - The shared link token
+ */
 export async function incrementDownloadCount(urlToken: string): Promise<void> {
   await query(
     `UPDATE shared_links SET download_count = download_count + 1 WHERE url_token = $1`,
@@ -111,7 +145,12 @@ export async function incrementDownloadCount(urlToken: string): Promise<void> {
   );
 }
 
-// Get user's shared links
+/**
+ * Retrieves all shared links created by a user.
+ * Used for the sharing management interface.
+ * @param userId - ID of user whose links to retrieve
+ * @returns Array of shared links with file names
+ */
 export async function getUserSharedLinks(userId: string): Promise<SharedLink[]> {
   return query<SharedLink>(
     `SELECT sl.id, sl.file_id as "fileId", sl.created_by as "createdBy",
@@ -127,7 +166,12 @@ export async function getUserSharedLinks(userId: string): Promise<SharedLink[]> 
   );
 }
 
-// Delete shared link
+/**
+ * Deletes a shared link.
+ * @param userId - ID of user (must own the link)
+ * @param linkId - ID of link to delete
+ * @throws Error if link not found
+ */
 export async function deleteSharedLink(userId: string, linkId: string): Promise<void> {
   const result = await query(
     `DELETE FROM shared_links WHERE id = $1 AND created_by = $2`,
@@ -139,7 +183,16 @@ export async function deleteSharedLink(userId: string, linkId: string): Promise<
   }
 }
 
-// Share folder with user
+/**
+ * Shares a folder with another user by email.
+ * Creates or updates the share with the specified access level.
+ * @param ownerId - ID of folder owner
+ * @param folderId - ID of folder to share
+ * @param email - Email of user to share with
+ * @param accessLevel - Permission level (view or edit)
+ * @returns Created folder share
+ * @throws Error if folder not found, target user not found, or sharing with self
+ */
 export async function shareFolderWithUser(
   ownerId: string,
   folderId: string,
@@ -189,7 +242,12 @@ export async function shareFolderWithUser(
   return result[0];
 }
 
-// Get folders shared with user
+/**
+ * Retrieves all folders shared with a user.
+ * Used for the "Shared with me" view in the file browser.
+ * @param userId - ID of user to get shared folders for
+ * @returns Array of folders with owner information and access level
+ */
 export async function getSharedWithMe(userId: string): Promise<FileItem[]> {
   return query<FileItem>(
     `SELECT f.id, f.user_id as "userId", f.parent_id as "parentId", f.name, f.is_folder as "isFolder",
@@ -205,7 +263,14 @@ export async function getSharedWithMe(userId: string): Promise<FileItem[]> {
   );
 }
 
-// Check if user has access to file/folder
+/**
+ * Checks if a user has access to a file or folder.
+ * Walks up the folder hierarchy checking for share permissions.
+ * @param userId - ID of user to check access for
+ * @param fileId - ID of file/folder to check
+ * @param requiredLevel - Minimum permission level needed (view or edit)
+ * @returns true if user has sufficient access, false otherwise
+ */
 export async function checkAccess(
   userId: string,
   fileId: string,
@@ -256,7 +321,13 @@ export async function checkAccess(
   return false;
 }
 
-// Remove folder share
+/**
+ * Removes a folder share.
+ * @param ownerId - ID of folder owner
+ * @param folderId - ID of folder
+ * @param sharedWithId - ID of user to remove from share
+ * @throws Error if folder not found
+ */
 export async function removeFolderShare(
   ownerId: string,
   folderId: string,
@@ -278,7 +349,13 @@ export async function removeFolderShare(
   );
 }
 
-// Get folder shares for a folder
+/**
+ * Retrieves all users a folder is shared with.
+ * @param userId - ID of folder owner
+ * @param folderId - ID of folder
+ * @returns Array of shares with user email and name
+ * @throws Error if folder not found
+ */
 export async function getFolderShares(userId: string, folderId: string): Promise<Array<FolderShare & { email: string; name: string }>> {
   // Verify ownership
   const folder = await queryOne<FileItem>(

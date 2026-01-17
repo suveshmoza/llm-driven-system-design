@@ -3,6 +3,10 @@ import { requireAuth } from '../middleware/auth.js';
 import { deviceService } from '../services/deviceService.js';
 import { CreateDeviceRequest, UpdateDeviceRequest } from '../types/index.js';
 
+/**
+ * Device management routes for CRUD operations on registered devices.
+ * All routes require authentication and are prefixed with /api/devices.
+ */
 const router = Router();
 
 // All routes require authentication
@@ -10,7 +14,7 @@ router.use(requireAuth);
 
 /**
  * GET /api/devices
- * Get all devices for the current user
+ * Get all devices belonging to the authenticated user.
  */
 router.get('/', async (req, res) => {
   try {
@@ -24,7 +28,8 @@ router.get('/', async (req, res) => {
 
 /**
  * POST /api/devices
- * Create a new device
+ * Register a new device for the authenticated user.
+ * Generates a unique master secret for end-to-end encryption.
  */
 router.post('/', async (req, res) => {
   try {
@@ -49,7 +54,8 @@ router.post('/', async (req, res) => {
 
 /**
  * GET /api/devices/:id
- * Get a specific device
+ * Get a specific device by ID.
+ * Returns 404 if device doesn't exist or isn't owned by user.
  */
 router.get('/:id', async (req, res) => {
   try {
@@ -68,7 +74,7 @@ router.get('/:id', async (req, res) => {
 
 /**
  * PATCH /api/devices/:id
- * Update a device
+ * Update a device's name, emoji, or active status.
  */
 router.patch('/:id', async (req, res) => {
   try {
@@ -92,7 +98,7 @@ router.patch('/:id', async (req, res) => {
 
 /**
  * DELETE /api/devices/:id
- * Delete a device
+ * Permanently delete a device and its associated data.
  */
 router.delete('/:id', async (req, res) => {
   try {
@@ -111,7 +117,8 @@ router.delete('/:id', async (req, res) => {
 
 /**
  * POST /api/devices/:id/play-sound
- * Simulate playing a sound on the device
+ * Trigger the device to play a sound (simulated in this demo).
+ * In production, this would send a notification to the actual device.
  */
 router.post('/:id/play-sound', async (req, res) => {
   try {

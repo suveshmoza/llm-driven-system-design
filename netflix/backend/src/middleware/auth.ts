@@ -13,7 +13,13 @@ declare global {
 }
 
 /**
- * Authentication middleware - validates session token from cookie
+ * Authentication middleware - validates session token from cookie.
+ * Extracts session data from Redis and attaches account/profile info to the request.
+ * Returns 401 if no valid session exists.
+ *
+ * @param req - Express request object (will be augmented with session data)
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export async function authenticate(
   req: Request,
@@ -42,7 +48,13 @@ export async function authenticate(
 }
 
 /**
- * Optional authentication - sets session info if available but doesn't require it
+ * Optional authentication middleware.
+ * Sets session info if a valid token exists but does not require authentication.
+ * Useful for endpoints that work for both authenticated and anonymous users.
+ *
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export async function optionalAuth(
   req: Request,
@@ -64,7 +76,13 @@ export async function optionalAuth(
 }
 
 /**
- * Requires a profile to be selected
+ * Middleware that requires a profile to be selected.
+ * Should be used after authenticate() for endpoints that need profile-specific data
+ * (e.g., viewing history, personalized recommendations).
+ *
+ * @param req - Express request object (must have session attached)
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export async function requireProfile(
   req: Request,

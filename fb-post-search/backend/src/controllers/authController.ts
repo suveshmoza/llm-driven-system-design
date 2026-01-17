@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Authentication API controller.
+ * Handles user login, registration, logout, and current user retrieval.
+ */
+
 import type { Request, Response } from 'express';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import {
@@ -8,7 +13,12 @@ import {
   createUser,
 } from '../services/authService.js';
 
-// POST /api/v1/auth/login
+/**
+ * Handles POST /api/v1/auth/login - User login.
+ * Authenticates user credentials and creates a session.
+ * @param req - Request with username and password in body
+ * @param res - Response with token and user data or error
+ */
 export async function login(req: Request, res: Response): Promise<void> {
   try {
     const { username, password } = req.body;
@@ -43,7 +53,12 @@ export async function login(req: Request, res: Response): Promise<void> {
   }
 }
 
-// POST /api/v1/auth/register
+/**
+ * Handles POST /api/v1/auth/register - User registration.
+ * Creates a new user account and establishes a session.
+ * @param req - Request with username, email, display_name, and password in body
+ * @param res - Response with token and user data or error
+ */
 export async function register(req: Request, res: Response): Promise<void> {
   try {
     const { username, email, display_name, password } = req.body;
@@ -82,7 +97,12 @@ export async function register(req: Request, res: Response): Promise<void> {
   }
 }
 
-// POST /api/v1/auth/logout
+/**
+ * Handles POST /api/v1/auth/logout - User logout.
+ * Invalidates the current session token.
+ * @param req - Request with auth token in header or cookie
+ * @param res - Response with success status or error
+ */
 export async function logout(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
@@ -98,7 +118,12 @@ export async function logout(req: AuthenticatedRequest, res: Response): Promise<
   }
 }
 
-// GET /api/v1/auth/me
+/**
+ * Handles GET /api/v1/auth/me - Get current user.
+ * Returns the authenticated user's profile information.
+ * @param req - Authenticated request
+ * @param res - Response with user data or error
+ */
 export async function getCurrentUser(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {

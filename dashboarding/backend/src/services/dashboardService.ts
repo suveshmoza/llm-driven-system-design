@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Dashboard and panel CRUD operations service.
+ *
+ * Manages the lifecycle of dashboards (collections of visualization panels)
+ * and their individual panels. Dashboards support public/private visibility
+ * and can be associated with users.
+ */
+
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db/pool.js';
 import type {
@@ -10,7 +18,13 @@ import type {
   PanelType,
 } from '../types/index.js';
 
-// Dashboard CRUD
+/**
+ * Creates a new dashboard with the specified name and options.
+ *
+ * @param name - The dashboard display name
+ * @param options - Optional configuration including userId, description, layout, and visibility
+ * @returns The newly created dashboard record
+ */
 export async function createDashboard(
   name: string,
   options?: {
@@ -38,6 +52,12 @@ export async function createDashboard(
   return result.rows[0];
 }
 
+/**
+ * Retrieves a single dashboard by ID.
+ *
+ * @param id - The dashboard UUID
+ * @returns The dashboard record, or null if not found
+ */
 export async function getDashboard(id: string): Promise<Dashboard | null> {
   const result = await pool.query<Dashboard>(
     `SELECT * FROM dashboards WHERE id = $1`,
@@ -46,6 +66,14 @@ export async function getDashboard(id: string): Promise<Dashboard | null> {
   return result.rows[0] || null;
 }
 
+/**
+ * Retrieves dashboards based on ownership and visibility criteria.
+ *
+ * @param options - Filter options
+ * @param options.userId - If provided, returns dashboards owned by this user
+ * @param options.includePublic - Whether to include public dashboards (default: true)
+ * @returns Array of matching dashboards, sorted by creation date descending
+ */
 export async function getDashboards(options?: {
   userId?: string;
   includePublic?: boolean;
@@ -71,6 +99,16 @@ export async function getDashboards(options?: {
   return result.rows;
 }
 
+/**
+ * Updates an existing dashboard's properties.
+ *
+ * Only provided fields are updated; others remain unchanged.
+ * Automatically updates the updated_at timestamp.
+ *
+ * @param id - The dashboard UUID to update
+ * @param updates - Partial object with fields to update
+ * @returns The updated dashboard, or null if not found
+ */
 export async function updateDashboard(
   id: string,
   updates: Partial<Pick<Dashboard, 'name' | 'description' | 'layout' | 'is_public'>>
@@ -113,12 +151,24 @@ export async function updateDashboard(
   return result.rows[0] || null;
 }
 
+/**
+ * Deletes a dashboard and all its associated panels (via CASCADE).
+ *
+ * @param id - The dashboard UUID to delete
+ * @returns true if the dashboard was deleted, false if not found
+ */
 export async function deleteDashboard(id: string): Promise<boolean> {
   const result = await pool.query('DELETE FROM dashboards WHERE id = $1', [id]);
   return result.rowCount !== null && result.rowCount > 0;
 }
 
-// Panel CRUD
+/**
+ * Creates a new visualization panel on a dashboard.
+ *
+ * @param dashboardId - The parent dashboard's UUID
+ * @param options - Panel configuration including title, type, query, position, and display options
+ * @returns The newly created panel record
+ */
 export async function createPanel(
   dashboardId: string,
   options: {
@@ -148,11 +198,23 @@ export async function createPanel(
   return result.rows[0];
 }
 
+/**
+ * Retrieves a single panel by ID.
+ *
+ * @param id - The panel UUID
+ * @returns The panel record, or null if not found
+ */
 export async function getPanel(id: string): Promise<Panel | null> {
   const result = await pool.query<Panel>('SELECT * FROM panels WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 
+/**
+ * Retrieves all panels belonging to a specific dashboard.
+ *
+ * @param dashboardId - The dashboard UUID
+ * @returns Array of panels, sorted by creation date
+ */
 export async function getPanelsByDashboard(dashboardId: string): Promise<Panel[]> {
   const result = await pool.query<Panel>(
     'SELECT * FROM panels WHERE dashboard_id = $1 ORDER BY created_at',
@@ -161,6 +223,16 @@ export async function getPanelsByDashboard(dashboardId: string): Promise<Panel[]
   return result.rows;
 }
 
+/**
+ * Updates an existing panel's properties.
+ *
+ * Only provided fields are updated; others remain unchanged.
+ * Automatically updates the updated_at timestamp.
+ *
+ * @param id - The panel UUID to update
+ * @param updates - Partial object with fields to update
+ * @returns The updated panel, or null if not found
+ */
 export async function updatePanel(
   id: string,
   updates: Partial<{
@@ -214,12 +286,25 @@ export async function updatePanel(
   return result.rows[0] || null;
 }
 
+/**
+ * Deletes a panel by ID.
+ *
+ * @param id - The panel UUID to delete
+ * @returns true if the panel was deleted, false if not found
+ */
 export async function deletePanel(id: string): Promise<boolean> {
   const result = await pool.query('DELETE FROM panels WHERE id = $1', [id]);
   return result.rowCount !== null && result.rowCount > 0;
 }
 
-// Get dashboard with panels
+/**
+ * Retrieves a dashboard along with all its panels in a single call.
+ *
+ * Useful for rendering a complete dashboard view on the frontend.
+ *
+ * @param id - The dashboard UUID
+ * @returns The dashboard with panels array, or null if not found
+ */
 export async function getDashboardWithPanels(
   id: string
 ): Promise<(Dashboard & { panels: Panel[] }) | null> {

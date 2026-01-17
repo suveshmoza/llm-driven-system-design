@@ -1,8 +1,12 @@
 /**
- * Mock LLM Provider - Simulates LLM responses for demo purposes
+ * Mock LLM Provider - Simulates LLM responses for demo purposes.
  *
  * This provider parses user input and generates appropriate tool calls
  * to demonstrate the agentic loop without requiring an actual LLM API.
+ * It uses pattern matching to detect user intents and generate corresponding
+ * tool invocations, making it useful for testing and offline development.
+ *
+ * @module llm/mock-provider
  */
 
 import type {
@@ -15,22 +19,50 @@ import type {
 } from '../types/index.js';
 
 /**
- * Pattern matching for common user intents
+ * Pattern matching configuration for user intent detection.
+ * Maps regex patterns to handler functions that generate mock responses.
  */
 interface IntentPattern {
+  /** Regex pattern to match against user input */
   pattern: RegExp;
+  /** Handler function to generate a response when pattern matches */
   handler: (match: RegExpMatchArray, messages: Message[]) => MockResponse;
 }
 
+/**
+ * Structure of a mock LLM response.
+ */
 interface MockResponse {
+  /** Text response to show the user */
   text: string;
+  /** Tool calls to execute */
   toolCalls: ToolCall[];
 }
 
+/**
+ * Mock LLM provider for testing and demonstration.
+ *
+ * This provider simulates Claude's behavior by:
+ * - Parsing user input for known intent patterns
+ * - Generating appropriate tool calls based on detected intent
+ * - Streaming responses character by character for realistic UX
+ * - Responding to tool results with contextual messages
+ *
+ * Useful for:
+ * - Testing the agentic loop without API costs
+ * - Demonstrating the system in offline environments
+ * - Developing and debugging tool implementations
+ */
 export class MockLLMProvider implements LLMProvider {
+  /** Provider identifier */
   name = 'mock';
+  /** Counter for generating unique tool call IDs */
   private callCount = 0;
 
+  /**
+   * Intent patterns for parsing user input.
+   * Each pattern maps a regex to a handler that generates the appropriate response.
+   */
   private patterns: IntentPattern[] = [
     // Read file patterns
     {
@@ -79,6 +111,12 @@ export class MockLLMProvider implements LLMProvider {
     },
   ];
 
+  /**
+   * Generate a complete response synchronously.
+   * Collects all stream chunks and combines them into a single response.
+   * @param request - The completion request with messages and options
+   * @returns The complete response with text and tool calls
+   */
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const chunks = [];
     for await (const chunk of this.stream(request)) {
@@ -110,6 +148,12 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Stream a response chunk by chunk.
+   * Parses user input, matches intent patterns, and generates appropriate responses.
+   * @param request - The completion request with messages and options
+   * @yields Stream chunks containing text or tool call information
+   */
   async *stream(request: CompletionRequest): AsyncIterable<StreamChunk> {
     this.callCount++;
 
@@ -147,11 +191,22 @@ export class MockLLMProvider implements LLMProvider {
     yield* this.streamResponse(this.handleUnknown(input));
   }
 
+  /**
+   * Estimate token count for text.
+   * Uses a simple approximation of ~4 characters per token.
+   * @param text - The text to count tokens for
+   * @returns Approximate token count
+   */
   countTokens(text: string): number {
     // Simple approximation: ~4 characters per token
     return Math.ceil(text.length / 4);
   }
 
+  /**
+   * Stream a mock response with realistic typing effect.
+   * @param response - The response to stream
+   * @yields Stream chunks for text and tool calls
+   */
   private async *streamResponse(response: MockResponse): AsyncIterable<StreamChunk> {
     // Stream text character by character with delay for demo effect
     for (const char of response.text) {
@@ -167,6 +222,12 @@ export class MockLLMProvider implements LLMProvider {
     }
   }
 
+  /**
+   * Generate a response based on tool execution results.
+   * Summarizes success/failure and provides contextual follow-up.
+   * @param messages - The conversation messages including tool results
+   * @yields Stream chunks for the response text
+   */
   private async *streamToolResultResponse(messages: Message[]): AsyncIterable<StreamChunk> {
     // Find the tool results
     const toolResults = messages
@@ -200,6 +261,11 @@ export class MockLLMProvider implements LLMProvider {
     }
   }
 
+  /**
+   * Handle a request to read a file.
+   * @param filePath - The path to the file to read
+   * @returns Mock response with Read tool call
+   */
   private handleReadFile(filePath: string): MockResponse {
     const cleanPath = filePath.trim();
     return {
@@ -214,6 +280,11 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a request to list/find files.
+   * @param match - Regex match array with file type and directory info
+   * @returns Mock response with Glob tool call
+   */
   private handleListFiles(match: RegExpMatchArray): MockResponse {
     const extension = match[1] || match[2]?.split(' ')[0] || '*';
     const dir = match[3]?.trim() || '.';
@@ -231,6 +302,11 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a glob pattern search request.
+   * @param pattern - The glob pattern to search for
+   * @returns Mock response with Glob tool call
+   */
   private handleGlob(pattern: string): MockResponse {
     return {
       text: `I'll search for files matching \`${pattern}\`.\n\n`,
@@ -244,6 +320,12 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a grep/search request.
+   * @param searchPattern - The pattern to search for
+   * @param path - Optional path to search in
+   * @returns Mock response with Grep tool call
+   */
   private handleGrep(searchPattern: string, path?: string): MockResponse {
     const searchPath = path?.trim() || '.';
     return {
@@ -261,6 +343,12 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a request to edit a file.
+   * First reads the file to understand its content before editing.
+   * @param filePath - The path to the file to edit
+   * @returns Mock response with Read tool call (edit comes after reading)
+   */
   private handleEditFile(filePath: string): MockResponse {
     return {
       text: `I'll first read the file \`${filePath}\` to understand its current content before making changes.\n\n`,
@@ -274,6 +362,12 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a request to create a new file.
+   * Generates starter content based on file extension.
+   * @param filePath - The path for the new file
+   * @returns Mock response with Write tool call and template content
+   */
   private handleCreateFile(filePath: string): MockResponse {
     const extension = filePath.split('.').pop() || 'txt';
     let content = '';
@@ -310,6 +404,11 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a request to run a shell command.
+   * @param command - The command to execute
+   * @returns Mock response with Bash tool call
+   */
   private handleRunCommand(command: string): MockResponse {
     return {
       text: `I'll execute the command for you.\n\n`,
@@ -323,6 +422,11 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a git command request.
+   * @param subcommand - The git subcommand (status, log, diff, etc.)
+   * @returns Mock response with Bash tool call for git
+   */
   private handleGitCommand(subcommand: string): MockResponse {
     const command = `git ${subcommand}`;
     return {
@@ -337,6 +441,11 @@ export class MockLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Handle a help request.
+   * Returns a formatted list of available capabilities.
+   * @returns Mock response with help text (no tool calls)
+   */
   private handleHelp(): MockResponse {
     return {
       text: `I'm an AI coding assistant that can help you with various tasks:
@@ -360,6 +469,12 @@ Just describe what you want to do in natural language, and I'll help you accompl
     };
   }
 
+  /**
+   * Handle unrecognized user input.
+   * Provides guidance on how to phrase requests.
+   * @param input - The unrecognized user input
+   * @returns Mock response with guidance text (no tool calls)
+   */
   private handleUnknown(input: string): MockResponse {
     // For demo purposes, try to interpret the input as a general task
     if (input.length < 10) {
@@ -390,6 +505,11 @@ For example: "Read src/index.ts" or "Search for 'TODO' in the codebase"
     };
   }
 
+  /**
+   * Helper to create a delay for simulating streaming.
+   * @param ms - Milliseconds to delay
+   * @returns Promise that resolves after the delay
+   */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }

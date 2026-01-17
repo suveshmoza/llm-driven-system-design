@@ -11,9 +11,17 @@ import {
 } from '../services/conversationService.js';
 import { requireAuth } from '../middleware/auth.js';
 
+/**
+ * Conversation management routes.
+ * Handles creating, listing, and managing conversations and group memberships.
+ */
 const router = Router();
 
-// Get all conversations for current user
+/**
+ * GET /api/conversations
+ * Returns all conversations for the authenticated user.
+ * Includes participants, last message, and unread counts.
+ */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversations = await getConversationsForUser(req.session.userId!);
@@ -24,7 +32,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Create direct conversation
+/**
+ * POST /api/conversations/direct
+ * Creates a 1:1 conversation with another user.
+ * Returns existing conversation if one already exists.
+ */
 router.post('/direct', requireAuth, async (req: Request, res: Response) => {
   try {
     const { userId } = req.body;
@@ -52,7 +64,11 @@ router.post('/direct', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Create group conversation
+/**
+ * POST /api/conversations/group
+ * Creates a new group conversation.
+ * Creator becomes admin, other members are regular participants.
+ */
 router.post('/group', requireAuth, async (req: Request, res: Response) => {
   try {
     const { name, memberIds } = req.body;
@@ -80,7 +96,11 @@ router.post('/group', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Get specific conversation
+/**
+ * GET /api/conversations/:id
+ * Returns a specific conversation with participants.
+ * User must be a participant to access.
+ */
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
@@ -109,7 +129,11 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Add member to group
+/**
+ * POST /api/conversations/:id/members
+ * Adds a new member to a group conversation.
+ * Requester must be a participant in the group.
+ */
 router.post('/:id/members', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
@@ -144,7 +168,11 @@ router.post('/:id/members', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
-// Remove member from group
+/**
+ * DELETE /api/conversations/:id/members/:userId
+ * Removes a member from a group conversation.
+ * Requester must be a participant in the group.
+ */
 router.delete('/:id/members/:userId', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;

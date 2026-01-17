@@ -5,13 +5,34 @@ import { useState, useEffect } from 'react';
 import { watchlistApi } from '../services/api';
 import { formatDurationHuman } from '../utils';
 
+/**
+ * Props for the ContentCard component.
+ */
 interface ContentCardProps {
+  /** Content item to display */
   content: Content;
+  /** Card size variant for different layout contexts */
   size?: 'small' | 'medium' | 'large';
+  /** Whether to show progress bar for continue watching */
   showProgress?: boolean;
+  /** Progress percentage (0-100) for continue watching indicator */
   progressPercent?: number;
 }
 
+/**
+ * Content card component for displaying movie/series thumbnails.
+ * Used in content rows for browsing the catalog with hover interactions.
+ *
+ * Features:
+ * - Thumbnail with hover zoom animation
+ * - Play and watchlist toggle buttons on hover
+ * - Progress bar for "Continue Watching" items
+ * - HDR badge for high dynamic range content
+ * - Episode info display for series content
+ *
+ * @param props - ContentCardProps with content data and display options
+ * @returns Interactive content thumbnail card
+ */
 export function ContentCard({ content, size = 'medium', showProgress, progressPercent }: ContentCardProps) {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [isHovered, setIsHovered] = useState(false);

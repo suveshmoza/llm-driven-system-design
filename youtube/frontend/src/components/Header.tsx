@@ -5,6 +5,12 @@ import { useVideoStore } from '../stores/videoStore';
 import AuthModal from './AuthModal';
 import UploadModal from './UploadModal';
 
+/**
+ * Main application header component.
+ * Provides the fixed top navigation bar with the YouTube logo,
+ * search functionality, upload button (for authenticated users),
+ * and user account menu. Manages auth and upload modal visibility.
+ */
 export default function Header() {
   const { user, logout } = useAuthStore();
   const { searchVideos, clearSearch } = useVideoStore();

@@ -3,6 +3,10 @@ import { requireAuth } from '../middleware/auth.js';
 import { locationService } from '../services/locationService.js';
 import { SimulatedLocation } from '../types/index.js';
 
+/**
+ * Location routes for retrieving and simulating device location reports.
+ * All routes require authentication and are prefixed with /api/locations.
+ */
 const router = Router();
 
 // All routes require authentication
@@ -10,7 +14,8 @@ router.use(requireAuth);
 
 /**
  * GET /api/locations/:deviceId
- * Get location history for a device
+ * Get decrypted location history for a device.
+ * Supports optional query params: startTime, endTime, limit.
  */
 router.get('/:deviceId', async (req, res) => {
   try {
@@ -44,7 +49,7 @@ router.get('/:deviceId', async (req, res) => {
 
 /**
  * GET /api/locations/:deviceId/latest
- * Get the latest location for a device
+ * Get only the most recent location for a device.
  */
 router.get('/:deviceId/latest', async (req, res) => {
   try {
@@ -68,7 +73,8 @@ router.get('/:deviceId/latest', async (req, res) => {
 
 /**
  * POST /api/locations/:deviceId/simulate
- * Simulate a location report (for testing/demo)
+ * Simulate a location report for testing purposes.
+ * Creates an encrypted report as if another device detected this tracker.
  */
 router.post('/:deviceId/simulate', async (req, res) => {
   try {
@@ -101,8 +107,9 @@ router.post('/:deviceId/simulate', async (req, res) => {
 
 /**
  * POST /api/locations/report
- * Submit a location report from a finder device (crowd-sourced network)
- * This endpoint would be used by other devices in the Find My network
+ * Submit an encrypted location report from a finder device.
+ * This endpoint simulates the crowd-sourced Find My network where
+ * any device can report sightings of nearby trackers.
  */
 router.post('/report', async (req, res) => {
   try {

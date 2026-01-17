@@ -12,24 +12,34 @@ import {
 import { authMiddleware } from '../middleware/auth.js';
 import { isValidUrl } from '../utils/helpers.js';
 
+/**
+ * Product routes for tracking and managing product subscriptions.
+ * All routes require authentication. Users can add products to track,
+ * configure alert settings, and view price history.
+ * @module routes/products
+ */
 const router = Router();
 
-// Validation schemas
+/** Zod schema for creating a new product subscription */
 const createProductSchema = z.object({
   url: z.string().url(),
   target_price: z.number().positive().optional(),
   notify_any_drop: z.boolean().optional(),
 });
 
+/** Zod schema for updating product subscription settings */
 const updateProductSchema = z.object({
   target_price: z.number().positive().nullable().optional(),
   notify_any_drop: z.boolean().optional(),
 });
 
-// All routes require authentication
+/** All product routes require authentication */
 router.use(authMiddleware);
 
-// Get user's tracked products
+/**
+ * GET / - Retrieves all products the authenticated user is tracking.
+ * Returns products with user-specific settings (target price, notification preferences).
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const products = await getUserProducts(req.user!.id);
@@ -39,7 +49,11 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Add new product to track
+/**
+ * POST / - Adds a new product to track.
+ * Creates the product if not already in database, then creates user subscription.
+ * Triggers initial scrape for new products.
+ */
 router.post('/', async (req: Request, res: Response) => {
   try {
     const data = createProductSchema.parse(req.body);
@@ -70,7 +84,10 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get single product details
+/**
+ * GET /:productId - Retrieves details for a specific product.
+ * Returns product data including current price, status, and metadata.
+ */
 router.get('/:productId', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
@@ -87,7 +104,10 @@ router.get('/:productId', async (req: Request, res: Response) => {
   }
 });
 
-// Update product tracking settings
+/**
+ * PATCH /:productId - Updates user's subscription settings for a product.
+ * Allows changing target price and notification preferences.
+ */
 router.patch('/:productId', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
@@ -113,7 +133,10 @@ router.patch('/:productId', async (req: Request, res: Response) => {
   }
 });
 
-// Stop tracking a product
+/**
+ * DELETE /:productId - Stops tracking a product.
+ * Removes user's subscription but keeps product for other users.
+ */
 router.delete('/:productId', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
@@ -130,7 +153,11 @@ router.delete('/:productId', async (req: Request, res: Response) => {
   }
 });
 
-// Get price history for a product
+/**
+ * GET /:productId/history - Retrieves raw price history for a product.
+ * Returns individual price points for detailed charting.
+ * Query params: days (default: 90)
+ */
 router.get('/:productId/history', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
@@ -147,7 +174,12 @@ router.get('/:productId/history', async (req: Request, res: Response) => {
   }
 });
 
-// Get daily price summary
+/**
+ * GET /:productId/daily - Retrieves aggregated daily price statistics.
+ * Returns min/max/avg prices per day using TimescaleDB aggregation.
+ * More efficient for long date ranges than raw history.
+ * Query params: days (default: 90)
+ */
 router.get('/:productId/daily', async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;

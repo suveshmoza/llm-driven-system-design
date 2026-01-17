@@ -10,9 +10,17 @@ import {
 } from '../services/userService.js';
 import { requireAuth } from '../middleware/auth.js';
 
+/**
+ * Authentication and user management routes.
+ * Handles login, registration, logout, and user search operations.
+ */
 const router = Router();
 
-// Login
+/**
+ * POST /api/auth/login
+ * Authenticates a user with username and password.
+ * Creates a session on successful authentication.
+ */
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
@@ -36,7 +44,11 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// Register
+/**
+ * POST /api/auth/register
+ * Creates a new user account.
+ * Validates username uniqueness and password requirements.
+ */
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { username, displayName, password } = req.body;
@@ -68,7 +80,10 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// Logout
+/**
+ * POST /api/auth/logout
+ * Destroys the user's session and logs them out.
+ */
 router.post('/logout', (req: Request, res: Response) => {
   req.session.destroy((err) => {
     if (err) {
@@ -78,7 +93,11 @@ router.post('/logout', (req: Request, res: Response) => {
   });
 });
 
-// Get current user
+/**
+ * GET /api/auth/me
+ * Returns the currently authenticated user's profile.
+ * Requires authentication.
+ */
 router.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const user = await findUserById(req.session.userId!);
@@ -94,7 +113,12 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Search users
+/**
+ * GET /api/auth/search
+ * Searches for users by username or display name.
+ * Returns all users if no query provided.
+ * Excludes the current user from results.
+ */
 router.get('/search', requireAuth, async (req: Request, res: Response) => {
   try {
     const query = req.query.q as string;
@@ -112,7 +136,11 @@ router.get('/search', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Get user by ID
+/**
+ * GET /api/auth/:id
+ * Returns a user's profile by ID with presence information.
+ * Used for viewing other users' profiles and online status.
+ */
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const user = await findUserById(req.params.id);

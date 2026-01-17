@@ -1,3 +1,12 @@
+/**
+ * Canvas routes for pixel placement and canvas state retrieval.
+ *
+ * Provides endpoints for:
+ * - Getting canvas configuration and current state
+ * - Placing pixels with rate limiting
+ * - Retrieving pixel history and recent events
+ * - Generating timelapse frames
+ */
 import { Router, Request, Response } from 'express';
 import { canvasService } from '../services/canvas.js';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.js';
@@ -5,7 +14,11 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, COLOR_PALETTE, COOLDOWN_SECONDS } from '..
 
 const router = Router();
 
-// Get canvas configuration
+/**
+ * GET /config - Get canvas configuration.
+ * Returns dimensions, color palette, and cooldown settings.
+ * No authentication required.
+ */
 router.get('/config', (req: Request, res: Response) => {
   res.json({
     width: CANVAS_WIDTH,
@@ -15,7 +28,11 @@ router.get('/config', (req: Request, res: Response) => {
   });
 });
 
-// Get current canvas state
+/**
+ * GET / - Get current canvas state as base64-encoded data.
+ * Returns the complete canvas as a byte array where each byte is a color index.
+ * No authentication required.
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const canvasBase64 = await canvasService.getCanvasBase64();
@@ -26,7 +43,11 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Place a pixel (requires authentication)
+/**
+ * POST /pixel - Place a pixel on the canvas.
+ * Requires authentication. Enforces rate limiting via cooldown.
+ * Returns 429 if user is still in cooldown period.
+ */
 router.post('/pixel', authMiddleware, async (req: Request, res: Response) => {
   const { x, y, color } = req.body;
 
@@ -51,7 +72,10 @@ router.post('/pixel', authMiddleware, async (req: Request, res: Response) => {
   });
 });
 
-// Get cooldown status
+/**
+ * GET /cooldown - Get the user's current cooldown status.
+ * Requires authentication. Returns whether user can place and time remaining.
+ */
 router.get('/cooldown', authMiddleware, async (req: Request, res: Response) => {
   const status = await canvasService.checkCooldown(req.user!.id);
   res.json({
@@ -61,7 +85,11 @@ router.get('/cooldown', authMiddleware, async (req: Request, res: Response) => {
   });
 });
 
-// Get pixel history for a specific location
+/**
+ * GET /pixel/:x/:y/history - Get placement history for a specific pixel.
+ * Returns a list of all placements at the given coordinates.
+ * No authentication required.
+ */
 router.get('/pixel/:x/:y/history', async (req: Request, res: Response) => {
   const x = parseInt(req.params.x);
   const y = parseInt(req.params.y);
@@ -75,14 +103,23 @@ router.get('/pixel/:x/:y/history', async (req: Request, res: Response) => {
   res.json({ history });
 });
 
-// Get recent events
+/**
+ * GET /events - Get recent pixel placement events.
+ * Accepts optional limit query parameter (default 100, max 1000).
+ * No authentication required.
+ */
 router.get('/events', async (req: Request, res: Response) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 100, 1000);
   const events = await canvasService.getRecentEvents(limit);
   res.json({ events });
 });
 
-// Get timelapse frames
+/**
+ * GET /timelapse - Get timelapse frames for canvas history.
+ * Reconstructs canvas state at intervals between start and end times.
+ * Query params: start, end (ISO dates), frames (count, default 30, max 100).
+ * No authentication required.
+ */
 router.get('/timelapse', async (req: Request, res: Response) => {
   const startTime = req.query.start ? new Date(req.query.start as string) : new Date(Date.now() - 3600000);
   const endTime = req.query.end ? new Date(req.query.end as string) : new Date();

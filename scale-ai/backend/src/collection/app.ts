@@ -1,3 +1,12 @@
+/**
+ * Collection service Express application.
+ * Provides REST API endpoints for the drawing game:
+ * - GET /api/shapes - List available shapes to draw
+ * - POST /api/drawings - Submit a new drawing
+ * - GET /api/user/stats - Get user's drawing statistics
+ * @module collection/app
+ */
+
 import express from 'express'
 import cors from 'cors'
 import { pool } from '../shared/db.js'
@@ -5,6 +14,7 @@ import { uploadDrawing } from '../shared/storage.js'
 import { cacheGet, cacheSet, cacheDelete, CacheKeys } from '../shared/cache.js'
 import { v4 as uuidv4 } from 'uuid'
 
+/** Express application instance */
 export const app = express()
 
 // Middleware
@@ -16,7 +26,10 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'collection' })
 })
 
-// Get available shapes (cached for 5 minutes since shapes rarely change)
+/**
+ * GET /api/shapes - Returns list of available shapes.
+ * Cached for 5 minutes since shapes rarely change.
+ */
 app.get('/api/shapes', async (_req, res) => {
   try {
     // Check cache first
@@ -40,7 +53,9 @@ app.get('/api/shapes', async (_req, res) => {
   }
 })
 
-// Submit a drawing
+/**
+ * Shape of a drawing submission request body.
+ */
 interface DrawingSubmission {
   sessionId: string
   shape: string
@@ -54,6 +69,11 @@ interface DrawingSubmission {
   device?: string
 }
 
+/**
+ * POST /api/drawings - Submits a new drawing.
+ * Creates user if not exists, validates shape, stores stroke data in MinIO,
+ * and records metadata in PostgreSQL.
+ */
 app.post('/api/drawings', async (req, res) => {
   try {
     const submission: DrawingSubmission = req.body
@@ -143,7 +163,10 @@ app.post('/api/drawings', async (req, res) => {
   }
 })
 
-// Get user stats (cached for 60 seconds)
+/**
+ * GET /api/user/stats - Returns user's drawing statistics.
+ * Requires sessionId query parameter. Cached for 60 seconds.
+ */
 app.get('/api/user/stats', async (req, res) => {
   try {
     const sessionId = req.query.sessionId as string

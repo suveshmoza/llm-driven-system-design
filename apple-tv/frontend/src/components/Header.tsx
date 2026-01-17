@@ -3,6 +3,19 @@ import { useAuthStore } from '../stores/authStore';
 import { Search, User, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
+/**
+ * Application header component with navigation and user menu.
+ * Provides fixed-position navigation bar with Apple TV+ branding, main navigation links,
+ * search functionality, and user profile dropdown menu.
+ *
+ * Features:
+ * - Responsive design with mobile hamburger menu
+ * - Gradient background that fades to transparent
+ * - Profile-aware navigation (shows "My List" only when profile selected)
+ * - Admin dashboard link for admin users
+ *
+ * @returns Header JSX element with navigation and user controls
+ */
 export function Header() {
   const { user, currentProfile, logout } = useAuthStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);

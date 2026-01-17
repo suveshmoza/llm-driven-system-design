@@ -4,10 +4,20 @@ import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Root route configuration for TanStack Router.
+ * Defines the application's root layout that wraps all pages.
+ */
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
+/**
+ * Root layout component that wraps all pages.
+ * Provides the consistent app shell with header, sidebar, and main
+ * content area. Checks authentication status on mount to restore
+ * user sessions from cookies/localStorage.
+ */
 function RootLayout() {
   const { checkAuth } = useAuthStore();
 

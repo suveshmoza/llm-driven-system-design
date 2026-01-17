@@ -1,9 +1,25 @@
-// JQL (Jira Query Language) Parser
-// Supports queries like: project = DEMO AND status = "In Progress" AND assignee = currentUser()
+/**
+ * JQL (Jira Query Language) Parser
+ *
+ * Parses JQL queries into an AST and converts them to Elasticsearch queries.
+ * Supports queries like: project = DEMO AND status = "In Progress" AND assignee = currentUser()
+ *
+ * Features:
+ * - Boolean operators: AND, OR with parentheses for grouping
+ * - Comparison operators: =, !=, ~, >, <, >=, <=, IN, NOT IN, IS, IS NOT
+ * - Functions: currentUser(), now(), startOfDay(), endOfDay(), empty(), null()
+ * - Field types: project, status, assignee, priority, type, labels, etc.
+ */
 
+/** Comparison operators supported by JQL */
 export type JQLOperator = '=' | '!=' | '~' | '!~' | '>' | '<' | '>=' | '<=' | 'IN' | 'NOT IN' | 'IS' | 'IS NOT';
+
+/** Logical operators for combining clauses */
 export type JQLLogical = 'AND' | 'OR';
 
+/**
+ * A single field comparison clause in a JQL query.
+ */
 export interface JQLClause {
   type: 'clause';
   field: string;
@@ -11,27 +27,37 @@ export interface JQLClause {
   value: JQLValue;
 }
 
+/**
+ * A group of clauses combined with a logical operator.
+ */
 export interface JQLGroup {
   type: 'group';
   logical: JQLLogical;
   clauses: JQLNode[];
 }
 
+/** Union type for any node in the JQL AST */
 export type JQLNode = JQLClause | JQLGroup;
 
+/** Possible value types in a JQL clause */
 export type JQLValue = string | number | boolean | null | string[] | JQLFunction;
 
+/**
+ * A function call in a JQL value position (e.g., currentUser()).
+ */
 export interface JQLFunction {
   type: 'function';
   name: string;
   args: string[];
 }
 
+/** Internal token representation for the tokenizer */
 interface Token {
   type: 'field' | 'operator' | 'value' | 'logical' | 'lparen' | 'rparen' | 'function' | 'comma';
   value: string;
 }
 
+/** Map of operator strings to canonical JQLOperator values */
 const OPERATORS: Record<string, JQLOperator> = {
   '=': '=',
   '!=': '!=',
@@ -47,18 +73,31 @@ const OPERATORS: Record<string, JQLOperator> = {
   'is not': 'IS NOT',
 };
 
+/** Fields recognized by the JQL parser */
 const FIELDS = [
   'project', 'status', 'assignee', 'reporter', 'priority', 'type', 'issuetype',
   'sprint', 'epic', 'labels', 'component', 'summary', 'description', 'key',
   'created', 'updated', 'storypoints', 'story_points'
 ];
 
+/** Built-in functions available in JQL */
 const FUNCTIONS = ['currentUser', 'now', 'startOfDay', 'endOfDay', 'startOfWeek', 'endOfWeek', 'empty', 'null'];
 
+/**
+ * JQL Parser class.
+ * Converts JQL query strings into an AST and then to Elasticsearch queries.
+ */
 export class JQLParser {
   private tokens: Token[] = [];
   private position = 0;
 
+  /**
+   * Parses a JQL query string into an AST.
+   *
+   * @param jql - JQL query string
+   * @returns Parsed AST node (clause or group)
+   * @throws Error if the query syntax is invalid
+   */
   parse(jql: string): JQLNode {
     this.tokens = this.tokenize(jql);
     this.position = 0;
@@ -364,7 +403,13 @@ export class JQLParser {
     return fieldMap[field] || field;
   }
 
-  // Convert JQL AST to Elasticsearch query
+  /**
+   * Converts a JQL AST to an Elasticsearch query DSL object.
+   *
+   * @param ast - Parsed JQL AST node
+   * @param context - Context object with currentUserId for function resolution
+   * @returns Elasticsearch query DSL object
+   */
   toElasticsearch(ast: JQLNode, context: { currentUserId?: string } = {}): Record<string, unknown> {
     if (ast.type === 'group') {
       const esClauseList = ast.clauses.map(c => this.toElasticsearch(c, context));
@@ -514,4 +559,7 @@ export class JQLParser {
   }
 }
 
+/**
+ * Singleton JQL parser instance for convenience.
+ */
 export const jqlParser = new JQLParser();

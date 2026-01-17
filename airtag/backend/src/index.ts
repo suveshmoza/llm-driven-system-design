@@ -1,3 +1,16 @@
+/**
+ * Find My Network Backend Server
+ *
+ * Main entry point for the Express server that powers the AirTag-like tracking system.
+ * Configures middleware, session management, and API routes for:
+ * - User authentication and registration
+ * - Device management and tracking
+ * - Location reporting and retrieval
+ * - Lost mode functionality
+ * - Anti-stalking protection
+ * - Admin dashboard
+ */
+
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
@@ -14,6 +27,8 @@ import antiStalkingRoutes from './routes/antiStalking.js';
 import adminRoutes from './routes/admin.js';
 
 const app = express();
+
+/** Server port, configurable via PORT environment variable */
 const PORT = parseInt(process.env.PORT || '3000');
 
 // Middleware

@@ -4,6 +4,18 @@ import { Plus, User, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { Profile } from '../types';
 
+/**
+ * Profile selection page for multi-user support.
+ * Allows users to choose, create, or delete viewing profiles.
+ * Each profile has independent watch history and recommendations.
+ *
+ * Features:
+ * - Grid of existing profiles with colored avatars
+ * - Profile creation modal with kids mode option
+ * - Profile deletion with confirmation (when editing)
+ * - Maximum of 6 profiles per account
+ * - Redirects to home page on profile selection
+ */
 function ProfilesPage() {
   const navigate = useNavigate();
   const { user, profiles, selectProfile, createProfile, deleteProfile } = useAuthStore();
@@ -191,6 +203,10 @@ function ProfilesPage() {
   );
 }
 
+/**
+ * Route configuration for the profiles page (/profiles).
+ * Required step after login to select a viewing profile.
+ */
 export const Route = createFileRoute('/profiles')({
   component: ProfilesPage,
 });

@@ -2,12 +2,21 @@ import { Router, Response } from 'express';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { orderService, PlaceOrderRequest } from '../services/orderService.js';
 
+/**
+ * Express router for order management endpoints.
+ * All routes require authentication.
+ * Handles order placement, retrieval, and cancellation.
+ */
 const router = Router();
 
 // All order routes require authentication
 router.use(authMiddleware);
 
-// Place an order
+/**
+ * POST /api/orders
+ * Places a new buy or sell order.
+ * Supports market, limit, stop, and stop-limit order types.
+ */
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -29,7 +38,11 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Get all orders for user
+/**
+ * GET /api/orders
+ * Returns all orders for the authenticated user.
+ * Optionally filter by status with ?status=filled|pending|cancelled
+ */
 router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -42,7 +55,10 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Get specific order
+/**
+ * GET /api/orders/:orderId
+ * Returns details for a specific order.
+ */
 router.get('/:orderId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -60,7 +76,11 @@ router.get('/:orderId', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Get executions for an order
+/**
+ * GET /api/orders/:orderId/executions
+ * Returns all trade executions for an order.
+ * An order may have multiple executions for partial fills.
+ */
 router.get('/:orderId/executions', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -79,7 +99,11 @@ router.get('/:orderId/executions', async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-// Cancel an order
+/**
+ * DELETE /api/orders/:orderId
+ * Cancels a pending or partially filled order.
+ * Returns error if order is already filled, cancelled, or expired.
+ */
 router.delete('/:orderId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;

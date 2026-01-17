@@ -6,6 +6,10 @@ import { ScraperConfig, ScrapedData } from '../types/index.js';
 import { parsePrice, extractDomain, sleep } from '../utils/helpers.js';
 import logger from '../utils/logger.js';
 
+/**
+ * Configuration for HTTP proxy rotation.
+ * Used to avoid IP-based rate limiting and blocks.
+ */
 interface ProxyConfig {
   host: string;
   port: number;
@@ -13,10 +17,21 @@ interface ProxyConfig {
   password?: string;
 }
 
+/**
+ * Web scraper for extracting product prices from e-commerce websites.
+ * Supports multiple extraction strategies: JSON-LD structured data,
+ * domain-specific CSS selectors, and generic price pattern matching.
+ * Implements rate limiting per domain to avoid being blocked.
+ */
 export class Scraper {
   private httpClient: AxiosInstance;
   private proxy: ProxyConfig | null = null;
 
+  /**
+   * Initializes the scraper with a configured axios instance.
+   * Sets up browser-like headers to avoid bot detection.
+   * Configures proxy if environment variables are set.
+   */
   constructor() {
     this.httpClient = axios.create({
       timeout: 30000,
@@ -42,6 +57,11 @@ export class Scraper {
     }
   }
 
+  /**
+   * Returns a random User-Agent string to mimic different browsers.
+   * Helps avoid detection as a bot scraper.
+   * @returns A random browser User-Agent string
+   */
   private getRandomUserAgent(): string {
     const userAgents = [
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -53,6 +73,12 @@ export class Scraper {
     return userAgents[Math.floor(Math.random() * userAgents.length)];
   }
 
+  /**
+   * Retrieves the scraper configuration for a specific domain.
+   * Configurations define CSS selectors and parser settings.
+   * @param domain - The domain to look up configuration for
+   * @returns The scraper config or null if not configured
+   */
   async getScraperConfig(domain: string): Promise<ScraperConfig | null> {
     return queryOne<ScraperConfig>(
       'SELECT * FROM scraper_configs WHERE domain = $1 AND is_active = true',
@@ -60,6 +86,14 @@ export class Scraper {
     );
   }
 
+  /**
+   * Scrapes product data from a URL.
+   * Checks rate limits before fetching, extracts price/title/image data.
+   * Uses domain-specific configuration if available, otherwise falls back to generic selectors.
+   * @param url - The product URL to scrape
+   * @returns Scraped product data including price, title, and availability
+   * @throws Error if scraping fails
+   */
   async scrape(url: string): Promise<ScrapedData> {
     const domain = extractDomain(url);
 
@@ -82,6 +116,12 @@ export class Scraper {
     }
   }
 
+  /**
+   * Fetches the HTML content of a page.
+   * Applies proxy configuration if available.
+   * @param url - The URL to fetch
+   * @returns The HTML content as a string
+   */
   private async fetchPage(url: string): Promise<string> {
     const config: Record<string, unknown> = {
       headers: {
@@ -103,6 +143,14 @@ export class Scraper {
     return response.data;
   }
 
+  /**
+   * Extracts product data from HTML using multiple strategies.
+   * Tries JSON-LD first (most reliable), then domain-specific selectors,
+   * then falls back to generic CSS selector patterns.
+   * @param html - The HTML content to parse
+   * @param config - Optional domain-specific scraper configuration
+   * @returns Extracted product data
+   */
   private extractData(html: string, config: ScraperConfig | null): ScrapedData {
     const $ = cheerio.load(html);
 
@@ -155,6 +203,13 @@ export class Scraper {
     };
   }
 
+  /**
+   * Extracts product data from JSON-LD structured data.
+   * JSON-LD is the most reliable extraction method as it's explicitly structured.
+   * Looks for Product schema with Offer data.
+   * @param $ - Cheerio instance with loaded HTML
+   * @returns Extracted product data
+   */
   private extractJsonLd($: cheerio.CheerioAPI): ScrapedData {
     const result: ScrapedData = {
       price: null,
@@ -194,6 +249,12 @@ export class Scraper {
     return result;
   }
 
+  /**
+   * Searches for price using common CSS selector patterns.
+   * Tries data attributes first, then text content.
+   * @param $ - Cheerio instance with loaded HTML
+   * @returns Parsed price or null if not found
+   */
   private findPrice($: cheerio.CheerioAPI): number | null {
     // Common price selectors
     const selectors = [
@@ -227,6 +288,12 @@ export class Scraper {
     return null;
   }
 
+  /**
+   * Searches for product title using common CSS selector patterns.
+   * Falls back to page title if no product-specific title found.
+   * @param $ - Cheerio instance with loaded HTML
+   * @returns Product title or null if not found
+   */
   private findTitle($: cheerio.CheerioAPI): string | null {
     // Common title selectors
     const selectors = [
@@ -248,6 +315,12 @@ export class Scraper {
     return pageTitle || null;
   }
 
+  /**
+   * Searches for product image using common CSS selector patterns.
+   * Checks src, data-src, and data-zoom-image attributes.
+   * @param $ - Cheerio instance with loaded HTML
+   * @returns Image URL or null if not found
+   */
   private findImage($: cheerio.CheerioAPI): string | null {
     // Common image selectors
     const selectors = [
@@ -267,6 +340,12 @@ export class Scraper {
     return null;
   }
 
+  /**
+   * Checks if a product is available based on out-of-stock text patterns.
+   * Searches the page body for common unavailability phrases.
+   * @param $ - Cheerio instance with loaded HTML
+   * @returns True if product appears available, false otherwise
+   */
   private checkAvailability($: cheerio.CheerioAPI): boolean {
     // Check for out of stock indicators
     const outOfStockPatterns = [
@@ -288,6 +367,12 @@ export class Scraper {
     return true;
   }
 
+  /**
+   * Attempts to detect the currency from the page.
+   * Checks meta tags and price element text for currency symbols.
+   * @param $ - Cheerio instance with loaded HTML
+   * @returns ISO 4217 currency code or null if not detected
+   */
   private detectCurrency($: cheerio.CheerioAPI): string | null {
     const currencyMap: Record<string, string> = {
       '$': 'USD',
@@ -314,15 +399,25 @@ export class Scraper {
   }
 }
 
-// Export singleton instance
+/** Singleton scraper instance for use across the application */
 export const scraper = new Scraper();
 
-// Get all active scraper configs
+/**
+ * Retrieves all active scraper configurations.
+ * Used by admin dashboard to view and manage domain-specific settings.
+ * @returns Array of active scraper configurations sorted by domain
+ */
 export async function getScraperConfigs(): Promise<ScraperConfig[]> {
   return query<ScraperConfig>('SELECT * FROM scraper_configs WHERE is_active = true ORDER BY domain');
 }
 
-// Update scraper config
+/**
+ * Updates an existing scraper configuration.
+ * Used by admins to fix broken selectors or adjust rate limits.
+ * @param domain - The domain to update
+ * @param updates - Partial configuration with fields to update
+ * @returns The updated configuration or null if not found
+ */
 export async function updateScraperConfig(
   domain: string,
   updates: Partial<ScraperConfig>
@@ -352,7 +447,12 @@ export async function updateScraperConfig(
   return result[0] || null;
 }
 
-// Create new scraper config
+/**
+ * Creates a new scraper configuration for a domain.
+ * Used when adding support for a new e-commerce website.
+ * @param config - Configuration including domain, selectors, and settings
+ * @returns The created configuration or null on failure
+ */
 export async function createScraperConfig(config: Partial<ScraperConfig>): Promise<ScraperConfig | null> {
   const result = await query<ScraperConfig>(
     `INSERT INTO scraper_configs (domain, price_selector, title_selector, image_selector, parser_type, requires_js, rate_limit)

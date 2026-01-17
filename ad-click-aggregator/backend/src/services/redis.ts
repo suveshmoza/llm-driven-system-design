@@ -191,7 +191,11 @@ export async function getRealTimeAdClicks(adId: string): Promise<Record<string, 
 }
 
 /**
- * Get real-time click counts for a campaign
+ * Retrieves real-time click counts for a specific campaign across time buckets.
+ * Aggregates clicks from all ads within the campaign.
+ *
+ * @param campaignId - Campaign identifier
+ * @returns Map of time bucket strings to click counts
  */
 export async function getRealTimeCampaignClicks(campaignId: string): Promise<Record<string, number>> {
   const data = await redis.hgetall(`realtime:campaign:${campaignId}`);
@@ -203,7 +207,10 @@ export async function getRealTimeCampaignClicks(campaignId: string): Promise<Rec
 }
 
 /**
- * Get global real-time click counts
+ * Retrieves global real-time click counts across all ads and campaigns.
+ * Used for system-wide dashboard metrics.
+ *
+ * @returns Map of time bucket strings to total click counts
  */
 export async function getRealTimeGlobalClicks(): Promise<Record<string, number>> {
   const data = await redis.hgetall('realtime:global');
@@ -214,6 +221,12 @@ export async function getRealTimeGlobalClicks(): Promise<Record<string, number>>
   return result;
 }
 
+/**
+ * Tests Redis connection by sending a PING command.
+ * Used by the health check endpoint to verify Redis availability.
+ *
+ * @returns True if connection succeeds, false otherwise
+ */
 export async function testConnection(): Promise<boolean> {
   try {
     await redis.ping();

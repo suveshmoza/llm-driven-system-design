@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Message routes for sending, receiving, and managing messages.
+ * Handles message CRUD, threading, reactions, and real-time delivery via WebSocket.
+ * Messages are indexed in Elasticsearch for search functionality.
+ */
+
 import { Router, Request, Response } from 'express';
 import { query } from '../db/index.js';
 import { requireAuth, requireWorkspace } from '../middleware/auth.js';
@@ -7,7 +13,11 @@ import type { Message } from '../types/index.js';
 
 const router = Router();
 
-// Get messages for a channel
+/**
+ * GET /messages/channel/:channelId - Get messages for a channel.
+ * Returns top-level messages (not thread replies) with pagination support.
+ * Includes author info and reactions for each message.
+ */
 router.get('/channel/:channelId', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { channelId } = req.params;
@@ -70,7 +80,10 @@ router.get('/channel/:channelId', requireAuth, requireWorkspace, async (req: Req
   }
 });
 
-// Get thread replies
+/**
+ * GET /messages/:messageId/thread - Get a thread with all replies.
+ * Returns the parent message and all replies in chronological order.
+ */
 router.get('/:messageId/thread', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
@@ -113,7 +126,11 @@ router.get('/:messageId/thread', requireAuth, requireWorkspace, async (req: Requ
   }
 });
 
-// Send message
+/**
+ * POST /messages/channel/:channelId - Send a new message to a channel.
+ * Publishes the message to all channel members via Redis pub/sub.
+ * Indexes the message in Elasticsearch for search.
+ */
 router.post('/channel/:channelId', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { channelId } = req.params;
@@ -197,7 +214,10 @@ router.post('/channel/:channelId', requireAuth, requireWorkspace, async (req: Re
   }
 });
 
-// Update message
+/**
+ * PUT /messages/:messageId - Edit an existing message.
+ * Only the message author can edit. Updates timestamp and notifies channel members.
+ */
 router.put('/:messageId', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
@@ -263,7 +283,11 @@ router.put('/:messageId', requireAuth, requireWorkspace, async (req: Request, re
   }
 });
 
-// Delete message
+/**
+ * DELETE /messages/:messageId - Delete a message.
+ * Only the message author can delete. Cascades to reactions and thread replies.
+ * Notifies channel members and removes from search index.
+ */
 router.delete('/:messageId', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
@@ -315,7 +339,10 @@ router.delete('/:messageId', requireAuth, requireWorkspace, async (req: Request,
   }
 });
 
-// Add reaction
+/**
+ * POST /messages/:messageId/reactions - Add an emoji reaction to a message.
+ * Each user can add one reaction per emoji. Notifies channel members in real-time.
+ */
 router.post('/:messageId/reactions', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
@@ -369,7 +396,10 @@ router.post('/:messageId/reactions', requireAuth, requireWorkspace, async (req: 
   }
 });
 
-// Remove reaction
+/**
+ * DELETE /messages/:messageId/reactions/:emoji - Remove a reaction from a message.
+ * Removes the current user's reaction of the specified emoji.
+ */
 router.delete('/:messageId/reactions/:emoji', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { messageId, emoji } = req.params;

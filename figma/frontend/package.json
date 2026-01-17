@@ -10,10 +10,11 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "pixi.js": "^8.15.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.0",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

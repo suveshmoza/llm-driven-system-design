@@ -1,3 +1,12 @@
+/**
+ * FaceTime Backend Server Entry Point
+ *
+ * This module bootstraps the Express HTTP server with WebSocket support
+ * for real-time video calling signaling. It initializes database and Redis
+ * connections, mounts REST API routes, and configures the WebSocket server
+ * for call signaling.
+ */
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -11,7 +20,10 @@ import { setupWebSocketServer, getOnlineUsers, getClientCount } from './services
 import usersRouter from './routes/users.js';
 import callsRouter from './routes/calls.js';
 
+/** Express application instance */
 const app = express();
+
+/** Server port from environment or default 3001 */
 const PORT = parseInt(process.env.PORT || '3001');
 
 // Middleware
@@ -25,7 +37,10 @@ app.use(helmet({
 app.use(morgan('dev'));
 app.use(express.json());
 
-// Health check
+/**
+ * Health check endpoint.
+ * Returns database and Redis connection status for monitoring.
+ */
 app.get('/health', async (req, res) => {
   const dbOk = await testConnection();
   let redisOk = false;
@@ -47,7 +62,10 @@ app.get('/health', async (req, res) => {
   });
 });
 
-// Stats endpoint
+/**
+ * Stats endpoint.
+ * Returns current online users and total WebSocket connection count.
+ */
 app.get('/stats', (req, res) => {
   res.json({
     onlineUsers: getOnlineUsers(),
@@ -56,7 +74,11 @@ app.get('/stats', (req, res) => {
   });
 });
 
-// TURN/STUN credentials endpoint
+/**
+ * TURN/STUN credentials endpoint.
+ * Returns ICE server configuration for WebRTC peer connections.
+ * In production, this would generate time-limited credentials.
+ */
 app.get('/turn-credentials', (req, res) => {
   // In production, generate time-limited credentials
   res.json({
@@ -79,10 +101,13 @@ app.get('/turn-credentials', (req, res) => {
 app.use('/api/users', usersRouter);
 app.use('/api/calls', callsRouter);
 
-// Create HTTP server
+/** HTTP server wrapping Express for WebSocket support */
 const server = createServer(app);
 
-// Create WebSocket server
+/**
+ * WebSocket server for real-time signaling.
+ * Handles call initiation, answering, and WebRTC offer/answer exchange.
+ */
 const wss = new WebSocketServer({
   server,
   path: '/ws',
@@ -91,7 +116,10 @@ const wss = new WebSocketServer({
 // Setup WebSocket handling
 setupWebSocketServer(wss);
 
-// Start server
+/**
+ * Starts the server after verifying database and Redis connectivity.
+ * Logs connection status and server URLs on successful startup.
+ */
 async function start() {
   try {
     // Test database connection

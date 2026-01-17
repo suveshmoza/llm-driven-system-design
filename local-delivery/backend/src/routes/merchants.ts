@@ -1,3 +1,10 @@
+/**
+ * Merchant discovery routes for the delivery platform.
+ * Provides endpoints for finding nearby merchants, browsing by category,
+ * searching, and viewing menus. These are public routes (no auth required).
+ *
+ * @module routes/merchants
+ */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import {

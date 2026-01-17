@@ -9,8 +9,23 @@ import {
 } from '../utils/crypto.js';
 import { CardProvisioningRequest, ProvisionedCard } from '../types/index.js';
 
+/**
+ * Service responsible for card tokenization and lifecycle management.
+ * Implements the core Token Service Provider (TSP) functionality for Apple Pay,
+ * converting real card numbers (PANs) into device-specific tokens (DPANs).
+ * This ensures actual card data is never stored or transmitted during payments.
+ */
 export class TokenizationService {
-  // Provision a new card to a device
+  /**
+   * Provisions a new payment card to a user's device.
+   * Validates the card using Luhn algorithm, identifies the network,
+   * generates a unique token reference and DPAN, then stores the
+   * token data in both PostgreSQL and Redis (simulating Secure Element).
+   *
+   * @param userId - The ID of the user provisioning the card
+   * @param request - Card details including PAN, expiry, CVV, and target device
+   * @returns Object with success status and provisioned card details (without sensitive data)
+   */
   async provisionCard(
     userId: string,
     request: CardProvisioningRequest
@@ -118,7 +133,15 @@ export class TokenizationService {
     };
   }
 
-  // Simulate Secure Element token storage
+  /**
+   * Simulates provisioning token data to the device's Secure Element.
+   * In a real implementation, this would establish a secure channel
+   * to the device's SE and push encrypted token data via APNs.
+   *
+   * @param deviceId - The target device ID
+   * @param tokenRef - The token reference identifier
+   * @param tokenDPAN - The device-specific PAN
+   */
   private async simulateSecureElementProvisioning(
     deviceId: string,
     tokenRef: string,
@@ -141,7 +164,14 @@ export class TokenizationService {
     );
   }
 
-  // Get user's provisioned cards
+  /**
+   * Retrieves all provisioned cards for a user across all their devices.
+   * Includes device information for each card and excludes deleted cards.
+   * Cards are sorted with default card first, then by provisioning date.
+   *
+   * @param userId - The user's unique identifier
+   * @returns Array of provisioned cards with device details
+   */
   async getCards(userId: string): Promise<ProvisionedCard[]> {
     const result = await query(
       `SELECT pc.*, d.device_name, d.device_type
@@ -154,7 +184,13 @@ export class TokenizationService {
     return result.rows;
   }
 
-  // Get a specific card
+  /**
+   * Retrieves a specific card by ID, ensuring it belongs to the user.
+   *
+   * @param userId - The user's unique identifier
+   * @param cardId - The card's unique identifier
+   * @returns The card if found and owned by user, null otherwise
+   */
   async getCard(userId: string, cardId: string): Promise<ProvisionedCard | null> {
     const result = await query(
       `SELECT * FROM provisioned_cards WHERE id = $1 AND user_id = $2`,
@@ -163,7 +199,17 @@ export class TokenizationService {
     return result.rows[0] || null;
   }
 
-  // Suspend a card
+  /**
+   * Suspends a card, preventing it from being used for transactions.
+   * Updates both the database and Redis token cache.
+   * Used when a user wants to temporarily disable a card or when
+   * fraud is suspected.
+   *
+   * @param userId - The user's unique identifier
+   * @param cardId - The card's unique identifier
+   * @param reason - The reason for suspension (e.g., 'user_request', 'fraud_suspected')
+   * @returns Object indicating success or failure with error message
+   */
   async suspendCard(
     userId: string,
     cardId: string,
@@ -196,7 +242,15 @@ export class TokenizationService {
     return { success: true };
   }
 
-  // Reactivate a suspended card
+  /**
+   * Reactivates a previously suspended card.
+   * Clears the suspension status and reason, allowing the card
+   * to be used for transactions again.
+   *
+   * @param userId - The user's unique identifier
+   * @param cardId - The card's unique identifier
+   * @returns Object indicating success or failure with error message
+   */
   async reactivateCard(
     userId: string,
     cardId: string
@@ -220,7 +274,16 @@ export class TokenizationService {
     return { success: true };
   }
 
-  // Remove a card
+  /**
+   * Permanently removes a card from the user's wallet.
+   * Marks the card as deleted in the database and removes
+   * token data from Redis. If the removed card was the default,
+   * automatically sets another active card as default.
+   *
+   * @param userId - The user's unique identifier
+   * @param cardId - The card's unique identifier
+   * @returns Object indicating success or failure with error message
+   */
   async removeCard(
     userId: string,
     cardId: string
@@ -255,7 +318,15 @@ export class TokenizationService {
     return { success: true };
   }
 
-  // Set default card
+  /**
+   * Sets a card as the user's default payment method.
+   * Clears the default flag from all other cards first.
+   * Only active cards can be set as default.
+   *
+   * @param userId - The user's unique identifier
+   * @param cardId - The card's unique identifier
+   * @returns Object indicating success or failure with error message
+   */
   async setDefaultCard(
     userId: string,
     cardId: string
@@ -287,4 +358,5 @@ export class TokenizationService {
   }
 }
 
+/** Singleton instance of the TokenizationService */
 export const tokenizationService = new TokenizationService();

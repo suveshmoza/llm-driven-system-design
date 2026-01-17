@@ -1,6 +1,13 @@
+/**
+ * User service for authentication and preference management.
+ * Handles user registration, login, preferences, and reading history tracking.
+ * Reading behavior is used to learn implicit topic preferences for personalization.
+ */
+
 import { query, queryOne, execute } from '../db/postgres.js';
 import { v4 as uuid } from 'uuid';
 
+/** Represents a user account */
 interface User {
   id: string;
   username: string;
@@ -9,12 +16,14 @@ interface User {
   created_at: Date;
 }
 
+/** User's explicit preferences for personalization */
 interface UserPreferences {
   preferred_topics: string[];
   preferred_sources: string[];
   blocked_sources: string[];
 }
 
+/** Entry in user's reading history */
 interface ReadingHistoryEntry {
   article_id: string;
   article_title: string;
@@ -23,19 +32,36 @@ interface ReadingHistoryEntry {
   dwell_time_seconds: number;
 }
 
-// Simple password hashing (use bcrypt in production)
+/**
+ * Hash a password for storage.
+ * Note: Uses simple SHA-256 for learning purposes.
+ * In production, use bcrypt or argon2.
+ * @param password - Plain text password
+ * @returns Hashed password string
+ */
 function hashPassword(password: string): string {
   // In production, use bcrypt.hash()
   const crypto = require('crypto');
   return crypto.createHash('sha256').update(password + 'salt').digest('hex');
 }
 
+/**
+ * Verify a password against its hash.
+ * @param password - Plain text password to verify
+ * @param hash - Stored password hash
+ * @returns True if password matches
+ */
 function verifyPassword(password: string, hash: string): boolean {
   return hashPassword(password) === hash;
 }
 
 /**
- * Create a new user
+ * Create a new user account.
+ * Initializes empty preferences for the user.
+ * @param username - Display name for the user
+ * @param email - Email address (used for login)
+ * @param password - Plain text password (will be hashed)
+ * @returns Created user object (without password hash)
  */
 export async function createUser(
   username: string,
@@ -68,7 +94,10 @@ export async function createUser(
 }
 
 /**
- * Authenticate a user
+ * Authenticate a user by email and password.
+ * @param email - User's email address
+ * @param password - Plain text password
+ * @returns User object if credentials are valid, null otherwise
  */
 export async function authenticateUser(
   email: string,
@@ -93,7 +122,9 @@ export async function authenticateUser(
 }
 
 /**
- * Get user by ID
+ * Get user by their ID.
+ * @param id - User UUID
+ * @returns User object or null if not found
  */
 export async function getUserById(id: string): Promise<User | null> {
   return queryOne<User>(
@@ -103,7 +134,9 @@ export async function getUserById(id: string): Promise<User | null> {
 }
 
 /**
- * Get user preferences
+ * Get user's explicit preferences.
+ * @param userId - User UUID
+ * @returns User preferences or empty defaults if not set
  */
 export async function getUserPreferences(userId: string): Promise<UserPreferences> {
   const prefs = await queryOne<UserPreferences>(
@@ -119,7 +152,11 @@ export async function getUserPreferences(userId: string): Promise<UserPreference
 }
 
 /**
- * Update user preferences
+ * Update user's explicit preferences.
+ * Merges provided updates with existing preferences.
+ * @param userId - User UUID
+ * @param updates - Partial preferences to update
+ * @returns Updated complete preferences
  */
 export async function updateUserPreferences(
   userId: string,
@@ -148,7 +185,13 @@ export async function updateUserPreferences(
 }
 
 /**
- * Record that a user read an article
+ * Record that a user read an article.
+ * Updates reading history and adjusts topic weights based on engagement.
+ * Longer dwell times (> 60s) result in higher weight increases.
+ * @param userId - User UUID
+ * @param articleId - Article UUID that was read
+ * @param dwellTimeSeconds - Time spent reading the article (default: 0)
+ * @throws Error if article is not found
  */
 export async function recordArticleRead(
   userId: string,
@@ -191,7 +234,11 @@ export async function recordArticleRead(
 }
 
 /**
- * Get user's reading history
+ * Get user's reading history.
+ * Returns recent articles the user has read.
+ * @param userId - User UUID
+ * @param limit - Maximum entries to return (default: 50)
+ * @returns Array of reading history entries with article details
  */
 export async function getReadingHistory(
   userId: string,
@@ -209,7 +256,9 @@ export async function getReadingHistory(
 }
 
 /**
- * Get all available topics
+ * Get all available topics from recent stories.
+ * Used for preference selection UI.
+ * @returns Array of topic names from stories in the last 7 days
  */
 export async function getAvailableTopics(): Promise<string[]> {
   const result = await query<{ topic: string }>(

@@ -1,3 +1,12 @@
+/**
+ * Netflix Clone Backend API Server
+ *
+ * Main entry point for the Express server that provides:
+ * - Authentication and session management
+ * - Video catalog and streaming
+ * - Profile management with personalization
+ * - A/B testing infrastructure
+ */
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -11,6 +20,10 @@ import browseRoutes from './routes/browse.js';
 import streamingRoutes from './routes/streaming.js';
 import experimentRoutes from './routes/experiments.js';
 
+/**
+ * Express application instance.
+ * Exported for testing purposes.
+ */
 const app = express();
 
 // Middleware

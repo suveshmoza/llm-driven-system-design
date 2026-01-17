@@ -1,3 +1,19 @@
+/**
+ * @fileoverview Main Express API server for the web crawler.
+ *
+ * This is the entry point for the API server component of the distributed
+ * web crawler. The server provides:
+ * - REST API endpoints for dashboard and administration
+ * - Health check endpoint for container orchestration
+ * - Rate limiting to prevent API abuse
+ * - Security middleware (helmet, CORS)
+ *
+ * The server runs independently from crawler workers and handles all
+ * HTTP requests for the dashboard and management operations.
+ *
+ * @module server
+ */
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -13,16 +29,31 @@ import statsRoutes from './routes/stats.js';
 import pagesRoutes from './routes/pages.js';
 import domainsRoutes from './routes/domains.js';
 
+/**
+ * Express application instance.
+ * Configured with security, compression, and logging middleware.
+ */
 const app = express();
 
-// Middleware
+// Security middleware
 app.use(helmet());
+
+// Enable CORS for frontend access
 app.use(cors());
+
+// Compress responses for better performance
 app.use(compression());
+
+// Parse JSON request bodies
 app.use(express.json());
+
+// Request logging
 app.use(morgan('combined'));
 
-// Rate limiting for API
+/**
+ * Rate limiter for API endpoints.
+ * Limits each IP to 100 requests per minute to prevent abuse.
+ */
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 100, // 100 requests per minute
@@ -30,7 +61,13 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Health check
+/**
+ * GET /health
+ *
+ * Health check endpoint for container orchestration.
+ * Verifies connectivity to PostgreSQL and Redis.
+ * Returns 200 if healthy, 503 if any service is unavailable.
+ */
 app.get('/health', async (_req, res) => {
   try {
     // Check database connection
@@ -56,13 +93,18 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// API Routes
+// Mount API route handlers
 app.use('/api/frontier', frontierRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/pages', pagesRoutes);
 app.use('/api/domains', domainsRoutes);
 
-// Root endpoint
+/**
+ * GET /
+ *
+ * Root endpoint returning API information.
+ * Useful for API discovery and documentation.
+ */
 app.get('/', (_req, res) => {
   res.json({
     name: 'Web Crawler API',
@@ -77,7 +119,11 @@ app.get('/', (_req, res) => {
   });
 });
 
-// Error handling middleware
+/**
+ * Global error handler.
+ * Catches unhandled errors and returns appropriate response.
+ * In development, includes error message; in production, hides details.
+ */
 app.use(
   (
     err: Error,
@@ -93,7 +139,12 @@ app.use(
   }
 );
 
-// Start server
+/**
+ * Starts the API server.
+ *
+ * Initializes the database schema and starts listening for HTTP requests.
+ * Called when this module is run directly.
+ */
 async function start() {
   try {
     // Initialize database
@@ -111,7 +162,10 @@ async function start() {
   }
 }
 
-// Handle graceful shutdown
+/**
+ * SIGTERM handler for graceful shutdown.
+ * Closes database and Redis connections before exiting.
+ */
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
   await pool.end();
@@ -119,6 +173,10 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
+/**
+ * SIGINT handler for graceful shutdown (Ctrl+C).
+ * Closes database and Redis connections before exiting.
+ */
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
   await pool.end();

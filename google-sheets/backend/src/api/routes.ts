@@ -2,9 +2,20 @@ import express from 'express';
 import { pool } from '../shared/db.js';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Express router for spreadsheet REST API endpoints.
+ * Provides CRUD operations for spreadsheets, sheets, and cells.
+ * Works alongside WebSocket for real-time collaboration.
+ */
 const router = express.Router();
 
-// List all spreadsheets
+/**
+ * GET /spreadsheets
+ * Lists all spreadsheets ordered by last update time.
+ * Returns spreadsheet metadata including sheet count.
+ *
+ * @returns Array of spreadsheet objects with sheet counts
+ */
 router.get('/spreadsheets', async (req, res) => {
   try {
     const result = await pool.query(`
@@ -21,7 +32,14 @@ router.get('/spreadsheets', async (req, res) => {
   }
 });
 
-// Create new spreadsheet
+/**
+ * POST /spreadsheets
+ * Creates a new spreadsheet with an optional title.
+ * Automatically creates a default "Sheet1" sheet.
+ *
+ * @param req.body.title - Optional title (defaults to "Untitled Spreadsheet")
+ * @returns The created spreadsheet with its initial sheet
+ */
 router.post('/spreadsheets', async (req, res) => {
   const { title = 'Untitled Spreadsheet' } = req.body;
   const id = uuidv4();
@@ -51,7 +69,13 @@ router.post('/spreadsheets', async (req, res) => {
   }
 });
 
-// Get spreadsheet details
+/**
+ * GET /spreadsheets/:id
+ * Retrieves a spreadsheet by ID with all its sheets.
+ *
+ * @param req.params.id - The spreadsheet UUID
+ * @returns The spreadsheet object with sheets array, or 404 if not found
+ */
 router.get('/spreadsheets/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -80,7 +104,14 @@ router.get('/spreadsheets/:id', async (req, res) => {
   }
 });
 
-// Update spreadsheet title
+/**
+ * PATCH /spreadsheets/:id
+ * Updates a spreadsheet's title.
+ *
+ * @param req.params.id - The spreadsheet UUID
+ * @param req.body.title - The new title
+ * @returns The updated spreadsheet ID and title
+ */
 router.patch('/spreadsheets/:id', async (req, res) => {
   const { id } = req.params;
   const { title } = req.body;
@@ -97,7 +128,13 @@ router.patch('/spreadsheets/:id', async (req, res) => {
   }
 });
 
-// Delete spreadsheet
+/**
+ * DELETE /spreadsheets/:id
+ * Deletes a spreadsheet and all associated data (cascading).
+ *
+ * @param req.params.id - The spreadsheet UUID to delete
+ * @returns 204 No Content on success
+ */
 router.delete('/spreadsheets/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -110,7 +147,15 @@ router.delete('/spreadsheets/:id', async (req, res) => {
   }
 });
 
-// Add sheet to spreadsheet
+/**
+ * POST /spreadsheets/:id/sheets
+ * Adds a new sheet to a spreadsheet.
+ * Automatically assigns the next sheet index.
+ *
+ * @param req.params.id - The spreadsheet UUID
+ * @param req.body.name - Optional sheet name (defaults to "New Sheet")
+ * @returns The created sheet object
+ */
 router.post('/spreadsheets/:id/sheets', async (req, res) => {
   const { id } = req.params;
   const { name = 'New Sheet' } = req.body;
@@ -136,7 +181,14 @@ router.post('/spreadsheets/:id/sheets', async (req, res) => {
   }
 });
 
-// Get all cells for a sheet
+/**
+ * GET /sheets/:sheetId/cells
+ * Retrieves all cells for a specific sheet.
+ * Returns a sparse map with "row-col" keys for efficient storage.
+ *
+ * @param req.params.sheetId - The sheet UUID
+ * @returns Object with cell keys mapping to cell data (rawValue, computedValue, format)
+ */
 router.get('/sheets/:sheetId/cells', async (req, res) => {
   const { sheetId } = req.params;
 
@@ -163,7 +215,15 @@ router.get('/sheets/:sheetId/cells', async (req, res) => {
   }
 });
 
-// Batch update cells
+/**
+ * PATCH /sheets/:sheetId/cells
+ * Batch updates multiple cells in a single transaction.
+ * Uses upsert to insert or update cells efficiently.
+ *
+ * @param req.params.sheetId - The sheet UUID
+ * @param req.body.changes - Array of {row, col, value} objects
+ * @returns Count of updated cells
+ */
 router.patch('/sheets/:sheetId/cells', async (req, res) => {
   const { sheetId } = req.params;
   const { changes } = req.body; // Array of { row, col, value }
@@ -201,7 +261,16 @@ router.patch('/sheets/:sheetId/cells', async (req, res) => {
   }
 });
 
-// Export spreadsheet as CSV
+/**
+ * GET /spreadsheets/:id/export
+ * Exports a spreadsheet sheet to CSV format.
+ * Uses computed values for formula cells.
+ *
+ * @param req.params.id - The spreadsheet UUID
+ * @param req.query.format - Export format (currently only 'csv' supported)
+ * @param req.query.sheetId - Optional specific sheet to export (defaults to first sheet)
+ * @returns CSV file download
+ */
 router.get('/spreadsheets/:id/export', async (req, res) => {
   const { id } = req.params;
   const { format = 'csv', sheetId } = req.query;

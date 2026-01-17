@@ -2,9 +2,16 @@ import { query } from '../config/database.js';
 import { cacheGet, cacheSet, cacheDel } from '../config/redis.js';
 import { Project, User, Sprint, Board, Label, Component, ProjectRole } from '../types/index.js';
 
+/** Cache TTL for project data in seconds (1 hour) */
 const PROJECT_CACHE_TTL = 3600;
 
-// Get project by ID
+/**
+ * Retrieves a project by its UUID with caching.
+ * Uses Redis cache to reduce database load for frequently accessed projects.
+ *
+ * @param projectId - UUID of the project
+ * @returns Project object or null if not found
+ */
 export async function getProjectById(projectId: string): Promise<Project | null> {
   const cacheKey = `project:${projectId}`;
   const cached = await cacheGet<Project>(cacheKey);
@@ -22,7 +29,13 @@ export async function getProjectById(projectId: string): Promise<Project | null>
   return rows[0] || null;
 }
 
-// Get project by key
+/**
+ * Retrieves a project by its human-readable key (e.g., "PROJ").
+ * Keys are stored uppercase and searched case-insensitively.
+ *
+ * @param key - Project key (2-10 letters)
+ * @returns Project object or null if not found
+ */
 export async function getProjectByKey(key: string): Promise<Project | null> {
   const { rows } = await query<Project>(
     'SELECT * FROM projects WHERE key = $1',
@@ -32,7 +45,11 @@ export async function getProjectByKey(key: string): Promise<Project | null> {
   return rows[0] || null;
 }
 
-// Get all projects
+/**
+ * Retrieves all projects ordered by name.
+ *
+ * @returns Array of all projects
+ */
 export async function getAllProjects(): Promise<Project[]> {
   const { rows } = await query<Project>(
     'SELECT * FROM projects ORDER BY name'
@@ -40,7 +57,12 @@ export async function getAllProjects(): Promise<Project[]> {
   return rows;
 }
 
-// Get projects for a user
+/**
+ * Retrieves projects that a user is a member of.
+ *
+ * @param userId - UUID of the user
+ * @returns Array of projects the user belongs to
+ */
 export async function getProjectsForUser(userId: string): Promise<Project[]> {
   const { rows } = await query<Project>(
     `SELECT p.* FROM projects p
@@ -52,7 +74,13 @@ export async function getProjectsForUser(userId: string): Promise<Project[]> {
   return rows;
 }
 
-// Create a project
+/**
+ * Creates a new project with default workflow and permission scheme.
+ * Automatically adds the project lead as Administrator.
+ *
+ * @param data - Project creation data including key, name, and lead
+ * @returns Newly created project
+ */
 export async function createProject(data: {
   key: string;
   name: string;
@@ -90,7 +118,14 @@ export async function createProject(data: {
   return rows[0];
 }
 
-// Update a project
+/**
+ * Updates an existing project's details.
+ * Invalidates the project cache after update.
+ *
+ * @param projectId - UUID of the project to update
+ * @param data - Partial project data to update
+ * @returns Updated project or null if not found
+ */
 export async function updateProject(
   projectId: string,
   data: Partial<Pick<Project, 'name' | 'description' | 'lead_id' | 'workflow_id' | 'permission_scheme_id'>>
@@ -137,14 +172,25 @@ export async function updateProject(
   return rows[0] || null;
 }
 
-// Delete a project
+/**
+ * Deletes a project and all related data.
+ * Invalidates the project cache after deletion.
+ *
+ * @param projectId - UUID of the project to delete
+ * @returns True if deleted, false if not found
+ */
 export async function deleteProject(projectId: string): Promise<boolean> {
   const { rowCount } = await query('DELETE FROM projects WHERE id = $1', [projectId]);
   await cacheDel(`project:${projectId}`);
   return (rowCount ?? 0) > 0;
 }
 
-// Get project members
+/**
+ * Retrieves all members of a project with their roles.
+ *
+ * @param projectId - UUID of the project
+ * @returns Array of users with their project roles
+ */
 export async function getProjectMembers(projectId: string): Promise<(User & { role: ProjectRole })[]> {
   const { rows } = await query<User & { role: ProjectRole }>(
     `SELECT u.*, json_build_object('id', r.id, 'name', r.name, 'description', r.description) as role
@@ -158,7 +204,14 @@ export async function getProjectMembers(projectId: string): Promise<(User & { ro
   return rows;
 }
 
-// Add project member
+/**
+ * Adds a user to a project with a specific role.
+ * If the user is already a member, updates their role.
+ *
+ * @param projectId - UUID of the project
+ * @param userId - UUID of the user to add
+ * @param roleId - ID of the project role to assign
+ */
 export async function addProjectMember(
   projectId: string,
   userId: string,
@@ -172,7 +225,12 @@ export async function addProjectMember(
   );
 }
 
-// Remove project member
+/**
+ * Removes a user from a project.
+ *
+ * @param projectId - UUID of the project
+ * @param userId - UUID of the user to remove
+ */
 export async function removeProjectMember(projectId: string, userId: string): Promise<void> {
   await query(
     'DELETE FROM project_members WHERE project_id = $1 AND user_id = $2',
@@ -180,7 +238,14 @@ export async function removeProjectMember(projectId: string, userId: string): Pr
   );
 }
 
-// Get user roles in project
+/**
+ * Gets all roles a user has in a specific project.
+ * Used for permission checking.
+ *
+ * @param userId - UUID of the user
+ * @param projectId - UUID of the project
+ * @returns Array of role names
+ */
 export async function getUserRolesInProject(userId: string, projectId: string): Promise<string[]> {
   const { rows } = await query<{ name: string }>(
     `SELECT r.name
@@ -192,7 +257,12 @@ export async function getUserRolesInProject(userId: string, projectId: string): 
   return rows.map(r => r.name);
 }
 
-// Sprints
+/**
+ * Retrieves all sprints for a project, newest first.
+ *
+ * @param projectId - UUID of the project
+ * @returns Array of sprints
+ */
 export async function getSprintsByProject(projectId: string): Promise<Sprint[]> {
   const { rows } = await query<Sprint>(
     'SELECT * FROM sprints WHERE project_id = $1 ORDER BY created_at DESC',
@@ -201,6 +271,12 @@ export async function getSprintsByProject(projectId: string): Promise<Sprint[]> 
   return rows;
 }
 
+/**
+ * Retrieves a sprint by its ID.
+ *
+ * @param sprintId - ID of the sprint
+ * @returns Sprint or null if not found
+ */
 export async function getSprintById(sprintId: number): Promise<Sprint | null> {
   const { rows } = await query<Sprint>(
     'SELECT * FROM sprints WHERE id = $1',
@@ -209,6 +285,12 @@ export async function getSprintById(sprintId: number): Promise<Sprint | null> {
   return rows[0] || null;
 }
 
+/**
+ * Creates a new sprint in a project.
+ *
+ * @param data - Sprint creation data
+ * @returns Newly created sprint
+ */
 export async function createSprint(data: {
   projectId: string;
   name: string;
@@ -225,6 +307,13 @@ export async function createSprint(data: {
   return rows[0];
 }
 
+/**
+ * Updates sprint details.
+ *
+ * @param sprintId - ID of the sprint to update
+ * @param data - Partial sprint data to update
+ * @returns Updated sprint or null if not found
+ */
 export async function updateSprint(
   sprintId: number,
   data: Partial<Pick<Sprint, 'name' | 'goal' | 'start_date' | 'end_date' | 'status'>>
@@ -267,6 +356,13 @@ export async function updateSprint(
   return rows[0] || null;
 }
 
+/**
+ * Starts a sprint, closing any currently active sprint in the project.
+ * Sets the start date to now.
+ *
+ * @param sprintId - ID of the sprint to start
+ * @returns Updated sprint or null if not found
+ */
 export async function startSprint(sprintId: number): Promise<Sprint | null> {
   // First, close any active sprint in the same project
   const sprint = await getSprintById(sprintId);
@@ -284,6 +380,12 @@ export async function startSprint(sprintId: number): Promise<Sprint | null> {
   });
 }
 
+/**
+ * Completes a sprint, setting its end date to now.
+ *
+ * @param sprintId - ID of the sprint to complete
+ * @returns Updated sprint or null if not found
+ */
 export async function completeSprint(sprintId: number): Promise<Sprint | null> {
   return updateSprint(sprintId, {
     status: 'closed',
@@ -291,7 +393,12 @@ export async function completeSprint(sprintId: number): Promise<Sprint | null> {
   });
 }
 
-// Boards
+/**
+ * Retrieves all boards for a project.
+ *
+ * @param projectId - UUID of the project
+ * @returns Array of boards
+ */
 export async function getBoardsByProject(projectId: string): Promise<Board[]> {
   const { rows } = await query<Board>(
     'SELECT * FROM boards WHERE project_id = $1 ORDER BY name',
@@ -300,6 +407,12 @@ export async function getBoardsByProject(projectId: string): Promise<Board[]> {
   return rows;
 }
 
+/**
+ * Retrieves a board by its ID.
+ *
+ * @param boardId - ID of the board
+ * @returns Board or null if not found
+ */
 export async function getBoardById(boardId: number): Promise<Board | null> {
   const { rows } = await query<Board>(
     'SELECT * FROM boards WHERE id = $1',
@@ -308,6 +421,12 @@ export async function getBoardById(boardId: number): Promise<Board | null> {
   return rows[0] || null;
 }
 
+/**
+ * Creates a new board for a project.
+ *
+ * @param data - Board creation data
+ * @returns Newly created board
+ */
 export async function createBoard(data: {
   projectId: string;
   name: string;
@@ -324,7 +443,12 @@ export async function createBoard(data: {
   return rows[0];
 }
 
-// Labels
+/**
+ * Retrieves all labels for a project.
+ *
+ * @param projectId - UUID of the project
+ * @returns Array of labels
+ */
 export async function getLabelsByProject(projectId: string): Promise<Label[]> {
   const { rows } = await query<Label>(
     'SELECT * FROM labels WHERE project_id = $1 ORDER BY name',
@@ -333,6 +457,14 @@ export async function getLabelsByProject(projectId: string): Promise<Label[]> {
   return rows;
 }
 
+/**
+ * Creates or updates a label in a project.
+ *
+ * @param projectId - UUID of the project
+ * @param name - Label name
+ * @param color - Hex color code (e.g., "#FF0000")
+ * @returns Created or updated label
+ */
 export async function createLabel(projectId: string, name: string, color: string): Promise<Label> {
   const { rows } = await query<Label>(
     `INSERT INTO labels (project_id, name, color) VALUES ($1, $2, $3)
@@ -343,7 +475,12 @@ export async function createLabel(projectId: string, name: string, color: string
   return rows[0];
 }
 
-// Components
+/**
+ * Retrieves all components for a project.
+ *
+ * @param projectId - UUID of the project
+ * @returns Array of components
+ */
 export async function getComponentsByProject(projectId: string): Promise<Component[]> {
   const { rows } = await query<Component>(
     'SELECT * FROM components WHERE project_id = $1 ORDER BY name',
@@ -352,6 +489,12 @@ export async function getComponentsByProject(projectId: string): Promise<Compone
   return rows;
 }
 
+/**
+ * Creates a new component in a project.
+ *
+ * @param data - Component creation data
+ * @returns Newly created component
+ */
 export async function createComponent(data: {
   projectId: string;
   name: string;
@@ -367,7 +510,11 @@ export async function createComponent(data: {
   return rows[0];
 }
 
-// Project roles
+/**
+ * Retrieves all available project roles.
+ *
+ * @returns Array of project roles
+ */
 export async function getProjectRoles(): Promise<ProjectRole[]> {
   const { rows } = await query<ProjectRole>('SELECT * FROM project_roles ORDER BY name');
   return rows;

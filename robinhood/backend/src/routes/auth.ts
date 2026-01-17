@@ -5,9 +5,17 @@ import { pool } from '../database.js';
 import type { User } from '../types/index.js';
 import { config } from '../config.js';
 
+/**
+ * Express router for authentication endpoints.
+ * Handles user login, registration, and logout with session-based auth.
+ */
 const router = Router();
 
-// Login
+/**
+ * POST /api/auth/login
+ * Authenticates a user with email and password.
+ * Creates a new session token on successful authentication.
+ */
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -68,7 +76,12 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// Register
+/**
+ * POST /api/auth/register
+ * Creates a new user account with email and password.
+ * Also creates a default watchlist and session for the new user.
+ * New users start with $10,000 buying power.
+ */
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { email, password, firstName, lastName } = req.body;
@@ -136,7 +149,11 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// Logout
+/**
+ * POST /api/auth/logout
+ * Invalidates the current session token.
+ * The user must re-authenticate to access protected endpoints.
+ */
 router.post('/logout', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;

@@ -1,6 +1,11 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Navigation menu items configuration.
+ * Each item defines an icon key, display label, route path,
+ * and optional auth requirement.
+ */
 const menuItems = [
   { icon: 'home', label: 'Home', path: '/' },
   { icon: 'trending', label: 'Trending', path: '/trending' },
@@ -31,10 +36,22 @@ const icons: Record<string, JSX.Element> = {
   ),
 };
 
+/**
+ * Props for the Sidebar component.
+ */
 interface SidebarProps {
+  /** Whether to show the collapsed (icon-only) version */
   collapsed?: boolean;
 }
 
+/**
+ * Left sidebar navigation component.
+ * Displays navigation links to main sections (Home, Trending, etc.)
+ * and the current user's channel. Supports both expanded and
+ * collapsed modes for responsive layouts.
+ *
+ * @param props.collapsed - If true, shows only icons without labels
+ */
 export default function Sidebar({ collapsed = false }: SidebarProps) {
   const location = useLocation();
   const { user } = useAuthStore();

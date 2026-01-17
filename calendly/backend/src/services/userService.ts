@@ -6,11 +6,21 @@ import {
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 
+/** Number of salt rounds for bcrypt password hashing */
 const SALT_ROUNDS = 10;
 
+/**
+ * Service for managing user accounts and authentication.
+ * Handles user creation, authentication, profile updates, and admin operations.
+ * Uses Redis caching to improve read performance for frequently accessed user data.
+ */
 export class UserService {
   /**
-   * Create a new user
+   * Creates a new user account with hashed password.
+   * Checks for existing email to prevent duplicates.
+   * @param input - User registration data including email, password, name, and timezone
+   * @returns The newly created user (without password)
+   * @throws Error if email already exists
    */
   async createUser(input: CreateUserInput): Promise<User> {
     const { email, password, name, time_zone } = input;
@@ -35,7 +45,10 @@ export class UserService {
   }
 
   /**
-   * Find user by ID
+   * Finds a user by their unique ID.
+   * Results are cached in Redis for 1 hour to reduce database load.
+   * @param id - The UUID of the user
+   * @returns The user if found, null otherwise
    */
   async findById(id: string): Promise<User | null> {
     const cacheKey = `user:${id}`;
@@ -62,7 +75,10 @@ export class UserService {
   }
 
   /**
-   * Find user by email
+   * Finds a user by their email address.
+   * Used for login authentication and duplicate email checks.
+   * @param email - The email address to search for
+   * @returns The user if found, null otherwise
    */
   async findByEmail(email: string): Promise<User | null> {
     const result = await pool.query(
@@ -75,7 +91,11 @@ export class UserService {
   }
 
   /**
-   * Validate user credentials
+   * Validates user credentials for login.
+   * Compares provided password against stored bcrypt hash.
+   * @param email - The user's email address
+   * @param password - The plaintext password to verify
+   * @returns The user (without password_hash) if valid, null if invalid credentials
    */
   async validateCredentials(email: string, password: string): Promise<User | null> {
     const result = await pool.query(
@@ -101,7 +121,11 @@ export class UserService {
   }
 
   /**
-   * Update user profile
+   * Updates a user's profile information.
+   * Invalidates the Redis cache after successful update.
+   * @param id - The UUID of the user to update
+   * @param updates - Object containing optional name and/or timezone updates
+   * @returns The updated user if found, null if user doesn't exist
    */
   async updateUser(
     id: string,
@@ -146,7 +170,9 @@ export class UserService {
   }
 
   /**
-   * Get all users (admin only)
+   * Retrieves all users in the system.
+   * Admin-only operation for user management.
+   * @returns Array of all users sorted by creation date (newest first)
    */
   async getAllUsers(): Promise<User[]> {
     const result = await pool.query(
@@ -158,7 +184,10 @@ export class UserService {
   }
 
   /**
-   * Delete user
+   * Permanently deletes a user account.
+   * Also removes the user's cache entry from Redis.
+   * @param id - The UUID of the user to delete
+   * @returns true if user was deleted, false if user not found
    */
   async deleteUser(id: string): Promise<boolean> {
     const result = await pool.query(
@@ -175,4 +204,5 @@ export class UserService {
   }
 }
 
+/** Singleton instance of UserService for application-wide use */
 export const userService = new UserService();

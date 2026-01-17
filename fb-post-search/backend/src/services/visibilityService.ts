@@ -1,6 +1,15 @@
+/**
+ * @fileoverview User visibility service for privacy-aware search.
+ * Computes and caches visibility sets that determine which posts a user can see.
+ * Central to the privacy model - ensures users only see posts they have permission to view.
+ */
+
 import { query } from '../config/database.js';
 import { getCache, setCache, cacheKeys } from '../config/redis.js';
 
+/**
+ * Represents a user's visibility set - the fingerprints of posts they can access.
+ */
 interface VisibilitySet {
   fingerprints: string[];
   userId: string;
@@ -8,7 +17,16 @@ interface VisibilitySet {
   updatedAt: string;
 }
 
-// Get user's visibility fingerprints - what posts they can see
+/**
+ * Computes a user's visibility set for search filtering.
+ * Determines which visibility fingerprints the user has access to based on:
+ * - Public posts (everyone can see)
+ * - Their own private posts
+ * - Posts from their friends (friends-only visibility)
+ * Results are cached in Redis for 5 minutes to reduce database load.
+ * @param userId - The user's ID
+ * @returns Promise resolving to the user's visibility set with fingerprints and friend IDs
+ */
 export async function getUserVisibilitySet(userId: string): Promise<VisibilitySet> {
   // Try cache first
   const cached = await getCache<VisibilitySet>(cacheKeys.userVisibility(userId));
@@ -58,13 +76,22 @@ export async function getUserVisibilitySet(userId: string): Promise<VisibilitySe
   return visibilitySet;
 }
 
-// Invalidate user's visibility cache (call when friendships change)
+/**
+ * Invalidates a user's cached visibility set.
+ * Should be called when friendships change to ensure accurate search results.
+ * @param userId - The user's ID whose cache should be invalidated
+ * @returns Promise that resolves when cache is cleared
+ */
 export async function invalidateVisibilityCache(userId: string): Promise<void> {
   const { deleteCache } = await import('../config/redis.js');
   await deleteCache(cacheKeys.userVisibility(userId));
 }
 
-// Get friend IDs for a user
+/**
+ * Retrieves the list of accepted friend IDs for a user.
+ * @param userId - The user's ID
+ * @returns Promise resolving to an array of friend user IDs
+ */
 export async function getUserFriendIds(userId: string): Promise<string[]> {
   interface FriendRow {
     friend_id: string;
@@ -78,7 +105,12 @@ export async function getUserFriendIds(userId: string): Promise<string[]> {
   return friends.map((f) => f.friend_id);
 }
 
-// Check if two users are friends
+/**
+ * Checks if two users have an accepted friendship.
+ * @param userId1 - First user's ID
+ * @param userId2 - Second user's ID
+ * @returns Promise resolving to true if users are friends, false otherwise
+ */
 export async function areUsersFriends(userId1: string, userId2: string): Promise<boolean> {
   interface CountRow {
     count: string;

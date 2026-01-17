@@ -2,21 +2,36 @@ import { Router, Response } from 'express';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { quoteService } from '../services/quoteService.js';
 
+/**
+ * Express router for stock quote endpoints.
+ * Provides real-time and batch quote data.
+ * Most endpoints are public; detailed stock info requires authentication.
+ */
 const router = Router();
 
-// Get all available stocks
+/**
+ * GET /api/quotes/stocks
+ * Returns list of all available stock symbols and names.
+ */
 router.get('/stocks', (_req, res: Response) => {
   const stocks = quoteService.getAllStocks();
   res.json(stocks);
 });
 
-// Get all quotes
+/**
+ * GET /api/quotes
+ * Returns current quotes for all available stocks.
+ */
 router.get('/', (_req, res: Response) => {
   const quotes = quoteService.getAllQuotes();
   res.json(quotes);
 });
 
-// Get quotes for specific symbols
+/**
+ * GET /api/quotes/batch
+ * Returns quotes for multiple symbols specified in query parameter.
+ * Query: ?symbols=AAPL,GOOGL,MSFT (comma-separated)
+ */
 router.get('/batch', (req, res: Response) => {
   const symbols = req.query.symbols as string;
 
@@ -30,7 +45,11 @@ router.get('/batch', (req, res: Response) => {
   res.json(quotes);
 });
 
-// Get quote for single symbol
+/**
+ * GET /api/quotes/:symbol
+ * Returns the current quote for a single stock symbol.
+ * Includes stock name in response.
+ */
 router.get('/:symbol', (req, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
   const quote = quoteService.getQuote(symbol);
@@ -48,7 +67,11 @@ router.get('/:symbol', (req, res: Response) => {
   });
 });
 
-// Get stock details
+/**
+ * GET /api/quotes/:symbol/details
+ * Returns extended stock details including quote and company information.
+ * Requires authentication. In production, would fetch from financial API.
+ */
 router.get('/:symbol/details', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const symbol = req.params.symbol.toUpperCase();
   const quote = quoteService.getQuote(symbol);

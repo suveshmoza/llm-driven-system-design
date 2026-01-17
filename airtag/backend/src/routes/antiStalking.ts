@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { antiStalkingService } from '../services/antiStalkingService.js';
 
+/**
+ * Anti-stalking routes for detecting and alerting users about unknown trackers.
+ * Implements safety features to prevent AirTag misuse for tracking people.
+ * All routes require authentication and are prefixed with /api/anti-stalking.
+ */
 const router = Router();
 
 // All routes require authentication
@@ -9,7 +14,8 @@ router.use(requireAuth);
 
 /**
  * POST /api/anti-stalking/sighting
- * Record a tracker sighting (when user's device detects a nearby unknown tracker)
+ * Record when the user's device detects a nearby unknown tracker.
+ * Triggers stalking analysis and may generate an alert.
  */
 router.post('/sighting', async (req, res) => {
   try {
@@ -40,7 +46,8 @@ router.post('/sighting', async (req, res) => {
 
 /**
  * GET /api/anti-stalking/unknown-trackers
- * Get all unknown trackers detected by the user
+ * Get a summary of all unknown trackers that have been traveling with the user.
+ * Excludes the user's own registered devices.
  */
 router.get('/unknown-trackers', async (req, res) => {
   try {
@@ -54,7 +61,8 @@ router.get('/unknown-trackers', async (req, res) => {
 
 /**
  * GET /api/anti-stalking/sightings/:identifierHash
- * Get sighting history for a specific tracker
+ * Get detailed sighting history for a specific unknown tracker.
+ * Shows when and where the tracker was detected.
  */
 router.get('/sightings/:identifierHash', async (req, res) => {
   try {

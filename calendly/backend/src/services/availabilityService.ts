@@ -19,9 +19,19 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { parseISO, addDays } from 'date-fns';
 
+/**
+ * Service for managing user availability and calculating bookable time slots.
+ * This is the core scheduling engine that determines when invitees can book meetings.
+ * Handles weekly recurring availability rules and integrates with booking data
+ * to prevent double-booking.
+ */
 export class AvailabilityService {
   /**
-   * Create a new availability rule
+   * Creates a single availability rule for a user.
+   * Invalidates relevant caches after creation.
+   * @param userId - The UUID of the user
+   * @param input - Rule configuration with day of week and time range
+   * @returns The newly created availability rule
    */
   async createRule(userId: string, input: CreateAvailabilityRuleInput): Promise<AvailabilityRule> {
     const id = uuidv4();
@@ -40,7 +50,11 @@ export class AvailabilityService {
   }
 
   /**
-   * Set availability rules in bulk (replaces existing rules)
+   * Replaces all availability rules for a user in a single transaction.
+   * Used when updating the entire weekly schedule at once.
+   * @param userId - The UUID of the user
+   * @param rules - Array of new availability rules to set
+   * @returns Array of the newly created availability rules
    */
   async setRules(userId: string, rules: CreateAvailabilityRuleInput[]): Promise<AvailabilityRule[]> {
     const client = await pool.connect();
@@ -82,7 +96,10 @@ export class AvailabilityService {
   }
 
   /**
-   * Get availability rules for a user
+   * Retrieves all active availability rules for a user.
+   * Results are cached in Redis for 5 minutes.
+   * @param userId - The UUID of the user
+   * @returns Array of availability rules sorted by day and time
    */
   async getRules(userId: string): Promise<AvailabilityRule[]> {
     const cacheKey = `availability_rules:${userId}`;
@@ -105,7 +122,18 @@ export class AvailabilityService {
   }
 
   /**
-   * Get available time slots for a meeting type on a specific date
+   * Calculates available time slots for a meeting type on a specific date.
+   * This is the core availability algorithm that:
+   * 1. Gets the host's availability rules for the day
+   * 2. Fetches existing bookings to identify busy periods
+   * 3. Computes gaps and generates bookable slots with buffer times
+   * 4. Filters out past slots and enforces daily booking limits
+   * Results are cached for 5 minutes.
+   * @param meetingTypeId - The UUID of the meeting type
+   * @param dateStr - Date in YYYY-MM-DD format
+   * @param inviteeTimezone - The invitee's timezone for display purposes
+   * @returns Array of available time slots in ISO 8601 format
+   * @throws Error if meeting type not found
    */
   async getAvailableSlots(
     meetingTypeId: string,
@@ -219,7 +247,12 @@ export class AvailabilityService {
   }
 
   /**
-   * Get available dates for a meeting type (next 30 days by default)
+   * Finds all dates with available slots within a given range.
+   * Useful for calendar displays that highlight bookable dates.
+   * @param meetingTypeId - The UUID of the meeting type
+   * @param inviteeTimezone - The invitee's timezone
+   * @param daysAhead - Number of days to check (default 30)
+   * @returns Array of date strings (YYYY-MM-DD) that have availability
    */
   async getAvailableDates(
     meetingTypeId: string,
@@ -243,7 +276,11 @@ export class AvailabilityService {
   }
 
   /**
-   * Delete an availability rule
+   * Deletes a single availability rule.
+   * Validates ownership and invalidates related caches.
+   * @param id - The UUID of the rule to delete
+   * @param userId - The UUID of the user (for ownership verification)
+   * @returns true if deleted, false if not found or not owned by user
    */
   async deleteRule(id: string, userId: string): Promise<boolean> {
     const result = await pool.query(
@@ -260,7 +297,9 @@ export class AvailabilityService {
   }
 
   /**
-   * Invalidate availability cache for a user
+   * Invalidates all availability-related caches for a user.
+   * Called after any change to availability rules or bookings.
+   * @param userId - The UUID of the user whose caches to invalidate
    */
   async invalidateCache(userId: string): Promise<void> {
     // Get all meeting types for this user and invalidate their slot caches
@@ -279,4 +318,5 @@ export class AvailabilityService {
   }
 }
 
+/** Singleton instance of AvailabilityService for application-wide use */
 export const availabilityService = new AvailabilityService();

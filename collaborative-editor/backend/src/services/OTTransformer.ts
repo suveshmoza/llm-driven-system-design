@@ -5,15 +5,29 @@ import type { Op } from '../types/index.js';
  * OT Transformer: Implements the transform and compose functions for
  * Operational Transformation.
  *
- * The key property: transform(op1, op2) returns [op1', op2'] such that
- * apply(apply(doc, op1), op2') = apply(apply(doc, op2), op1')
+ * This class provides the core algorithms that enable real-time collaborative
+ * editing by allowing concurrent operations to be reconciled.
+ *
+ * The key property (transformation property 1 / TP1):
+ *   transform(op1, op2) returns [op1', op2'] such that
+ *   apply(apply(doc, op1), op2') = apply(apply(doc, op2), op1')
+ *
+ * This ensures that regardless of the order in which concurrent operations
+ * are received, all clients converge to the same document state.
  */
 export class OTTransformer {
   /**
    * Transform op1 against op2.
-   * Returns [op1', op2'] where:
-   * - op1' is op1 transformed to apply after op2
-   * - op2' is op2 transformed to apply after op1
+   *
+   * Given two operations that were created against the same document state,
+   * this function produces transformed versions that can be applied in
+   * either order while preserving the intended changes.
+   *
+   * @param op1 - The first operation
+   * @param op2 - The second operation (must have same baseLength as op1)
+   * @returns A tuple [op1', op2'] where op1' can be applied after op2,
+   *          and op2' can be applied after op1
+   * @throws Error if the operations have different base lengths
    */
   static transform(
     op1: TextOperation,
@@ -153,7 +167,15 @@ export class OTTransformer {
 
   /**
    * Compose two operations into a single operation.
-   * compose(op1, op2) returns op such that apply(apply(doc, op1), op2) = apply(doc, op)
+   *
+   * Creates a new operation that has the same effect as applying op1
+   * followed by op2. This is useful for combining multiple local
+   * operations before sending them to the server.
+   *
+   * @param op1 - The first operation to apply
+   * @param op2 - The second operation to apply (op2.baseLength must equal op1.targetLength)
+   * @returns A single operation equivalent to applying op1 then op2
+   * @throws Error if op1.targetLength does not match op2.baseLength
    */
   static compose(op1: TextOperation, op2: TextOperation): TextOperation {
     if (op1.targetLength !== op2.baseLength) {
@@ -283,7 +305,17 @@ export class OTTransformer {
   }
 
   /**
-   * Transform a cursor position against an operation
+   * Transform a cursor position against an operation.
+   *
+   * Adjusts a cursor position to account for insertions and deletions
+   * that occurred before or at the cursor location. This is used to
+   * keep remote users' cursor positions accurate as the document changes.
+   *
+   * @param cursor - The current cursor position (zero-based index)
+   * @param op - The operation to transform against
+   * @param isOwnCursor - If true, inserts at the cursor position go after the cursor
+   *                      (used for the local user's cursor)
+   * @returns The new cursor position after the operation
    */
   static transformCursor(
     cursor: number,

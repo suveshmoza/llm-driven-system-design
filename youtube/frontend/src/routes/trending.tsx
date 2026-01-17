@@ -3,10 +3,20 @@ import { useEffect } from 'react';
 import { useVideoStore } from '../stores/videoStore';
 import VideoCard from '../components/VideoCard';
 
+/**
+ * Trending page route configuration.
+ * Public page showing currently popular videos.
+ */
 export const Route = createFileRoute('/trending')({
   component: TrendingPage,
 });
 
+/**
+ * Trending videos page component.
+ * Displays a ranked list of currently popular videos with position
+ * numbers. Videos are shown in a list layout for better visibility
+ * of trending rankings.
+ */
 function TrendingPage() {
   const { trending, isLoading, fetchTrending } = useVideoStore();
 

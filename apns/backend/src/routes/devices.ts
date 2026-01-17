@@ -10,9 +10,32 @@ import {
   SubscribeTopicRequest,
 } from "../types/index.js";
 
+/**
+ * Device Management Routes.
+ *
+ * Handles device token registration, lookup, invalidation, and topic subscriptions.
+ * These endpoints are called by iOS apps and backend services.
+ *
+ * Routes:
+ * - POST /register - Register a device token
+ * - GET /token/:token - Look up device by raw token
+ * - GET /:deviceId - Look up device by ID
+ * - DELETE /token/:token - Invalidate a device token
+ * - POST /topics/subscribe - Subscribe device to topic
+ * - POST /topics/unsubscribe - Unsubscribe device from topic
+ * - GET /:deviceId/topics - Get device's topic subscriptions
+ */
 const router = Router();
 
-// Register a device token
+/**
+ * Register a device token.
+ * Called by iOS apps when they receive a device token from APNs.
+ * Creates a new device or updates last_seen for existing devices.
+ *
+ * @route POST /api/v1/devices/register
+ * @body {token, app_bundle_id, device_info?}
+ * @returns {device_id, is_new}
+ */
 router.post("/register", async (req: Request, res: Response) => {
   try {
     const { token, app_bundle_id, device_info } = req.body as RegisterDeviceRequest;
@@ -49,7 +72,14 @@ router.post("/register", async (req: Request, res: Response) => {
   }
 });
 
-// Get device by token
+/**
+ * Look up a device by its raw token.
+ * Returns device info if found and valid.
+ *
+ * @route GET /api/v1/devices/token/:token
+ * @param token - 64-character hex device token
+ * @returns Device record
+ */
 router.get("/token/:token", async (req: Request, res: Response) => {
   try {
     const { token } = req.params;
@@ -80,7 +110,14 @@ router.get("/token/:token", async (req: Request, res: Response) => {
   }
 });
 
-// Get device by ID
+/**
+ * Look up a device by its server-assigned ID.
+ * Returns device info including validity status.
+ *
+ * @route GET /api/v1/devices/:deviceId
+ * @param deviceId - UUID device identifier
+ * @returns Device record
+ */
 router.get("/:deviceId", async (req: Request, res: Response) => {
   try {
     const { deviceId } = req.params;
@@ -104,7 +141,16 @@ router.get("/:deviceId", async (req: Request, res: Response) => {
   }
 });
 
-// Invalidate a device token
+/**
+ * Invalidate a device token.
+ * Marks the token as invalid and adds to feedback queue.
+ * Called when an app uninstalls or token is known to be invalid.
+ *
+ * @route DELETE /api/v1/devices/token/:token
+ * @param token - 64-character hex device token
+ * @body {reason?} - Optional invalidation reason
+ * @returns 204 No Content
+ */
 router.delete("/token/:token", async (req: Request, res: Response) => {
   try {
     const { token } = req.params;
@@ -129,7 +175,14 @@ router.delete("/token/:token", async (req: Request, res: Response) => {
   }
 });
 
-// Subscribe to a topic
+/**
+ * Subscribe a device to a topic.
+ * Enables the device to receive notifications sent to this topic.
+ *
+ * @route POST /api/v1/devices/topics/subscribe
+ * @body {device_token, topic}
+ * @returns {success: true, topic}
+ */
 router.post("/topics/subscribe", async (req: Request, res: Response) => {
   try {
     const { device_token, topic } = req.body as SubscribeTopicRequest;
@@ -168,7 +221,14 @@ router.post("/topics/subscribe", async (req: Request, res: Response) => {
   }
 });
 
-// Unsubscribe from a topic
+/**
+ * Unsubscribe a device from a topic.
+ * Device will no longer receive notifications for this topic.
+ *
+ * @route POST /api/v1/devices/topics/unsubscribe
+ * @body {device_token, topic}
+ * @returns {success: true}
+ */
 router.post("/topics/unsubscribe", async (req: Request, res: Response) => {
   try {
     const { device_token, topic } = req.body as SubscribeTopicRequest;
@@ -207,7 +267,13 @@ router.post("/topics/unsubscribe", async (req: Request, res: Response) => {
   }
 });
 
-// Get device subscriptions
+/**
+ * Get all topics a device is subscribed to.
+ *
+ * @route GET /api/v1/devices/:deviceId/topics
+ * @param deviceId - UUID device identifier
+ * @returns {device_id, topics: string[]}
+ */
 router.get("/:deviceId/topics", async (req: Request, res: Response) => {
   try {
     const { deviceId } = req.params;

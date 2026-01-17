@@ -1,10 +1,23 @@
+/**
+ * Authentication routes for user registration, login, and session management.
+ * Endpoints:
+ * - POST /register - Create new user account
+ * - POST /login - Authenticate and create session
+ * - POST /logout - Invalidate current session
+ * - GET /me - Get current authenticated user
+ */
 import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth.service.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
+/** Express router for authentication endpoints */
 const router = Router();
 
-// Register
+/**
+ * POST /register
+ * Creates a new user account.
+ * Requires email, password, and name in request body.
+ */
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { email, password, name } = req.body;
@@ -30,7 +43,11 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// Login
+/**
+ * POST /login
+ * Authenticates a user and creates a session.
+ * Sets session cookie and returns user info with session ID.
+ */
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -69,7 +86,11 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// Logout
+/**
+ * POST /logout
+ * Invalidates the current session and clears the session cookie.
+ * Requires authentication.
+ */
 router.post('/logout', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (req.sessionId) {
@@ -84,7 +105,11 @@ router.post('/logout', authMiddleware, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// Get current user
+/**
+ * GET /me
+ * Returns the currently authenticated user's profile.
+ * Requires authentication.
+ */
 router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = await authService.getUserById(req.userId!);

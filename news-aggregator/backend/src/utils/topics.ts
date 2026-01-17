@@ -1,8 +1,14 @@
 /**
  * Topic extraction using keyword-based classification.
+ * Assigns topics to articles based on keyword matches in title and body.
  * In production, this would use ML models like BERT for better accuracy.
  */
 
+/**
+ * Keyword mappings for each topic category.
+ * Keys are topic names, values are arrays of keywords that indicate that topic.
+ * Matches are case-insensitive and use word boundaries.
+ */
 const TOPIC_KEYWORDS: Record<string, string[]> = {
   technology: [
     'tech', 'software', 'hardware', 'app', 'startup', 'ai', 'artificial intelligence',
@@ -56,7 +62,12 @@ const TOPIC_KEYWORDS: Record<string, string[]> = {
 };
 
 /**
- * Extract topics from article text
+ * Extract topics from article text using keyword matching.
+ * Title matches are weighted more heavily than body matches.
+ * Returns up to 3 most relevant topics sorted by score.
+ * @param title - Article headline
+ * @param body - Full article text (optional)
+ * @returns Array of up to 3 topic names, sorted by relevance
  */
 export function extractTopics(title: string, body?: string): string[] {
   const text = `${title} ${body || ''}`.toLowerCase();
@@ -90,8 +101,11 @@ export function extractTopics(title: string, body?: string): string[] {
 }
 
 /**
- * Simple named entity extraction
- * In production, use NLP libraries like spaCy or Stanford NER
+ * Simple named entity extraction from text.
+ * Identifies capitalized words and compound names as potential entities.
+ * In production, use NLP libraries like spaCy or Stanford NER for proper classification.
+ * @param text - Text to extract entities from
+ * @returns Array of up to 10 entities with name and type (type is 'UNKNOWN' without ML)
  */
 export function extractEntities(text: string): { name: string; type: string }[] {
   const entities: { name: string; type: string }[] = [];

@@ -3,7 +3,17 @@ import { cacheGet, cacheSet, cacheDel } from '../utils/redis.js';
 import { getUserById, getUsersByIds, getUserSkills, getUserExperiences, getUserEducation } from './userService.js';
 import type { User, ConnectionRequest, ConnectionDegree, PYMKCandidate } from '../types/index.js';
 
-// Connection Management
+/**
+ * Sends a connection request from one user to another.
+ * Checks for existing connections or pending requests to prevent duplicates.
+ * Connections are the core of LinkedIn's social graph.
+ *
+ * @param fromUserId - The ID of the user sending the request
+ * @param toUserId - The ID of the user receiving the request
+ * @param message - Optional personal message with the request
+ * @returns The created or updated connection request
+ * @throws Error if already connected or request is pending
+ */
 export async function sendConnectionRequest(
   fromUserId: number,
   toUserId: number,
@@ -44,6 +54,15 @@ export async function sendConnectionRequest(
   return request!;
 }
 
+/**
+ * Accepts a pending connection request and creates the connection.
+ * Stores connections with smaller user ID first for consistent lookups.
+ * Invalidates caches for both users to reflect new connection.
+ *
+ * @param requestId - The connection request ID
+ * @param userId - The user accepting (must be the request recipient)
+ * @throws Error if request not found or user is not the recipient
+ */
 export async function acceptConnectionRequest(requestId: number, userId: number): Promise<void> {
   const request = await queryOne<ConnectionRequest>(
     `SELECT * FROM connection_requests WHERE id = $1 AND to_user_id = $2 AND status = 'pending'`,
@@ -83,6 +102,12 @@ export async function acceptConnectionRequest(requestId: number, userId: number)
   await cacheDel(`pymk:${request.to_user_id}`);
 }
 
+/**
+ * Rejects a pending connection request.
+ *
+ * @param requestId - The connection request ID
+ * @param userId - The user rejecting (must be the request recipient)
+ */
 export async function rejectConnectionRequest(requestId: number, userId: number): Promise<void> {
   await execute(
     `UPDATE connection_requests SET status = 'rejected', updated_at = NOW()
@@ -91,6 +116,13 @@ export async function rejectConnectionRequest(requestId: number, userId: number)
   );
 }
 
+/**
+ * Retrieves pending connection requests for a user.
+ * Includes sender information for display in the UI.
+ *
+ * @param userId - The user's ID receiving the requests
+ * @returns Array of pending requests with sender details
+ */
 export async function getPendingRequests(userId: number): Promise<(ConnectionRequest & { from_user: User })[]> {
   const requests = await query<ConnectionRequest & { from_user: User }>(
     `SELECT cr.*,
@@ -110,6 +142,13 @@ export async function getPendingRequests(userId: number): Promise<(ConnectionReq
   return requests;
 }
 
+/**
+ * Removes an existing connection between two users.
+ * Decrements connection counts and invalidates caches.
+ *
+ * @param userId - The user initiating the removal
+ * @param connectedUserId - The connected user to remove
+ */
 export async function removeConnection(userId: number, connectedUserId: number): Promise<void> {
   const [smallerId, largerId] = userId < connectedUserId
     ? [userId, connectedUserId]
@@ -130,6 +169,13 @@ export async function removeConnection(userId: number, connectedUserId: number):
   }
 }
 
+/**
+ * Checks if two users are directly connected (1st degree).
+ *
+ * @param userId1 - First user's ID
+ * @param userId2 - Second user's ID
+ * @returns True if users are connected, false otherwise
+ */
 export async function areConnected(userId1: number, userId2: number): Promise<boolean> {
   const [smallerId, largerId] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1];
   const result = await queryOne<{ exists: boolean }>(
@@ -139,7 +185,14 @@ export async function areConnected(userId1: number, userId2: number): Promise<bo
   return result?.exists || false;
 }
 
-// Get first-degree connections
+/**
+ * Retrieves all first-degree connection IDs for a user.
+ * Results are cached for 1 hour to reduce database load.
+ * First-degree connections are the user's direct professional network.
+ *
+ * @param userId - The user's unique identifier
+ * @returns Array of connected user IDs
+ */
 export async function getFirstDegreeConnections(userId: number): Promise<number[]> {
   const cacheKey = `connections:${userId}`;
   const cached = await cacheGet<number[]>(cacheKey);
@@ -157,7 +210,14 @@ export async function getFirstDegreeConnections(userId: number): Promise<number[
   return ids;
 }
 
-// Get second-degree connections
+/**
+ * Retrieves second-degree connections (friends of friends).
+ * Returns users connected to the user's connections but not directly connected.
+ * Includes mutual connection count for ranking recommendations.
+ *
+ * @param userId - The user's unique identifier
+ * @returns Array of second-degree connections with mutual counts
+ */
 export async function getSecondDegreeConnections(userId: number): Promise<ConnectionDegree[]> {
   const firstDegree = await getFirstDegreeConnections(userId);
   if (firstDegree.length === 0) return [];
@@ -187,7 +247,14 @@ export async function getSecondDegreeConnections(userId: number): Promise<Connec
     }));
 }
 
-// Get mutual connections between two users
+/**
+ * Finds mutual connections between two users.
+ * Useful for showing common connections on profiles.
+ *
+ * @param userId1 - First user's ID
+ * @param userId2 - Second user's ID
+ * @returns Array of user IDs connected to both users
+ */
 export async function getMutualConnections(userId1: number, userId2: number): Promise<number[]> {
   const [conn1, conn2] = await Promise.all([
     getFirstDegreeConnections(userId1),
@@ -198,7 +265,15 @@ export async function getMutualConnections(userId1: number, userId2: number): Pr
   return conn2.filter(id => set1.has(id));
 }
 
-// Get connection degree between two users
+/**
+ * Calculates the connection degree between two users.
+ * Returns 0 for self, 1 for direct connections, 2 for friends-of-friends,
+ * 3 for third-degree, or null if not connected within 3 degrees.
+ *
+ * @param userId1 - First user's ID
+ * @param userId2 - Second user's ID
+ * @returns Connection degree (0-3) or null if not in network
+ */
 export async function getConnectionDegree(userId1: number, userId2: number): Promise<number | null> {
   if (userId1 === userId2) return 0;
 
@@ -225,7 +300,20 @@ export async function getConnectionDegree(userId1: number, userId2: number): Pro
   return null; // Not connected within 3 degrees
 }
 
-// People You May Know (PYMK)
+/**
+ * Generates "People You May Know" (PYMK) recommendations.
+ * Scores candidates based on multiple signals:
+ * - Mutual connections (10 points each, strongest signal)
+ * - Same current company (8 points)
+ * - Same school (5 points)
+ * - Shared skills (2 points each)
+ * - Same location (2 points)
+ * Results are cached for 24 hours to reduce computation.
+ *
+ * @param userId - The user to generate recommendations for
+ * @param limit - Maximum recommendations to return (default: 20)
+ * @returns Array of candidates with scores and match reasons
+ */
 export async function getPeopleYouMayKnow(userId: number, limit = 20): Promise<PYMKCandidate[]> {
   const cacheKey = `pymk:${userId}`;
   const cached = await cacheGet<PYMKCandidate[]>(cacheKey);
@@ -306,7 +394,15 @@ export async function getPeopleYouMayKnow(userId: number, limit = 20): Promise<P
   return topCandidates.slice(0, limit);
 }
 
-// Get connections with user data
+/**
+ * Retrieves connections with full user data for display.
+ * Supports pagination for large connection lists.
+ *
+ * @param userId - The user's unique identifier
+ * @param offset - Number of connections to skip (default: 0)
+ * @param limit - Maximum connections to return (default: 20)
+ * @returns Array of user objects for the connection list
+ */
 export async function getConnectionsWithData(
   userId: number,
   offset = 0,

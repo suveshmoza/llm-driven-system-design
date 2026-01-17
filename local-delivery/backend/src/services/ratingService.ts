@@ -3,6 +3,18 @@ import { updateDriverRating } from './driverService.js';
 import { updateMerchantRating } from './merchantService.js';
 import type { Rating, CreateRatingInput, Order } from '../types/index.js';
 
+/**
+ * Creates a rating for a driver or merchant from a completed order.
+ * Validates the order is delivered and the rater is the customer.
+ * Prevents duplicate ratings for the same order/target combination.
+ * Automatically updates the target's average rating.
+ *
+ * @param raterId - The customer submitting the rating
+ * @param input - Rating details including order ID, score, and optional comment
+ * @param ratingType - Whether rating the driver or merchant
+ * @returns Created rating record
+ * @throws Error if order not found, not delivered, or already rated
+ */
 export async function createRating(
   raterId: string,
   input: CreateRatingInput,
@@ -87,10 +99,24 @@ export async function createRating(
   return rating;
 }
 
+/**
+ * Retrieves all ratings associated with an order.
+ * Typically includes one for driver and one for merchant.
+ *
+ * @param orderId - The order's UUID
+ * @returns Array of rating records
+ */
 export async function getOrderRatings(orderId: string): Promise<Rating[]> {
   return query<Rating>(`SELECT * FROM ratings WHERE order_id = $1`, [orderId]);
 }
 
+/**
+ * Retrieves recent ratings for a driver's profile display.
+ *
+ * @param driverId - The driver's UUID
+ * @param limit - Maximum ratings to return (default 10)
+ * @returns Array of ratings, newest first
+ */
 export async function getDriverRatings(
   driverId: string,
   limit: number = 10
@@ -104,6 +130,13 @@ export async function getDriverRatings(
   );
 }
 
+/**
+ * Retrieves recent ratings for a merchant's profile display.
+ *
+ * @param merchantId - The merchant's UUID
+ * @param limit - Maximum ratings to return (default 10)
+ * @returns Array of ratings, newest first
+ */
 export async function getMerchantRatings(
   merchantId: string,
   limit: number = 10

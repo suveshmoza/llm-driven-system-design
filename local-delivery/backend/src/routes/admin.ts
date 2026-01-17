@@ -1,3 +1,10 @@
+/**
+ * Admin dashboard routes for the delivery platform.
+ * Provides endpoints for viewing platform statistics, managing users,
+ * and accessing analytics. All routes require admin authentication.
+ *
+ * @module routes/admin
+ */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authenticate, requireAdmin } from '../middleware/auth.js';

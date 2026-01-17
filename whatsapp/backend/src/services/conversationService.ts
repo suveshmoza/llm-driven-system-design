@@ -2,6 +2,14 @@ import { pool } from '../db.js';
 import { redis, KEYS } from '../redis.js';
 import { Conversation, ConversationParticipant, User } from '../types/index.js';
 
+/**
+ * Creates a 1:1 direct conversation between two users.
+ * If a conversation already exists between these users, returns the existing one.
+ * Uses a database transaction to ensure atomicity.
+ * @param userId1 - First user (typically the initiator)
+ * @param userId2 - Second user
+ * @returns The new or existing conversation
+ */
 export async function createDirectConversation(
   userId1: string,
   userId2: string
@@ -53,6 +61,15 @@ export async function createDirectConversation(
   }
 }
 
+/**
+ * Creates a new group conversation.
+ * The creator automatically becomes an admin, other members become regular members.
+ * Caches group membership in Redis for fast lookups during message routing.
+ * @param name - Display name for the group
+ * @param creatorId - User creating the group (becomes admin)
+ * @param memberIds - Array of user IDs to add as members
+ * @returns The newly created conversation
+ */
 export async function createGroupConversation(
   name: string,
   creatorId: string,
@@ -103,11 +120,23 @@ export async function createGroupConversation(
   }
 }
 
+/**
+ * Retrieves a conversation by its unique ID.
+ * @param conversationId - The conversation's UUID
+ * @returns The conversation if found, null otherwise
+ */
 export async function getConversationById(conversationId: string): Promise<Conversation | null> {
   const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [conversationId]);
   return result.rows[0] || null;
 }
 
+/**
+ * Retrieves all conversations for a user with enriched data.
+ * Includes participants, last message, and unread count for efficient UI rendering.
+ * Results are ordered by most recent activity (updated_at).
+ * @param userId - The user whose conversations to retrieve
+ * @returns Array of conversations with nested participant and message data
+ */
 export async function getConversationsForUser(userId: string): Promise<Conversation[]> {
   const result = await pool.query(
     `SELECT
@@ -160,6 +189,12 @@ export async function getConversationsForUser(userId: string): Promise<Conversat
   return result.rows;
 }
 
+/**
+ * Retrieves all participants in a conversation with user details.
+ * Used for displaying participant lists and routing messages.
+ * @param conversationId - The conversation to query
+ * @returns Array of participants with embedded user information
+ */
 export async function getConversationParticipants(
   conversationId: string
 ): Promise<ConversationParticipant[]> {
@@ -179,6 +214,13 @@ export async function getConversationParticipants(
   return result.rows;
 }
 
+/**
+ * Checks if a user is a participant in a conversation.
+ * Used for authorization before allowing message access or sending.
+ * @param userId - The user to check
+ * @param conversationId - The conversation to check membership in
+ * @returns True if user is a participant, false otherwise
+ */
 export async function isUserInConversation(
   userId: string,
   conversationId: string
@@ -190,6 +232,13 @@ export async function isUserInConversation(
   return result.rows.length > 0;
 }
 
+/**
+ * Gets the other participant in a 1:1 conversation.
+ * Used for displaying conversation headers and presence information.
+ * @param conversationId - The direct conversation
+ * @param userId - The current user (to exclude from results)
+ * @returns The other user if found, null otherwise
+ */
 export async function getOtherParticipant(
   conversationId: string,
   userId: string
@@ -204,6 +253,14 @@ export async function getOtherParticipant(
   return result.rows[0] || null;
 }
 
+/**
+ * Adds a user to a group conversation.
+ * Updates both PostgreSQL and Redis cache for group membership.
+ * Uses ON CONFLICT to handle duplicate add attempts gracefully.
+ * @param conversationId - The group to add the user to
+ * @param userId - The user to add
+ * @param role - The user's role in the group (default: 'member')
+ */
 export async function addUserToGroup(
   conversationId: string,
   userId: string,
@@ -220,6 +277,12 @@ export async function addUserToGroup(
   await redis.sadd(KEYS.groupMembers(conversationId), userId);
 }
 
+/**
+ * Removes a user from a group conversation.
+ * Updates both PostgreSQL and Redis cache for group membership.
+ * @param conversationId - The group to remove the user from
+ * @param userId - The user to remove
+ */
 export async function removeUserFromGroup(conversationId: string, userId: string): Promise<void> {
   await pool.query(
     'DELETE FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',

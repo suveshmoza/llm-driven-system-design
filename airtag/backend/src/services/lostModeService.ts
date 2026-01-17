@@ -2,9 +2,19 @@ import pool from '../db/pool.js';
 import { LostMode, LostModeRequest } from '../types/index.js';
 import { deviceService } from './deviceService.js';
 
+/**
+ * Service for managing lost mode settings on devices.
+ * Lost mode enables notifications when a lost device is detected by the Find My network,
+ * and allows owners to display contact information to finders.
+ */
 export class LostModeService {
   /**
-   * Get lost mode settings for a device
+   * Get lost mode settings for a device.
+   * Verifies device ownership before returning settings.
+   *
+   * @param deviceId - The UUID of the device
+   * @param userId - The ID of the user who should own the device
+   * @returns Lost mode settings, or null if device not found/not owned
    */
   async getLostMode(deviceId: string, userId: string): Promise<LostMode | null> {
     // Verify device ownership
@@ -20,7 +30,14 @@ export class LostModeService {
   }
 
   /**
-   * Update lost mode settings for a device
+   * Update lost mode settings for a device.
+   * Uses upsert to create settings if they don't exist.
+   * Tracks when lost mode was first enabled.
+   *
+   * @param deviceId - The UUID of the device
+   * @param userId - The ID of the user who should own the device
+   * @param data - New lost mode settings to apply
+   * @returns Updated lost mode settings, or null if device not found
    */
   async updateLostMode(
     deviceId: string,
@@ -61,21 +78,32 @@ export class LostModeService {
   }
 
   /**
-   * Enable lost mode quickly
+   * Quickly enable lost mode with existing/default settings.
+   *
+   * @param deviceId - The UUID of the device
+   * @param userId - The ID of the user who should own the device
+   * @returns Updated lost mode settings
    */
   async enableLostMode(deviceId: string, userId: string): Promise<LostMode | null> {
     return this.updateLostMode(deviceId, userId, { enabled: true });
   }
 
   /**
-   * Disable lost mode
+   * Disable lost mode when device is recovered.
+   *
+   * @param deviceId - The UUID of the device
+   * @param userId - The ID of the user who should own the device
+   * @returns Updated lost mode settings
    */
   async disableLostMode(deviceId: string, userId: string): Promise<LostMode | null> {
     return this.updateLostMode(deviceId, userId, { enabled: false });
   }
 
   /**
-   * Get all devices in lost mode (for admin)
+   * Get all devices currently in lost mode.
+   * Admin-only operation for monitoring active lost devices.
+   *
+   * @returns Array of lost mode records with device and owner information
    */
   async getAllLostDevices(): Promise<
     Array<LostMode & { device_name: string; device_type: string; user_email: string }>
@@ -92,7 +120,9 @@ export class LostModeService {
   }
 
   /**
-   * Get lost mode statistics
+   * Get lost mode statistics for the admin dashboard.
+   *
+   * @returns Statistics with total and active lost mode counts
    */
   async getLostModeStats(): Promise<{ total: number; active: number }> {
     const total = await pool.query(`SELECT COUNT(*) as count FROM lost_mode`);

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Workspace routes for multi-tenant workspace management.
+ * Handles workspace CRUD, member management, and workspace selection.
+ * Each workspace is isolated with its own channels and messages.
+ */
+
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../db/index.js';
@@ -6,7 +12,10 @@ import type { Workspace, WorkspaceMember } from '../types/index.js';
 
 const router = Router();
 
-// Get user's workspaces
+/**
+ * GET /workspaces - List all workspaces the current user is a member of.
+ * Returns workspace details along with the user's role in each.
+ */
 router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query<Workspace & { role: string }>(
@@ -24,7 +33,10 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
   }
 });
 
-// Create workspace
+/**
+ * POST /workspaces - Create a new workspace.
+ * The creator becomes the workspace owner and default channels are created.
+ */
 router.post('/', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, domain } = req.body;
@@ -84,7 +96,10 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
   }
 });
 
-// Get workspace by domain (for joining)
+/**
+ * GET /workspaces/domain/:domain - Find a workspace by its domain.
+ * Used for joining workspaces by URL. Returns limited public info.
+ */
 router.get('/domain/:domain', async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query<Workspace>(
@@ -104,7 +119,10 @@ router.get('/domain/:domain', async (req: Request, res: Response): Promise<void>
   }
 });
 
-// Get workspace details
+/**
+ * GET /workspaces/:id - Get detailed information about a specific workspace.
+ * Requires membership in the workspace.
+ */
 router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     // Check membership
@@ -135,7 +153,10 @@ router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<voi
   }
 });
 
-// Join workspace
+/**
+ * POST /workspaces/:id/join - Join an existing workspace.
+ * Adds user as a member and subscribes them to default channels.
+ */
 router.post('/:id/join', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const workspaceId = req.params.id;
@@ -179,7 +200,10 @@ router.post('/:id/join', requireAuth, async (req: Request, res: Response): Promi
   }
 });
 
-// Select workspace (set session context)
+/**
+ * POST /workspaces/:id/select - Set the active workspace in the session.
+ * Required before making workspace-scoped API calls.
+ */
 router.post('/:id/select', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     // Verify membership
@@ -202,7 +226,10 @@ router.post('/:id/select', requireAuth, async (req: Request, res: Response): Pro
   }
 });
 
-// Get workspace members
+/**
+ * GET /workspaces/:id/members - List all members of a workspace.
+ * Returns user profiles with their roles and join dates.
+ */
 router.get('/:id/members', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query(

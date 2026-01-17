@@ -20,6 +20,11 @@ import type {
   ICECandidate,
 } from '../types/index.js';
 
+/**
+ * Represents a connected WebSocket client for signaling.
+ * Tracks the socket connection, user identity, device info,
+ * and last heartbeat for connection health monitoring.
+ */
 interface ConnectedClient {
   ws: WebSocket;
   userId: string;
@@ -28,15 +33,22 @@ interface ConnectedClient {
   lastPing: number;
 }
 
-// Store connected clients: Map<clientId, ConnectedClient>
+/** Map of clientId to ConnectedClient for all active WebSocket connections */
 const clients = new Map<string, ConnectedClient>();
 
-// Map userId -> Set<clientId> for quick lookup
+/** Map of userId to Set of clientIds for quick user-to-connection lookup */
 const userClients = new Map<string, Set<string>>();
 
-// Ring timeouts: Map<callId, NodeJS.Timeout>
+/** Map of callId to timeout handle for ring timeout management */
 const ringTimeouts = new Map<string, NodeJS.Timeout>();
 
+/**
+ * Initializes WebSocket signaling server with event handlers.
+ * This is the core of the real-time communication system, handling
+ * client registration, call signaling, and WebRTC offer/answer exchange.
+ *
+ * @param wss - The WebSocket server instance to configure
+ */
 export function setupWebSocketServer(wss: WebSocketServer): void {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const clientId = uuidv4();
@@ -129,6 +141,16 @@ export function setupWebSocketServer(wss: WebSocketServer): void {
   }, 30000);
 }
 
+/**
+ * Handles client registration when a user connects via WebSocket.
+ * Verifies user exists, creates client tracking entry, updates presence
+ * in Redis, and records the device in the database.
+ *
+ * @param ws - The WebSocket connection
+ * @param clientId - Unique ID for this connection
+ * @param message - The registration message containing userId and deviceId
+ * @returns The created ConnectedClient or null if registration failed
+ */
 async function handleRegister(
   ws: WebSocket,
   clientId: string,
@@ -207,6 +229,14 @@ async function handleRegister(
   return client;
 }
 
+/**
+ * Handles call initiation from a caller to one or more callees.
+ * Creates call record in database, stores state in Redis,
+ * rings all callee devices, and sets a 30-second ring timeout.
+ *
+ * @param client - The caller's connected client
+ * @param message - Message containing calleeIds and callType
+ */
 async function handleCallInitiate(
   client: ConnectedClient,
   message: WebSocketMessage
@@ -309,6 +339,14 @@ async function handleCallInitiate(
   });
 }
 
+/**
+ * Handles when a callee answers an incoming call.
+ * Updates call state to connected, notifies the initiator,
+ * and stops ringing on the answerer's other devices.
+ *
+ * @param client - The answering callee's connected client
+ * @param message - Message containing the callId
+ */
 async function handleCallAnswer(
   client: ConnectedClient,
   message: WebSocketMessage
@@ -407,6 +445,14 @@ async function handleCallAnswer(
   });
 }
 
+/**
+ * Handles when a callee declines an incoming call.
+ * Updates participant state and notifies the initiator.
+ * If all callees decline, ends the call.
+ *
+ * @param client - The declining callee's connected client
+ * @param message - Message containing the callId
+ */
 async function handleCallDecline(
   client: ConnectedClient,
   message: WebSocketMessage
@@ -456,6 +502,13 @@ async function handleCallDecline(
   }
 }
 
+/**
+ * Handles when a participant ends an active call.
+ * Triggers call termination for all participants.
+ *
+ * @param client - The connected client ending the call
+ * @param message - Message containing the callId
+ */
 async function handleCallEnd(
   client: ConnectedClient,
   message: WebSocketMessage
@@ -467,6 +520,14 @@ async function handleCallEnd(
   await endCall(callId, 'ended');
 }
 
+/**
+ * Terminates a call and notifies all participants.
+ * Updates database records, cleans up Redis state,
+ * and calculates call duration for ended calls.
+ *
+ * @param callId - Unique identifier of the call to end
+ * @param reason - Reason for ending: 'ended', 'missed', or 'declined'
+ */
 async function endCall(callId: string, reason: string): Promise<void> {
   const callState = await getCallState(callId);
   if (!callState) return;
@@ -518,6 +579,12 @@ async function endCall(callId: string, reason: string): Promise<void> {
   await deleteCallState(callId);
 }
 
+/**
+ * Handles ring timeout when no callee answers within 30 seconds.
+ * Ends the call with 'missed' status if still ringing.
+ *
+ * @param callId - Unique identifier of the timed-out call
+ */
 async function handleRingTimeout(callId: string): Promise<void> {
   const callState = await getCallState(callId);
   if (!callState || callState.state !== 'ringing') return;
@@ -526,6 +593,14 @@ async function handleRingTimeout(callId: string): Promise<void> {
   await endCall(callId, 'missed');
 }
 
+/**
+ * Forwards WebRTC signaling messages between call participants.
+ * Routes offer, answer, and ICE candidate messages to enable
+ * peer-to-peer connection establishment.
+ *
+ * @param client - The sender's connected client
+ * @param message - The signaling message to forward
+ */
 async function handleSignaling(
   client: ConnectedClient,
   message: WebSocketMessage
@@ -560,6 +635,14 @@ async function handleSignaling(
   }
 }
 
+/**
+ * Cleans up when a WebSocket client disconnects.
+ * Removes from tracking maps, updates Redis presence,
+ * and marks device as inactive in database.
+ *
+ * @param clientId - The unique ID of the disconnecting client
+ * @param client - The disconnecting client's data
+ */
 async function handleDisconnect(clientId: string, client: ConnectedClient): Promise<void> {
   // Remove from clients map
   clients.delete(clientId);
@@ -583,13 +666,25 @@ async function handleDisconnect(clientId: string, client: ConnectedClient): Prom
   );
 }
 
+/**
+ * Sends a message to a connected WebSocket client.
+ * Adds timestamp and handles serialization.
+ *
+ * @param ws - The WebSocket connection to send to
+ * @param message - The message to send
+ */
 function sendToClient(ws: WebSocket, message: WebSocketMessage): void {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ ...message, timestamp: Date.now() }));
   }
 }
 
-// Helper to get online users
+/**
+ * Returns a list of currently online users with their device counts.
+ * Used by the stats endpoint to monitor active connections.
+ *
+ * @returns Array of objects with userId and deviceCount
+ */
 export function getOnlineUsers(): { userId: string; deviceCount: number }[] {
   const users: { userId: string; deviceCount: number }[] = [];
   for (const [userId, clientIds] of userClients) {
@@ -598,7 +693,12 @@ export function getOnlineUsers(): { userId: string; deviceCount: number }[] {
   return users;
 }
 
-// Helper to get client count
+/**
+ * Returns the total number of connected WebSocket clients.
+ * Used by the stats endpoint to monitor server load.
+ *
+ * @returns Total count of active WebSocket connections
+ */
 export function getClientCount(): number {
   return clients.size;
 }

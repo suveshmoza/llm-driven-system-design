@@ -1,13 +1,39 @@
 import type { RoomType } from '@/types';
 import { formatCurrency, getAmenityLabel } from '@/utils';
 
+/**
+ * Props for the RoomTypeCard component.
+ */
 interface RoomTypeCardProps {
+  /** Room type data to display */
   roomType: RoomType;
+  /** Number of nights for price calculation display */
   nights?: number;
+  /** Callback when room is selected for booking */
   onSelect?: (roomType: RoomType) => void;
+  /** Whether this room type is currently selected */
   isSelected?: boolean;
 }
 
+/**
+ * Room type card for hotel detail page.
+ * Displays room image, details, amenities, availability, and pricing.
+ *
+ * Features:
+ * - Room image with fallback
+ * - Capacity, bed type, and size info
+ * - Amenity tags
+ * - Total and per-night pricing with dynamic calculation
+ * - Availability status (rooms left or unavailable)
+ * - Select button with selected state styling
+ *
+ * @param props - Component props
+ * @param props.roomType - Room type data to display
+ * @param props.nights - Number of nights for price calculation (default: 1)
+ * @param props.onSelect - Callback when room is selected
+ * @param props.isSelected - Whether this room is currently selected
+ * @returns Room type card with selection capability
+ */
 export function RoomTypeCard({ roomType, nights = 1, onSelect, isSelected }: RoomTypeCardProps) {
   const isAvailable = !roomType.availability || roomType.availability.available;
   const availableRooms = roomType.availability?.availableRooms ?? roomType.totalCount;

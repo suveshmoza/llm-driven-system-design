@@ -1,12 +1,33 @@
+/**
+ * Virtual waiting room service for managing high-demand event access.
+ * Implements a fair queue system using Redis sorted sets to control
+ * the number of concurrent shoppers during high-traffic ticket sales.
+ */
 import redis from '../db/redis.js';
 import type { QueueStatus } from '../types/index.js';
 
-const ACTIVE_SESSION_TTL = 900; // 15 minutes active shopping time
-const QUEUE_PROCESS_INTERVAL = 1000; // Process queue every second
+/** Duration in seconds that active shoppers can browse before timing out (15 minutes) */
+const ACTIVE_SESSION_TTL = 900;
+/** Interval in milliseconds for processing the queue and admitting users (1 second) */
+const QUEUE_PROCESS_INTERVAL = 1000;
 
+/**
+ * Service class for virtual waiting room functionality.
+ * Manages user queues, admission control, and active session tracking.
+ */
 export class WaitingRoomService {
+  /** Map of event IDs to their queue processing intervals */
   private processingIntervals: Map<string, NodeJS.Timeout> = new Map();
 
+  /**
+   * Adds a user to the waiting queue for an event.
+   * If already active or in queue, returns current status.
+   * Uses timestamp with jitter for fair ordering.
+   *
+   * @param eventId - The event ID
+   * @param sessionId - The user's session ID
+   * @returns Current queue status (position, status, estimated wait)
+   */
   async joinQueue(eventId: string, sessionId: string): Promise<QueueStatus> {
     const queueKey = `queue:${eventId}`;
     const activeKey = `active:${eventId}`;
@@ -46,6 +67,13 @@ export class WaitingRoomService {
     };
   }
 
+  /**
+   * Gets the current queue status for a user.
+   *
+   * @param eventId - The event ID
+   * @param sessionId - The user's session ID
+   * @returns Current queue status
+   */
   async getQueueStatus(eventId: string, sessionId: string): Promise<QueueStatus> {
     const queueKey = `queue:${eventId}`;
     const activeKey = `active:${eventId}`;
@@ -78,12 +106,28 @@ export class WaitingRoomService {
     };
   }
 
+  /**
+   * Checks if a session is currently active for shopping.
+   *
+   * @param eventId - The event ID
+   * @param sessionId - The user's session ID
+   * @returns True if session is active, false otherwise
+   */
   async isSessionActive(eventId: string, sessionId: string): Promise<boolean> {
     const activeSessionKey = `active_session:${eventId}:${sessionId}`;
     const exists = await redis.exists(activeSessionKey);
     return exists === 1;
   }
 
+  /**
+   * Admits the next batch of users from the queue to active shopping.
+   * Called periodically by the queue processor.
+   * Respects the maximum concurrent shoppers limit.
+   *
+   * @param eventId - The event ID
+   * @param maxConcurrent - Maximum allowed concurrent active shoppers
+   * @returns Number of users admitted in this batch
+   */
   async admitNextBatch(eventId: string, maxConcurrent: number): Promise<number> {
     const queueKey = `queue:${eventId}`;
     const activeKey = `active:${eventId}`;
@@ -115,6 +159,13 @@ export class WaitingRoomService {
     return nextUsers.length;
   }
 
+  /**
+   * Removes a user from the queue and/or active set.
+   * Called when user explicitly leaves or navigates away.
+   *
+   * @param eventId - The event ID
+   * @param sessionId - The user's session ID
+   */
   async leaveQueue(eventId: string, sessionId: string): Promise<void> {
     const queueKey = `queue:${eventId}`;
     const activeKey = `active:${eventId}`;
@@ -124,6 +175,13 @@ export class WaitingRoomService {
     await redis.del(`active_session:${eventId}:${sessionId}`);
   }
 
+  /**
+   * Gets statistics about the current queue state.
+   * Useful for monitoring and display purposes.
+   *
+   * @param eventId - The event ID
+   * @returns Object with queue length, active count, and estimated wait
+   */
   async getQueueStats(eventId: string): Promise<{
     queueLength: number;
     activeCount: number;
@@ -144,6 +202,13 @@ export class WaitingRoomService {
     };
   }
 
+  /**
+   * Starts the background queue processor for an event.
+   * Periodically admits users from the queue as slots become available.
+   *
+   * @param eventId - The event ID to start processing
+   * @param maxConcurrent - Maximum concurrent shoppers allowed
+   */
   startQueueProcessor(eventId: string, maxConcurrent: number): void {
     if (this.processingIntervals.has(eventId)) {
       return;
@@ -164,6 +229,12 @@ export class WaitingRoomService {
     console.log(`Started queue processor for event ${eventId}`);
   }
 
+  /**
+   * Stops the queue processor for an event.
+   * Called when event goes off-sale or is cancelled.
+   *
+   * @param eventId - The event ID to stop processing
+   */
   stopQueueProcessor(eventId: string): void {
     const interval = this.processingIntervals.get(eventId);
     if (interval) {
@@ -173,6 +244,13 @@ export class WaitingRoomService {
     }
   }
 
+  /**
+   * Estimates wait time based on queue position.
+   * Uses a simplified model assuming ~10 users admitted per second.
+   *
+   * @param position - User's position in the queue
+   * @returns Estimated wait time in seconds
+   */
   private estimateWait(position: number): number {
     // Rough estimate: ~10 users per second can be admitted
     // and average shopping time is about 5 minutes
@@ -181,4 +259,5 @@ export class WaitingRoomService {
   }
 }
 
+/** Singleton instance of WaitingRoomService for use throughout the application */
 export const waitingRoomService = new WaitingRoomService();

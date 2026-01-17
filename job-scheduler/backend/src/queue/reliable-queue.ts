@@ -1,14 +1,34 @@
+/**
+ * Reliable queue implementation using Redis sorted sets.
+ * Provides at-least-once delivery semantics with visibility timeout and dead letter queue.
+ * Jobs are ordered by priority and enqueue time for fair, priority-aware scheduling.
+ * @module queue/reliable-queue
+ */
+
 import { redis } from './redis';
 import { logger } from '../utils/logger';
 import { QueueItem } from '../types';
 
+/** Redis key for the main priority queue (sorted set) */
 const QUEUE_KEY = 'job_scheduler:queue';
+/** Redis key for jobs currently being processed (sorted set with timeout) */
 const PROCESSING_KEY = 'job_scheduler:processing';
+/** Redis key for permanently failed jobs (list) */
 const DEAD_LETTER_KEY = 'job_scheduler:dead_letter';
 
+/**
+ * Reliable priority queue for job execution scheduling.
+ * Uses Redis sorted sets for priority ordering and visibility timeout
+ * to ensure at-least-once processing even if workers crash.
+ */
 export class ReliableQueue {
+  /** Timeout in milliseconds before a processing job is considered stalled */
   private visibilityTimeoutMs: number;
 
+  /**
+   * Creates a new ReliableQueue instance.
+   * @param visibilityTimeoutMs - How long a job can be processed before it's recovered (default: 5 minutes)
+   */
   constructor(visibilityTimeoutMs: number = 300000) {
     this.visibilityTimeoutMs = visibilityTimeoutMs;
   }
@@ -179,7 +199,11 @@ export class ReliableQueue {
   }
 }
 
-// Default queue instance
+/**
+ * Default queue instance configured from environment.
+ * VISIBILITY_TIMEOUT_MS env var controls how long a job can be processed
+ * before it's considered stalled and recovered.
+ */
 export const queue = new ReliableQueue(
   parseInt(process.env.VISIBILITY_TIMEOUT_MS || '300000', 10)
 );

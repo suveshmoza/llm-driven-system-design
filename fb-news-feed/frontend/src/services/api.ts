@@ -1,3 +1,9 @@
+/**
+ * @fileoverview API client for communicating with the News Feed backend.
+ * Provides typed methods for authentication, user management, posts, and feeds.
+ * Handles token-based authentication automatically.
+ */
+
 import type {
   Post,
   User,
@@ -11,11 +17,22 @@ import type {
   RegisterRequest,
 } from '@/types';
 
+/** Base URL for all API requests */
 const API_BASE = '/api/v1';
 
+/**
+ * Custom error class for API request failures.
+ * Includes HTTP status code for handling specific error types.
+ */
 class ApiError extends Error {
+  /** HTTP status code returned by the server */
   status: number;
 
+  /**
+   * Creates a new ApiError instance.
+   * @param message - Error message from the server
+   * @param status - HTTP status code
+   */
   constructor(message: string, status: number) {
     super(message);
     this.status = status;
@@ -23,6 +40,15 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Generic request helper that handles authentication and error handling.
+ * Automatically includes Bearer token from localStorage if available.
+ *
+ * @param endpoint - API endpoint path (without base URL)
+ * @param options - Fetch options (method, body, headers, etc.)
+ * @returns Promise resolving to the parsed JSON response
+ * @throws ApiError if the response is not OK
+ */
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -51,7 +77,10 @@ async function request<T>(
   return response.json();
 }
 
-// Auth API
+/**
+ * Authentication API methods.
+ * Handles login, registration, logout, and session validation.
+ */
 export const authApi = {
   login: (data: LoginRequest) =>
     request<AuthResponse>('/auth/login', {
@@ -71,7 +100,10 @@ export const authApi = {
   getMe: () => request<User>('/auth/me'),
 };
 
-// Users API
+/**
+ * User API methods.
+ * Handles profile viewing/editing, following, and user search.
+ */
 export const usersApi = {
   getUser: (username: string) =>
     request<UserWithFollowStatus>(`/users/${username}`),
@@ -108,7 +140,10 @@ export const usersApi = {
     request<{ users: User[] }>(`/users?q=${encodeURIComponent(query)}`),
 };
 
-// Posts API
+/**
+ * Post API methods.
+ * Handles CRUD operations for posts, likes, and comments.
+ */
 export const postsApi = {
   createPost: (data: CreatePostRequest) =>
     request<Post>('/posts', {
@@ -142,7 +177,10 @@ export const postsApi = {
     }),
 };
 
-// Feed API
+/**
+ * Feed API methods.
+ * Handles personalized home feed and public explore feed retrieval.
+ */
 export const feedApi = {
   getFeed: (cursor?: string) => {
     const params = new URLSearchParams({ limit: '20' });

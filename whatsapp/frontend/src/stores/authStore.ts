@@ -1,7 +1,19 @@
+/**
+ * Authentication Store
+ *
+ * Manages user authentication state using Zustand.
+ * Handles login, registration, logout, and session validation.
+ * Persists authentication across page refreshes via session cookies.
+ */
+
 import { create } from 'zustand';
 import { User } from '../types';
 import { authApi } from '../services/api';
 
+/**
+ * Authentication state interface.
+ * Tracks current user, loading state, and error messages.
+ */
 interface AuthState {
   user: User | null;
   isLoading: boolean;
@@ -15,6 +27,10 @@ interface AuthState {
   clearError: () => void;
 }
 
+/**
+ * Zustand store for authentication state management.
+ * Provides reactive state updates for login/logout flows.
+ */
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,

@@ -2,10 +2,29 @@ import { Link } from '@tanstack/react-router';
 import type { Auction } from '../types';
 import { useCountdown } from '../hooks/useCountdown';
 
+/**
+ * Props for the AuctionCard component.
+ */
 interface AuctionCardProps {
+  /** Auction data to display */
   auction: Auction;
 }
 
+/**
+ * Card component for displaying auction summary in listings.
+ *
+ * Shows key auction information at a glance:
+ * - Item image (or placeholder)
+ * - Title and status badge
+ * - Current bid price
+ * - Time remaining (with urgency styling when < 5 minutes)
+ * - Bid count and seller name
+ *
+ * The entire card is clickable and navigates to the auction detail page.
+ *
+ * @param props - Component props containing auction data
+ * @returns JSX element for the auction card
+ */
 export function AuctionCard({ auction }: AuctionCardProps) {
   const countdown = useCountdown(auction.end_time);
 

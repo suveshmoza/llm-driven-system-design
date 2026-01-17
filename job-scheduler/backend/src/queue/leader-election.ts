@@ -1,6 +1,18 @@
+/**
+ * Leader election and distributed locking using Redis.
+ * Ensures only one scheduler instance processes due jobs at a time,
+ * preventing duplicate scheduling in a distributed deployment.
+ * @module queue/leader-election
+ */
+
 import { redis } from './redis';
 import { logger } from '../utils/logger';
 
+/**
+ * Leader election manager for single-active-scheduler pattern.
+ * Uses Redis SET NX EX for distributed lock acquisition with heartbeat
+ * to maintain leadership and automatic failover if the leader crashes.
+ */
 export class LeaderElection {
   private instanceId: string;
   private lockKey: string;
@@ -8,6 +20,12 @@ export class LeaderElection {
   private isLeader: boolean = false;
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
+  /**
+   * Creates a new LeaderElection instance.
+   * @param instanceId - Unique identifier for this instance
+   * @param lockKey - Redis key for the leader lock
+   * @param lockTTL - Lock time-to-live in seconds (default: 30)
+   */
   constructor(
     instanceId: string,
     lockKey: string = 'job_scheduler:leader',
@@ -151,11 +169,18 @@ export class LeaderElection {
 }
 
 /**
- * Distributed lock for job execution deduplication
+ * Distributed lock for job execution deduplication.
+ * Prevents the same job from running concurrently on multiple workers.
+ * Uses Redis SET NX EX with Lua scripts for atomic operations.
  */
 export class DistributedLock {
+  /** Lock time-to-live in seconds */
   private lockTTL: number;
 
+  /**
+   * Creates a new DistributedLock instance.
+   * @param lockTTL - Lock time-to-live in seconds (default: 1 hour)
+   */
   constructor(lockTTL: number = 3600) {
     this.lockTTL = lockTTL;
   }
@@ -221,4 +246,8 @@ export class DistributedLock {
   }
 }
 
+/**
+ * Default distributed lock instance for job execution deduplication.
+ * Shared across all worker instances.
+ */
 export const distributedLock = new DistributedLock();

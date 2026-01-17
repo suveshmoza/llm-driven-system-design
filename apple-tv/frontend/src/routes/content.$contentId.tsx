@@ -7,6 +7,17 @@ import type { Content, Episode, WatchProgress } from '../types';
 import { formatDurationHuman, formatYear } from '../utils';
 import { Play, Plus, Check, Star } from 'lucide-react';
 
+/**
+ * Content detail page showing full information about a movie or series.
+ * Displays metadata, description, playback options, and episode list for series.
+ *
+ * Features:
+ * - Hero section with banner image and content metadata
+ * - Play/Resume button with progress indicator
+ * - Add to watchlist toggle
+ * - Season selector and episode list for series
+ * - Technical details section (quality, audio tracks, subtitles)
+ */
 function ContentDetailPage() {
   const { contentId } = Route.useParams();
   const navigate = useNavigate();
@@ -254,6 +265,15 @@ function ContentDetailPage() {
   );
 }
 
+/**
+ * Episode card component for series episode listings.
+ * Displays episode thumbnail, number, title, duration, and description.
+ *
+ * @param props - Episode data and play callback
+ * @param props.episode - Episode information to display
+ * @param props.onPlay - Callback when play button is clicked
+ * @returns Episode list item with hover play button
+ */
 function EpisodeCard({ episode, onPlay }: { episode: Episode; onPlay: () => void }) {
   return (
     <div className="flex gap-4 p-4 bg-apple-gray-800 rounded-xl hover:bg-apple-gray-700 transition-colors group">
@@ -288,6 +308,10 @@ function EpisodeCard({ episode, onPlay }: { episode: Episode; onPlay: () => void
   );
 }
 
+/**
+ * Route configuration for content detail page (/content/:contentId).
+ * Dynamic route that displays movie or series details based on URL parameter.
+ */
 export const Route = createFileRoute('/content/$contentId')({
   component: ContentDetailPage,
 });

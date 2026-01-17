@@ -3,7 +3,10 @@ import { getUserByToken } from '../services/authService.js';
 import { AUTH_CONFIG } from '../config.js';
 import { UserPublic } from '../models/types.js';
 
-// Extend Express Request to include user
+/**
+ * Extends the Express Request interface to include an optional user property.
+ * Populated by authentication middleware for use in route handlers.
+ */
 declare global {
   namespace Express {
     interface Request {
@@ -12,7 +15,14 @@ declare global {
   }
 }
 
-// Optional authentication - attaches user if present
+/**
+ * Optional authentication middleware.
+ * Attaches user to request if valid session exists, but allows unauthenticated access.
+ * Used for routes that work for both anonymous and authenticated users.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ */
 export async function optionalAuth(
   req: Request,
   res: Response,
@@ -34,7 +44,14 @@ export async function optionalAuth(
   next();
 }
 
-// Required authentication - returns 401 if not authenticated
+/**
+ * Required authentication middleware.
+ * Returns 401 Unauthorized if no valid session exists.
+ * Attaches user to request for authorized requests.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ */
 export async function requireAuth(
   req: Request,
   res: Response,
@@ -63,7 +80,14 @@ export async function requireAuth(
   }
 }
 
-// Admin-only authentication
+/**
+ * Admin-only authentication middleware.
+ * Returns 401 if not authenticated, 403 if authenticated but not admin.
+ * Used for admin dashboard and management endpoints.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ */
 export async function requireAdmin(
   req: Request,
   res: Response,

@@ -1,11 +1,29 @@
+/**
+ * Sidebar Component
+ *
+ * Main navigation sidebar for the Stripe Clone dashboard.
+ * Displays navigation links, merchant information, and sign-out functionality.
+ * Uses TanStack Router for active state detection and navigation.
+ *
+ * @module components/Sidebar
+ */
+
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useMerchantStore } from '@/stores';
 
+/**
+ * Sidebar navigation component.
+ * Renders the left-side navigation panel with links to all main dashboard sections.
+ * Shows the current merchant name and provides sign-out functionality.
+ *
+ * @returns The sidebar navigation element
+ */
 export function Sidebar() {
   const { merchantName, clearCredentials } = useMerchantStore();
   const router = useRouterState();
   const currentPath = router.location.pathname;
 
+  /** Navigation items configuration with paths, labels, and icons */
   const navItems = [
     { path: '/', label: 'Dashboard', icon: HomeIcon },
     { path: '/payments', label: 'Payments', icon: PaymentsIcon },
@@ -67,6 +85,15 @@ export function Sidebar() {
   );
 }
 
+// ============================================================================
+// Navigation Icons
+// SVG icons for sidebar navigation items
+// ============================================================================
+
+/**
+ * Home icon for dashboard navigation.
+ * @param props - Icon props including optional className
+ */
 function HomeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -75,6 +102,10 @@ function HomeIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Payments icon (credit card) for payment management navigation.
+ * @param props - Icon props including optional className
+ */
 function PaymentsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -83,6 +114,10 @@ function PaymentsIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Customers icon (users) for customer management navigation.
+ * @param props - Icon props including optional className
+ */
 function CustomersIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -91,6 +126,10 @@ function CustomersIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Balance icon (currency) for balance and transactions navigation.
+ * @param props - Icon props including optional className
+ */
 function BalanceIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -99,6 +138,10 @@ function BalanceIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Webhooks icon (lightning bolt) for webhook configuration navigation.
+ * @param props - Icon props including optional className
+ */
 function WebhooksIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -107,6 +150,10 @@ function WebhooksIcon({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Checkout icon (shopping bag) for checkout demo navigation.
+ * @param props - Icon props including optional className
+ */
 function CheckoutIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">

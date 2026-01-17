@@ -1,3 +1,9 @@
+/**
+ * @fileoverview WebSocket service for real-time messaging.
+ * Manages WebSocket connections, authenticates users, handles presence,
+ * and routes messages through Redis pub/sub for multi-instance support.
+ */
+
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { parse } from 'url';
@@ -5,15 +11,32 @@ import { createSubscriber, setPresence, removePresence, setTyping, publishToUser
 import { query } from '../db/index.js';
 import type Redis from 'ioredis';
 
+/**
+ * Extended WebSocket interface with user session data and Redis subscriber.
+ */
 interface ExtendedWebSocket extends WebSocket {
+  /** The authenticated user's ID */
   userId?: string;
+  /** The workspace the user is connected to */
   workspaceId?: string;
+  /** Redis subscriber for receiving messages */
   subscriber?: Redis;
+  /** Heartbeat flag for connection health checking */
   isAlive?: boolean;
 }
 
+/**
+ * Map of user IDs to their active WebSocket connections.
+ * Supports multiple connections per user (e.g., multiple browser tabs).
+ */
 const clients = new Map<string, Set<ExtendedWebSocket>>();
 
+/**
+ * Sets up the WebSocket server on the provided HTTP server.
+ * Handles connection authentication, heartbeat monitoring, message routing,
+ * and presence updates. Each user subscribes to their own Redis pub/sub channel.
+ * @param server - The HTTP server to attach the WebSocket server to
+ */
 export function setupWebSocket(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -127,6 +150,12 @@ export function setupWebSocket(server: Server): void {
   });
 }
 
+/**
+ * Processes incoming WebSocket messages from clients.
+ * Handles ping/pong heartbeats, typing indicators, and presence updates.
+ * @param ws - The WebSocket connection that sent the message
+ * @param message - The parsed message object with type and payload
+ */
 async function handleClientMessage(ws: ExtendedWebSocket, message: { type: string; payload: unknown }): Promise<void> {
   const { type, payload } = message;
 
@@ -171,6 +200,13 @@ async function handleClientMessage(ws: ExtendedWebSocket, message: { type: strin
   }
 }
 
+/**
+ * Broadcasts a presence update to all members of a workspace.
+ * Notifies other users when someone comes online, goes away, or disconnects.
+ * @param workspaceId - The workspace where the presence change occurred
+ * @param userId - The user whose presence changed
+ * @param status - The new presence status ('online', 'away', or 'offline')
+ */
 async function broadcastPresence(workspaceId: string, userId: string, status: string): Promise<void> {
   try {
     // Get workspace members
@@ -202,7 +238,13 @@ async function broadcastPresence(workspaceId: string, userId: string, status: st
   }
 }
 
-// Helper to send to specific user (if connected)
+/**
+ * Sends a message directly to a user if they have an active WebSocket connection.
+ * Delivers to all of the user's connected clients (multiple tabs/devices).
+ * Used for direct delivery without going through Redis pub/sub.
+ * @param userId - The target user's unique identifier
+ * @param message - The message payload to send (will be JSON stringified)
+ */
 export function sendToUser(userId: string, message: unknown): void {
   const userClients = clients.get(userId);
   if (userClients) {
@@ -215,7 +257,11 @@ export function sendToUser(userId: string, message: unknown): void {
   }
 }
 
-// Get connected users count
+/**
+ * Returns the number of unique users currently connected via WebSocket.
+ * Useful for monitoring and debugging connection state.
+ * @returns Count of unique connected user IDs
+ */
 export function getConnectedUsersCount(): number {
   return clients.size;
 }

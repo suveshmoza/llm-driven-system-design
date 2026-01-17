@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Post management API controller.
+ * Handles CRUD operations for posts including create, read, update, delete, and like.
+ */
+
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import {
@@ -11,7 +16,12 @@ import {
 } from '../services/postService.js';
 import type { Visibility, PostType } from '../types/index.js';
 
-// POST /api/v1/posts
+/**
+ * Handles POST /api/v1/posts - Create a new post.
+ * Creates a post with the specified content, visibility, and type.
+ * @param req - Authenticated request with content, visibility, post_type in body
+ * @param res - Response with created post or error
+ */
 export async function create(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {
@@ -46,7 +56,12 @@ export async function create(req: AuthenticatedRequest, res: Response): Promise<
   }
 }
 
-// GET /api/v1/posts/:id
+/**
+ * Handles GET /api/v1/posts/:id - Get a single post.
+ * Returns the post with the specified ID if the user has visibility access.
+ * @param req - Request with post ID in params
+ * @param res - Response with post data or 404/403 error
+ */
 export async function getById(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { id } = req.params;
@@ -72,7 +87,12 @@ export async function getById(req: AuthenticatedRequest, res: Response): Promise
   }
 }
 
-// GET /api/v1/posts/user/:userId
+/**
+ * Handles GET /api/v1/posts/user/:userId - Get posts by user.
+ * Returns paginated posts from a specific user, filtered by visibility.
+ * @param req - Request with userId in params and optional pagination query
+ * @param res - Response with array of visible posts or error
+ */
 export async function getByUser(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { userId } = req.params;
@@ -102,7 +122,13 @@ export async function getByUser(req: AuthenticatedRequest, res: Response): Promi
   }
 }
 
-// PUT /api/v1/posts/:id
+/**
+ * Handles PUT /api/v1/posts/:id - Update a post.
+ * Updates the content or visibility of an existing post.
+ * Only the post author or admin can update posts.
+ * @param req - Authenticated request with post ID in params and updates in body
+ * @param res - Response with updated post or error
+ */
 export async function update(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {
@@ -133,7 +159,13 @@ export async function update(req: AuthenticatedRequest, res: Response): Promise<
   }
 }
 
-// DELETE /api/v1/posts/:id
+/**
+ * Handles DELETE /api/v1/posts/:id - Delete a post.
+ * Removes a post and its Elasticsearch index entry.
+ * Only the post author or admin can delete posts.
+ * @param req - Authenticated request with post ID in params
+ * @param res - Response with success status or error
+ */
 export async function remove(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {
@@ -163,7 +195,12 @@ export async function remove(req: AuthenticatedRequest, res: Response): Promise<
   }
 }
 
-// POST /api/v1/posts/:id/like
+/**
+ * Handles POST /api/v1/posts/:id/like - Like a post.
+ * Increments the like count for a post.
+ * @param req - Authenticated request with post ID in params
+ * @param res - Response with updated post or error
+ */
 export async function like(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {
@@ -186,7 +223,12 @@ export async function like(req: AuthenticatedRequest, res: Response): Promise<vo
   }
 }
 
-// GET /api/v1/posts/feed
+/**
+ * Handles GET /api/v1/posts/feed - Get user's feed.
+ * Returns recent posts visible to the authenticated user.
+ * @param req - Authenticated request with optional pagination query
+ * @param res - Response with array of visible posts or error
+ */
 export async function getFeed(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {

@@ -5,17 +5,31 @@ import { sessionCache } from '../utils/cache.js';
 import { AUTH_CONFIG } from '../config.js';
 import { User, UserPublic, CreateUserInput, Session } from '../models/types.js';
 
-// Hash password
+/**
+ * Hashes a password using bcrypt.
+ * @param password - Plain text password to hash
+ * @returns Promise resolving to the hashed password
+ */
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
 }
 
-// Verify password
+/**
+ * Verifies a password against a bcrypt hash.
+ * @param password - Plain text password to verify
+ * @param hash - Bcrypt hash to compare against
+ * @returns Promise resolving to true if password matches
+ */
 async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
 
-// Convert user to public format (without password)
+/**
+ * Converts a full user model to public format.
+ * Removes sensitive data (password hash) before sending to clients.
+ * @param user - Full user model with password hash
+ * @returns Public user data safe for API responses
+ */
 function toPublicUser(user: User): UserPublic {
   return {
     id: user.id,
@@ -25,7 +39,13 @@ function toPublicUser(user: User): UserPublic {
   };
 }
 
-// Create a new user
+/**
+ * Creates a new user account.
+ * Validates email uniqueness and password requirements.
+ * @param input - User registration data
+ * @returns Promise resolving to the created user (public format)
+ * @throws Error if email exists or password is too short
+ */
 export async function createUser(input: CreateUserInput): Promise<UserPublic> {
   const { email, password, role = 'user' } = input;
 
@@ -56,7 +76,13 @@ export async function createUser(input: CreateUserInput): Promise<UserPublic> {
   return toPublicUser(result[0]);
 }
 
-// Login user
+/**
+ * Authenticates a user and creates a session.
+ * Verifies credentials, generates a session token, and caches it.
+ * @param email - User's email address
+ * @param password - User's password
+ * @returns Promise resolving to user and token, or null if invalid credentials
+ */
 export async function loginUser(
   email: string,
   password: string
@@ -96,13 +122,22 @@ export async function loginUser(
   };
 }
 
-// Logout user
+/**
+ * Logs out a user by invalidating their session.
+ * Removes the session from both database and cache.
+ * @param token - The session token to invalidate
+ */
 export async function logoutUser(token: string): Promise<void> {
   await query(`DELETE FROM sessions WHERE token = $1`, [token]);
   await sessionCache.delete(token);
 }
 
-// Get user by session token
+/**
+ * Retrieves a user by their session token.
+ * Checks cache first for performance, falls back to database.
+ * @param token - The session token
+ * @returns Promise resolving to user (public format) or null if invalid
+ */
 export async function getUserByToken(token: string): Promise<UserPublic | null> {
   // Check cache first
   const cachedUserId = await sessionCache.get(token);
@@ -143,7 +178,11 @@ export async function getUserByToken(token: string): Promise<UserPublic | null> 
   return toPublicUser(users[0]);
 }
 
-// Get user by ID
+/**
+ * Retrieves a user by their ID.
+ * @param userId - The user's UUID
+ * @returns Promise resolving to user (public format) or null if not found
+ */
 export async function getUserById(userId: string): Promise<UserPublic | null> {
   const users = await query<User>(
     `SELECT * FROM users WHERE id = $1 AND is_active = true`,
@@ -157,7 +196,13 @@ export async function getUserById(userId: string): Promise<UserPublic | null> {
   return toPublicUser(users[0]);
 }
 
-// Get all users (admin only)
+/**
+ * Retrieves a paginated list of all users.
+ * Admin-only operation for user management.
+ * @param limit - Maximum number of users to return (default: 50)
+ * @param offset - Number of users to skip (default: 0)
+ * @returns Promise resolving to users array and total count
+ */
 export async function getAllUsers(
   limit: number = 50,
   offset: number = 0
@@ -177,7 +222,13 @@ export async function getAllUsers(
   };
 }
 
-// Update user role (admin only)
+/**
+ * Updates a user's role.
+ * Admin-only operation for granting or revoking admin privileges.
+ * @param userId - The user's UUID
+ * @param role - New role ('user' or 'admin')
+ * @returns Promise resolving to updated user or null if not found
+ */
 export async function updateUserRole(
   userId: string,
   role: 'user' | 'admin'
@@ -194,7 +245,12 @@ export async function updateUserRole(
   return toPublicUser(result[0]);
 }
 
-// Deactivate user (admin only)
+/**
+ * Deactivates a user account.
+ * Admin-only operation that prevents the user from logging in.
+ * @param userId - The user's UUID
+ * @returns Promise resolving to true if deactivated, false if not found
+ */
 export async function deactivateUser(userId: string): Promise<boolean> {
   const result = await query<User>(
     `UPDATE users SET is_active = false WHERE id = $1 RETURNING *`,

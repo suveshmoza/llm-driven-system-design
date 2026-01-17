@@ -5,10 +5,22 @@ import { useAuthStore } from '@/stores/authStore';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from './TypingIndicator';
 
+/**
+ * Props for the ChatView component.
+ */
 interface ChatViewProps {
+  /** The conversation to display messages for */
   conversation: Conversation;
 }
 
+/**
+ * Main chat interface component displaying messages and input for a conversation.
+ * Handles message display with date grouping, typing indicators, auto-scrolling,
+ * and message composition with typing indicator broadcasting.
+ *
+ * @param props - Component props containing the conversation to display
+ * @returns React component for the chat view
+ */
 export function ChatView({ conversation }: ChatViewProps) {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -23,7 +35,12 @@ export function ChatView({ conversation }: ChatViewProps) {
   const setTypingIndicator = useChatStore((state) => state.setTyping);
   const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
 
-  // Get display name for conversation
+  /**
+   * Determines the display name for the conversation header.
+   * For groups, uses the group name. For direct chats, shows the other participant's name.
+   *
+   * @returns Display name string for the conversation
+   */
   const getConversationName = () => {
     if (conversation.type === 'group') {
       return conversation.name || 'Group Chat';
@@ -42,6 +59,10 @@ export function ChatView({ conversation }: ChatViewProps) {
     inputRef.current?.focus();
   }, [conversation.id]);
 
+  /**
+   * Handles typing indicator logic with debouncing.
+   * Sends typing indicator when user starts typing and clears it after 2 seconds of inactivity.
+   */
   const handleTyping = useCallback(() => {
     if (!isTyping) {
       setIsTyping(true);
@@ -60,6 +81,10 @@ export function ChatView({ conversation }: ChatViewProps) {
     }, 2000);
   }, [conversation.id, isTyping, setTypingIndicator]);
 
+  /**
+   * Sends the composed message and resets input state.
+   * Clears typing indicator and submits message via WebSocket.
+   */
   const handleSend = async () => {
     const content = inputValue.trim();
     if (!content) return;
@@ -75,6 +100,12 @@ export function ChatView({ conversation }: ChatViewProps) {
     await sendMessage(conversation.id, content);
   };
 
+  /**
+   * Handles keyboard events in the input field.
+   * Submits message on Enter (without Shift for multi-line).
+   *
+   * @param e - Keyboard event from the input
+   */
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -82,7 +113,13 @@ export function ChatView({ conversation }: ChatViewProps) {
     }
   };
 
-  // Group messages by date
+  /**
+   * Groups messages by date for display with date separators.
+   * Messages from the same day are grouped together.
+   *
+   * @param messages - Array of messages to group
+   * @returns Array of groups with date label and messages
+   */
   const groupMessagesByDate = (messages: Message[]) => {
     const groups: { date: string; messages: Message[] }[] = [];
     let currentDate = '';

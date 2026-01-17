@@ -6,9 +6,18 @@ import {
 import { isUserInConversation } from '../services/conversationService.js';
 import { requireAuth } from '../middleware/auth.js';
 
+/**
+ * Message routes.
+ * Handles fetching messages and marking conversations as read.
+ * Message sending happens via WebSocket for real-time delivery.
+ */
 const router = Router();
 
-// Get messages for a conversation
+/**
+ * GET /api/messages/:conversationId
+ * Returns messages for a conversation with pagination.
+ * Supports cursor-based pagination via 'before' query param.
+ */
 router.get('/:conversationId', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.conversationId;
@@ -29,7 +38,11 @@ router.get('/:conversationId', requireAuth, async (req: Request, res: Response) 
   }
 });
 
-// Mark conversation as read
+/**
+ * POST /api/messages/:conversationId/read
+ * Marks all messages in a conversation as read.
+ * Returns the IDs of messages that were marked as read.
+ */
 router.post('/:conversationId/read', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.conversationId;

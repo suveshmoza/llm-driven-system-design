@@ -1,3 +1,14 @@
+/**
+ * Admin service for data management and model training.
+ * Provides REST API endpoints for administrators to:
+ * - View dashboard statistics
+ * - Browse, flag, and delete drawings
+ * - Analyze data quality
+ * - Start training jobs and manage models
+ * Requires session-based authentication.
+ * @module admin
+ */
+
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
@@ -10,9 +21,13 @@ import { scoreDrawing, type StrokeData } from '../shared/quality.js'
 import { v4 as uuidv4 } from 'uuid'
 
 const app = express()
+
+/** Port for the admin service (default: 3002) */
 const PORT = parseInt(process.env.PORT || '3002')
 
-// Session interface for typed requests
+/**
+ * Session data attached to authenticated requests.
+ */
 interface AdminSession {
   userId: string
   email: string
@@ -28,7 +43,7 @@ declare global {
   }
 }
 
-// Middleware
+// Middleware configuration
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
@@ -36,7 +51,11 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser())
 
-// Auth middleware - now uses session cookies
+/**
+ * Authentication middleware that verifies the admin session cookie.
+ * Attaches session data to req.adminSession on success.
+ * Returns 401 if not authenticated or session expired.
+ */
 async function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const sessionId = req.cookies.adminSession
 
@@ -59,12 +78,15 @@ async function requireAdmin(req: express.Request, res: express.Response, next: e
   next()
 }
 
-// Health check
+// Health check endpoint
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'admin' })
 })
 
-// Login endpoint
+/**
+ * POST /api/admin/auth/login - Authenticates an admin user.
+ * Creates a session and sets an httpOnly cookie.
+ */
 app.post('/api/admin/auth/login', async (req, res) => {
   try {
     const { email, password, rememberMe } = req.body
@@ -100,7 +122,10 @@ app.post('/api/admin/auth/login', async (req, res) => {
   }
 })
 
-// Logout endpoint
+/**
+ * POST /api/admin/auth/logout - Logs out the current admin user.
+ * Clears the session from Redis and removes the cookie.
+ */
 app.post('/api/admin/auth/logout', async (req, res) => {
   const sessionId = req.cookies.adminSession
 
@@ -112,12 +137,18 @@ app.post('/api/admin/auth/logout', async (req, res) => {
   res.json({ success: true })
 })
 
-// Get current user
+/**
+ * GET /api/admin/auth/me - Returns the current authenticated user.
+ */
 app.get('/api/admin/auth/me', requireAdmin, (req, res) => {
   res.json({ user: req.adminSession })
 })
 
-// Dashboard stats (cached for 30 seconds)
+/**
+ * GET /api/admin/stats - Returns aggregated dashboard statistics.
+ * Includes total drawings, users, flagged count, per-shape breakdown,
+ * active model info, and recent training jobs. Cached for 30 seconds.
+ */
 app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
   try {
     // Check cache first
@@ -188,7 +219,10 @@ app.get('/api/admin/stats', requireAdmin, async (_req, res) => {
   }
 })
 
-// List drawings with pagination and filters
+/**
+ * GET /api/admin/drawings - Lists drawings with pagination and filters.
+ * Supports filtering by shape, date range, flagged status, and soft-deleted items.
+ */
 app.get('/api/admin/drawings', requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1
@@ -267,7 +301,10 @@ app.get('/api/admin/drawings', requireAdmin, async (req, res) => {
   }
 })
 
-// Flag/unflag a drawing
+/**
+ * POST /api/admin/drawings/:id/flag - Flags or unflags a drawing.
+ * Flagged drawings can be excluded from training data.
+ */
 app.post('/api/admin/drawings/:id/flag', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params
@@ -288,7 +325,10 @@ app.post('/api/admin/drawings/:id/flag', requireAdmin, async (req, res) => {
   }
 })
 
-// Soft delete a drawing
+/**
+ * DELETE /api/admin/drawings/:id - Soft-deletes a drawing.
+ * Sets deleted_at timestamp; drawing can be restored later.
+ */
 app.delete('/api/admin/drawings/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params
@@ -308,7 +348,10 @@ app.delete('/api/admin/drawings/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// Restore a soft-deleted drawing
+/**
+ * POST /api/admin/drawings/:id/restore - Restores a soft-deleted drawing.
+ * Clears the deleted_at timestamp.
+ */
 app.post('/api/admin/drawings/:id/restore', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params
@@ -328,7 +371,10 @@ app.post('/api/admin/drawings/:id/restore', requireAdmin, async (req, res) => {
   }
 })
 
-// Get stroke data for a drawing
+/**
+ * GET /api/admin/drawings/:id/strokes - Returns the raw stroke data for a drawing.
+ * Fetches from MinIO object storage.
+ */
 app.get('/api/admin/drawings/:id/strokes', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params
@@ -355,7 +401,10 @@ app.get('/api/admin/drawings/:id/strokes', requireAdmin, async (req, res) => {
   }
 })
 
-// Analyze quality of a single drawing
+/**
+ * GET /api/admin/drawings/:id/quality - Analyzes quality of a single drawing.
+ * Returns detailed quality score with individual check results.
+ */
 app.get('/api/admin/drawings/:id/quality', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params
@@ -388,7 +437,11 @@ app.get('/api/admin/drawings/:id/quality', requireAdmin, async (req, res) => {
   }
 })
 
-// Batch analyze quality and update scores
+/**
+ * POST /api/admin/quality/analyze-batch - Batch analyzes quality of unscored drawings.
+ * Can optionally update scores in database and auto-flag low quality drawings.
+ * Use updateScores=false for dry run.
+ */
 app.post('/api/admin/quality/analyze-batch', requireAdmin, async (req, res) => {
   try {
     const { minScore, limit = 100, updateScores = false } = req.body
@@ -484,7 +537,10 @@ app.post('/api/admin/quality/analyze-batch', requireAdmin, async (req, res) => {
   }
 })
 
-// Get quality statistics
+/**
+ * GET /api/admin/quality/stats - Returns quality score statistics.
+ * Shows distribution across quality tiers and average scores per shape.
+ */
 app.get('/api/admin/quality/stats', requireAdmin, async (_req, res) => {
   try {
     // Overall quality score distribution
@@ -534,7 +590,10 @@ app.get('/api/admin/quality/stats', requireAdmin, async (_req, res) => {
   }
 })
 
-// Start a training job
+/**
+ * POST /api/admin/training/start - Starts a new model training job.
+ * Creates a job record and publishes to RabbitMQ for async processing.
+ */
 app.post('/api/admin/training/start', requireAdmin, async (req, res) => {
   try {
     const config = req.body.config || {}
@@ -561,7 +620,9 @@ app.post('/api/admin/training/start', requireAdmin, async (req, res) => {
   }
 })
 
-// Get training job status
+/**
+ * GET /api/admin/training/:id - Returns status and details of a training job.
+ */
 app.get('/api/admin/training/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params
@@ -583,7 +644,9 @@ app.get('/api/admin/training/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// List all training jobs
+/**
+ * GET /api/admin/training - Lists all training jobs (most recent first).
+ */
 app.get('/api/admin/training', requireAdmin, async (_req, res) => {
   try {
     const result = await pool.query(`
@@ -601,7 +664,9 @@ app.get('/api/admin/training', requireAdmin, async (_req, res) => {
   }
 })
 
-// List models
+/**
+ * GET /api/admin/models - Lists all trained models.
+ */
 app.get('/api/admin/models', requireAdmin, async (_req, res) => {
   try {
     const result = await pool.query(`
@@ -619,7 +684,10 @@ app.get('/api/admin/models', requireAdmin, async (_req, res) => {
   }
 })
 
-// Activate a model
+/**
+ * POST /api/admin/models/:id/activate - Activates a model for inference.
+ * Deactivates all other models first (only one active at a time).
+ */
 app.post('/api/admin/models/:id/activate', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params

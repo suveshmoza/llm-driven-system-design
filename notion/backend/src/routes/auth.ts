@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Authentication routes for user registration, login, and session management.
+ * Uses bcrypt for password hashing and Redis-backed sessions via HTTP-only cookies.
+ */
+
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
@@ -7,11 +12,14 @@ import { authMiddleware } from '../middleware/auth.js';
 import type { User } from '../types/index.js';
 
 const router = Router();
+
+/** Number of bcrypt salt rounds for password hashing */
 const SALT_ROUNDS = 10;
 
 /**
  * POST /api/auth/register
- * Register a new user
+ * Registers a new user and creates their default workspace.
+ * Sets up a session and returns the user with an auth token.
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
@@ -98,7 +106,8 @@ router.post('/register', async (req: Request, res: Response) => {
 
 /**
  * POST /api/auth/login
- * Login with email and password
+ * Authenticates a user with email and password.
+ * Creates a new session and sets an HTTP-only cookie.
  */
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -158,7 +167,8 @@ router.post('/login', async (req: Request, res: Response) => {
 
 /**
  * POST /api/auth/logout
- * Logout current user
+ * Invalidates the current session and clears the session cookie.
+ * Requires authentication.
  */
 router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -176,7 +186,8 @@ router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * GET /api/auth/me
- * Get current user info
+ * Returns the currently authenticated user's information.
+ * Used by the frontend to verify authentication state.
  */
 router.get('/me', authMiddleware, async (req: Request, res: Response) => {
   try {

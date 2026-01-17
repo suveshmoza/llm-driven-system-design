@@ -1,3 +1,9 @@
+/**
+ * RSS feed crawler service.
+ * Responsible for fetching RSS feeds from news sources, parsing articles,
+ * detecting duplicates via SimHash, and clustering articles into stories.
+ */
+
 import { query, queryOne, execute } from '../db/postgres.js';
 import { parseRSS, stripHtml, extractSummary, RSSItem } from '../utils/rss.js';
 import { computeSimHash } from '../utils/simhash.js';
@@ -5,6 +11,7 @@ import { extractTopics, extractEntities } from '../utils/topics.js';
 import { indexArticle } from '../db/elasticsearch.js';
 import { v4 as uuid } from 'uuid';
 
+/** Represents a news source configuration */
 interface Source {
   id: string;
   name: string;
@@ -14,6 +21,7 @@ interface Source {
   crawl_frequency_minutes: number;
 }
 
+/** Represents an article stored in the database */
 interface Article {
   id: string;
   source_id: string;
@@ -29,6 +37,7 @@ interface Article {
   topics: string[];
 }
 
+/** Result of crawling a single source */
 interface CrawlResult {
   source_id: string;
   articles_found: number;
@@ -36,10 +45,17 @@ interface CrawlResult {
   errors: string[];
 }
 
-// Rate limiting per domain
+/** Tracks last crawl time per domain for rate limiting */
 const domainLastCrawl: Map<string, number> = new Map();
-const CRAWL_DELAY_MS = 1000; // Minimum 1 second between requests to same domain
 
+/** Minimum delay in milliseconds between requests to the same domain */
+const CRAWL_DELAY_MS = 1000;
+
+/**
+ * Enforce rate limiting per domain.
+ * Waits if necessary to respect the minimum delay between requests.
+ * @param domain - The domain to rate limit
+ */
 async function respectRateLimit(domain: string): Promise<void> {
   const lastCrawl = domainLastCrawl.get(domain) || 0;
   const elapsed = Date.now() - lastCrawl;
@@ -52,7 +68,10 @@ async function respectRateLimit(domain: string): Promise<void> {
 }
 
 /**
- * Fetch and parse RSS feed from a source
+ * Crawl a single news source.
+ * Fetches the RSS feed, parses articles, deduplicates, and stores new content.
+ * @param source - The source configuration to crawl
+ * @returns Result containing counts of found/new articles and any errors
  */
 export async function crawlSource(source: Source): Promise<CrawlResult> {
   const result: CrawlResult = {
@@ -121,7 +140,11 @@ export async function crawlSource(source: Source): Promise<CrawlResult> {
 }
 
 /**
- * Process a single article from a feed item
+ * Process a single article from a feed item.
+ * Cleans content, computes fingerprint, extracts topics, and stores the article.
+ * @param source - The source this article came from
+ * @param item - The parsed RSS item
+ * @returns True if the article was new and inserted, false if it already existed
  */
 async function processArticle(source: Source, item: RSSItem): Promise<boolean> {
   // Check if article already exists by URL
@@ -199,7 +222,15 @@ async function processArticle(source: Source, item: RSSItem): Promise<boolean> {
 }
 
 /**
- * Assign an article to a story cluster
+ * Assign an article to a story cluster based on content similarity.
+ * Uses SimHash fingerprints to find matching stories from the last 48 hours.
+ * Creates a new story if no similar story exists.
+ * @param articleId - The ID of the article to assign
+ * @param fingerprint - The article's SimHash fingerprint
+ * @param title - Article title (used if creating a new story)
+ * @param summary - Article summary (used if creating a new story)
+ * @param topics - Article topics (used if creating a new story)
+ * @param entities - Extracted entities (used if creating a new story)
  */
 async function assignToStory(
   articleId: string,
@@ -263,6 +294,13 @@ async function assignToStory(
   await execute('UPDATE articles SET story_id = $1 WHERE id = $2', [storyId, articleId]);
 }
 
+/**
+ * Calculate Hamming distance between two fingerprints.
+ * Used internally for story matching.
+ * @param a - First fingerprint
+ * @param b - Second fingerprint
+ * @returns Number of differing bits
+ */
 function hammingDistance(a: bigint, b: bigint): number {
   let xor = a ^ b;
   let count = 0;
@@ -274,7 +312,9 @@ function hammingDistance(a: bigint, b: bigint): number {
 }
 
 /**
- * Get all sources due for crawling
+ * Get all sources that are due for crawling.
+ * Returns sources ordered by priority and scheduled crawl time.
+ * @returns Array of sources ready to be crawled (max 50)
  */
 export async function getSourcesToCrawl(): Promise<Source[]> {
   return query<Source>(
@@ -290,7 +330,9 @@ export async function getSourcesToCrawl(): Promise<Source[]> {
 }
 
 /**
- * Crawl all sources due for refresh
+ * Crawl all sources that are due for refresh.
+ * Logs progress to console and returns results for each source.
+ * @returns Array of crawl results for all processed sources
  */
 export async function crawlAllDueSources(): Promise<CrawlResult[]> {
   const sources = await getSourcesToCrawl();
@@ -313,7 +355,8 @@ export async function crawlAllDueSources(): Promise<CrawlResult[]> {
 }
 
 /**
- * Get all sources
+ * Get all active news sources.
+ * @returns Array of all active source configurations sorted by name
  */
 export async function getAllSources(): Promise<Source[]> {
   return query<Source>(
@@ -326,7 +369,12 @@ export async function getAllSources(): Promise<Source[]> {
 }
 
 /**
- * Add a new source
+ * Add a new news source to the system.
+ * Creates the source record and schedules it for immediate crawling.
+ * @param name - Human-readable name for the source
+ * @param feedUrl - URL of the RSS/Atom feed
+ * @param category - Default category for articles from this source
+ * @returns The created source configuration
  */
 export async function addSource(
   name: string,

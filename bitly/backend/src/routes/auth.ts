@@ -8,9 +8,18 @@ import {
   getUserByToken,
 } from '../services/authService.js';
 
+/**
+ * Authentication router.
+ * Provides user registration, login, logout, and session management.
+ * Routes: POST /register, POST /login, POST /logout, GET /me
+ */
 const router = Router();
 
-// Register new user
+/**
+ * POST /register - Create a new user account
+ * Requires email and password in request body.
+ * Returns the created user (without password).
+ */
 router.post(
   '/register',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -31,7 +40,11 @@ router.post(
   })
 );
 
-// Login
+/**
+ * POST /login - Authenticate user and create session
+ * Sets httpOnly cookie with session token.
+ * Returns user data and token in response body.
+ */
 router.post(
   '/login',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -61,7 +74,10 @@ router.post(
   })
 );
 
-// Logout
+/**
+ * POST /logout - Invalidate current session
+ * Clears session cookie and removes session from database/cache.
+ */
 router.post(
   '/logout',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -76,7 +92,10 @@ router.post(
   })
 );
 
-// Get current user
+/**
+ * GET /me - Get current authenticated user
+ * Returns user data if session is valid, 401 otherwise.
+ */
 router.get(
   '/me',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {

@@ -3,8 +3,14 @@ import { query, queryOne } from '../db/index.js';
 import { authenticate } from '../middleware/auth.js';
 import crypto from 'crypto';
 
+/**
+ * Experiments router.
+ * Provides A/B testing infrastructure with consistent user allocation.
+ * Supports experiment creation, status management, and variant assignment.
+ */
 const router = Router();
 
+/** Database row type for experiment queries */
 interface ExperimentRow {
   id: string;
   name: string;
@@ -19,11 +25,13 @@ interface ExperimentRow {
   created_at: Date;
 }
 
+/** Database row type for allocation queries */
 interface AllocationRow {
   experiment_id: string;
   variant_id: string;
 }
 
+/** Experiment variant with weight and configuration */
 interface Variant {
   id: string;
   name: string;
@@ -32,7 +40,11 @@ interface Variant {
 }
 
 /**
- * Simple hash function for consistent allocation
+ * Generates a consistent hash for user allocation.
+ * Uses MD5 to produce a deterministic 32-bit integer for bucketing.
+ *
+ * @param str - String to hash (typically "profileId:experimentId")
+ * @returns 32-bit unsigned integer hash value
  */
 function murmurhash(str: string): number {
   const hash = crypto.createHash('md5').update(str).digest();
@@ -41,7 +53,7 @@ function murmurhash(str: string): number {
 
 /**
  * GET /api/experiments
- * List all experiments
+ * Lists all experiments sorted by creation date.
  */
 router.get('/', authenticate, async (_req: Request, res: Response) => {
   try {
@@ -71,7 +83,7 @@ router.get('/', authenticate, async (_req: Request, res: Response) => {
 
 /**
  * GET /api/experiments/:id
- * Get experiment details
+ * Returns experiment details including variants and targeting rules.
  */
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -109,7 +121,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
 
 /**
  * POST /api/experiments
- * Create a new experiment
+ * Creates a new experiment with variants (must have at least 2, weights sum to 100).
  */
 router.post('/', authenticate, async (req: Request, res: Response) => {
   try {
@@ -175,7 +187,7 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
 
 /**
  * PUT /api/experiments/:id/status
- * Update experiment status
+ * Updates experiment status (draft, active, paused, completed).
  */
 router.put('/:id/status', authenticate, async (req: Request, res: Response) => {
   try {
@@ -212,7 +224,8 @@ router.put('/:id/status', authenticate, async (req: Request, res: Response) => {
 
 /**
  * GET /api/experiments/:id/allocation
- * Get experiment allocation for current profile
+ * Gets or creates variant allocation for the current profile.
+ * Uses consistent hashing to ensure the same user always gets the same variant.
  */
 router.get('/:id/allocation', authenticate, async (req: Request, res: Response) => {
   try {
@@ -268,7 +281,8 @@ router.get('/:id/allocation', authenticate, async (req: Request, res: Response) 
 
 /**
  * POST /api/experiments/allocations
- * Get all experiment allocations for current profile
+ * Gets all experiment allocations for the current profile.
+ * Allocates to new experiments if not already assigned.
  */
 router.post('/allocations', authenticate, async (req: Request, res: Response) => {
   try {
@@ -318,7 +332,13 @@ router.post('/allocations', authenticate, async (req: Request, res: Response) =>
 });
 
 /**
- * Allocate a user to an experiment variant using consistent hashing
+ * Allocates a user to an experiment variant using consistent hashing.
+ * First determines if user is in the experiment population (based on allocation_percent),
+ * then assigns to a variant based on weighted random selection.
+ *
+ * @param profileId - Profile ID to allocate
+ * @param experiment - Experiment configuration with variants
+ * @returns Variant ID or null if user is not in experiment population
  */
 function allocateToExperiment(profileId: string, experiment: ExperimentRow): string | null {
   // Hash user+experiment for consistent allocation

@@ -2,7 +2,11 @@ import { query } from '../utils/database.js';
 import { getKeyPoolStats } from './keyService.js';
 import { SystemStats, Url } from '../models/types.js';
 
-// Get comprehensive system statistics
+/**
+ * Retrieves comprehensive system statistics for the admin dashboard.
+ * Aggregates data from URLs, clicks, and key pool.
+ * @returns Promise resolving to system-wide statistics
+ */
 export async function getSystemStats(): Promise<SystemStats> {
   // Total URLs
   const totalUrlsResult = await query<{ count: string }>(
@@ -59,7 +63,14 @@ export async function getSystemStats(): Promise<SystemStats> {
   };
 }
 
-// Get all URLs (admin view)
+/**
+ * Retrieves a paginated list of all URLs with optional filtering.
+ * Admin-only operation for URL management.
+ * @param limit - Maximum number of URLs to return (default: 50)
+ * @param offset - Number of URLs to skip (default: 0)
+ * @param filters - Optional filters for is_active, is_custom, and search
+ * @returns Promise resolving to URLs array and total count
+ */
 export async function getAllUrls(
   limit: number = 50,
   offset: number = 0,
@@ -109,7 +120,12 @@ export async function getAllUrls(
   };
 }
 
-// Deactivate URL (admin action)
+/**
+ * Deactivates a URL, preventing it from redirecting.
+ * Admin-only operation for moderation.
+ * @param shortCode - The short code of the URL to deactivate
+ * @returns Promise resolving to true if deactivated, false if not found
+ */
 export async function adminDeactivateUrl(shortCode: string): Promise<boolean> {
   const result = await query<Url>(
     `UPDATE urls SET is_active = false WHERE short_code = $1 RETURNING *`,
@@ -119,7 +135,12 @@ export async function adminDeactivateUrl(shortCode: string): Promise<boolean> {
   return result.length > 0;
 }
 
-// Reactivate URL (admin action)
+/**
+ * Reactivates a previously deactivated URL.
+ * Admin-only operation to restore a URL.
+ * @param shortCode - The short code of the URL to reactivate
+ * @returns Promise resolving to true if reactivated, false if not found
+ */
 export async function adminReactivateUrl(shortCode: string): Promise<boolean> {
   const result = await query<Url>(
     `UPDATE urls SET is_active = true WHERE short_code = $1 RETURNING *`,
@@ -129,7 +150,12 @@ export async function adminReactivateUrl(shortCode: string): Promise<boolean> {
   return result.length > 0;
 }
 
-// Get expired URLs for cleanup
+/**
+ * Retrieves URLs that have passed their expiration date.
+ * Used by the cleanup job to identify stale URLs.
+ * @param limit - Maximum number of URLs to return (default: 1000)
+ * @returns Promise resolving to array of expired URLs
+ */
 export async function getExpiredUrls(limit: number = 1000): Promise<Url[]> {
   return query<Url>(
     `SELECT * FROM urls
@@ -139,7 +165,11 @@ export async function getExpiredUrls(limit: number = 1000): Promise<Url[]> {
   );
 }
 
-// Cleanup expired URLs
+/**
+ * Deactivates all expired URLs in a single batch operation.
+ * Admin maintenance task to clean up stale URLs.
+ * @returns Promise resolving to the number of URLs deactivated
+ */
 export async function cleanupExpiredUrls(): Promise<number> {
   const result = await query<{ count: string }>(
     `WITH updated AS (

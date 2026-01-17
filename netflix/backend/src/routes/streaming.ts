@@ -4,8 +4,14 @@ import { authenticate, requireProfile } from '../middleware/auth.js';
 import { getVideoStreamUrl } from '../services/storage.js';
 import { STREAMING_CONFIG, MINIO_CONFIG } from '../config.js';
 
+/**
+ * Streaming router.
+ * Handles video playback including manifest generation, stream URLs,
+ * and viewing progress tracking for resume functionality.
+ */
 const router = Router();
 
+/** Database row type for video queries (minimal fields for streaming) */
 interface VideoRow {
   id: string;
   title: string;
@@ -13,6 +19,7 @@ interface VideoRow {
   duration_minutes: number | null;
 }
 
+/** Database row type for episode queries */
 interface EpisodeRow {
   id: string;
   season_id: string;
@@ -22,6 +29,7 @@ interface EpisodeRow {
   video_key: string | null;
 }
 
+/** Database row type for video file (quality variant) queries */
 interface VideoFileRow {
   id: string;
   video_id: string | null;
@@ -33,6 +41,7 @@ interface VideoFileRow {
   video_key: string;
 }
 
+/** Database row type for viewing progress queries */
 interface ViewingProgressRow {
   position_seconds: number;
   duration_seconds: number;
@@ -40,7 +49,8 @@ interface ViewingProgressRow {
 
 /**
  * GET /api/stream/:videoId/manifest
- * Get streaming manifest for a video or episode
+ * Returns streaming manifest with available quality levels and resume position.
+ * For series, requires episodeId query parameter.
  */
 router.get('/:videoId/manifest', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -145,7 +155,8 @@ router.get('/:videoId/manifest', authenticate, requireProfile, async (req: Reque
 
 /**
  * GET /api/stream/:videoId/play
- * Get actual video stream URL (redirect to MinIO/S3)
+ * Redirects to presigned video stream URL in MinIO/S3.
+ * For demo, returns error info if video file doesn't exist.
  */
 router.get('/:videoId/play', authenticate, async (req: Request, res: Response) => {
   try {
@@ -177,7 +188,8 @@ router.get('/:videoId/play', authenticate, async (req: Request, res: Response) =
 
 /**
  * POST /api/stream/:videoId/progress
- * Update viewing progress
+ * Updates viewing progress for resume functionality.
+ * Also adds to watch history when content is completed (>95%).
  */
 router.post('/:videoId/progress', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -240,7 +252,7 @@ router.post('/:videoId/progress', authenticate, requireProfile, async (req: Requ
 
 /**
  * GET /api/stream/:videoId/progress
- * Get current viewing progress
+ * Returns current viewing progress for a video or episode.
  */
 router.get('/:videoId/progress', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -271,7 +283,14 @@ router.get('/:videoId/progress', authenticate, requireProfile, async (req: Reque
   }
 });
 
-// Helper to determine if viewing is complete (> 95%)
+/**
+ * Determines if viewing is complete based on position and duration.
+ * Content is considered complete when more than 95% has been watched.
+ *
+ * @param position - Current position in seconds
+ * @param duration - Total duration in seconds
+ * @returns True if viewing is complete
+ */
 function isProgressComplete(position: number, duration: number): boolean {
   if (duration === 0) return false;
   return (position / duration) > 0.95;

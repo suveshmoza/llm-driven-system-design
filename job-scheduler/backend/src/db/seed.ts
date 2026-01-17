@@ -1,3 +1,10 @@
+/**
+ * Database seeding script for development and testing.
+ * Creates sample jobs to demonstrate the scheduler's capabilities.
+ * Run with `npx ts-node src/db/seed.ts` or `npm run db:seed`.
+ * @module db/seed
+ */
+
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -5,6 +12,11 @@ import { migrate } from './migrate';
 import * as db from './repository';
 import { logger } from '../utils/logger';
 
+/**
+ * Seeds the database with sample jobs.
+ * Runs migrations first, then creates sample jobs if they don't exist.
+ * Includes examples of recurring, one-time, and test jobs.
+ */
 async function seed() {
   logger.info('Starting database seeding...');
 

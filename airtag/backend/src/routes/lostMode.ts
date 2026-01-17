@@ -3,6 +3,11 @@ import { requireAuth } from '../middleware/auth.js';
 import { lostModeService } from '../services/lostModeService.js';
 import { LostModeRequest } from '../types/index.js';
 
+/**
+ * Lost mode routes for managing device lost mode settings.
+ * Lost mode enables notifications when a lost device is found by the network.
+ * All routes require authentication and are prefixed with /api/lost-mode.
+ */
 const router = Router();
 
 // All routes require authentication
@@ -10,7 +15,7 @@ router.use(requireAuth);
 
 /**
  * GET /api/lost-mode/:deviceId
- * Get lost mode settings for a device
+ * Get current lost mode settings for a device.
  */
 router.get('/:deviceId', async (req, res) => {
   try {
@@ -31,7 +36,7 @@ router.get('/:deviceId', async (req, res) => {
 
 /**
  * PUT /api/lost-mode/:deviceId
- * Update lost mode settings for a device
+ * Update lost mode settings including contact info and message.
  */
 router.put('/:deviceId', async (req, res) => {
   try {
@@ -61,7 +66,7 @@ router.put('/:deviceId', async (req, res) => {
 
 /**
  * POST /api/lost-mode/:deviceId/enable
- * Quick enable lost mode
+ * Quickly enable lost mode with existing settings.
  */
 router.post('/:deviceId/enable', async (req, res) => {
   try {
@@ -85,7 +90,7 @@ router.post('/:deviceId/enable', async (req, res) => {
 
 /**
  * POST /api/lost-mode/:deviceId/disable
- * Disable lost mode
+ * Turn off lost mode when device is recovered.
  */
 router.post('/:deviceId/disable', async (req, res) => {
   try {

@@ -7,6 +7,10 @@ import { notificationService } from '../services/notificationService.js';
 import { antiStalkingService } from '../services/antiStalkingService.js';
 import { userService } from '../services/userService.js';
 
+/**
+ * Admin routes for system monitoring and management.
+ * All routes require admin role authentication and are prefixed with /api/admin.
+ */
 const router = Router();
 
 // All routes require admin authentication
@@ -14,7 +18,8 @@ router.use(requireAdmin);
 
 /**
  * GET /api/admin/stats
- * Get overall system statistics
+ * Get comprehensive system statistics for the admin dashboard.
+ * Includes user, device, location, and anti-stalking metrics.
  */
 router.get('/stats', async (req, res) => {
   try {
@@ -44,7 +49,7 @@ router.get('/stats', async (req, res) => {
 
 /**
  * GET /api/admin/users
- * Get all users
+ * Get a list of all registered users.
  */
 router.get('/users', async (req, res) => {
   try {
@@ -58,7 +63,7 @@ router.get('/users', async (req, res) => {
 
 /**
  * GET /api/admin/devices
- * Get all devices
+ * Get a list of all registered devices across all users.
  */
 router.get('/devices', async (req, res) => {
   try {
@@ -72,7 +77,7 @@ router.get('/devices', async (req, res) => {
 
 /**
  * GET /api/admin/lost-devices
- * Get all devices in lost mode
+ * Get a list of all devices currently in lost mode.
  */
 router.get('/lost-devices', async (req, res) => {
   try {

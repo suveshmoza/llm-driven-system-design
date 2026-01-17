@@ -1,6 +1,17 @@
 import { pool } from '../db.js';
 import { Message, MessageStatus, MessageStatusUpdate } from '../types/index.js';
 
+/**
+ * Creates a new message in a conversation.
+ * Uses a transaction to atomically insert the message, create status records
+ * for all recipients, and update the conversation's timestamp.
+ * @param conversationId - The conversation to send the message to
+ * @param senderId - The user sending the message
+ * @param content - The message content (text or caption for media)
+ * @param contentType - Type of content: text, image, video, or file
+ * @param mediaUrl - Optional URL to media attachment
+ * @returns The created message
+ */
 export async function createMessage(
   conversationId: string,
   senderId: string,
@@ -54,6 +65,14 @@ export async function createMessage(
   }
 }
 
+/**
+ * Retrieves messages for a conversation with pagination support.
+ * Returns messages in chronological order with sender information.
+ * @param conversationId - The conversation to fetch messages from
+ * @param limit - Maximum number of messages to return (default: 50)
+ * @param beforeId - Optional message ID for cursor-based pagination
+ * @returns Array of messages with embedded sender data
+ */
 export async function getMessagesForConversation(
   conversationId: string,
   limit: number = 50,
@@ -86,6 +105,12 @@ export async function getMessagesForConversation(
   return result.rows.reverse(); // Return in chronological order
 }
 
+/**
+ * Retrieves a single message by its ID.
+ * Includes sender information for display purposes.
+ * @param messageId - The message's UUID
+ * @returns The message with sender data if found, null otherwise
+ */
 export async function getMessageById(messageId: string): Promise<Message | null> {
   const result = await pool.query(
     `SELECT m.*,
@@ -103,6 +128,14 @@ export async function getMessageById(messageId: string): Promise<Message | null>
   return result.rows[0] || null;
 }
 
+/**
+ * Updates the delivery status for a specific recipient.
+ * Tracks the progression: sent -> delivered -> read with timestamps.
+ * @param messageId - The message to update
+ * @param recipientId - The recipient whose status is being updated
+ * @param status - The new status (delivered or read)
+ * @returns The updated status record if successful, null otherwise
+ */
 export async function updateMessageStatus(
   messageId: string,
   recipientId: string,
@@ -132,6 +165,13 @@ export async function updateMessageStatus(
   return result.rows[0] || null;
 }
 
+/**
+ * Marks all unread messages in a conversation as read for a user.
+ * Bulk operation used when user opens a conversation.
+ * @param conversationId - The conversation being viewed
+ * @param userId - The user who is reading the messages
+ * @returns Array of message IDs that were marked as read
+ */
 export async function markConversationAsRead(
   conversationId: string,
   userId: string
@@ -168,6 +208,12 @@ export async function markConversationAsRead(
   return messageIds;
 }
 
+/**
+ * Gets all status records for a message across all recipients.
+ * Used to determine overall message delivery state (e.g., double blue check).
+ * @param messageId - The message to query
+ * @returns Array of status records for each recipient
+ */
 export async function getMessageStatus(messageId: string): Promise<MessageStatusUpdate[]> {
   const result = await pool.query('SELECT * FROM message_status WHERE message_id = $1', [
     messageId,
@@ -175,6 +221,12 @@ export async function getMessageStatus(messageId: string): Promise<MessageStatus
   return result.rows;
 }
 
+/**
+ * Retrieves all messages pending delivery for a user.
+ * Called when user reconnects to deliver messages that arrived while offline.
+ * @param userId - The user to get pending messages for
+ * @returns Array of undelivered messages in chronological order
+ */
 export async function getPendingMessagesForUser(userId: string): Promise<Message[]> {
   const result = await pool.query(
     `SELECT m.*,

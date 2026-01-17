@@ -1,8 +1,20 @@
+/**
+ * Redis client module for the job scheduler.
+ * Provides a shared Redis connection for queuing, leader election, and caching.
+ * Uses ioredis with automatic retry logic.
+ * @module queue/redis
+ */
+
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
 
+/** Redis connection URL from environment, defaults to localhost */
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
+/**
+ * Shared Redis client instance.
+ * Configured with retry strategy and connection monitoring.
+ */
 export const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 3,
   retryStrategy(times) {
@@ -23,6 +35,10 @@ redis.on('close', () => {
   logger.warn('Redis connection closed');
 });
 
+/**
+ * Checks if Redis is available and responding.
+ * @returns True if Redis responds to PING, false otherwise
+ */
 export async function healthCheck(): Promise<boolean> {
   try {
     await redis.ping();
@@ -32,6 +48,10 @@ export async function healthCheck(): Promise<boolean> {
   }
 }
 
+/**
+ * Gracefully disconnects from Redis.
+ * Should be called during application shutdown.
+ */
 export async function disconnect(): Promise<void> {
   await redis.quit();
 }

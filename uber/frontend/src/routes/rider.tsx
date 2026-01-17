@@ -1,9 +1,25 @@
+/**
+ * Rider dashboard page - main interface for booking and tracking rides.
+ * Protected route that requires rider authentication.
+ */
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useRideStore } from '../stores/rideStore';
 import { FareEstimate } from '../types';
 
+/**
+ * Main rider interface for the ride-hailing experience.
+ * Provides the complete ride booking flow:
+ * 1. Enter pickup and dropoff locations
+ * 2. View fare estimates for different vehicle types
+ * 3. Request a ride and track driver progress
+ * 4. Rate driver after ride completion
+ *
+ * Handles real-time updates via WebSocket for ride status changes.
+ *
+ * @returns Rider dashboard component
+ */
 function RiderPage() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
@@ -79,8 +95,18 @@ function RiderPage() {
     navigate({ to: '/' });
   };
 
+  /**
+   * Format cents as USD currency string.
+   * @param cents - Amount in cents
+   * @returns Formatted currency string (e.g., "$12.50")
+   */
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
+  /**
+   * Get emoji icon for vehicle type.
+   * @param type - Vehicle type (economy, comfort, premium, xl)
+   * @returns Emoji representing the vehicle type
+   */
   const getVehicleIcon = (type: string) => {
     switch (type) {
       case 'economy':

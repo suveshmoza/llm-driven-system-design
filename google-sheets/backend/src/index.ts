@@ -1,3 +1,11 @@
+/**
+ * Main entry point for the Google Sheets backend server.
+ * Sets up Express HTTP server with WebSocket support for real-time collaboration.
+ * Configures CORS, JSON parsing, and API routes.
+ *
+ * @module index
+ */
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -6,6 +14,8 @@ import apiRoutes from './api/routes.js';
 import { setupWebSocket } from './websocket/server.js';
 
 const app = express();
+
+/** Server port, configurable via PORT environment variable */
 const PORT = parseInt(process.env.PORT || '3001');
 
 // Middleware
@@ -16,7 +26,10 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Health check
+/**
+ * Health check endpoint for monitoring and load balancer probes.
+ * Returns service name and status.
+ */
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'google-sheets' });
 });

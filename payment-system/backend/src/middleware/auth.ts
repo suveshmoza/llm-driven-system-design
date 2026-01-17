@@ -2,7 +2,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { MerchantService } from '../services/merchant.service.js';
 import type { Merchant } from '../types/index.js';
 
-// Extend Express Request to include merchant
+/**
+ * Extends Express Request interface to include authenticated merchant.
+ * The merchant property is populated by authentication middleware.
+ */
 declare global {
   namespace Express {
     interface Request {
@@ -14,8 +17,12 @@ declare global {
 const merchantService = new MerchantService();
 
 /**
- * API Key authentication middleware
- * Expects: Authorization: Bearer pk_xxx
+ * Authenticates requests using API key in the Authorization header.
+ * Required for all protected payment and merchant endpoints.
+ * Expects format: "Authorization: Bearer pk_xxx"
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export async function authenticateApiKey(
   req: Request,
@@ -53,7 +60,12 @@ export async function authenticateApiKey(
 }
 
 /**
- * Optional authentication - doesn't fail if no auth provided
+ * Optional authentication middleware that doesn't fail if no auth is provided.
+ * Populates req.merchant if valid credentials are present, continues otherwise.
+ * Useful for endpoints that behave differently for authenticated vs anonymous users.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export async function optionalAuth(
   req: Request,
@@ -79,7 +91,11 @@ export async function optionalAuth(
 }
 
 /**
- * Idempotency key extraction middleware
+ * Extracts idempotency key from request headers and adds it to the request body.
+ * Used to prevent duplicate payment processing on network retries.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export function extractIdempotencyKey(
   req: Request,
@@ -96,7 +112,11 @@ export function extractIdempotencyKey(
 }
 
 /**
- * Request logging middleware
+ * Logs all incoming requests with timing information.
+ * Records HTTP method, path, status code, and response duration.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export function requestLogger(
   req: Request,
@@ -116,7 +136,12 @@ export function requestLogger(
 }
 
 /**
- * Error handling middleware
+ * Global error handler for uncaught exceptions in route handlers.
+ * Returns sanitized error messages in production, detailed messages in development.
+ * @param err - Error object thrown by route handlers
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export function errorHandler(
   err: Error,

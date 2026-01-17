@@ -1,6 +1,19 @@
 import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
 
+/**
+ * Main navigation header component displayed at the top of all pages.
+ * Provides branding, navigation links, and authentication controls.
+ *
+ * Features:
+ * - Logo/home link to return to homepage
+ * - "My Bookings" link for authenticated users
+ * - "Admin" link for hotel_admin and admin roles
+ * - User name display and logout button when authenticated
+ * - Login/Sign Up buttons for unauthenticated visitors
+ *
+ * @returns Header element with responsive navigation
+ */
 export function Header() {
   const { isAuthenticated, user, logout } = useAuthStore();
 

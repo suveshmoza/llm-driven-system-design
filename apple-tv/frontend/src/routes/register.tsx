@@ -3,6 +3,18 @@ import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Eye, EyeOff } from 'lucide-react';
 
+/**
+ * Registration page component for new user signup.
+ * Provides form for creating new accounts with validation.
+ * Auto-logs in and redirects to profile selection on success.
+ *
+ * Features:
+ * - Name, email, password, and confirm password fields
+ * - Client-side validation (password match, minimum length)
+ * - Show/hide password toggle
+ * - Error message display
+ * - Link to login page for existing users
+ */
 function RegisterPage() {
   const navigate = useNavigate();
   const { register, login, isLoading, error, clearError } = useAuthStore();
@@ -159,6 +171,10 @@ function RegisterPage() {
   );
 }
 
+/**
+ * Route configuration for the registration page (/register).
+ * Provides new user account creation.
+ */
 export const Route = createFileRoute('/register')({
   component: RegisterPage,
 });

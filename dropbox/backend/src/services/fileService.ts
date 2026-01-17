@@ -1,3 +1,10 @@
+/**
+ * File and folder management service.
+ * Handles file uploads with chunking and deduplication, folder operations,
+ * file versioning, and storage hierarchy navigation.
+ * @module services/fileService
+ */
+
 import { query, queryOne, transaction } from '../utils/database.js';
 import { FileItem, FileChunk, Chunk, UploadSession, FileVersion } from '../types/index.js';
 import { uploadChunk, chunkExists, downloadChunk, BUCKET_NAME } from '../utils/storage.js';
@@ -5,7 +12,17 @@ import { calculateHash, calculateContentHash, CHUNK_SIZE, getMimeType } from '..
 import { publishSync, deleteCache } from '../utils/redis.js';
 import { v4 as uuidv4 } from 'uuid';
 
-// Create upload session
+/**
+ * Creates a new upload session for chunked file uploads.
+ * Checks which chunks already exist in storage for deduplication,
+ * allowing clients to skip uploading duplicate chunks.
+ * @param userId - ID of uploading user
+ * @param fileName - Name for the uploaded file
+ * @param fileSize - Total file size in bytes
+ * @param parentId - ID of parent folder (null for root)
+ * @param chunkHashes - Array of SHA-256 hashes for all chunks
+ * @returns Upload session ID, list of chunks that need uploading, and total chunk count
+ */
 export async function createUploadSession(
   userId: string,
   fileName: string,
@@ -37,7 +54,18 @@ export async function createUploadSession(
   };
 }
 
-// Upload a chunk
+/**
+ * Uploads a single chunk of a file.
+ * Verifies the chunk hash matches the data for integrity.
+ * Increments reference count for existing chunks (deduplication).
+ * @param userId - ID of uploading user
+ * @param uploadSessionId - Active upload session ID
+ * @param chunkIndex - Position of this chunk in the file
+ * @param chunkHash - Expected SHA-256 hash of the chunk
+ * @param data - Raw chunk data
+ * @returns Upload confirmation
+ * @throws Error if session not found or hash mismatch
+ */
 export async function uploadFileChunk(
   userId: string,
   uploadSessionId: string,
@@ -94,7 +122,16 @@ export async function uploadFileChunk(
   return { uploaded: true };
 }
 
-// Complete upload and create file
+/**
+ * Completes an upload session and creates or updates the file record.
+ * Handles versioning by saving current file state before updating.
+ * Updates user storage quota and notifies connected clients.
+ * @param userId - ID of uploading user
+ * @param uploadSessionId - Upload session to complete
+ * @param chunkHashes - Ordered list of all chunk hashes
+ * @returns Created or updated file item
+ * @throws Error if session not found or chunk count mismatch
+ */
 export async function completeUpload(
   userId: string,
   uploadSessionId: string,
@@ -231,7 +268,14 @@ export async function completeUpload(
   return file;
 }
 
-// Create folder
+/**
+ * Creates a new folder in the file hierarchy.
+ * @param userId - ID of owning user
+ * @param name - Folder name
+ * @param parentId - ID of parent folder (null for root)
+ * @returns Created folder item
+ * @throws Error if folder with same name already exists in parent
+ */
 export async function createFolder(
   userId: string,
   name: string,
@@ -263,7 +307,15 @@ export async function createFolder(
   return result[0];
 }
 
-// Get folder contents
+/**
+ * Retrieves the contents of a folder for the file browser.
+ * Returns items sorted with folders first, then files alphabetically.
+ * Builds breadcrumb trail for navigation.
+ * @param userId - ID of user viewing folder
+ * @param folderId - Folder to list contents of (null for root)
+ * @returns Folder metadata, child items, and breadcrumb trail
+ * @throws Error if folder not found
+ */
 export async function getFolderContents(
   userId: string,
   folderId: string | null
@@ -315,7 +367,13 @@ export async function getFolderContents(
   return { folder, items, breadcrumbs };
 }
 
-// Get file by ID
+/**
+ * Retrieves a single file or folder by ID.
+ * Only returns items owned by the specified user.
+ * @param userId - ID of owning user
+ * @param fileId - ID of file/folder to retrieve
+ * @returns File/folder item or null if not found
+ */
 export async function getFile(userId: string, fileId: string): Promise<FileItem | null> {
   return queryOne<FileItem>(
     `SELECT id, user_id as "userId", parent_id as "parentId", name, is_folder as "isFolder",
@@ -326,7 +384,11 @@ export async function getFile(userId: string, fileId: string): Promise<FileItem 
   );
 }
 
-// Get file chunks
+/**
+ * Retrieves the ordered list of chunks that make up a file.
+ * @param fileId - ID of file to get chunks for
+ * @returns Array of chunk references in order
+ */
 export async function getFileChunks(fileId: string): Promise<FileChunk[]> {
   return query<FileChunk>(
     `SELECT id, file_id as "fileId", chunk_index as "chunkIndex",
@@ -336,7 +398,14 @@ export async function getFileChunks(fileId: string): Promise<FileChunk[]> {
   );
 }
 
-// Download file - returns all chunk data combined
+/**
+ * Downloads a complete file by reassembling its chunks.
+ * Retrieves each chunk from object storage and concatenates them.
+ * @param userId - ID of user downloading
+ * @param fileId - ID of file to download
+ * @returns File data buffer and file metadata
+ * @throws Error if file not found or is a folder
+ */
 export async function downloadFile(userId: string, fileId: string): Promise<{ data: Buffer; file: FileItem }> {
   const file = await getFile(userId, fileId);
 
@@ -355,7 +424,14 @@ export async function downloadFile(userId: string, fileId: string): Promise<{ da
   return { data: Buffer.concat(chunkBuffers), file };
 }
 
-// Rename file/folder
+/**
+ * Renames a file or folder.
+ * @param userId - ID of owning user
+ * @param itemId - ID of item to rename
+ * @param newName - New name for the item
+ * @returns Updated item
+ * @throws Error if item not found or name already exists in parent
+ */
 export async function renameItem(userId: string, itemId: string, newName: string): Promise<FileItem> {
   const item = await getFile(userId, itemId);
 
@@ -389,7 +465,15 @@ export async function renameItem(userId: string, itemId: string, newName: string
   return result[0];
 }
 
-// Move file/folder
+/**
+ * Moves a file or folder to a different parent folder.
+ * Validates that the move is allowed (prevents moving folder into itself).
+ * @param userId - ID of owning user
+ * @param itemId - ID of item to move
+ * @param newParentId - ID of destination folder (null for root)
+ * @returns Updated item
+ * @throws Error if item or destination not found, or invalid move
+ */
 export async function moveItem(userId: string, itemId: string, newParentId: string | null): Promise<FileItem> {
   const item = await getFile(userId, itemId);
 
@@ -449,7 +533,14 @@ export async function moveItem(userId: string, itemId: string, newParentId: stri
   return result[0];
 }
 
-// Delete file/folder (soft delete)
+/**
+ * Soft-deletes a file or folder and all its children.
+ * Items are marked with deleted_at timestamp rather than removed.
+ * Updates user's storage usage for deleted files.
+ * @param userId - ID of owning user
+ * @param itemId - ID of item to delete
+ * @throws Error if item not found
+ */
 export async function deleteItem(userId: string, itemId: string): Promise<void> {
   const item = await getFile(userId, itemId);
 
@@ -482,7 +573,13 @@ export async function deleteItem(userId: string, itemId: string): Promise<void> 
   await deleteCache(`folder:${userId}:${item.parentId || 'root'}`);
 }
 
-// Get file versions
+/**
+ * Retrieves version history for a file.
+ * @param userId - ID of owning user
+ * @param fileId - ID of file to get versions for
+ * @returns Array of previous versions, ordered newest first
+ * @throws Error if file not found
+ */
 export async function getFileVersions(userId: string, fileId: string): Promise<FileVersion[]> {
   const file = await getFile(userId, fileId);
 
@@ -498,7 +595,16 @@ export async function getFileVersions(userId: string, fileId: string): Promise<F
   );
 }
 
-// Restore file version
+/**
+ * Restores a file to a previous version.
+ * Saves the current version to history before restoring.
+ * Updates user's storage usage based on size difference.
+ * @param userId - ID of owning user
+ * @param fileId - ID of file to restore
+ * @param versionId - ID of version to restore to
+ * @returns Updated file with restored content
+ * @throws Error if file or version not found
+ */
 export async function restoreFileVersion(userId: string, fileId: string, versionId: string): Promise<FileItem> {
   const file = await getFile(userId, fileId);
 

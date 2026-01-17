@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Core search service for the post search system.
+ * Handles Elasticsearch query building, privacy filtering, personalized ranking,
+ * search suggestions, and search history management.
+ */
+
 import { esClient, POSTS_INDEX } from '../config/elasticsearch.js';
 import { getUserVisibilitySet, getUserFriendIds } from './visibilityService.js';
 import { query } from '../config/database.js';
@@ -11,7 +17,19 @@ import type {
   PostDocument,
 } from '../types/index.js';
 
-// Build Elasticsearch query with privacy filtering
+/**
+ * Builds an Elasticsearch query with privacy filtering and personalized ranking.
+ * Constructs a bool query with:
+ * - must: Text matching with multi_match across content, author_name, hashtags
+ * - filter: Privacy filters using visibility fingerprints, date range, post type
+ * - should: Boosting for friends' posts and user's own posts
+ * @param searchQuery - The text query to search for
+ * @param filters - Optional filter criteria
+ * @param userId - The searching user's ID (undefined for anonymous)
+ * @param from - Pagination offset
+ * @param size - Number of results to return
+ * @returns Elasticsearch query object ready for execution
+ */
 async function buildSearchQuery(
   searchQuery: string,
   filters: SearchFilters | undefined,
@@ -149,7 +167,13 @@ async function buildSearchQuery(
   };
 }
 
-// Main search function
+/**
+ * Executes a search query against the posts index.
+ * Handles pagination, privacy filtering, friend boosting, and result highlighting.
+ * Records search in history for authenticated users and updates trending searches.
+ * @param request - Search request containing query, filters, pagination, and user context
+ * @returns Promise resolving to search results with metadata
+ */
 export async function searchPosts(request: SearchRequest): Promise<SearchResponse> {
   const startTime = Date.now();
 
@@ -224,7 +248,14 @@ export async function searchPosts(request: SearchRequest): Promise<SearchRespons
   };
 }
 
-// Record search in history
+/**
+ * Records a search query in the user's search history.
+ * Used for personalization and analytics.
+ * @param userId - The user's ID
+ * @param queryText - The search query text
+ * @param filters - Applied filters (if any)
+ * @param resultsCount - Number of results returned
+ */
 async function recordSearchHistory(
   userId: string,
   queryText: string,
@@ -238,7 +269,11 @@ async function recordSearchHistory(
   );
 }
 
-// Update trending searches using Redis sorted set
+/**
+ * Updates the trending searches sorted set in Redis.
+ * Increments the score for the search query and maintains top 1000 entries.
+ * @param queryText - The search query to track
+ */
 async function updateTrendingSearches(queryText: string): Promise<void> {
   const normalized = queryText.toLowerCase().trim();
   if (normalized.length < 2) return;
@@ -249,7 +284,18 @@ async function updateTrendingSearches(queryText: string): Promise<void> {
   await redis.zremrangebyrank(cacheKeys.trendingSearches(), 0, -1001);
 }
 
-// Get search suggestions/typeahead
+/**
+ * Provides typeahead/autocomplete suggestions for a search prefix.
+ * Sources suggestions from:
+ * - Hashtag aggregations (if prefix starts with #)
+ * - Trending searches matching the prefix
+ * - User display names matching the prefix
+ * Results are cached for 1 minute to reduce load.
+ * @param prefix - The search prefix to get suggestions for
+ * @param userId - The user's ID (optional, enables user suggestions)
+ * @param limit - Maximum number of suggestions to return
+ * @returns Promise resolving to array of suggestions with types and scores
+ */
 export async function getSearchSuggestions(
   prefix: string,
   userId?: string,
@@ -360,7 +406,12 @@ export async function getSearchSuggestions(
   return result;
 }
 
-// Get user's recent searches
+/**
+ * Retrieves a user's recent unique search queries.
+ * @param userId - The user's ID
+ * @param limit - Maximum number of searches to return
+ * @returns Promise resolving to array of recent search query strings
+ */
 export async function getUserRecentSearches(
   userId: string,
   limit: number = 10
@@ -380,13 +431,21 @@ export async function getUserRecentSearches(
   return searches.map((s) => s.query);
 }
 
-// Get trending searches
+/**
+ * Retrieves the most popular search queries.
+ * @param limit - Maximum number of trending searches to return
+ * @returns Promise resolving to array of trending search query strings
+ */
 export async function getTrendingSearches(limit: number = 10): Promise<string[]> {
   const trending = await redis.zrevrange(cacheKeys.trendingSearches(), 0, limit - 1);
   return trending;
 }
 
-// Delete user's search history
+/**
+ * Deletes all search history for a user.
+ * @param userId - The user's ID whose history should be cleared
+ * @returns Promise that resolves when history is deleted
+ */
 export async function deleteSearchHistory(userId: string): Promise<void> {
   await query('DELETE FROM search_history WHERE user_id = $1', [userId]);
 }

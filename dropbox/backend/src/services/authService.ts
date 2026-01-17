@@ -1,11 +1,28 @@
+/**
+ * User authentication and account management service.
+ * Handles registration, login, logout, and user profile operations.
+ * Sessions are stored in both Redis (for fast lookup) and PostgreSQL (for persistence).
+ * @module services/authService
+ */
+
 import bcrypt from 'bcrypt';
 import { query, queryOne } from '../utils/database.js';
 import { setSession, deleteSession } from '../utils/redis.js';
 import { User, AuthResponse } from '../types/index.js';
 import { generateToken } from '../utils/chunking.js';
 
+/** Session duration in hours, configurable via environment variable */
 const SESSION_EXPIRY_HOURS = parseInt(process.env.SESSION_EXPIRY_HOURS || '24', 10);
 
+/**
+ * Registers a new user account.
+ * Creates the user record, hashes the password, and establishes a session.
+ * @param email - User's email address (will be lowercased)
+ * @param password - Plain text password (will be hashed with bcrypt)
+ * @param name - User's display name
+ * @returns User profile and session token
+ * @throws Error if email is already registered
+ */
 export async function register(
   email: string,
   password: string,
@@ -60,6 +77,14 @@ export async function register(
   };
 }
 
+/**
+ * Authenticates a user with email and password.
+ * Validates credentials and creates a new session.
+ * @param email - User's email address
+ * @param password - Plain text password to verify
+ * @returns User profile and session token
+ * @throws Error if credentials are invalid
+ */
 export async function login(email: string, password: string): Promise<AuthResponse> {
   // Find user
   const user = await queryOne<User & { password_hash: string }>(
@@ -105,11 +130,21 @@ export async function login(email: string, password: string): Promise<AuthRespon
   };
 }
 
+/**
+ * Terminates a user session.
+ * Removes the session from both Redis and the database.
+ * @param token - Session token to invalidate
+ */
 export async function logout(token: string): Promise<void> {
   await deleteSession(token);
   await query(`DELETE FROM sessions WHERE token = $1`, [token]);
 }
 
+/**
+ * Retrieves a user by their ID.
+ * @param userId - User's unique identifier
+ * @returns User profile or null if not found
+ */
 export async function getUserById(userId: string): Promise<User | null> {
   return queryOne<User>(
     `SELECT id, email, name, role, quota_bytes as "quotaBytes", used_bytes as "usedBytes",
@@ -119,6 +154,13 @@ export async function getUserById(userId: string): Promise<User | null> {
   );
 }
 
+/**
+ * Updates user profile information.
+ * @param userId - ID of user to update
+ * @param updates - Object containing fields to update (name and/or password)
+ * @returns Updated user profile
+ * @throws Error if user not found
+ */
 export async function updateUser(
   userId: string,
   updates: { name?: string; password?: string }
@@ -147,6 +189,12 @@ export async function updateUser(
 }
 
 // Admin functions
+
+/**
+ * Retrieves all user accounts (admin only).
+ * Used for the admin dashboard user management interface.
+ * @returns Array of all users ordered by creation date
+ */
 export async function getAllUsers(): Promise<User[]> {
   return query<User>(
     `SELECT id, email, name, role, quota_bytes as "quotaBytes", used_bytes as "usedBytes",
@@ -155,6 +203,13 @@ export async function getAllUsers(): Promise<User[]> {
   );
 }
 
+/**
+ * Updates a user's storage quota (admin only).
+ * @param userId - ID of user to update
+ * @param quotaBytes - New storage quota in bytes
+ * @returns Updated user profile
+ * @throws Error if user not found
+ */
 export async function updateUserQuota(userId: string, quotaBytes: number): Promise<User> {
   const result = await query<User>(
     `UPDATE users SET quota_bytes = $1, updated_at = NOW()
@@ -170,6 +225,11 @@ export async function updateUserQuota(userId: string, quotaBytes: number): Promi
   return result[0];
 }
 
+/**
+ * Permanently deletes a user account (admin only).
+ * Cascade deletes will remove all user's files, sessions, and shares.
+ * @param userId - ID of user to delete
+ */
 export async function deleteUser(userId: string): Promise<void> {
   // Cascade delete will handle files, sessions, etc.
   await query(`DELETE FROM users WHERE id = $1`, [userId]);

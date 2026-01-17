@@ -1,12 +1,43 @@
+/**
+ * Connection Manager Module
+ *
+ * Manages active user sessions across all transport protocols (TCP and HTTP).
+ * Provides a central registry of connected users with methods for session
+ * lifecycle management, user lookup, and room membership tracking.
+ *
+ * Key responsibilities:
+ * - Track active sessions by sessionId
+ * - Map users to their sessions (supports multiple sessions per user)
+ * - Track which room each session is currently in
+ * - Provide session counts for monitoring
+ */
+
 import type { Session, TransportType } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Manages all active user sessions.
+ *
+ * Sessions are identified by UUID and can be accessed by sessionId or userId.
+ * A single user can have multiple sessions (e.g., browser + netcat),
+ * enabling multi-device usage.
+ */
 export class ConnectionManager {
+  /** Map of sessionId to Session for fast session lookup */
   private sessions: Map<string, Session> = new Map();
+  /** Map of userId to set of sessionIds for user-based lookups */
   private userIdToSessions: Map<number, Set<string>> = new Map();
 
   /**
-   * Register a new session
+   * Register a new session for a connected user.
+   * Called when a user successfully authenticates via TCP or HTTP.
+   *
+   * @param sessionId - Unique session identifier (UUID)
+   * @param userId - Database ID of the authenticated user
+   * @param nickname - User's display name
+   * @param transport - Protocol used for this connection
+   * @param sendFn - Callback to send messages to this session
+   * @returns The created session object
    */
   connect(
     sessionId: string,
@@ -44,7 +75,11 @@ export class ConnectionManager {
   }
 
   /**
-   * Remove a session
+   * Remove a session when user disconnects.
+   * Cleans up both session and user-to-session mappings.
+   *
+   * @param sessionId - ID of the session to remove
+   * @returns The removed session, or undefined if not found
    */
   disconnect(sessionId: string): Session | undefined {
     const session = this.sessions.get(sessionId);
@@ -71,14 +106,21 @@ export class ConnectionManager {
   }
 
   /**
-   * Get a session by ID
+   * Get a session by its ID.
+   *
+   * @param sessionId - The session ID to look up
+   * @returns The session if found, undefined otherwise
    */
   getSession(sessionId: string): Session | undefined {
     return this.sessions.get(sessionId);
   }
 
   /**
-   * Get all sessions for a user
+   * Get all sessions for a specific user.
+   * Useful for sending DMs or checking online status.
+   *
+   * @param userId - The user's database ID
+   * @returns Array of active sessions for this user
    */
   getSessionsByUserId(userId: number): Session[] {
     const sessionIds = this.userIdToSessions.get(userId);
@@ -90,14 +132,20 @@ export class ConnectionManager {
   }
 
   /**
-   * Get all active sessions
+   * Get all active sessions across all users.
+   *
+   * @returns Array of all active sessions
    */
   getAllSessions(): Session[] {
     return Array.from(this.sessions.values());
   }
 
   /**
-   * Update session nickname
+   * Update a session's nickname after /nick command.
+   *
+   * @param sessionId - ID of the session to update
+   * @param newNickname - New nickname to set
+   * @returns True if session was found and updated, false otherwise
    */
   updateNickname(sessionId: string, newNickname: string): boolean {
     const session = this.sessions.get(sessionId);
@@ -108,7 +156,12 @@ export class ConnectionManager {
   }
 
   /**
-   * Update session's current room
+   * Update which room a session is currently in.
+   * Called when user joins or leaves a room.
+   *
+   * @param sessionId - ID of the session to update
+   * @param roomName - Name of the room, or null if leaving
+   * @returns True if session was found and updated, false otherwise
    */
   setCurrentRoom(sessionId: string, roomName: string | null): boolean {
     const session = this.sessions.get(sessionId);
@@ -119,7 +172,11 @@ export class ConnectionManager {
   }
 
   /**
-   * Get all sessions in a specific room
+   * Get all sessions currently in a specific room.
+   * Used for broadcasting messages to room members.
+   *
+   * @param roomName - Name of the room
+   * @returns Array of sessions in the room
    */
   getSessionsInRoom(roomName: string): Session[] {
     return Array.from(this.sessions.values()).filter(
@@ -128,7 +185,10 @@ export class ConnectionManager {
   }
 
   /**
-   * Check if user is online (has at least one session)
+   * Check if a user has at least one active session.
+   *
+   * @param userId - The user's database ID
+   * @returns True if user has active sessions, false otherwise
    */
   isUserOnline(userId: number): boolean {
     const sessions = this.userIdToSessions.get(userId);
@@ -136,19 +196,26 @@ export class ConnectionManager {
   }
 
   /**
-   * Get count of active sessions
+   * Get the total number of active sessions.
+   * Used for monitoring and health checks.
+   *
+   * @returns Total session count
    */
   getSessionCount(): number {
     return this.sessions.size;
   }
 
   /**
-   * Get count of unique online users
+   * Get the number of unique online users.
+   * A user with multiple sessions is counted once.
+   *
+   * @returns Number of unique online users
    */
   getOnlineUserCount(): number {
     return this.userIdToSessions.size;
   }
 }
 
+/** Singleton instance of the connection manager */
 export const connectionManager = new ConnectionManager();
 export default connectionManager;

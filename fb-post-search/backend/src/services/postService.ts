@@ -1,12 +1,29 @@
+/**
+ * @fileoverview Post management service.
+ * Provides CRUD operations for posts with automatic Elasticsearch indexing.
+ * Includes visibility-aware feed retrieval and engagement tracking.
+ */
+
 import { query, queryOne } from '../config/database.js';
 import { indexPost, updatePostIndex, deletePostFromIndex } from './indexingService.js';
 import type { Post, Visibility, PostType } from '../types/index.js';
 
+/**
+ * Extended Post interface with optional author name for display.
+ */
 interface PostRow extends Post {
   author_name?: string;
 }
 
-// Create a new post
+/**
+ * Creates a new post and indexes it in Elasticsearch.
+ * @param authorId - The author's user ID
+ * @param content - Post content text
+ * @param visibility - Post visibility setting (defaults to 'friends')
+ * @param postType - Type of post content (defaults to 'text')
+ * @param mediaUrl - Optional URL to attached media
+ * @returns Promise resolving to the created Post or null on failure
+ */
 export async function createPost(
   authorId: string,
   content: string,
@@ -40,7 +57,11 @@ export async function createPost(
   }
 }
 
-// Get post by ID
+/**
+ * Retrieves a post by its ID with author name.
+ * @param postId - The post's ID
+ * @returns Promise resolving to the PostRow or null if not found
+ */
 export async function getPostById(postId: string): Promise<PostRow | null> {
   return queryOne<PostRow>(
     `SELECT p.*, u.display_name as author_name
@@ -51,7 +72,13 @@ export async function getPostById(postId: string): Promise<PostRow | null> {
   );
 }
 
-// Get posts by author
+/**
+ * Retrieves all posts by a specific author with pagination.
+ * @param authorId - The author's user ID
+ * @param limit - Maximum number of posts to return
+ * @param offset - Number of posts to skip
+ * @returns Promise resolving to array of PostRows
+ */
 export async function getPostsByAuthor(
   authorId: string,
   limit: number = 20,
@@ -68,7 +95,14 @@ export async function getPostsByAuthor(
   );
 }
 
-// Update post
+/**
+ * Updates a post's content and/or visibility.
+ * Automatically re-indexes the post in Elasticsearch.
+ * @param postId - The post's ID
+ * @param content - New content (optional)
+ * @param visibility - New visibility setting (optional)
+ * @returns Promise resolving to the updated Post or null if not found
+ */
 export async function updatePost(
   postId: string,
   content?: string,
@@ -108,7 +142,11 @@ export async function updatePost(
   return post;
 }
 
-// Delete post
+/**
+ * Deletes a post and removes it from the Elasticsearch index.
+ * @param postId - The post's ID to delete
+ * @returns Promise resolving to true if deleted, false if not found
+ */
 export async function deletePost(postId: string): Promise<boolean> {
   const result = await query<{ id: string }>(
     'DELETE FROM posts WHERE id = $1 RETURNING id',
@@ -123,7 +161,12 @@ export async function deletePost(postId: string): Promise<boolean> {
   return false;
 }
 
-// Like a post
+/**
+ * Increments a post's like count by 1.
+ * Automatically updates the Elasticsearch index with new engagement score.
+ * @param postId - The post's ID to like
+ * @returns Promise resolving to the updated Post or null if not found
+ */
 export async function likePost(postId: string): Promise<Post | null> {
   const post = await queryOne<Post>(
     `UPDATE posts SET like_count = like_count + 1
@@ -139,7 +182,14 @@ export async function likePost(postId: string): Promise<Post | null> {
   return post;
 }
 
-// Get recent posts (for feed - respects visibility)
+/**
+ * Retrieves recent posts visible to a user for their feed.
+ * Respects visibility settings: shows public posts, own posts, and friends' posts.
+ * @param userId - The requesting user's ID
+ * @param limit - Maximum number of posts to return
+ * @param offset - Number of posts to skip
+ * @returns Promise resolving to array of visible PostRows
+ */
 export async function getRecentPosts(
   userId: string,
   limit: number = 20,
@@ -171,7 +221,12 @@ export async function getRecentPosts(
   );
 }
 
-// Get all posts (admin only)
+/**
+ * Retrieves all posts with pagination (admin only).
+ * @param limit - Maximum number of posts to return
+ * @param offset - Number of posts to skip
+ * @returns Promise resolving to array of PostRows
+ */
 export async function getAllPosts(limit: number = 50, offset: number = 0): Promise<PostRow[]> {
   return query<PostRow>(
     `SELECT p.*, u.display_name as author_name
@@ -183,7 +238,11 @@ export async function getAllPosts(limit: number = 50, offset: number = 0): Promi
   );
 }
 
-// Get post stats (admin only)
+/**
+ * Retrieves aggregate statistics about posts (admin only).
+ * Includes total counts, breakdowns by visibility and type.
+ * @returns Promise resolving to post statistics object
+ */
 export async function getPostStats(): Promise<{
   total_posts: number;
   posts_today: number;

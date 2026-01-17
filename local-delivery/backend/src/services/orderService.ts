@@ -13,9 +13,22 @@ import type {
   Location,
 } from '../types/index.js';
 
+/** Time in seconds before a driver offer expires and is offered to the next driver. */
 const OFFER_EXPIRY_SECONDS = 30;
+
+/** Maximum number of drivers to try before cancelling an order for lack of driver. */
 const MAX_OFFER_ATTEMPTS = 5;
 
+/**
+ * Creates a new order from customer cart data.
+ * Calculates subtotal, delivery fee, and estimated delivery time.
+ * Validates merchant and menu items exist and are available.
+ *
+ * @param customerId - The ordering customer's UUID
+ * @param input - Order details including items, delivery address, and tip
+ * @returns Complete order with items and merchant info
+ * @throws Error if merchant or items not found
+ */
 export async function createOrder(
   customerId: string,
   input: CreateOrderInput
@@ -123,10 +136,23 @@ export async function createOrder(
   };
 }
 
+/**
+ * Retrieves a basic order by its unique identifier.
+ *
+ * @param id - The order's UUID
+ * @returns Order record or null if not found
+ */
 export async function getOrderById(id: string): Promise<Order | null> {
   return queryOne<Order>(`SELECT * FROM orders WHERE id = $1`, [id]);
 }
 
+/**
+ * Retrieves an order with all related data for display.
+ * Includes order items, merchant, driver, and customer information.
+ *
+ * @param id - The order's UUID
+ * @returns Order with full details or null if not found
+ */
 export async function getOrderWithDetails(id: string): Promise<OrderWithDetails | null> {
   const order = await getOrderById(id);
   if (!order) return null;
@@ -166,6 +192,13 @@ export async function getOrderWithDetails(id: string): Promise<OrderWithDetails 
   };
 }
 
+/**
+ * Retrieves all orders placed by a customer.
+ * Returns newest orders first for the order history page.
+ *
+ * @param customerId - The customer's UUID
+ * @returns Array of customer's orders
+ */
 export async function getCustomerOrders(customerId: string): Promise<Order[]> {
   return query<Order>(
     `SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC`,
@@ -173,6 +206,13 @@ export async function getCustomerOrders(customerId: string): Promise<Order[]> {
   );
 }
 
+/**
+ * Retrieves all active orders assigned to a driver.
+ * Only includes orders in pickup/transit states, not delivered or cancelled.
+ *
+ * @param driverId - The driver's UUID
+ * @returns Array of active orders with full details
+ */
 export async function getDriverOrders(driverId: string): Promise<OrderWithDetails[]> {
   const orders = await query<Order>(
     `SELECT * FROM orders
@@ -189,6 +229,15 @@ export async function getDriverOrders(driverId: string): Promise<OrderWithDetail
   return ordersWithDetails.filter((o): o is OrderWithDetails => o !== null);
 }
 
+/**
+ * Updates an order's status and records relevant timestamps.
+ * Publishes status change via Redis for real-time client updates.
+ *
+ * @param id - The order's UUID
+ * @param status - New status value
+ * @param additionalFields - Optional extra fields to update (e.g., cancellation_reason)
+ * @returns Updated order or null if not found
+ */
 export async function updateOrderStatus(
   id: string,
   status: OrderStatus,
@@ -246,6 +295,15 @@ export async function updateOrderStatus(
   return order;
 }
 
+/**
+ * Assigns a driver to an order and updates all related state.
+ * Updates order status, adds to driver's active orders in Redis,
+ * and sets driver status to busy.
+ *
+ * @param orderId - The order's UUID
+ * @param driverId - The assigned driver's UUID
+ * @returns Updated order or null if not found
+ */
 export async function assignDriverToOrder(
   orderId: string,
   driverId: string
@@ -265,6 +323,14 @@ export async function assignDriverToOrder(
   return order;
 }
 
+/**
+ * Marks an order as delivered and updates driver state.
+ * Removes order from driver's active set, increments delivery count,
+ * and sets driver to available if no other orders.
+ *
+ * @param orderId - The order's UUID
+ * @returns Updated order or null if not found
+ */
 export async function completeDelivery(orderId: string): Promise<Order | null> {
   const order = await getOrderById(orderId);
   if (!order || !order.driver_id) return null;
@@ -288,7 +354,16 @@ export async function completeDelivery(orderId: string): Promise<Order | null> {
   return updatedOrder;
 }
 
-// Driver offer management
+/**
+ * Creates a delivery offer for a specific driver.
+ * The offer has a 30-second expiry after which it moves to the next driver.
+ * Publishes the offer via Redis for real-time driver notification.
+ *
+ * @param orderId - The order needing a driver
+ * @param driverId - The driver receiving the offer
+ * @returns Created offer record
+ * @throws Error if offer creation fails
+ */
 export async function createDriverOffer(
   orderId: string,
   driverId: string
@@ -321,6 +396,15 @@ export async function createDriverOffer(
   return offer;
 }
 
+/**
+ * Processes a driver's acceptance of a delivery offer.
+ * Validates the offer is still valid (not expired, not already responded),
+ * then assigns the driver to the order.
+ *
+ * @param offerId - The offer's UUID
+ * @param driverId - The accepting driver's UUID (for verification)
+ * @returns Assigned order or null if offer invalid/expired
+ */
 export async function acceptDriverOffer(
   offerId: string,
   driverId: string
@@ -342,6 +426,14 @@ export async function acceptDriverOffer(
   return assignDriverToOrder(offer.order_id, driverId);
 }
 
+/**
+ * Processes a driver's rejection of a delivery offer.
+ * Marks the offer as rejected so the system can try the next driver.
+ *
+ * @param offerId - The offer's UUID
+ * @param driverId - The rejecting driver's UUID (for verification)
+ * @returns True if rejection recorded, false if offer not found
+ */
 export async function rejectDriverOffer(
   offerId: string,
   driverId: string
@@ -356,6 +448,13 @@ export async function rejectDriverOffer(
   return count > 0;
 }
 
+/**
+ * Retrieves the current pending offer for a driver, if any.
+ * Used to check if driver has an active offer to display.
+ *
+ * @param driverId - The driver's UUID
+ * @returns Pending offer or null if none
+ */
 export async function getPendingOfferForDriver(
   driverId: string
 ): Promise<DriverOffer | null> {
@@ -368,6 +467,12 @@ export async function getPendingOfferForDriver(
   );
 }
 
+/**
+ * Marks all expired offers as expired status.
+ * Should be called periodically to clean up stale offers.
+ *
+ * @returns Number of offers marked as expired
+ */
 export async function expireOldOffers(): Promise<number> {
   return execute(
     `UPDATE driver_offers
@@ -376,7 +481,14 @@ export async function expireOldOffers(): Promise<number> {
   );
 }
 
-// Start driver matching process for an order
+/**
+ * Initiates the driver matching process for a new order.
+ * Sequentially offers to nearby drivers, waiting for each response.
+ * Cancels order if no driver accepts after max attempts.
+ *
+ * @param orderId - The order needing a driver
+ * @returns True if driver assigned, false if no driver available
+ */
 export async function startDriverMatching(orderId: string): Promise<boolean> {
   const order = await getOrderWithDetails(orderId);
   if (!order || !order.merchant) {
@@ -425,6 +537,14 @@ export async function startDriverMatching(orderId: string): Promise<boolean> {
   return false;
 }
 
+/**
+ * Waits for a driver to respond to an offer, polling the database.
+ * Returns the response status or 'expired' if timeout reached.
+ *
+ * @param offerId - The offer's UUID
+ * @param timeoutMs - Maximum wait time in milliseconds
+ * @returns 'accepted', 'rejected', or 'expired'
+ */
 async function waitForOfferResponse(
   offerId: string,
   timeoutMs: number
@@ -452,7 +572,12 @@ async function waitForOfferResponse(
   return 'expired';
 }
 
-// Get order statistics for admin dashboard
+/**
+ * Retrieves aggregate order statistics for the admin dashboard.
+ * Includes counts by status and orders created today.
+ *
+ * @returns Object with order counts by status category
+ */
 export async function getOrderStats(): Promise<{
   total: number;
   pending: number;
@@ -489,6 +614,12 @@ export async function getOrderStats(): Promise<{
   };
 }
 
+/**
+ * Retrieves the most recent orders for admin monitoring.
+ *
+ * @param limit - Maximum number of orders to return (default 20)
+ * @returns Array of recent orders, newest first
+ */
 export async function getRecentOrders(limit: number = 20): Promise<Order[]> {
   return query<Order>(
     `SELECT * FROM orders ORDER BY created_at DESC LIMIT $1`,

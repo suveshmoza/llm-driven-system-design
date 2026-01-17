@@ -15,6 +15,14 @@ import type {
   MatchingScore,
 } from '../types/index.js';
 
+/**
+ * Creates a new driver profile linked to an existing user account.
+ * Called during driver registration after the user record is created.
+ *
+ * @param input - Driver-specific data including user ID and vehicle info
+ * @returns The newly created driver profile
+ * @throws Error if driver creation fails
+ */
 export async function createDriver(input: CreateDriverInput): Promise<Driver> {
   const result = await queryOne<Driver>(
     `INSERT INTO drivers (id, vehicle_type, license_plate)
@@ -30,10 +38,23 @@ export async function createDriver(input: CreateDriverInput): Promise<Driver> {
   return result;
 }
 
+/**
+ * Retrieves a driver profile by their unique identifier.
+ *
+ * @param id - The driver's UUID (same as their user ID)
+ * @returns Driver profile or null if not found
+ */
 export async function getDriverById(id: string): Promise<Driver | null> {
   return queryOne<Driver>(`SELECT * FROM drivers WHERE id = $1`, [id]);
 }
 
+/**
+ * Retrieves a driver profile with associated user information.
+ * Combines driver and user tables for complete profile data.
+ *
+ * @param id - The driver's UUID
+ * @returns Driver profile with name, email, and phone, or null if not found
+ */
 export async function getDriverWithUser(
   id: string
 ): Promise<(Driver & { name: string; email: string; phone: string | null }) | null> {
@@ -46,6 +67,15 @@ export async function getDriverWithUser(
   );
 }
 
+/**
+ * Updates a driver's availability status.
+ * Transitions: offline -> available -> busy (with orders) -> available -> offline.
+ * Going offline removes the driver from the geo-index.
+ *
+ * @param id - The driver's UUID
+ * @param status - New status (offline, available, or busy)
+ * @returns Updated driver profile or null if not found
+ */
 export async function updateDriverStatus(
   id: string,
   status: 'offline' | 'available' | 'busy'
@@ -62,6 +92,15 @@ export async function updateDriverStatus(
   return driver;
 }
 
+/**
+ * Updates a driver's current location in both database and Redis.
+ * Called frequently (every few seconds) while driver is active.
+ * Samples location history at 10-second intervals to reduce storage.
+ *
+ * @param id - The driver's UUID
+ * @param lat - Current latitude in decimal degrees
+ * @param lng - Current longitude in decimal degrees
+ */
 export async function updateDriverLocation(
   id: string,
   lat: number,
@@ -90,6 +129,16 @@ export async function updateDriverLocation(
   }
 }
 
+/**
+ * Finds available drivers near a location for order assignment.
+ * Uses Redis geo-index for fast proximity search, then enriches with PostgreSQL data.
+ * Only returns drivers with 'available' status.
+ *
+ * @param location - The pickup location (usually merchant)
+ * @param radiusKm - Search radius in kilometers (default 5)
+ * @param limit - Maximum drivers to return (default 10)
+ * @returns Array of drivers with distance, sorted by proximity
+ */
 export async function findNearbyDrivers(
   location: Location,
   radiusKm: number = 5,
@@ -125,6 +174,15 @@ export async function findNearbyDrivers(
     .slice(0, limit);
 }
 
+/**
+ * Calculates a matching score for a driver considering multiple factors.
+ * Used to rank drivers when deciding who receives an order offer.
+ * Factors: distance (40%), rating (25%), acceptance rate (20%), current load (15%).
+ *
+ * @param driver - Driver with distance already calculated
+ * @param maxDistance - Maximum expected distance for normalization (default 5km)
+ * @returns Matching score with breakdown of individual factors
+ */
 export async function calculateDriverScore(
   driver: DriverWithDistance,
   maxDistance: number = 5
@@ -163,6 +221,15 @@ export async function calculateDriverScore(
   };
 }
 
+/**
+ * Finds the best available driver for an order using the scoring algorithm.
+ * Filters out excluded drivers (e.g., those who rejected the offer).
+ * Returns the highest-scoring available driver.
+ *
+ * @param pickupLocation - Merchant location for the order
+ * @param excludeDriverIds - Set of driver IDs to skip (previously rejected)
+ * @returns Best matching driver or null if none available
+ */
 export async function findBestDriver(
   pickupLocation: Location,
   excludeDriverIds: Set<string> = new Set()
@@ -192,6 +259,12 @@ export async function findBestDriver(
   return scores[0]?.driver || null;
 }
 
+/**
+ * Recalculates a driver's average rating from all their ratings.
+ * Called after a customer submits a new rating for a completed delivery.
+ *
+ * @param id - The driver's UUID
+ */
 export async function updateDriverRating(id: string): Promise<void> {
   // Calculate average rating from all ratings
   const result = await queryOne<{ avg: number }>(
@@ -206,6 +279,13 @@ export async function updateDriverRating(id: string): Promise<void> {
   }
 }
 
+/**
+ * Recalculates a driver's acceptance rate from recent offers.
+ * Uses a 7-day rolling window to reflect current behavior.
+ * Called after driver accepts or rejects an offer.
+ *
+ * @param id - The driver's UUID
+ */
 export async function updateDriverAcceptanceRate(id: string): Promise<void> {
   // Calculate acceptance rate from recent offers
   const result = await queryOne<{ rate: number }>(
@@ -227,6 +307,13 @@ export async function updateDriverAcceptanceRate(id: string): Promise<void> {
   }
 }
 
+/**
+ * Retrieves comprehensive statistics for a driver's profile page.
+ * Combines database stats with real-time Redis data.
+ *
+ * @param id - The driver's UUID
+ * @returns Driver statistics including rating, deliveries, acceptance rate, and current orders
+ */
 export async function getDriverStats(id: string): Promise<{
   rating: number;
   total_deliveries: number;
@@ -244,6 +331,12 @@ export async function getDriverStats(id: string): Promise<{
   };
 }
 
+/**
+ * Increments a driver's total delivery count.
+ * Called when an order is successfully delivered.
+ *
+ * @param id - The driver's UUID
+ */
 export async function incrementDriverDeliveries(id: string): Promise<void> {
   await execute(
     `UPDATE drivers SET total_deliveries = total_deliveries + 1 WHERE id = $1`,

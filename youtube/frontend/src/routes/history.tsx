@@ -5,16 +5,32 @@ import { Video, PaginatedResponse } from '../types';
 import { api } from '../services/api';
 import VideoCard from '../components/VideoCard';
 
+/**
+ * Extended Video type with watch history metadata.
+ */
 interface HistoryVideo extends Video {
+  /** ISO timestamp of when the video was watched */
   watchedAt: string;
+  /** Percentage of video watched (0-100) */
   watchPercentage: number;
+  /** Position in seconds to resume playback */
   resumePosition: number;
 }
 
+/**
+ * History page route configuration.
+ * Protected page requiring authentication.
+ */
 export const Route = createFileRoute('/history')({
   component: HistoryPage,
 });
 
+/**
+ * Watch history page component.
+ * Displays a chronological list of videos the user has watched,
+ * with progress bars showing how much of each video was viewed.
+ * Redirects to home page if user is not authenticated.
+ */
 function HistoryPage() {
   const { user } = useAuthStore();
   const [videos, setVideos] = useState<HistoryVideo[]>([]);

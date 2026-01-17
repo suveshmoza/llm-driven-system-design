@@ -6,6 +6,10 @@ import redis, { redisPub, redisSub } from '../utils/redis.js';
 import { transform, transformOperations } from './ot.js';
 import type { Operation, PresenceState, WSMessage, UserPublic } from '../types/index.js';
 
+/**
+ * Represents a connected WebSocket client with their session info.
+ * Tracks which document they are currently viewing and activity timestamp.
+ */
 interface ClientConnection {
   ws: WebSocket;
   user: UserPublic;
@@ -13,23 +17,34 @@ interface ClientConnection {
   lastActivity: number;
 }
 
+/**
+ * In-memory state for an active document being edited.
+ * Contains the current version, operation log for OT, and connected users' presence.
+ */
 interface DocumentState {
   version: number;
   operationLog: Operation[][];
   presence: Map<string, PresenceState>;
 }
 
-// In-memory document states
+/** In-memory cache of active document states for real-time collaboration */
 const documents = new Map<string, DocumentState>();
 
-// Client connections
+/** Map of WebSocket connections to their client metadata */
 const clients = new Map<WebSocket, ClientConnection>();
 
-// Server ID for distributed coordination
+/**
+ * Unique identifier for this server instance.
+ * Used to filter out self-originated Redis pub/sub messages in multi-server deployments.
+ */
 const serverId = Math.random().toString(36).substring(7);
 
 /**
- * Initialize WebSocket server
+ * Initializes the WebSocket server for real-time collaboration.
+ * Sets up Redis pub/sub for cross-server communication.
+ * Handles client connections, authentication, and message routing.
+ *
+ * @param wss - The WebSocket server instance to configure
  */
 export function initWebSocket(wss: WebSocketServer): void {
   console.log(`WebSocket server initialized (server: ${serverId})`);
@@ -123,7 +138,12 @@ export function initWebSocket(wss: WebSocketServer): void {
 }
 
 /**
- * Handle incoming WebSocket message
+ * Routes incoming WebSocket messages to appropriate handlers.
+ * Updates client activity timestamp to prevent timeout disconnection.
+ * Handles subscribe, unsubscribe, operation, and presence messages.
+ *
+ * @param ws - The WebSocket connection that sent the message
+ * @param message - The raw JSON message string
  */
 async function handleMessage(ws: WebSocket, message: string): Promise<void> {
   const client = clients.get(ws);
@@ -164,7 +184,14 @@ async function handleMessage(ws: WebSocket, message: string): Promise<void> {
 }
 
 /**
- * Handle document subscription
+ * Handles a client subscribing to a document for real-time updates.
+ * Verifies document access permission before allowing subscription.
+ * Initializes document state if not already cached.
+ * Sends sync message with current document content and online users.
+ *
+ * @param ws - The WebSocket connection subscribing
+ * @param client - The client's connection metadata
+ * @param documentId - The document UUID to subscribe to
  */
 async function handleSubscribe(
   ws: WebSocket,
@@ -240,7 +267,12 @@ async function handleSubscribe(
 }
 
 /**
- * Handle leaving a document
+ * Handles a client leaving/unsubscribing from a document.
+ * Removes their presence from the document state.
+ * Broadcasts departure to other users in the document.
+ *
+ * @param ws - The WebSocket connection leaving
+ * @param documentId - The document UUID being left
  */
 function handleLeaveDocument(ws: WebSocket, documentId: string): void {
   const client = clients.get(ws);
@@ -264,7 +296,13 @@ function handleLeaveDocument(ws: WebSocket, documentId: string): void {
 }
 
 /**
- * Handle operation from client
+ * Handles an edit operation from a client.
+ * Transforms the operation against any concurrent operations (OT).
+ * Broadcasts to other clients and persists to database.
+ *
+ * @param ws - The WebSocket connection sending the operation
+ * @param client - The client's connection metadata
+ * @param msg - The WebSocket message containing the operation
  */
 async function handleOperation(
   ws: WebSocket,
@@ -330,7 +368,13 @@ async function handleOperation(
 }
 
 /**
- * Handle presence/cursor update
+ * Handles cursor/selection updates from a client.
+ * Updates the client's presence state and broadcasts to others.
+ * Published via Redis for cross-server visibility.
+ *
+ * @param ws - The WebSocket connection sending the update
+ * @param client - The client's connection metadata
+ * @param msg - The WebSocket message with cursor/selection data
  */
 function handlePresence(ws: WebSocket, client: ClientConnection, msg: WSMessage): void {
   const documentId = client.documentId;
@@ -365,7 +409,11 @@ function handlePresence(ws: WebSocket, client: ClientConnection, msg: WSMessage)
 }
 
 /**
- * Broadcast presence update
+ * Broadcasts a presence update to all clients in a document.
+ * Also publishes to Redis for cross-server notification.
+ *
+ * @param documentId - The document UUID
+ * @param presence - The presence state to broadcast
  */
 function broadcastPresence(documentId: string, presence: PresenceState): void {
   broadcastToDocument(documentId, {
@@ -381,7 +429,12 @@ function broadcastPresence(documentId: string, presence: PresenceState): void {
 }
 
 /**
- * Broadcast message to all clients in a document
+ * Sends a message to all clients connected to a specific document.
+ * Optionally excludes a specific connection (typically the sender).
+ *
+ * @param documentId - The document UUID to broadcast to
+ * @param message - The WebSocket message to send
+ * @param exclude - Optional WebSocket connection to exclude from broadcast
  */
 function broadcastToDocument(
   documentId: string,
@@ -397,9 +450,19 @@ function broadcastToDocument(
   }
 }
 
-// Debounce persistence
+/** Timers for debounced database persistence per document */
 const persistTimers = new Map<string, NodeJS.Timeout>();
 
+/**
+ * Debounces database persistence of operations.
+ * Batches rapid edits to reduce database writes.
+ * Creates automatic version snapshots every 100 versions.
+ *
+ * @param documentId - The document UUID
+ * @param version - The new version number
+ * @param operation - The operation(s) to persist
+ * @param userId - The user who made the edit
+ */
 function debouncedPersist(
   documentId: string,
   version: number,
@@ -452,7 +515,11 @@ function debouncedPersist(
 }
 
 /**
- * Get active users in a document
+ * Returns the current list of online users for a document.
+ * Used for displaying presence indicators in the UI.
+ *
+ * @param documentId - The document UUID
+ * @returns Array of presence states for all connected users
  */
 export function getDocumentPresence(documentId: string): PresenceState[] {
   const docState = documents.get(documentId);

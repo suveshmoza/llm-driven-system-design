@@ -4,11 +4,25 @@ import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { timeAgo, getAvatarUrl } from '../utils/format';
 
+/**
+ * Props for the CommentSection component.
+ */
 interface CommentSectionProps {
+  /** ID of the video to display comments for */
   videoId: string;
+  /** Total number of comments for display */
   commentCount: number;
 }
 
+/**
+ * Video comment section component.
+ * Displays comments for a video with support for adding new comments,
+ * replying to existing comments, and liking comments. Requires
+ * authentication for interactive features.
+ *
+ * @param props.videoId - The video ID to fetch comments for
+ * @param props.commentCount - Displayed count in the section header
+ */
 export default function CommentSection({ videoId, commentCount }: CommentSectionProps) {
   const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);

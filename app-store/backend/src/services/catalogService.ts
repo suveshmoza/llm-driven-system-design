@@ -1,9 +1,20 @@
+/**
+ * @fileoverview Catalog service for app and category management.
+ * Handles CRUD operations, rankings, and download tracking.
+ */
+
 import { query } from '../config/database.js';
 import { cacheGet, cacheSet, cacheDelete } from '../config/redis.js';
 import type { App, Category, Screenshot, PaginatedResponse, Developer } from '../types/index.js';
 
-const CACHE_TTL = 300; // 5 minutes
+/** Cache time-to-live in seconds (5 minutes) */
+const CACHE_TTL = 300;
 
+/**
+ * Maps a database row to an App object.
+ * @param row - Raw database row with snake_case columns
+ * @returns Typed App object with camelCase properties
+ */
 function mapAppRow(row: Record<string, unknown>): App {
   return {
     id: row.id as string,
@@ -35,6 +46,11 @@ function mapAppRow(row: Record<string, unknown>): App {
   };
 }
 
+/**
+ * Maps a database row to a Category object.
+ * @param row - Raw database row
+ * @returns Typed Category object
+ */
 function mapCategoryRow(row: Record<string, unknown>): Category {
   return {
     id: row.id as string,
@@ -48,6 +64,11 @@ function mapCategoryRow(row: Record<string, unknown>): Category {
   };
 }
 
+/**
+ * Maps a database row to a Developer object.
+ * @param row - Raw database row
+ * @returns Typed Developer object
+ */
 function mapDeveloperRow(row: Record<string, unknown>): Developer {
   return {
     id: row.id as string,
@@ -64,8 +85,17 @@ function mapDeveloperRow(row: Record<string, unknown>): Developer {
   };
 }
 
+/**
+ * Service class for managing the app catalog.
+ * Provides methods for categories, apps, rankings, and download tracking.
+ * Uses Redis caching for frequently accessed data.
+ */
 export class CatalogService {
-  // Categories
+  /**
+   * Retrieves all top-level categories with their subcategories.
+   * Results are cached for performance.
+   * @returns Array of categories with nested subcategories
+   */
   async getCategories(): Promise<Category[]> {
     const cacheKey = 'categories:all';
     const cached = await cacheGet<Category[]>(cacheKey);
@@ -93,13 +123,22 @@ export class CatalogService {
     return categories;
   }
 
+  /**
+   * Finds a category by its URL slug.
+   * @param slug - URL-safe category identifier
+   * @returns Category or null if not found
+   */
   async getCategoryBySlug(slug: string): Promise<Category | null> {
     const result = await query(`SELECT * FROM categories WHERE slug = $1`, [slug]);
     if (result.rows.length === 0) return null;
     return mapCategoryRow(result.rows[0] as Record<string, unknown>);
   }
 
-  // Apps
+  /**
+   * Retrieves a paginated list of apps with filtering and sorting.
+   * @param options - Query options including category, status, pagination, and sorting
+   * @returns Paginated response with apps and pagination metadata
+   */
   async getApps(options: {
     categoryId?: string;
     status?: string;
@@ -184,6 +223,12 @@ export class CatalogService {
     };
   }
 
+  /**
+   * Retrieves a single app by ID with developer, category, and screenshots.
+   * Results are cached for performance.
+   * @param id - App UUID
+   * @returns Complete app data or null if not found
+   */
   async getAppById(id: string): Promise<App | null> {
     const cacheKey = `app:${id}`;
     const cached = await cacheGet<App>(cacheKey);
@@ -236,12 +281,23 @@ export class CatalogService {
     return app;
   }
 
+  /**
+   * Finds an app by its bundle identifier.
+   * @param bundleId - Unique bundle ID (e.g., com.example.app)
+   * @returns App or null if not found
+   */
   async getAppByBundleId(bundleId: string): Promise<App | null> {
     const result = await query(`SELECT id FROM apps WHERE bundle_id = $1`, [bundleId]);
     if (result.rows.length === 0) return null;
     return this.getAppById(result.rows[0].id as string);
   }
 
+  /**
+   * Creates a new app entry for a developer.
+   * @param developerId - Developer's UUID
+   * @param data - App metadata including bundleId, name, description
+   * @returns Newly created app object
+   */
   async createApp(developerId: string, data: {
     bundleId: string;
     name: string;
@@ -278,6 +334,13 @@ export class CatalogService {
     return mapAppRow(result.rows[0] as Record<string, unknown>);
   }
 
+  /**
+   * Updates an existing app's metadata.
+   * Clears cached data after update.
+   * @param appId - App UUID to update
+   * @param data - Fields to update
+   * @returns Updated app object or null if not found
+   */
   async updateApp(appId: string, data: Partial<{
     name: string;
     description: string;
@@ -335,6 +398,12 @@ export class CatalogService {
     return this.getAppById(appId);
   }
 
+  /**
+   * Changes app status to 'pending' for review.
+   * Only works for apps in 'draft' status.
+   * @param appId - App UUID
+   * @returns Updated app or null
+   */
   async submitAppForReview(appId: string): Promise<App | null> {
     await query(`
       UPDATE apps SET status = 'pending', updated_at = NOW()
@@ -345,6 +414,12 @@ export class CatalogService {
     return this.getAppById(appId);
   }
 
+  /**
+   * Publishes an app, making it visible in the store.
+   * Works for 'approved' or 'draft' apps (demo mode allows direct publish).
+   * @param appId - App UUID
+   * @returns Updated app or null
+   */
   async publishApp(appId: string): Promise<App | null> {
     await query(`
       UPDATE apps SET status = 'published', published_at = NOW(), updated_at = NOW()
@@ -355,7 +430,14 @@ export class CatalogService {
     return this.getAppById(appId);
   }
 
-  // Screenshots
+  /**
+   * Adds a screenshot to an app.
+   * Automatically assigns sort order based on existing screenshots.
+   * @param appId - App UUID
+   * @param url - Screenshot URL in MinIO
+   * @param deviceType - Device type (e.g., 'iphone', 'ipad')
+   * @returns Created screenshot object
+   */
   async addScreenshot(appId: string, url: string, deviceType = 'iphone'): Promise<Screenshot> {
     const maxOrder = await query(`
       SELECT COALESCE(MAX(sort_order), -1) + 1 as next_order
@@ -381,12 +463,21 @@ export class CatalogService {
     };
   }
 
+  /**
+   * Removes a screenshot from an app.
+   * @param screenshotId - Screenshot UUID
+   * @param appId - App UUID (for ownership verification)
+   */
   async deleteScreenshot(screenshotId: string, appId: string): Promise<void> {
     await query(`DELETE FROM app_screenshots WHERE id = $1 AND app_id = $2`, [screenshotId, appId]);
     await cacheDelete(`app:${appId}`);
   }
 
-  // Developer apps
+  /**
+   * Retrieves all apps belonging to a developer.
+   * @param developerId - Developer's UUID
+   * @returns Array of apps ordered by creation date (newest first)
+   */
   async getDeveloperApps(developerId: string): Promise<App[]> {
     const result = await query(`
       SELECT * FROM apps WHERE developer_id = $1 ORDER BY created_at DESC
@@ -395,13 +486,23 @@ export class CatalogService {
     return result.rows.map((row) => mapAppRow(row as Record<string, unknown>));
   }
 
+  /**
+   * Finds a developer account by their associated user ID.
+   * @param userId - User's UUID
+   * @returns Developer profile or null if not a developer
+   */
   async getDeveloperByUserId(userId: string): Promise<Developer | null> {
     const result = await query(`SELECT * FROM developers WHERE user_id = $1`, [userId]);
     if (result.rows.length === 0) return null;
     return mapDeveloperRow(result.rows[0] as Record<string, unknown>);
   }
 
-  // Rankings
+  /**
+   * Retrieves top-ranked apps based on type (free, paid, grossing, new).
+   * Used for homepage charts and category-specific rankings.
+   * @param options - Ranking type, optional category filter, and limit
+   * @returns Array of apps ordered by ranking criteria
+   */
   async getTopApps(options: {
     rankType?: 'free' | 'paid' | 'grossing' | 'new';
     categoryId?: string;
@@ -452,7 +553,13 @@ export class CatalogService {
     });
   }
 
-  // Track downloads
+  /**
+   * Records an app download and updates analytics.
+   * Increments download count, creates download event, and updates user library.
+   * @param appId - App UUID that was downloaded
+   * @param userId - Optional user UUID if logged in
+   * @param metadata - Optional download context (version, country, device)
+   */
   async recordDownload(appId: string, userId?: string, metadata?: {
     version?: string;
     country?: string;
@@ -484,4 +591,5 @@ export class CatalogService {
   }
 }
 
+/** Singleton instance of the catalog service */
 export const catalogService = new CatalogService();

@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Express routes for browsing crawled pages.
+ *
+ * These endpoints provide API access to the crawled_pages table,
+ * allowing the dashboard to display and search through crawled content.
+ * Supports pagination, domain filtering, and text search.
+ *
+ * @module routes/pages
+ */
+
 import { Router, Request, Response } from 'express';
 import { pool } from '../models/database.js';
 
@@ -5,7 +15,15 @@ const router = Router();
 
 /**
  * GET /api/pages
- * Get recently crawled pages
+ *
+ * Returns a paginated list of crawled pages with optional filtering.
+ * Used by the Pages view in the dashboard to browse crawled content.
+ *
+ * @query limit - Maximum pages to return (default: 50, max: 100)
+ * @query offset - Number of pages to skip for pagination
+ * @query domain - Filter by specific domain
+ * @query search - Search in URL and title (case-insensitive)
+ * @returns Object with pages array, total count, and pagination info
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -69,7 +87,12 @@ router.get('/', async (req: Request, res: Response) => {
 
 /**
  * GET /api/pages/:urlHash
- * Get a specific crawled page by URL hash
+ *
+ * Returns details of a specific crawled page by its URL hash.
+ * The URL hash is the SHA-256 hash of the normalized URL.
+ *
+ * @param urlHash - SHA-256 hash of the page URL
+ * @returns Complete page record including all metadata
  */
 router.get('/:urlHash', async (req: Request, res: Response) => {
   try {
@@ -94,7 +117,13 @@ router.get('/:urlHash', async (req: Request, res: Response) => {
 
 /**
  * GET /api/pages/domain/:domain
- * Get pages for a specific domain
+ *
+ * Returns all crawled pages for a specific domain.
+ * Useful for exploring content from a single site.
+ *
+ * @param domain - Domain hostname to filter by
+ * @query limit - Maximum pages to return (default: 50, max: 100)
+ * @returns Array of page records for the domain
  */
 router.get('/domain/:domain', async (req: Request, res: Response) => {
   try {

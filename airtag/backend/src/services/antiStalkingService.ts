@@ -5,13 +5,27 @@ import { notificationService } from './notificationService.js';
 import { deviceService } from './deviceService.js';
 import { KeyManager } from '../utils/crypto.js';
 
-const ALERT_THRESHOLD = 3; // Number of sightings before alert
-const TIME_WINDOW = 3 * 60 * 60 * 1000; // 3 hours
-const MIN_DISTANCE_KM = 0.5; // 500 meters minimum travel distance
+/** Number of sightings required before triggering a stalking alert */
+const ALERT_THRESHOLD = 3;
+/** Time window for analyzing tracker patterns (3 hours) */
+const TIME_WINDOW = 3 * 60 * 60 * 1000;
+/** Minimum travel distance in km to indicate following behavior */
+const MIN_DISTANCE_KM = 0.5;
 
+/**
+ * Service for detecting and alerting users about unknown trackers.
+ * Implements Apple's anti-stalking safety feature that warns users when
+ * an unknown AirTag has been traveling with them for an extended time or distance.
+ */
 export class AntiStalkingService {
   /**
-   * Record a tracker sighting (called when user's device detects a nearby tracker)
+   * Record a sighting of a nearby tracker detected by the user's device.
+   * Analyzes the pattern to determine if a stalking alert should be triggered.
+   *
+   * @param userId - The ID of the user whose device detected the tracker
+   * @param identifierHash - The hashed identifier of the detected tracker
+   * @param location - The GPS coordinates where the tracker was detected
+   * @returns Object containing whether an alert was triggered and the sighting record
    */
   async recordSighting(
     userId: string,
@@ -52,7 +66,12 @@ export class AntiStalkingService {
   }
 
   /**
-   * Check if an identifier belongs to the user's registered devices
+   * Check if an identifier hash belongs to one of the user's registered devices.
+   * Own devices should not trigger stalking alerts.
+   *
+   * @param userId - The ID of the user
+   * @param identifierHash - The identifier hash to check
+   * @returns True if the identifier belongs to the user's device
    */
   private async isUserDevice(userId: string, identifierHash: string): Promise<boolean> {
     const devices = await deviceService.getDevicesByUser(userId);
@@ -69,7 +88,15 @@ export class AntiStalkingService {
   }
 
   /**
-   * Check if sightings indicate a stalking pattern
+   * Analyze recent sightings to detect stalking patterns.
+   * A stalking pattern is detected when:
+   * - 3+ sightings occur within the time window, AND
+   * - The user has traveled 500m+ with the tracker, OR
+   * - The tracker has been with the user for 1+ hour
+   *
+   * @param userId - The ID of the user
+   * @param identifierHash - The identifier hash of the tracker
+   * @returns True if a stalking pattern is detected
    */
   private async checkStalkingPattern(
     userId: string,
@@ -120,7 +147,11 @@ export class AntiStalkingService {
   }
 
   /**
-   * Create a stalking alert notification
+   * Create a notification alerting the user about an unknown tracker.
+   * Implements a 1-hour cooldown to prevent spam for the same tracker.
+   *
+   * @param userId - The ID of the user to notify
+   * @param identifierHash - The identifier hash of the suspicious tracker
    */
   private async createStalkingAlert(userId: string, identifierHash: string): Promise<void> {
     // Check if we already sent an alert for this tracker recently
@@ -154,7 +185,11 @@ export class AntiStalkingService {
   }
 
   /**
-   * Get all sightings for a specific tracker by a user
+   * Get all sightings of a specific tracker by a user within the time window.
+   *
+   * @param userId - The ID of the user
+   * @param identifierHash - The identifier hash of the tracker
+   * @returns Array of tracker sightings sorted by time descending
    */
   async getSightings(
     userId: string,
@@ -171,7 +206,11 @@ export class AntiStalkingService {
   }
 
   /**
-   * Get all unknown trackers detected by a user
+   * Get all unknown trackers detected by a user that meet the alert threshold.
+   * Filters out the user's own devices from the results.
+   *
+   * @param userId - The ID of the user
+   * @returns Array of unknown tracker summaries with sighting statistics
    */
   async getUnknownTrackers(userId: string): Promise<
     Array<{
@@ -214,7 +253,10 @@ export class AntiStalkingService {
   }
 
   /**
-   * Get anti-stalking statistics (for admin)
+   * Get anti-stalking statistics for the admin dashboard.
+   * Provides insight into system-wide tracker detection activity.
+   *
+   * @returns Statistics with total sightings, unique trackers, and alerts triggered
    */
   async getAntiStalkingStats(): Promise<{
     totalSightings: number;

@@ -4,7 +4,11 @@ import { SERVER_CONFIG, URL_CONFIG } from '../config.js';
 import { Url, CreateUrlInput, UrlResponse } from '../models/types.js';
 import { getNextKey, markKeyAsUsed, isCodeAvailable } from './keyService.js';
 
-// Validate URL format
+/**
+ * Validates that a string is a properly formatted HTTP/HTTPS URL.
+ * @param url - The URL string to validate
+ * @returns true if valid, false otherwise
+ */
 function isValidUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -14,7 +18,11 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-// Validate custom short code format
+/**
+ * Validates a custom short code against format and policy rules.
+ * @param code - The custom code to validate
+ * @returns Object with valid flag and optional error message
+ */
 function isValidCustomCode(code: string): { valid: boolean; error?: string } {
   if (code.length < 4) {
     return { valid: false, error: 'Custom code must be at least 4 characters' };
@@ -31,7 +39,12 @@ function isValidCustomCode(code: string): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-// Convert database row to response format
+/**
+ * Converts a database URL row to API response format.
+ * Constructs the full short URL from the base URL and short code.
+ * @param url - The database URL model
+ * @returns Formatted URL response for API clients
+ */
 function toUrlResponse(url: Url): UrlResponse {
   return {
     short_url: `${SERVER_CONFIG.baseUrl}/${url.short_code}`,
@@ -44,7 +57,14 @@ function toUrlResponse(url: Url): UrlResponse {
   };
 }
 
-// Create a new shortened URL
+/**
+ * Creates a new shortened URL.
+ * Handles both auto-generated and custom short codes.
+ * Validates input, persists to database, and caches the mapping.
+ * @param input - URL creation parameters
+ * @returns Promise resolving to the created URL response
+ * @throws Error if validation fails or custom code is taken
+ */
 export async function createUrl(input: CreateUrlInput): Promise<UrlResponse> {
   const { long_url, custom_code, expires_in, user_id } = input;
 
@@ -105,7 +125,13 @@ export async function createUrl(input: CreateUrlInput): Promise<UrlResponse> {
   return toUrlResponse(result[0]);
 }
 
-// Get URL by short code (for redirect)
+/**
+ * Retrieves the long URL for a short code (used for redirects).
+ * Checks cache first, falls back to database on cache miss.
+ * Returns null for inactive or expired URLs.
+ * @param shortCode - The short code to look up
+ * @returns Promise resolving to the long URL or null if not found
+ */
 export async function getUrlByShortCode(shortCode: string): Promise<string | null> {
   // Check cache first
   const cached = await urlCache.get(shortCode);
@@ -134,7 +160,13 @@ export async function getUrlByShortCode(shortCode: string): Promise<string | nul
   return url.long_url;
 }
 
-// Get URL details
+/**
+ * Retrieves full URL details for display or management.
+ * Optionally filters by user ID for ownership verification.
+ * @param shortCode - The short code to look up
+ * @param userId - Optional user ID to filter by ownership
+ * @returns Promise resolving to URL response or null if not found
+ */
 export async function getUrlDetails(shortCode: string, userId?: string): Promise<UrlResponse | null> {
   let queryText = `SELECT * FROM urls WHERE short_code = $1`;
   const params: (string | undefined)[] = [shortCode];
@@ -153,7 +185,14 @@ export async function getUrlDetails(shortCode: string, userId?: string): Promise
   return toUrlResponse(result[0]);
 }
 
-// Get user's URLs
+/**
+ * Retrieves paginated list of URLs for a user.
+ * Used by the dashboard to display the user's created URLs.
+ * @param userId - The user's ID
+ * @param limit - Maximum number of URLs to return (default: 50)
+ * @param offset - Number of URLs to skip (default: 0)
+ * @returns Promise resolving to URLs array and total count
+ */
 export async function getUserUrls(
   userId: string,
   limit: number = 50,
@@ -178,7 +217,14 @@ export async function getUserUrls(
   };
 }
 
-// Update URL (deactivate, change expiration)
+/**
+ * Updates a URL's active status or expiration.
+ * Invalidates cache when URL is deactivated.
+ * @param shortCode - The short code of the URL to update
+ * @param userId - The owner's user ID (for authorization)
+ * @param updates - Object with optional is_active and expires_at fields
+ * @returns Promise resolving to updated URL or null if not found/unauthorized
+ */
 export async function updateUrl(
   shortCode: string,
   userId: string,
@@ -224,7 +270,13 @@ export async function updateUrl(
   return toUrlResponse(result[0]);
 }
 
-// Delete URL (soft delete)
+/**
+ * Soft-deletes a URL by marking it inactive.
+ * Removes the URL from cache to prevent further redirects.
+ * @param shortCode - The short code of the URL to delete
+ * @param userId - The owner's user ID (for authorization)
+ * @returns Promise resolving to true if deleted, false if not found
+ */
 export async function deleteUrl(shortCode: string, userId: string): Promise<boolean> {
   const result = await query<Url>(
     `UPDATE urls SET is_active = false WHERE short_code = $1 AND user_id = $2 RETURNING *`,
@@ -239,7 +291,11 @@ export async function deleteUrl(shortCode: string, userId: string): Promise<bool
   return false;
 }
 
-// Increment click count
+/**
+ * Increments the click count for a URL.
+ * Called asynchronously during redirects to avoid blocking.
+ * @param shortCode - The short code that was clicked
+ */
 export async function incrementClickCount(shortCode: string): Promise<void> {
   await query(
     `UPDATE urls SET click_count = click_count + 1 WHERE short_code = $1`,

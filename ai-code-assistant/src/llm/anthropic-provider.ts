@@ -1,7 +1,12 @@
 /**
- * Anthropic LLM Provider - Integration with Claude API
+ * Anthropic LLM Provider - Integration with Claude API.
  *
- * Uses the official Anthropic SDK to make requests to Claude models.
+ * This provider implements the LLMProvider interface using the official
+ * Anthropic SDK to communicate with Claude models. It handles message
+ * conversion, tool definition formatting, and response parsing to bridge
+ * the gap between the evylcode internal format and Anthropic's API format.
+ *
+ * @module llm/anthropic-provider
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -15,21 +20,42 @@ import type {
   Message,
 } from '../types/index.js';
 
+/**
+ * Configuration options for the Anthropic provider.
+ */
 interface AnthropicProviderOptions {
+  /** Anthropic API key for authentication */
   apiKey: string;
+  /** Model to use (defaults to claude-sonnet-4-20250514) */
   model?: string;
+  /** Default max tokens for responses (defaults to 4096) */
   maxTokens?: number;
 }
 
 /**
- * Anthropic LLM Provider using Claude API
+ * Anthropic LLM Provider using the Claude API.
+ *
+ * This provider enables evylcode to use Claude models for:
+ * - Natural language understanding of user requests
+ * - Intelligent tool selection and parameter generation
+ * - Contextual responses based on tool execution results
+ *
+ * Supports both synchronous and streaming completions.
  */
 export class AnthropicProvider implements LLMProvider {
+  /** Provider identifier */
   name = 'anthropic';
+  /** Anthropic SDK client instance */
   private client: Anthropic;
+  /** Model ID to use for requests */
   private model: string;
+  /** Default maximum tokens for responses */
   private defaultMaxTokens: number;
 
+  /**
+   * Creates a new AnthropicProvider.
+   * @param options - Configuration including API key and optional model/token settings
+   */
   constructor(options: AnthropicProviderOptions) {
     this.client = new Anthropic({
       apiKey: options.apiKey,
@@ -38,6 +64,11 @@ export class AnthropicProvider implements LLMProvider {
     this.defaultMaxTokens = options.maxTokens || 4096;
   }
 
+  /**
+   * Generate a complete response synchronously.
+   * @param request - The completion request with messages and options
+   * @returns The complete response with content and any tool calls
+   */
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     const messages = this.convertMessages(request.messages);
     const tools = request.tools ? this.convertTools(request.tools) : undefined;
@@ -53,6 +84,12 @@ export class AnthropicProvider implements LLMProvider {
     return this.parseResponse(response);
   }
 
+  /**
+   * Stream a response chunk by chunk.
+   * Yields text deltas and tool call events as they arrive from the API.
+   * @param request - The completion request with messages and options
+   * @yields Stream chunks containing text or tool call information
+   */
   async *stream(request: CompletionRequest): AsyncIterable<StreamChunk> {
     const messages = this.convertMessages(request.messages);
     const tools = request.tools ? this.convertTools(request.tools) : undefined;
@@ -123,11 +160,23 @@ export class AnthropicProvider implements LLMProvider {
     }
   }
 
+  /**
+   * Estimate token count for text.
+   * Uses a simple approximation since exact tokenization requires the model.
+   * @param text - The text to count tokens for
+   * @returns Approximate token count (based on ~4 chars per token)
+   */
   countTokens(text: string): number {
     // Approximate token count (Claude uses ~4 chars per token on average)
     return Math.ceil(text.length / 4);
   }
 
+  /**
+   * Convert internal message format to Anthropic API format.
+   * Handles role conversion and content block structure.
+   * @param messages - Internal message array
+   * @returns Anthropic-formatted message array
+   */
   private convertMessages(messages: Message[]): Anthropic.MessageParam[] {
     const result: Anthropic.MessageParam[] = [];
 
@@ -196,6 +245,12 @@ export class AnthropicProvider implements LLMProvider {
     return result;
   }
 
+  /**
+   * Convert internal tool definitions to Anthropic API format.
+   * Maps the JSONSchema parameters to Anthropic's input_schema format.
+   * @param tools - Internal tool definition array
+   * @returns Anthropic-formatted tool array
+   */
   private convertTools(tools: ToolDefinition[]): Anthropic.Tool[] {
     return tools.map((tool) => ({
       name: tool.name,
@@ -208,6 +263,12 @@ export class AnthropicProvider implements LLMProvider {
     }));
   }
 
+  /**
+   * Parse Anthropic API response into internal format.
+   * Extracts text content, tool calls, and stop reason.
+   * @param response - Raw Anthropic API response
+   * @returns Internal completion response format
+   */
   private parseResponse(response: Anthropic.Message): CompletionResponse {
     let content = '';
     const toolCalls: ToolCall[] = [];

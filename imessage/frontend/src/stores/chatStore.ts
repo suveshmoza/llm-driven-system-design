@@ -3,33 +3,110 @@ import type { Conversation, Message, TypingUser, WebSocketMessage } from '@/type
 import { api } from '@/services/api';
 import { wsService } from '@/services/websocket';
 
+/**
+ * Chat state interface.
+ * Manages conversations, messages, typing indicators, and real-time updates.
+ * Uses Maps for efficient message lookup by conversation ID.
+ */
 interface ChatState {
+  /** All conversations the user is participating in */
   conversations: Conversation[];
+  /** Currently selected conversation ID for the chat view */
   currentConversationId: string | null;
+  /** Messages indexed by conversation ID for efficient access */
   messages: Map<string, Message[]>;
+  /** Users currently typing, indexed by conversation ID */
   typingUsers: Map<string, TypingUser[]>;
+  /** Loading state for conversations list */
   isLoadingConversations: boolean;
+  /** Loading state for messages in current conversation */
   isLoadingMessages: boolean;
-
-  // Offline queue
+  /** Queue of messages to send when connection is restored */
   offlineQueue: Message[];
 
   // Actions
+  /** Fetches all conversations from the server */
   loadConversations: () => Promise<void>;
+  /**
+   * Selects a conversation and loads its messages.
+   * @param id - Conversation UUID or null to deselect
+   */
   selectConversation: (id: string | null) => void;
+  /**
+   * Loads messages for a specific conversation.
+   * @param conversationId - Target conversation UUID
+   */
   loadMessages: (conversationId: string) => Promise<void>;
+  /**
+   * Sends a message via WebSocket with optimistic update.
+   * @param conversationId - Target conversation UUID
+   * @param content - Message text
+   * @param replyToId - Optional message ID for threaded replies
+   */
   sendMessage: (conversationId: string, content: string, replyToId?: string) => Promise<void>;
+  /**
+   * Adds a message to the local state (from WebSocket or optimistic update).
+   * @param message - The message to add
+   */
   addMessage: (message: Message) => void;
+  /**
+   * Updates an existing message in state.
+   * @param messageId - UUID of message to update
+   * @param updates - Partial message fields to merge
+   */
   updateMessage: (messageId: string, updates: Partial<Message>) => void;
+  /**
+   * Removes a message from local state.
+   * @param conversationId - Conversation containing the message
+   * @param messageId - UUID of message to remove
+   */
   deleteMessage: (conversationId: string, messageId: string) => void;
+  /**
+   * Sends typing indicator via WebSocket.
+   * @param conversationId - Target conversation UUID
+   * @param isTyping - Whether user is currently typing
+   */
   setTyping: (conversationId: string, isTyping: boolean) => void;
+  /**
+   * Processes incoming WebSocket messages and updates state accordingly.
+   * @param message - The WebSocket message to handle
+   */
   handleWebSocketMessage: (message: WebSocketMessage) => void;
+  /**
+   * Creates a new direct (1:1) conversation.
+   * @param userId - UUID of the other user
+   * @returns The created conversation
+   */
   createDirectConversation: (userId: string) => Promise<Conversation>;
+  /**
+   * Creates a new group conversation.
+   * @param name - Group name
+   * @param participantIds - Array of user UUIDs
+   * @returns The created conversation
+   */
   createGroupConversation: (name: string, participantIds: string[]) => Promise<Conversation>;
+  /**
+   * Marks a message as read and updates unread count.
+   * @param conversationId - Target conversation UUID
+   * @param messageId - UUID of the last read message
+   */
   markAsRead: (conversationId: string, messageId: string) => void;
+  /**
+   * Updates a conversation's properties in state.
+   * @param conversationId - Target conversation UUID
+   * @param updates - Partial conversation fields to merge
+   */
   updateConversation: (conversationId: string, updates: Partial<Conversation>) => void;
 }
 
+/**
+ * Zustand store for chat state management.
+ * Handles all messaging-related state including conversations, messages,
+ * typing indicators, and real-time WebSocket updates.
+ *
+ * Uses optimistic updates for sending messages to provide instant feedback,
+ * with the actual message being confirmed/replaced when the server responds.
+ */
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversationId: null,

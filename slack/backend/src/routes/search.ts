@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Search routes for message search functionality.
+ * Provides full-text search across messages with Elasticsearch.
+ * Falls back to PostgreSQL tsvector search when Elasticsearch is unavailable.
+ */
+
 import { Router, Request, Response } from 'express';
 import { requireAuth, requireWorkspace } from '../middleware/auth.js';
 import { searchMessages } from '../services/elasticsearch.js';
@@ -5,7 +11,11 @@ import { query } from '../db/index.js';
 
 const router = Router();
 
-// Search messages
+/**
+ * GET /search - Search messages in the current workspace.
+ * Supports filtering by channel, user, and date range.
+ * Returns highlighted snippets and enriched user/channel info.
+ */
 router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { q, channel_id, user_id, from_date, to_date, limit = '50' } = req.query;

@@ -1,3 +1,13 @@
+/**
+ * Backend Server Entry Point
+ *
+ * Initializes and starts the Express HTTP server with WebSocket support.
+ * Sets up API routes, middleware, and the WebSocket gateway for real-time
+ * communication. Handles graceful shutdown on SIGTERM/SIGINT.
+ *
+ * @module index
+ */
+
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -9,14 +19,20 @@ import { WebSocketGateway } from './services/wsGateway.js';
 
 dotenv.config();
 
+/** Express application instance */
 const app = express();
+
+/** Server port from environment or default to 3001 */
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Health check
+/**
+ * Health check endpoint for load balancer and monitoring.
+ * Returns current server status and timestamp.
+ */
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -25,13 +41,16 @@ app.get('/health', (_req, res) => {
 app.use('/api/streams', streamRoutes);
 app.use('/api/users', userRoutes);
 
-// Create HTTP server
+/** HTTP server instance (used by both Express and WebSocket) */
 const server = http.createServer(app);
 
-// Initialize WebSocket gateway
+/** WebSocket gateway for real-time communication */
 const wsGateway = new WebSocketGateway(server);
 
-// Expose viewer count endpoint
+/**
+ * Real-time viewer count endpoint.
+ * Provides current viewer count from WebSocket connections.
+ */
 app.get('/api/streams/:streamId/viewers', (req, res) => {
   const count = wsGateway.getViewerCount(req.params.streamId);
   res.json({ stream_id: req.params.streamId, viewer_count: count });
@@ -43,7 +62,10 @@ server.listen(PORT, () => {
   console.log(`WebSocket server running on ws://localhost:${PORT}`);
 });
 
-// Graceful shutdown
+/**
+ * Graceful shutdown handler for SIGTERM.
+ * Closes the server and waits for existing connections to complete.
+ */
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
   server.close(() => {
@@ -52,6 +74,10 @@ process.on('SIGTERM', () => {
   });
 });
 
+/**
+ * Graceful shutdown handler for SIGINT (Ctrl+C).
+ * Closes the server and waits for existing connections to complete.
+ */
 process.on('SIGINT', () => {
   console.log('SIGINT received. Shutting down gracefully...');
   server.close(() => {

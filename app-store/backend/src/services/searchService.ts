@@ -1,7 +1,16 @@
+/**
+ * @fileoverview Search service for app discovery using Elasticsearch.
+ * Provides full-text search, autocomplete suggestions, and similar app recommendations.
+ */
+
 import { esClient, APP_INDEX } from '../config/elasticsearch.js';
 import { cacheGet, cacheSet } from '../config/redis.js';
 import type { App, SearchParams, PaginatedResponse } from '../types/index.js';
 
+/**
+ * Elasticsearch document structure for indexed apps.
+ * Contains searchable fields and ranking signals.
+ */
 interface ESAppDocument {
   id: string;
   bundleId: string;
@@ -33,9 +42,20 @@ interface SearchHit {
   _source: ESAppDocument;
 }
 
+/**
+ * Service class for app search and discovery operations.
+ * Uses Elasticsearch for full-text search with caching for popular queries.
+ */
 export class SearchService {
-  private readonly CACHE_TTL = 60; // 1 minute for search results
+  /** Cache time-to-live for search results (1 minute) */
+  private readonly CACHE_TTL = 60;
 
+  /**
+   * Performs a full-text search for apps with filtering and sorting.
+   * Combines text relevance with quality signals for ranking.
+   * @param params - Search parameters including query, filters, and pagination
+   * @returns Paginated list of matching apps
+   */
   async search(params: SearchParams): Promise<PaginatedResponse<Partial<App>>> {
     const {
       q = '',
@@ -152,6 +172,12 @@ export class SearchService {
     }
   }
 
+  /**
+   * Re-ranks search results by combining text relevance with quality signals.
+   * Applies 60% weight to text relevance and 40% to quality score.
+   * @param apps - Initial search results with scores
+   * @returns Re-ranked apps without internal scoring fields
+   */
   private rerank(apps: (Partial<App> & { _score?: number; qualityScore?: number })[]): Partial<App>[] {
     return apps
       .map((app) => {
@@ -167,6 +193,13 @@ export class SearchService {
       .map(({ _score, qualityScore, _finalScore, ...app }) => app);
   }
 
+  /**
+   * Provides autocomplete suggestions for search queries.
+   * Uses Elasticsearch completion suggester for fast prefix matching.
+   * @param query - Partial search query
+   * @param limit - Maximum number of suggestions
+   * @returns Array of suggested app names
+   */
   async suggest(query: string, limit = 5): Promise<string[]> {
     if (!query.trim()) return [];
 
@@ -195,6 +228,13 @@ export class SearchService {
     }
   }
 
+  /**
+   * Finds apps similar to a given app using content-based filtering.
+   * Uses Elasticsearch more_like_this query on name, description, and keywords.
+   * @param appId - Source app UUID
+   * @param limit - Maximum number of similar apps to return
+   * @returns Array of similar apps
+   */
   async getSimilarApps(appId: string, limit = 10): Promise<Partial<App>[]> {
     const cacheKey = `similar:${appId}:${limit}`;
     const cached = await cacheGet<Partial<App>[]>(cacheKey);
@@ -257,6 +297,11 @@ export class SearchService {
     }
   }
 
+  /**
+   * Indexes an app document in Elasticsearch for search.
+   * Called when an app is created, updated, or published.
+   * @param app - App data to index
+   */
   async indexApp(app: Partial<App> & { developer?: { name: string } }): Promise<void> {
     const document: ESAppDocument = {
       id: app.id!,
@@ -289,6 +334,11 @@ export class SearchService {
     });
   }
 
+  /**
+   * Removes an app from the search index.
+   * Called when an app is deleted or unpublished.
+   * @param appId - App UUID to remove
+   */
   async removeApp(appId: string): Promise<void> {
     await esClient.delete({
       index: APP_INDEX,
@@ -296,6 +346,12 @@ export class SearchService {
     });
   }
 
+  /**
+   * Calculates a quality score for an app based on ratings and downloads.
+   * Used for ranking in search results.
+   * @param app - App data
+   * @returns Quality score between 0 and 1
+   */
   private calculateQualityScore(app: Partial<App>): number {
     const ratingScore = (app.averageRating || 0) / 5;
     const ratingCountScore = Math.min((app.ratingCount || 0) / 1000, 1);
@@ -304,6 +360,12 @@ export class SearchService {
     return ratingScore * 0.4 + ratingCountScore * 0.3 + downloadScore * 0.3;
   }
 
+  /**
+   * Maps an Elasticsearch document to a partial App object.
+   * @param doc - Elasticsearch source document
+   * @param score - Optional relevance score from search
+   * @returns App object with search metadata
+   */
   private mapESDocumentToApp(doc: ESAppDocument, score?: number): Partial<App> & { _score?: number; qualityScore?: number } {
     return {
       id: doc.id,
@@ -328,4 +390,5 @@ export class SearchService {
   }
 }
 
+/** Singleton instance of the search service */
 export const searchService = new SearchService();

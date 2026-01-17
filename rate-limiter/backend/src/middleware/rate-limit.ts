@@ -1,4 +1,10 @@
-// Rate limit middleware for Express
+/**
+ * @fileoverview Express middleware for rate limiting API endpoints.
+ *
+ * Provides a configurable middleware factory that can be applied to any Express route.
+ * The middleware integrates with the rate limiter algorithms and automatically sets
+ * standard rate limit headers on responses.
+ */
 
 import { Request, Response, NextFunction } from 'express';
 import { RateLimiterFactory } from '../algorithms/index.js';
@@ -6,18 +12,56 @@ import { Algorithm, RateLimitResult } from '../types/index.js';
 import { recordMetric } from '../utils/redis.js';
 import Redis from 'ioredis';
 
+/**
+ * Configuration options for the rate limiting middleware.
+ */
 export interface RateLimitMiddlewareOptions {
+  /**
+   * Function to extract the rate limit identifier from a request.
+   * Default: uses request IP address.
+   */
   identifier?: (req: Request) => string;
+  /** Rate limiting algorithm to use */
   algorithm?: Algorithm;
+  /** Maximum requests per window */
   limit?: number;
+  /** Window duration in seconds */
   windowSeconds?: number;
+  /** Burst capacity for bucket algorithms */
   burstCapacity?: number;
+  /** Token refill rate for token bucket */
   refillRate?: number;
+  /** Leak rate for leaky bucket */
   leakRate?: number;
+  /** Request paths to skip rate limiting (prefix matching) */
   skipPaths?: string[];
+  /** Custom handler when rate limit is exceeded */
   onRateLimited?: (req: Request, res: Response, result: RateLimitResult) => void;
 }
 
+/**
+ * Create an Express middleware for rate limiting.
+ * The middleware checks each request against the configured rate limit and
+ * sets appropriate headers. If the limit is exceeded, returns 429 Too Many Requests.
+ *
+ * Design decision: Fail-open on Redis errors to avoid blocking legitimate users
+ * during temporary infrastructure issues.
+ *
+ * @param factory - RateLimiterFactory instance with configured algorithms
+ * @param redis - Redis client for recording metrics
+ * @param options - Middleware configuration options
+ * @returns Express middleware function
+ *
+ * @example
+ * ```ts
+ * app.use('/api', createRateLimitMiddleware(factory, redis, {
+ *   identifier: (req) => req.headers['x-api-key'] || req.ip,
+ *   algorithm: 'sliding_window',
+ *   limit: 100,
+ *   windowSeconds: 60,
+ * }));
+ * ```
+ */
 export function createRateLimitMiddleware(
   factory: RateLimiterFactory,
   redis: Redis,
@@ -36,7 +80,7 @@ export function createRateLimitMiddleware(
   } = options;
 
   return async (req: Request, res: Response, next: NextFunction) => {
-    // Skip certain paths
+    // Skip rate limiting for certain paths (e.g., health checks)
     if (skipPaths.some(path => req.path.startsWith(path))) {
       return next();
     }
@@ -56,7 +100,7 @@ export function createRateLimitMiddleware(
       const latencyMs = Date.now() - startTime;
       await recordMetric(redis, result.allowed ? 'allowed' : 'denied', latencyMs);
 
-      // Set rate limit headers
+      // Set standard rate limit headers (compatible with RFC 6585)
       res.set({
         'X-RateLimit-Limit': result.limit.toString(),
         'X-RateLimit-Remaining': result.remaining.toString(),
@@ -84,7 +128,7 @@ export function createRateLimitMiddleware(
       next();
     } catch (error) {
       console.error('Rate limit check failed:', error);
-      // Fail open - allow request on error
+      // Fail open - allow request on error to prevent blocking during outages
       next();
     }
   };

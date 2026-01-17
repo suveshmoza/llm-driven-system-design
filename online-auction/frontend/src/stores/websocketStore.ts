@@ -1,20 +1,67 @@
 import { create } from 'zustand';
 import type { WebSocketMessage } from '../types';
 
+/**
+ * Shape of the WebSocket state managed by Zustand.
+ * Handles real-time bidding updates via WebSocket connection.
+ */
 interface WebSocketState {
+  /** Active WebSocket connection or null if disconnected */
   socket: WebSocket | null;
+  /** True if WebSocket is currently connected */
   isConnected: boolean;
+  /** Set of auction IDs currently subscribed to for real-time updates */
   subscribedAuctions: Set<string>;
+  /** Most recently received WebSocket message */
   lastMessage: WebSocketMessage | null;
+  /** Establishes WebSocket connection with optional auth token */
   connect: (token?: string) => void;
+  /** Closes WebSocket connection */
   disconnect: () => void;
+  /** Subscribes to real-time updates for an auction */
   subscribe: (auctionId: string) => void;
+  /** Unsubscribes from real-time updates for an auction */
   unsubscribe: (auctionId: string) => void;
+  /** Registers a callback for incoming messages, returns cleanup function */
   addMessageListener: (callback: (message: WebSocketMessage) => void) => () => void;
 }
 
+/**
+ * Set of callback functions that receive WebSocket messages.
+ * External to the store to avoid serialization issues.
+ */
 const messageListeners = new Set<(message: WebSocketMessage) => void>();
 
+/**
+ * Global WebSocket store for real-time auction updates.
+ *
+ * This store manages a single WebSocket connection to the server,
+ * enabling real-time notifications for:
+ * - New bids on subscribed auctions
+ * - Auction end events
+ * - Price updates
+ *
+ * The connection automatically reconnects on disconnect with a 3-second delay.
+ * Subscriptions are preserved across reconnections.
+ *
+ * @example
+ * ```tsx
+ * const { connect, subscribe, addMessageListener } = useWebSocketStore();
+ *
+ * // Connect on app mount
+ * connect(token);
+ *
+ * // Subscribe to auction updates
+ * subscribe(auctionId);
+ *
+ * // Listen for messages
+ * const removeListener = addMessageListener((msg) => {
+ *   if (msg.type === 'new_bid') {
+ *     console.log('New bid:', msg.bid_amount);
+ *   }
+ * });
+ * ```
+ */
 export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   socket: null,
   isConnected: false,

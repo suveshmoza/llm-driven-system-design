@@ -1,10 +1,30 @@
+/**
+ * Checkout service for processing ticket purchases and managing orders.
+ * Handles the final transaction step, converting seat reservations to sold tickets.
+ * Integrates with payment processing (currently simulated).
+ */
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '../db/pool.js';
 import redis from '../db/redis.js';
 import { seatService } from './seat.service.js';
 import type { Order, OrderItem } from '../types/index.js';
 
+/**
+ * Service class for checkout and order management.
+ * Processes payments, creates orders, and handles cancellations.
+ */
 export class CheckoutService {
+  /**
+   * Completes a ticket purchase from a user's reservation.
+   * Validates the reservation, processes payment, and finalizes the order.
+   * Uses a database transaction to ensure atomicity.
+   *
+   * @param sessionId - The user's session ID (holds the reservation)
+   * @param userId - The user making the purchase
+   * @param paymentMethod - The payment method used (e.g., 'card')
+   * @returns Object containing the created order and order items
+   * @throws Error if no reservation exists or it has expired
+   */
   async checkout(
     sessionId: string,
     userId: string,
@@ -79,6 +99,12 @@ export class CheckoutService {
     return result;
   }
 
+  /**
+   * Retrieves all orders for a user with event and venue details.
+   *
+   * @param userId - The user's ID
+   * @returns Array of orders with associated event information
+   */
   async getOrdersByUser(userId: string): Promise<Order[]> {
     const result = await query(
       `SELECT o.*, e.name as event_name, e.event_date, e.artist,
@@ -93,6 +119,14 @@ export class CheckoutService {
     return result.rows;
   }
 
+  /**
+   * Retrieves a specific order with all details including seats.
+   * Verifies the order belongs to the specified user.
+   *
+   * @param orderId - The order ID to retrieve
+   * @param userId - The user ID (for authorization)
+   * @returns Order details with items and seat information, or null if not found
+   */
   async getOrderById(orderId: string, userId: string): Promise<{
     order: Order;
     items: OrderItem[];
@@ -132,6 +166,15 @@ export class CheckoutService {
     };
   }
 
+  /**
+   * Cancels a completed order and releases the seats back to inventory.
+   * Only completed orders can be cancelled.
+   * Uses a transaction to update order status and release seats atomically.
+   *
+   * @param orderId - The order ID to cancel
+   * @param userId - The user ID (for authorization)
+   * @throws Error if order not found or not in completed status
+   */
   async cancelOrder(orderId: string, userId: string): Promise<void> {
     const order = await query(
       'SELECT * FROM orders WHERE id = $1 AND user_id = $2',
@@ -190,4 +233,5 @@ export class CheckoutService {
   }
 }
 
+/** Singleton instance of CheckoutService for use throughout the application */
 export const checkoutService = new CheckoutService();

@@ -1,8 +1,21 @@
 import { pool, redis } from '../db/index.js';
 import type { Match, MatchWithUser } from '../types/index.js';
 
+/**
+ * Service responsible for swipe processing, match detection, and match management.
+ * Handles the core matching logic: storing swipes, detecting mutual likes, and creating matches.
+ * Uses Redis for fast mutual-like detection and PostgreSQL for persistence.
+ */
 export class MatchService {
-  // Process a swipe action
+  /**
+   * Processes a swipe action and checks for mutual match.
+   * If both users have liked each other, creates a match and returns match data.
+   * Caches swipes in Redis for fast subsequent lookups.
+   * @param swiperId - The user who is swiping
+   * @param swipedId - The user being swiped on
+   * @param direction - 'like' or 'pass'
+   * @returns Object with match data (if mutual like) and isNewMatch flag
+   */
   async processSwipe(
     swiperId: string,
     swipedId: string,
@@ -52,7 +65,14 @@ export class MatchService {
     return { match: null, isNewMatch: false };
   }
 
-  // Create a match between two users
+  /**
+   * Creates a match record between two users.
+   * Uses consistent UUID ordering to prevent duplicate matches.
+   * Returns existing match if one already exists.
+   * @param user1Id - First user's UUID
+   * @param user2Id - Second user's UUID
+   * @returns The created or existing match record
+   */
   private async createMatch(user1Id: string, user2Id: string): Promise<Match> {
     // Ensure consistent ordering (smaller UUID first)
     const [first, second] = user1Id < user2Id ? [user1Id, user2Id] : [user2Id, user1Id];
@@ -78,7 +98,13 @@ export class MatchService {
     return result.rows[0];
   }
 
-  // Get all matches for a user
+  /**
+   * Retrieves all matches for a user with the other user's info.
+   * Includes last message preview for conversation list display.
+   * Orders by most recent activity (message or match time).
+   * @param userId - The user's UUID
+   * @returns Array of matches with user info and message previews
+   */
   async getUserMatches(userId: string): Promise<MatchWithUser[]> {
     const result = await pool.query(
       `SELECT
@@ -127,7 +153,12 @@ export class MatchService {
     return matches;
   }
 
-  // Check if two users are matched
+  /**
+   * Checks if two users have an existing match.
+   * @param userId1 - First user's UUID
+   * @param userId2 - Second user's UUID
+   * @returns Match record if matched, null otherwise
+   */
   async areMatched(userId1: string, userId2: string): Promise<Match | null> {
     const [first, second] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1];
 
@@ -139,7 +170,11 @@ export class MatchService {
     return result.rows[0] || null;
   }
 
-  // Get match by ID
+  /**
+   * Retrieves a match by its ID.
+   * @param matchId - The match's UUID
+   * @returns Match record or null if not found
+   */
   async getMatchById(matchId: string): Promise<Match | null> {
     const result = await pool.query(
       'SELECT * FROM matches WHERE id = $1',
@@ -148,7 +183,14 @@ export class MatchService {
     return result.rows[0] || null;
   }
 
-  // Unmatch (delete match)
+  /**
+   * Removes a match between two users.
+   * Deletes the match record, associated messages (via cascade), and swipe history.
+   * Cleans up Redis caches to prevent stale data.
+   * @param matchId - The match's UUID
+   * @param userId - The requesting user (must be part of the match)
+   * @returns True if unmatched successfully, false if unauthorized
+   */
   async unmatch(matchId: string, userId: string): Promise<boolean> {
     // Verify user is part of this match
     const match = await this.getMatchById(matchId);
@@ -174,7 +216,11 @@ export class MatchService {
     return true;
   }
 
-  // Get stats for admin dashboard
+  /**
+   * Retrieves aggregate match and swipe statistics for admin dashboard.
+   * Includes total counts, today's activity, and like rate percentage.
+   * @returns Statistics object with match and swipe metrics
+   */
   async getMatchStats(): Promise<{
     totalMatches: number;
     matchesToday: number;

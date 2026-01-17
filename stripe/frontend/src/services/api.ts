@@ -289,7 +289,20 @@ export async function deleteCustomer(id: string): Promise<{ deleted: boolean }> 
   });
 }
 
-// Payment Methods
+// ============================================================================
+// Payment Methods API
+// ============================================================================
+
+/**
+ * Retrieves a paginated list of payment methods.
+ * Payment methods represent saved card details that can be reused for payments.
+ *
+ * @param params - Query parameters for filtering and pagination
+ * @param params.limit - Maximum number of results to return
+ * @param params.offset - Number of results to skip for pagination
+ * @param params.customer - Filter by customer ID to get a customer's saved methods
+ * @returns Paginated list of payment method objects
+ */
 export async function listPaymentMethods(
   params: { limit?: number; offset?: number; customer?: string } = {}
 ): Promise<ListResponse<PaymentMethod>> {
@@ -303,10 +316,32 @@ export async function listPaymentMethods(
   );
 }
 
+/**
+ * Retrieves a single payment method by its ID.
+ *
+ * @param id - The payment method ID (prefixed with 'pm_')
+ * @returns The payment method object with card details
+ */
 export async function getPaymentMethod(id: string): Promise<PaymentMethod> {
   return fetchApi<PaymentMethod>(`/payment_methods/${id}`);
 }
 
+/**
+ * Creates a new payment method from card details.
+ * In production, card details should be tokenized client-side to maintain PCI compliance.
+ * This simulated implementation accepts raw card data for demonstration purposes.
+ *
+ * @param data - Payment method creation parameters
+ * @param data.type - Payment method type (currently only 'card' is supported)
+ * @param data.card - Card details including number, expiration, and CVC
+ * @param data.card.number - Full card number (will be tokenized)
+ * @param data.card.exp_month - Expiration month (1-12)
+ * @param data.card.exp_year - Expiration year (4 digits)
+ * @param data.card.cvc - Card verification code
+ * @param data.customer - Optional customer ID to immediately attach the method to
+ * @param data.billing_details - Optional billing information
+ * @returns The created payment method with masked card details
+ */
 export async function createPaymentMethod(data: {
   type: 'card';
   card: {
@@ -324,6 +359,14 @@ export async function createPaymentMethod(data: {
   });
 }
 
+/**
+ * Attaches a payment method to a customer for future use.
+ * Once attached, the payment method can be reused for subsequent payments.
+ *
+ * @param id - The payment method ID to attach
+ * @param customerId - The customer ID to attach the method to
+ * @returns The updated payment method with customer reference
+ */
 export async function attachPaymentMethod(
   id: string,
   customerId: string
@@ -334,13 +377,33 @@ export async function attachPaymentMethod(
   });
 }
 
+/**
+ * Detaches a payment method from its customer.
+ * The payment method can no longer be used until reattached.
+ *
+ * @param id - The payment method ID to detach
+ * @returns The updated payment method without customer reference
+ */
 export async function detachPaymentMethod(id: string): Promise<PaymentMethod> {
   return fetchApi<PaymentMethod>(`/payment_methods/${id}/detach`, {
     method: 'POST',
   });
 }
 
-// Charges
+// ============================================================================
+// Charges API
+// ============================================================================
+
+/**
+ * Retrieves a paginated list of charges.
+ * Charges represent successful payment transactions that have been captured.
+ *
+ * @param params - Query parameters for filtering and pagination
+ * @param params.limit - Maximum number of results to return
+ * @param params.offset - Number of results to skip for pagination
+ * @param params.customer - Filter charges by customer ID
+ * @returns Paginated list of charge objects
+ */
 export async function listCharges(
   params: { limit?: number; offset?: number; customer?: string } = {}
 ): Promise<ListResponse<Charge>> {
@@ -352,11 +415,31 @@ export async function listCharges(
   return fetchApi<ListResponse<Charge>>(`/charges?${query.toString()}`);
 }
 
+/**
+ * Retrieves a single charge by its ID.
+ * Includes details like amount, fees, payment method used, and refund status.
+ *
+ * @param id - The charge ID (prefixed with 'ch_')
+ * @returns The charge object with full transaction details
+ */
 export async function getCharge(id: string): Promise<Charge> {
   return fetchApi<Charge>(`/charges/${id}`);
 }
 
-// Refunds
+// ============================================================================
+// Refunds API
+// ============================================================================
+
+/**
+ * Retrieves a paginated list of refunds.
+ * Refunds represent partial or full returns of captured payment amounts.
+ *
+ * @param params - Query parameters for filtering and pagination
+ * @param params.limit - Maximum number of results to return
+ * @param params.offset - Number of results to skip for pagination
+ * @param params.payment_intent - Filter refunds by payment intent ID
+ * @returns Paginated list of refund objects
+ */
 export async function listRefunds(
   params: { limit?: number; offset?: number; payment_intent?: string } = {}
 ): Promise<ListResponse<Refund>> {
@@ -368,6 +451,18 @@ export async function listRefunds(
   return fetchApi<ListResponse<Refund>>(`/refunds?${query.toString()}`);
 }
 
+/**
+ * Creates a refund for a payment.
+ * Returns funds to the customer's payment method. Can be partial or full amount.
+ *
+ * @param data - Refund creation parameters
+ * @param data.payment_intent - Payment intent ID to refund
+ * @param data.charge - Alternatively, the charge ID to refund
+ * @param data.amount - Amount to refund in cents (defaults to full amount)
+ * @param data.reason - Optional reason for the refund
+ * @param data.metadata - Optional key-value pairs for additional data
+ * @returns The created refund object
+ */
 export async function createRefund(data: {
   payment_intent?: string;
   charge?: string;
@@ -381,15 +476,39 @@ export async function createRefund(data: {
   });
 }
 
-// Balance
+// ============================================================================
+// Balance API
+// ============================================================================
+
+/**
+ * Retrieves the current balance for the authenticated merchant.
+ * Shows available and pending amounts broken down by currency.
+ *
+ * @returns Balance object with available and pending amounts
+ */
 export async function getBalance(): Promise<Balance> {
   return fetchApi<Balance>('/balance');
 }
 
+/**
+ * Retrieves a summary of the merchant's financial activity.
+ * Includes lifetime totals for charges, fees, refunds, and today's activity.
+ *
+ * @returns Balance summary with aggregated statistics
+ */
 export async function getBalanceSummary(): Promise<BalanceSummary> {
   return fetchApi<BalanceSummary>('/balance/summary');
 }
 
+/**
+ * Retrieves a paginated list of balance transactions.
+ * Each transaction represents a change to the merchant's balance (charge, refund, fee).
+ *
+ * @param params - Query parameters for pagination
+ * @param params.limit - Maximum number of results to return
+ * @param params.offset - Number of results to skip for pagination
+ * @returns Paginated list of balance transactions
+ */
 export async function listBalanceTransactions(
   params: { limit?: number; offset?: number } = {}
 ): Promise<ListResponse<BalanceTransaction>> {
@@ -402,7 +521,19 @@ export async function listBalanceTransactions(
   );
 }
 
-// Webhooks
+// ============================================================================
+// Webhooks API
+// ============================================================================
+
+/**
+ * Retrieves a paginated list of webhook events for the authenticated merchant.
+ * Events are created when significant payment lifecycle changes occur.
+ *
+ * @param params - Query parameters for pagination
+ * @param params.limit - Maximum number of results to return
+ * @param params.offset - Number of results to skip for pagination
+ * @returns List of webhook events with delivery status
+ */
 export async function listWebhookEvents(
   params: { limit?: number; offset?: number } = {}
 ): Promise<{ data: WebhookEvent[] }> {
@@ -415,10 +546,23 @@ export async function listWebhookEvents(
   );
 }
 
+/**
+ * Retrieves the merchant's configured webhook endpoint.
+ * Returns the URL, signing secret, and enabled status.
+ *
+ * @returns Webhook endpoint configuration
+ */
 export async function getWebhookEndpoint(): Promise<WebhookEndpoint> {
   return fetchApi<WebhookEndpoint>('/webhooks/endpoints');
 }
 
+/**
+ * Creates or updates the merchant's webhook endpoint URL.
+ * A signing secret is automatically generated for HMAC verification.
+ *
+ * @param url - The HTTPS URL to receive webhook events
+ * @returns Updated webhook endpoint with signing secret
+ */
 export async function updateWebhookEndpoint(
   url: string
 ): Promise<WebhookEndpoint> {
@@ -428,19 +572,44 @@ export async function updateWebhookEndpoint(
   });
 }
 
+/**
+ * Deletes the merchant's webhook endpoint configuration.
+ * No further webhook events will be delivered until a new endpoint is configured.
+ *
+ * @returns Confirmation of deletion
+ */
 export async function deleteWebhookEndpoint(): Promise<{ deleted: boolean }> {
   return fetchApi<{ deleted: boolean }>('/webhooks/endpoints', {
     method: 'DELETE',
   });
 }
 
+/**
+ * Queues a webhook event for redelivery.
+ * Use this when the initial delivery failed and you've fixed the endpoint.
+ *
+ * @param eventId - The webhook event ID to retry
+ * @returns Confirmation that the retry has been queued
+ */
 export async function retryWebhook(eventId: string): Promise<{ queued: boolean }> {
   return fetchApi<{ queued: boolean }>(`/webhooks/events/${eventId}/retry`, {
     method: 'POST',
   });
 }
 
-// Merchants
+// ============================================================================
+// Merchants API
+// ============================================================================
+
+/**
+ * Creates a new merchant account.
+ * Returns the merchant object with a generated API key for authentication.
+ *
+ * @param data - Merchant registration data
+ * @param data.name - Business name for the merchant
+ * @param data.email - Contact email for the merchant account
+ * @returns Created merchant object including the API key (only shown once)
+ */
 export async function createMerchant(data: {
   name: string;
   email: string;
@@ -451,10 +620,25 @@ export async function createMerchant(data: {
   });
 }
 
+/**
+ * Retrieves the currently authenticated merchant's profile.
+ * Uses the API key from the store to identify the merchant.
+ *
+ * @returns The authenticated merchant's profile
+ */
 export async function getMerchant(): Promise<Merchant> {
   return fetchApi<Merchant>('/merchants/me');
 }
 
+/**
+ * Retrieves a paginated list of all merchants.
+ * Typically used for admin purposes.
+ *
+ * @param params - Query parameters for pagination
+ * @param params.limit - Maximum number of results to return
+ * @param params.offset - Number of results to skip for pagination
+ * @returns Paginated list of merchant objects
+ */
 export async function listMerchants(
   params: { limit?: number; offset?: number } = {}
 ): Promise<ListResponse<Merchant>> {

@@ -1,6 +1,17 @@
+/**
+ * Landing page route component.
+ * Serves as the entry point for both authenticated and unauthenticated users.
+ */
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Landing page that adapts based on authentication state.
+ * - Authenticated users see a welcome message and link to their respective app (rider/driver)
+ * - Unauthenticated users see login/register options with demo credentials
+ *
+ * @returns Landing page component
+ */
 function IndexPage() {
   const user = useAuthStore((state) => state.user);
 

@@ -12,6 +12,11 @@ import type {
 import { LedgerService } from './ledger.service.js';
 import { redis } from '../db/connection.js';
 
+/**
+ * Service for processing refunds on captured payments.
+ * Handles full and partial refunds with idempotency support.
+ * Coordinates with the ledger service to reverse financial entries.
+ */
 export class RefundService {
   private ledgerService: LedgerService;
 
@@ -20,7 +25,10 @@ export class RefundService {
   }
 
   /**
-   * Check idempotency for refund
+   * Checks if a refund request has already been processed.
+   * Prevents duplicate refunds when clients retry requests.
+   * @param key - Unique idempotency key for the refund request
+   * @returns Existing refund if found, null otherwise
    */
   async checkIdempotency(key: string): Promise<Refund | null> {
     const cached = await redis.get(`refund_idempotency:${key}`);
@@ -41,7 +49,15 @@ export class RefundService {
   }
 
   /**
-   * Create a refund for a captured transaction
+   * Creates a full or partial refund for a captured transaction.
+   * Validates refund amount against remaining refundable balance.
+   * Creates reversing ledger entries and updates transaction status.
+   * @param transactionId - UUID of the original captured transaction
+   * @param merchantId - UUID of the merchant for ownership verification
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @param request - Refund details including optional amount and reason
+   * @returns Created refund record with completed status
+   * @throws Error if transaction not refundable or amount exceeds limit
    */
   async createRefund(
     transactionId: string,
@@ -148,14 +164,18 @@ export class RefundService {
   }
 
   /**
-   * Get a single refund
+   * Retrieves a single refund by its unique identifier.
+   * @param id - UUID of the refund
+   * @returns Refund if found, null otherwise
    */
   async getRefund(id: string): Promise<Refund | null> {
     return queryOne<Refund>('SELECT * FROM refunds WHERE id = $1', [id]);
   }
 
   /**
-   * Get all refunds for a transaction
+   * Retrieves all refunds associated with a specific transaction.
+   * @param transactionId - UUID of the original transaction
+   * @returns Array of refunds ordered by creation time (newest first)
    */
   async getRefundsForTransaction(transactionId: string): Promise<Refund[]> {
     return query<Refund>(
@@ -165,7 +185,11 @@ export class RefundService {
   }
 
   /**
-   * List refunds for a merchant
+   * Retrieves a paginated list of refunds for a merchant.
+   * @param merchantId - UUID of the merchant
+   * @param limit - Maximum number of refunds to return
+   * @param offset - Number of refunds to skip for pagination
+   * @returns Object containing refunds array and total count
    */
   async listRefunds(
     merchantId: string,
@@ -189,16 +213,31 @@ export class RefundService {
   }
 }
 
+/**
+ * Service for handling chargebacks initiated by card issuers.
+ * Chargebacks occur when customers dispute transactions with their bank.
+ * Includes additional fees charged to merchants for chargeback processing.
+ */
 export class ChargebackService {
   private ledgerService: LedgerService;
-  private chargebackFee = 1500; // $15 chargeback fee
+  /** Fixed chargeback processing fee in cents ($15.00) */
+  private chargebackFee = 1500;
 
   constructor() {
     this.ledgerService = new LedgerService();
   }
 
   /**
-   * Create a chargeback (typically initiated by card network)
+   * Creates a chargeback record when a card issuer notifies of a dispute.
+   * Immediately debits the merchant's account for the disputed amount plus fee.
+   * Sets a 7-day deadline for the merchant to submit evidence.
+   * @param transactionId - UUID of the disputed transaction
+   * @param merchantId - UUID of the merchant
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @param amount - Disputed amount in cents
+   * @param reasonCode - Card network reason code for the dispute
+   * @param reasonDescription - Human-readable description of the dispute
+   * @returns Created chargeback record
    */
   async createChargeback(
     transactionId: string,
@@ -254,7 +293,14 @@ export class ChargebackService {
   }
 
   /**
-   * Update chargeback status (won/lost)
+   * Updates a chargeback's status based on the dispute outcome.
+   * If the merchant wins, reverses the chargeback debit and refunds the fee.
+   * @param chargebackId - UUID of the chargeback
+   * @param merchantId - UUID of the merchant for ownership verification
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @param status - New status ('won' or 'lost')
+   * @returns Updated chargeback record
+   * @throws Error if chargeback not found or already resolved
    */
   async updateChargebackStatus(
     chargebackId: string,
@@ -302,14 +348,22 @@ export class ChargebackService {
   }
 
   /**
-   * Get a single chargeback
+   * Retrieves a single chargeback by its unique identifier.
+   * @param id - UUID of the chargeback
+   * @returns Chargeback if found, null otherwise
    */
   async getChargeback(id: string): Promise<Chargeback | null> {
     return queryOne<Chargeback>('SELECT * FROM chargebacks WHERE id = $1', [id]);
   }
 
   /**
-   * List chargebacks for a merchant
+   * Retrieves a paginated list of chargebacks for a merchant.
+   * Optionally filters by chargeback status.
+   * @param merchantId - UUID of the merchant
+   * @param status - Optional status filter
+   * @param limit - Maximum number of chargebacks to return
+   * @param offset - Number of chargebacks to skip for pagination
+   * @returns Object containing chargebacks array and total count
    */
   async listChargebacks(
     merchantId: string,

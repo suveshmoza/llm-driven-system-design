@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Alert rules and instances API routes.
+ *
+ * Exposes REST endpoints for:
+ * - Alert rule CRUD operations (create, read, update, delete)
+ * - Alert instance querying (firing and resolved alerts)
+ * - Manual alert rule evaluation for testing
+ */
+
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import {
@@ -12,20 +21,26 @@ import {
 
 const router = Router();
 
-// Alert condition schema
+/**
+ * Zod schema for alert condition configuration.
+ */
 const AlertConditionSchema = z.object({
   operator: z.enum(['>', '<', '>=', '<=', '==', '!=']),
   threshold: z.number(),
   aggregation: z.enum(['avg', 'min', 'max', 'sum', 'count']).default('avg'),
 });
 
-// Alert notification schema
+/**
+ * Zod schema for alert notification channel configuration.
+ */
 const AlertNotificationSchema = z.object({
   channel: z.enum(['console', 'webhook']),
   target: z.string().min(1),
 });
 
-// Create alert rule schema
+/**
+ * Zod schema for alert rule creation requests.
+ */
 const CreateAlertRuleSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
@@ -38,7 +53,9 @@ const CreateAlertRuleSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
-// Update alert rule schema
+/**
+ * Zod schema for alert rule update requests.
+ */
 const UpdateAlertRuleSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).optional(),
@@ -51,7 +68,13 @@ const UpdateAlertRuleSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
-// Get all alert rules
+/**
+ * GET /rules
+ * Lists all alert rules, optionally filtered by enabled status.
+ *
+ * @query enabled - Filter by enabled/disabled status ('true' or 'false')
+ * @returns {rules: AlertRule[]} - Array of alert rules
+ */
 router.get('/rules', async (req: Request, res: Response) => {
   try {
     const enabled = req.query.enabled === 'true' ? true : req.query.enabled === 'false' ? false : undefined;
@@ -63,7 +86,13 @@ router.get('/rules', async (req: Request, res: Response) => {
   }
 });
 
-// Get single alert rule
+/**
+ * GET /rules/:id
+ * Retrieves a single alert rule by ID.
+ *
+ * @param id - Alert rule UUID
+ * @returns The alert rule if found
+ */
 router.get('/rules/:id', async (req: Request, res: Response) => {
   try {
     const rule = await getAlertRule(req.params.id);
@@ -77,7 +106,13 @@ router.get('/rules/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Create alert rule
+/**
+ * POST /rules
+ * Creates a new alert rule.
+ *
+ * @body {name, metric_name, condition, window_seconds?, severity?, notifications?, enabled?}
+ * @returns The newly created alert rule
+ */
 router.post('/rules', async (req: Request, res: Response) => {
   try {
     const validation = CreateAlertRuleSchema.safeParse(req.body);
@@ -119,7 +154,14 @@ router.post('/rules', async (req: Request, res: Response) => {
   }
 });
 
-// Update alert rule
+/**
+ * PUT /rules/:id
+ * Updates an existing alert rule's properties.
+ *
+ * @param id - Alert rule UUID
+ * @body Partial alert rule properties to update
+ * @returns The updated alert rule
+ */
 router.put('/rules/:id', async (req: Request, res: Response) => {
   try {
     const validation = UpdateAlertRuleSchema.safeParse(req.body);
@@ -165,7 +207,13 @@ router.put('/rules/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Delete alert rule
+/**
+ * DELETE /rules/:id
+ * Deletes an alert rule and all its instances.
+ *
+ * @param id - Alert rule UUID
+ * @returns 204 No Content on success
+ */
 router.delete('/rules/:id', async (req: Request, res: Response) => {
   try {
     const deleted = await deleteAlertRule(req.params.id);
@@ -179,7 +227,15 @@ router.delete('/rules/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Get alert instances
+/**
+ * GET /instances
+ * Retrieves alert instances (active and historical alerts).
+ *
+ * @query rule_id - Filter by specific alert rule
+ * @query status - Filter by 'firing' or 'resolved'
+ * @query limit - Maximum results (default: 100)
+ * @returns {instances: AlertInstance[]} - Array of alert instances
+ */
 router.get('/instances', async (req: Request, res: Response) => {
   try {
     const ruleId = req.query.rule_id as string | undefined;
@@ -194,7 +250,14 @@ router.get('/instances', async (req: Request, res: Response) => {
   }
 });
 
-// Test/evaluate an alert rule
+/**
+ * POST /rules/:id/evaluate
+ * Manually evaluates an alert rule against current data.
+ * Useful for testing alert configurations without waiting for the scheduler.
+ *
+ * @param id - Alert rule UUID
+ * @returns {should_fire, current_value, condition} - Evaluation result
+ */
 router.post('/rules/:id/evaluate', async (req: Request, res: Response) => {
   try {
     const rule = await getAlertRule(req.params.id);

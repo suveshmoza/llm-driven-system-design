@@ -1,3 +1,13 @@
+/**
+ * Canvas service for managing the collaborative pixel canvas.
+ *
+ * Handles all canvas operations including:
+ * - Canvas initialization and state retrieval
+ * - Pixel placement with rate limiting
+ * - Event logging to PostgreSQL
+ * - Snapshot creation for timelapse
+ * - Historical canvas reconstruction
+ */
 import { redis, redisPub } from './redis.js';
 import { query } from './database.js';
 import zlib from 'zlib';
@@ -12,10 +22,18 @@ import {
 } from '../config.js';
 import type { PixelEvent, CooldownStatus } from '../types/index.js';
 
+/** Promisified gzip compression function. */
 const gzipAsync = promisify(zlib.gzip);
 
+/**
+ * Service class managing all canvas-related operations.
+ * Uses Redis for real-time state and PostgreSQL for historical data.
+ */
 export class CanvasService {
-  // Initialize canvas with default color (white = 0)
+  /**
+   * Initializes the canvas in Redis if it does not exist.
+   * Creates a blank canvas with all pixels set to white (color index 0).
+   */
   async initializeCanvas(): Promise<void> {
     const exists = await redis.exists(REDIS_KEYS.CANVAS);
     if (!exists) {
@@ -27,7 +45,12 @@ export class CanvasService {
     }
   }
 
-  // Get entire canvas state as Buffer
+  /**
+   * Retrieves the current canvas state from Redis.
+   * Creates an empty canvas if none exists.
+   *
+   * @returns Buffer containing color indices for all pixels (row-major order).
+   */
   async getCanvas(): Promise<Buffer> {
     const canvas = await redis.getBuffer(REDIS_KEYS.CANVAS);
     if (!canvas) {
@@ -38,13 +61,22 @@ export class CanvasService {
     return canvas;
   }
 
-  // Get canvas as base64 string for transmission
+  /**
+   * Retrieves the canvas as a base64-encoded string for network transmission.
+   *
+   * @returns Base64-encoded string of the canvas data.
+   */
   async getCanvasBase64(): Promise<string> {
     const canvas = await this.getCanvas();
     return canvas.toString('base64');
   }
 
-  // Check and set cooldown for a user
+  /**
+   * Checks the cooldown status for a user.
+   *
+   * @param userId - The user's unique identifier.
+   * @returns CooldownStatus indicating if the user can place a pixel.
+   */
   async checkCooldown(userId: string): Promise<CooldownStatus> {
     const cooldownKey = REDIS_KEYS.COOLDOWN(userId);
     const ttl = await redis.ttl(cooldownKey);
@@ -56,13 +88,32 @@ export class CanvasService {
     return { canPlace: true, remainingSeconds: 0 };
   }
 
-  // Set cooldown for a user
+  /**
+   * Sets the cooldown timer for a user after placing a pixel.
+   *
+   * @param userId - The user's unique identifier.
+   */
   async setCooldown(userId: string): Promise<void> {
     const cooldownKey = REDIS_KEYS.COOLDOWN(userId);
     await redis.set(cooldownKey, Date.now().toString(), 'EX', COOLDOWN_SECONDS);
   }
 
-  // Place a pixel on the canvas
+  /**
+   * Places a pixel on the canvas with validation and rate limiting.
+   *
+   * Performs:
+   * - Coordinate and color validation
+   * - Cooldown check
+   * - Atomic canvas update in Redis
+   * - Pub/sub broadcast for real-time sync
+   * - Event logging to PostgreSQL
+   *
+   * @param userId - The user placing the pixel.
+   * @param x - X coordinate (0 to CANVAS_WIDTH-1).
+   * @param y - Y coordinate (0 to CANVAS_HEIGHT-1).
+   * @param color - Color index (0 to 15).
+   * @returns Object with success status, error message, and next placement time.
+   */
   async placePixel(
     userId: string,
     x: number,
@@ -123,7 +174,11 @@ export class CanvasService {
     };
   }
 
-  // Log pixel event to PostgreSQL
+  /**
+   * Logs a pixel placement event to PostgreSQL for historical records.
+   *
+   * @param event - The pixel event to log.
+   */
   private async logPixelEvent(event: PixelEvent): Promise<void> {
     try {
       await query(
@@ -136,7 +191,10 @@ export class CanvasService {
     }
   }
 
-  // Create a canvas snapshot
+  /**
+   * Creates a compressed snapshot of the current canvas state.
+   * Snapshots are stored in PostgreSQL and used for timelapse generation.
+   */
   async createSnapshot(): Promise<void> {
     try {
       const canvas = await this.getCanvas();
@@ -159,7 +217,13 @@ export class CanvasService {
     }
   }
 
-  // Get canvas at a specific time (for timelapse)
+  /**
+   * Reconstructs the canvas state at a specific point in time.
+   * Uses the nearest snapshot and replays subsequent events.
+   *
+   * @param targetTime - The timestamp to reconstruct the canvas for.
+   * @returns Buffer containing the canvas state, or null if no data available.
+   */
   async getCanvasAtTime(targetTime: Date): Promise<Buffer | null> {
     try {
       // Find the most recent snapshot before target time
@@ -200,7 +264,14 @@ export class CanvasService {
     }
   }
 
-  // Get timelapse frames
+  /**
+   * Generates timelapse frames showing canvas evolution over time.
+   *
+   * @param startTime - Beginning of the timelapse period.
+   * @param endTime - End of the timelapse period.
+   * @param frameCount - Number of frames to generate.
+   * @returns Array of frames with timestamp and base64-encoded canvas data.
+   */
   async getTimelapseFrames(
     startTime: Date,
     endTime: Date,
@@ -223,7 +294,12 @@ export class CanvasService {
     return frames;
   }
 
-  // Get recent pixel events
+  /**
+   * Retrieves recent pixel placement events.
+   *
+   * @param limit - Maximum number of events to return (default 100).
+   * @returns Array of pixel events sorted by most recent first.
+   */
   async getRecentEvents(limit: number = 100): Promise<PixelEvent[]> {
     const events = await query<{
       x: number;
@@ -248,7 +324,14 @@ export class CanvasService {
     }));
   }
 
-  // Get pixel history for a specific location
+  /**
+   * Retrieves the placement history for a specific pixel location.
+   *
+   * @param x - X coordinate of the pixel.
+   * @param y - Y coordinate of the pixel.
+   * @param limit - Maximum number of events to return (default 50).
+   * @returns Array of pixel events for this location, most recent first.
+   */
   async getPixelHistory(
     x: number,
     y: number,
@@ -279,4 +362,5 @@ export class CanvasService {
   }
 }
 
+/** Singleton instance of the canvas service. */
 export const canvasService = new CanvasService();

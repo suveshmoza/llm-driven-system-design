@@ -3,6 +3,16 @@ import { useEffect } from 'react';
 import { Header } from '../components';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Root layout component that wraps all routes.
+ * Handles authentication state initialization and provides
+ * the base layout structure for the application.
+ *
+ * Features:
+ * - Validates existing session on mount
+ * - Shows loading spinner during auth check
+ * - Provides dark theme container for child routes
+ */
 function RootComponent() {
   const { checkAuth, isLoading } = useAuthStore();
 
@@ -25,6 +35,10 @@ function RootComponent() {
   );
 }
 
+/**
+ * Root route configuration for Tanstack Router.
+ * Defines the top-level layout that all child routes inherit.
+ */
 export const Route = createRootRoute({
   component: RootComponent,
 });

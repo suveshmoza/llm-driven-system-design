@@ -3,6 +3,18 @@ import { useAuthStore } from '../stores/authStore';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 
+/**
+ * Global navigation header component.
+ *
+ * Displays the site logo, navigation links, and user actions.
+ * Shows different content based on authentication state:
+ * - Unauthenticated: Sign In / Sign Up links
+ * - Authenticated: Notifications, user menu, and additional nav links
+ *
+ * Fetches unread notification count to display badge.
+ *
+ * @returns JSX element for the sticky header
+ */
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const [unreadCount, setUnreadCount] = useState(0);

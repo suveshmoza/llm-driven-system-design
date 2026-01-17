@@ -1,5 +1,12 @@
 /**
- * Tool Registry - Central tool management
+ * Tool Registry - Central tool management.
+ *
+ * This module provides the ToolRegistry class which manages all available tools
+ * in the system. It handles tool registration, lookup, and execution, serving
+ * as the central point of coordination between the agent controller and
+ * individual tool implementations.
+ *
+ * @module tools
  */
 
 import type { Tool, ToolDefinition, ToolContext, ToolResult } from '../types/index.js';
@@ -10,9 +17,24 @@ import { BashTool } from './bash.js';
 import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
 
+/**
+ * Registry for managing available tools.
+ *
+ * The ToolRegistry is the central hub for all tool operations:
+ * - Registers default tools on initialization
+ * - Provides tool lookup by name
+ * - Generates tool definitions for the LLM
+ * - Handles tool execution with error handling
+ * - Determines which tools require user approval
+ */
 export class ToolRegistry {
+  /** Map of tool names to tool implementations */
   private tools: Map<string, Tool> = new Map();
 
+  /**
+   * Creates a new ToolRegistry and registers default tools.
+   * Default tools include: Read, Write, Edit, Bash, Glob, Grep.
+   */
   constructor() {
     // Register default tools
     this.register(ReadTool);
@@ -24,28 +46,34 @@ export class ToolRegistry {
   }
 
   /**
-   * Register a tool
+   * Register a tool in the registry.
+   * @param tool - The tool implementation to register
    */
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
   }
 
   /**
-   * Get a tool by name
+   * Get a tool by name.
+   * @param name - The name of the tool to retrieve
+   * @returns The tool if found, undefined otherwise
    */
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }
 
   /**
-   * Get all tools
+   * Get all registered tools.
+   * @returns Array of all tool implementations
    */
   getAll(): Tool[] {
     return Array.from(this.tools.values());
   }
 
   /**
-   * Get tool definitions for LLM
+   * Get tool definitions formatted for the LLM.
+   * This is sent to Claude so it knows what tools are available.
+   * @returns Array of tool definitions with name, description, and parameters
    */
   getDefinitions(): ToolDefinition[] {
     return this.getAll().map(tool => ({
@@ -56,7 +84,11 @@ export class ToolRegistry {
   }
 
   /**
-   * Check if a tool requires approval for given params
+   * Check if a tool requires user approval for given parameters.
+   * Some tools (like Bash) have dynamic approval based on the command.
+   * @param name - The tool name
+   * @param params - The parameters to check
+   * @returns True if approval is required, false otherwise
    */
   requiresApproval(name: string, params: Record<string, unknown>): boolean {
     const tool = this.get(name);
@@ -69,7 +101,11 @@ export class ToolRegistry {
   }
 
   /**
-   * Execute a tool
+   * Execute a tool with error handling.
+   * @param name - The name of the tool to execute
+   * @param params - Parameters to pass to the tool
+   * @param context - Execution context with working directory and permissions
+   * @returns The tool execution result
    */
   async execute(name: string, params: Record<string, unknown>, context: ToolContext): Promise<ToolResult> {
     const tool = this.get(name);

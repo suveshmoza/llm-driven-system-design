@@ -1,52 +1,119 @@
+/**
+ * @fileoverview Statistics Service for crawler monitoring and reporting.
+ *
+ * This service aggregates and provides crawl statistics from multiple sources:
+ * - Redis counters for real-time metrics (pages crawled, bytes downloaded)
+ * - PostgreSQL for frontier status and historical data
+ * - Worker heartbeats for monitoring worker health
+ *
+ * The statistics are consumed by the dashboard to display:
+ * - Overall crawl progress (pages crawled, failed, pending)
+ * - Real-time throughput metrics
+ * - Active worker status
+ * - Top domains by page count
+ * - Recently crawled pages
+ *
+ * @module services/stats
+ */
+
 import { pool } from '../models/database.js';
 import { redis, REDIS_KEYS } from '../models/redis.js';
 
+/**
+ * Comprehensive crawl statistics for the dashboard.
+ * Combines real-time counters with database aggregations.
+ */
 export interface CrawlStats {
-  // Overall stats
+  /** Total pages successfully crawled across all workers (from Redis) */
   pagesCrawled: number;
+  /** Total pages that failed to crawl (from Redis) */
   pagesFailed: number;
+  /** Total bytes of content downloaded (from Redis) */
   bytesDownloaded: number;
+  /** Total new URLs discovered from crawled pages (from Redis) */
   linksDiscovered: number;
+  /** Number of duplicate URLs skipped (from Redis) */
   duplicatesSkipped: number;
 
-  // Frontier stats
+  /** URLs waiting to be crawled (from PostgreSQL) */
   frontierPending: number;
+  /** URLs currently being processed by workers (from PostgreSQL) */
   frontierInProgress: number;
+  /** URLs successfully completed (from PostgreSQL) */
   frontierCompleted: number;
+  /** URLs that failed (from PostgreSQL) */
   frontierFailed: number;
+  /** Total unique domains in the frontier (from PostgreSQL) */
   totalDomains: number;
 
-  // Worker stats
+  /** List of active worker IDs (from Redis) */
   activeWorkers: string[];
+  /** Worker heartbeat timestamps for health monitoring */
   workerHeartbeats: { workerId: string; lastHeartbeat: number }[];
 
-  // Recent activity
+  /** Most recently crawled pages (from PostgreSQL) */
   recentPages: RecentPage[];
+  /** Top domains by page count (from PostgreSQL) */
   topDomains: DomainStats[];
 }
 
+/**
+ * Summary of a recently crawled page for the dashboard.
+ */
 export interface RecentPage {
+  /** The URL that was crawled */
   url: string;
+  /** Domain of the URL */
   domain: string;
+  /** Extracted page title */
   title: string;
+  /** HTTP status code */
   statusCode: number;
+  /** ISO timestamp when crawled */
   crawledAt: string;
+  /** Crawl duration in milliseconds */
   durationMs: number;
 }
 
+/**
+ * Statistics for a single domain.
+ */
 export interface DomainStats {
+  /** Domain hostname */
   domain: string;
+  /** Number of pages crawled from this domain */
   pageCount: number;
+  /** Crawl delay in seconds */
   crawlDelay: number;
 }
 
 /**
- * Statistics Service
- * Aggregates and provides crawl statistics for the dashboard
+ * Statistics Service - aggregates and provides crawl metrics.
+ *
+ * This service is the primary data source for the dashboard, combining
+ * data from Redis (real-time counters) and PostgreSQL (historical data).
+ *
+ * @example
+ * ```typescript
+ * import { statsService } from './services/stats';
+ *
+ * // Get comprehensive stats for the dashboard
+ * const stats = await statsService.getStats();
+ * console.log(`Crawled ${stats.pagesCrawled} pages across ${stats.totalDomains} domains`);
+ *
+ * // Get time-series data for charts
+ * const timeSeries = await statsService.getTimeSeries(24); // Last 24 hours
+ * ```
  */
 export class StatsService {
   /**
-   * Get comprehensive crawl statistics
+   * Gets comprehensive crawl statistics.
+   *
+   * Fetches data from multiple sources in parallel for efficiency:
+   * - Redis: Real-time counters and worker status
+   * - PostgreSQL: Frontier status, recent pages, top domains
+   *
+   * @returns Complete CrawlStats object for dashboard display
    */
   async getStats(): Promise<CrawlStats> {
     // Get Redis counters
@@ -147,7 +214,13 @@ export class StatsService {
   }
 
   /**
-   * Get time-series stats for charts
+   * Gets time-series data for chart visualization.
+   *
+   * Aggregates crawl results by hour for the specified time window.
+   * Useful for displaying crawl throughput trends over time.
+   *
+   * @param hours - Number of hours to look back (default: 24)
+   * @returns Object containing arrays of timestamps and metrics
    */
   async getTimeSeries(hours: number = 24): Promise<{
     timestamps: string[];
@@ -176,7 +249,11 @@ export class StatsService {
   }
 
   /**
-   * Reset all statistics
+   * Resets all statistics counters in Redis.
+   *
+   * This is an admin function that clears the real-time counters.
+   * Useful for starting fresh after testing or debugging.
+   * Note: This does NOT delete data from PostgreSQL.
    */
   async resetStats(): Promise<void> {
     await Promise.all([
@@ -189,4 +266,8 @@ export class StatsService {
   }
 }
 
+/**
+ * Singleton instance of the StatsService.
+ * Use this export for all statistics operations.
+ */
 export const statsService = new StatsService();

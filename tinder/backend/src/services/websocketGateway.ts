@@ -2,16 +2,31 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { redis } from '../db/index.js';
 
+/**
+ * Extended WebSocket interface with user tracking and heartbeat state.
+ */
 interface ExtendedWebSocket extends WebSocket {
+  /** User ID after authentication */
   userId?: string;
+  /** Whether the connection is still alive (heartbeat) */
   isAlive?: boolean;
 }
 
+/**
+ * WebSocket gateway for real-time communication between clients and server.
+ * Handles connection management, authentication, heartbeat monitoring, and message routing.
+ * Integrates with Redis pub/sub to enable cross-server message delivery in a distributed setup.
+ */
 export class WebSocketGateway {
   private wss: WebSocketServer;
+  /** Map of userId to their WebSocket connection */
   private connections: Map<string, ExtendedWebSocket> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
+  /**
+   * Creates a new WebSocket gateway attached to an HTTP server.
+   * @param server - HTTP server to attach WebSocket server to
+   */
   constructor(server: Server) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
     this.setupConnectionHandler();
@@ -19,6 +34,10 @@ export class WebSocketGateway {
     this.startHeartbeat();
   }
 
+  /**
+   * Sets up handlers for new WebSocket connections.
+   * Manages authentication, message handling, and cleanup on disconnect.
+   */
   private setupConnectionHandler(): void {
     this.wss.on('connection', (ws: ExtendedWebSocket, req) => {
       ws.isAlive = true;
@@ -49,6 +68,12 @@ export class WebSocketGateway {
     });
   }
 
+  /**
+   * Processes incoming WebSocket messages from clients.
+   * Supports: auth (authenticate connection), ping (keep-alive), typing (typing indicator).
+   * @param ws - The WebSocket connection
+   * @param message - Parsed message object
+   */
   private handleMessage(ws: ExtendedWebSocket, message: any): void {
     switch (message.type) {
       case 'auth':
@@ -83,6 +108,11 @@ export class WebSocketGateway {
     }
   }
 
+  /**
+   * Sets up Redis pub/sub subscriber for cross-server message delivery.
+   * Subscribes to user:* pattern and forwards messages to connected WebSocket clients.
+   * Enables horizontal scaling with multiple server instances.
+   */
   private async setupRedisSubscriber(): Promise<void> {
     // Create a separate Redis connection for subscribing
     const subscriber = redis.duplicate();
@@ -103,6 +133,10 @@ export class WebSocketGateway {
     subscriber.psubscribe('user:*');
   }
 
+  /**
+   * Starts the heartbeat mechanism to detect dead connections.
+   * Pings all clients every 30 seconds and terminates unresponsive ones.
+   */
   private startHeartbeat(): void {
     this.heartbeatInterval = setInterval(() => {
       this.wss.clients.forEach((ws: ExtendedWebSocket) => {
@@ -119,6 +153,12 @@ export class WebSocketGateway {
     }, 30000);
   }
 
+  /**
+   * Sends a message to a specific user via their WebSocket connection.
+   * @param userId - The target user's UUID
+   * @param payload - The message payload to send
+   * @returns True if message was sent, false if user not connected
+   */
   sendToUser(userId: string, payload: any): boolean {
     const ws = this.connections.get(userId);
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -128,6 +168,10 @@ export class WebSocketGateway {
     return false;
   }
 
+  /**
+   * Broadcasts a message to all connected WebSocket clients.
+   * @param payload - The message payload to broadcast
+   */
   broadcast(payload: any): void {
     this.wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
@@ -136,14 +180,26 @@ export class WebSocketGateway {
     });
   }
 
+  /**
+   * Returns a list of all currently connected user IDs.
+   * @returns Array of user UUID strings
+   */
   getConnectedUsers(): string[] {
     return Array.from(this.connections.keys());
   }
 
+  /**
+   * Returns the current number of connected WebSocket clients.
+   * @returns Number of active connections
+   */
   getConnectionCount(): number {
     return this.connections.size;
   }
 
+  /**
+   * Gracefully shuts down the WebSocket server.
+   * Stops heartbeat interval and closes all connections.
+   */
   close(): void {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);

@@ -77,7 +77,12 @@ export class PaymentService {
   }
 
   /**
-   * Create a new payment transaction
+   * Creates a new payment transaction with fraud detection and optional capture.
+   * Implements the authorize-then-capture flow for card payments.
+   * @param merchantId - UUID of the merchant initiating the payment
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @param request - Payment details including amount, currency, and payment method
+   * @returns Response with transaction ID, status, and fee breakdown
    */
   async createPayment(
     merchantId: string,
@@ -224,7 +229,12 @@ export class PaymentService {
   }
 
   /**
-   * Capture an authorized payment
+   * Captures funds from an authorized payment, making them available for settlement.
+   * Records double-entry ledger entries for the captured amount and platform fee.
+   * @param transactionId - UUID of the authorized transaction to capture
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @returns Updated transaction with 'captured' status
+   * @throws Error if transaction not found or not in 'authorized' status
    */
   async capturePayment(transactionId: string, merchantAccountId: string): Promise<Transaction> {
     const transaction = await this.getTransaction(transactionId);
@@ -262,7 +272,11 @@ export class PaymentService {
   }
 
   /**
-   * Void an authorized but not captured payment
+   * Cancels an authorized payment before capture, releasing the hold on customer funds.
+   * No ledger entries are created since no money was moved.
+   * @param transactionId - UUID of the authorized transaction to void
+   * @returns Updated transaction with 'voided' status
+   * @throws Error if transaction not found or not in 'authorized' status
    */
   async voidPayment(transactionId: string): Promise<Transaction> {
     const transaction = await this.getTransaction(transactionId);
@@ -284,14 +298,20 @@ export class PaymentService {
   }
 
   /**
-   * Get a single transaction
+   * Retrieves a single transaction by its unique identifier.
+   * @param id - UUID of the transaction
+   * @returns Transaction if found, null otherwise
    */
   async getTransaction(id: string): Promise<Transaction | null> {
     return queryOne<Transaction>('SELECT * FROM transactions WHERE id = $1', [id]);
   }
 
   /**
-   * List transactions for a merchant
+   * Retrieves a paginated list of transactions for a merchant.
+   * Supports filtering by status and date range.
+   * @param merchantId - UUID of the merchant
+   * @param params - Pagination and filter options
+   * @returns Object containing transactions array and total count
    */
   async listTransactions(
     merchantId: string,
@@ -338,7 +358,10 @@ export class PaymentService {
   }
 
   /**
-   * Get ledger entries for a transaction
+   * Retrieves all ledger entries associated with a transaction.
+   * Useful for auditing and reconciliation of the double-entry bookkeeping.
+   * @param transactionId - UUID of the transaction
+   * @returns Array of ledger entries ordered by creation time
    */
   async getTransactionLedgerEntries(transactionId: string): Promise<LedgerEntry[]> {
     return query<LedgerEntry>(
@@ -348,7 +371,11 @@ export class PaymentService {
   }
 
   /**
-   * Update transaction status with optional additional fields
+   * Updates a transaction's status and any additional fields atomically.
+   * Increments the version number for optimistic locking.
+   * @param id - UUID of the transaction to update
+   * @param status - New status to set
+   * @param additionalFields - Optional additional columns to update
    */
   private async updateTransactionStatus(
     id: string,
@@ -372,7 +399,12 @@ export class PaymentService {
   }
 
   /**
-   * Simulate processor authorization (in production, this would call real processor)
+   * Simulates payment processor authorization.
+   * In production, this would call real payment processors (Stripe, Adyen, etc.).
+   * Returns false for test decline card numbers or high-risk amounts.
+   * @param amount - Transaction amount in cents
+   * @param paymentMethod - Payment method details for simulation logic
+   * @returns True if authorization succeeds, false if declined
    */
   private async simulateProcessorAuth(
     amount: number,

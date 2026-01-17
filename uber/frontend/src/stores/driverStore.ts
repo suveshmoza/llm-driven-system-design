@@ -3,44 +3,123 @@ import { Location, Ride, RideOffer, EarningsData } from '../types';
 import api from '../services/api';
 import wsService from '../services/websocket';
 
+/**
+ * Driver state interface for the Zustand store.
+ * Manages driver availability, active rides, and earnings tracking.
+ */
 interface DriverState {
-  // Status
+  /** Whether driver is currently online and visible to the system */
   isOnline: boolean;
+  /** Whether driver is available for new ride offers (not on active trip) */
   isAvailable: boolean;
+  /** Driver's current GPS location */
   currentLocation: Location | null;
 
-  // Current ride
+  /** Currently active ride assignment */
   currentRide: Ride | null;
+  /** Pending ride offer awaiting acceptance/decline */
   rideOffer: RideOffer | null;
+  /** Timestamp when the current offer expires (for countdown display) */
   offerExpiresAt: number | null;
 
-  // Earnings
+  /** Earnings summary for the selected time period */
   earnings: EarningsData | null;
 
-  // UI state
+  /** Whether an API operation is in progress */
   isLoading: boolean;
+  /** Error message from the last failed operation */
   error: string | null;
 
-  // Actions
+  /**
+   * Update driver's current GPS location.
+   * @param location - Current location coordinates
+   */
   setCurrentLocation: (location: Location) => void;
+
+  /** Set driver status to online and available for ride offers */
   goOnline: () => Promise<void>;
+
+  /** Set driver status to offline and stop receiving ride offers */
   goOffline: () => Promise<void>;
+
+  /**
+   * Send location update to server.
+   * Called periodically while online for real-time tracking.
+   * @param lat - Current latitude
+   * @param lng - Current longitude
+   */
   updateLocation: (lat: number, lng: number) => Promise<void>;
+
+  /** Fetch current driver status from server */
   fetchStatus: () => Promise<void>;
 
+  /** Accept the pending ride offer */
   acceptRide: () => Promise<void>;
+
+  /** Decline the pending ride offer */
   declineRide: () => void;
+
+  /** Signal arrival at the pickup location */
   arrivedAtPickup: () => Promise<void>;
+
+  /** Start the ride after picking up the rider */
   startRide: () => Promise<void>;
+
+  /** Complete the ride at the dropoff location */
   completeRide: () => Promise<void>;
 
+  /**
+   * Fetch earnings summary for a time period.
+   * @param period - Time period: 'today', 'week', or 'month'
+   */
   fetchEarnings: (period?: string) => Promise<void>;
 
+  /** Clear error message */
   clearError: () => void;
 }
 
+/**
+ * Zustand store for driver-side state management.
+ * Handles driver availability, ride acceptance, and trip progression.
+ *
+ * Key features:
+ * - Online/offline status management
+ * - Real-time ride offers via WebSocket with countdown timer
+ * - Trip lifecycle management (accept -> arrived -> start -> complete)
+ * - Earnings tracking by time period
+ *
+ * WebSocket events handled:
+ * - ride_offer: New ride request matching driver's location/vehicle
+ * - ride_cancelled: Rider cancelled the ride
+ *
+ * The driver flow:
+ * 1. Go online at current location
+ * 2. Receive ride_offer via WebSocket
+ * 3. Accept or decline within time limit
+ * 4. If accepted: navigate to pickup -> mark arrived -> start trip -> complete
+ * 5. Driver becomes available again after completion
+ *
+ * @example
+ * ```tsx
+ * const { isOnline, goOnline, goOffline, rideOffer, acceptRide, declineRide } = useDriverStore();
+ *
+ * // Toggle online status
+ * if (isOnline) {
+ *   await goOffline();
+ * } else {
+ *   await goOnline();
+ * }
+ *
+ * // Handle ride offer
+ * if (rideOffer) {
+ *   await acceptRide();
+ *   // or
+ *   declineRide();
+ * }
+ * ```
+ */
 export const useDriverStore = create<DriverState>((set, get) => {
-  // Set up WebSocket handlers
+  // Set up WebSocket handlers for real-time ride offers
   wsService.on('ride_offer', (msg) => {
     const offer = msg as RideOffer;
     set({
@@ -99,14 +178,14 @@ export const useDriverStore = create<DriverState>((set, get) => {
       const location = { lat, lng };
       set({ currentLocation: location });
 
-      // Send via WebSocket for real-time updates
+      // Send via WebSocket for real-time updates (low latency)
       wsService.sendLocationUpdate(lat, lng);
 
-      // Also send via API for persistence
+      // Also send via API for persistence (more reliable)
       try {
         await api.driver.updateLocation(lat, lng);
       } catch {
-        // Silently fail location updates
+        // Silently fail location updates - not critical
       }
     },
 
@@ -151,6 +230,7 @@ export const useDriverStore = create<DriverState>((set, get) => {
     declineRide: () => {
       const { rideOffer } = get();
       if (rideOffer) {
+        // Notify server of decline (fire and forget)
         api.driver.declineRide(rideOffer.rideId).catch(console.error);
       }
       set({ rideOffer: null, offerExpiresAt: null });

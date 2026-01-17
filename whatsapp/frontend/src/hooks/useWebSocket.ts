@@ -1,3 +1,14 @@
+/**
+ * WebSocket Hook
+ *
+ * Manages the WebSocket connection for real-time messaging.
+ * Features:
+ * - Automatic connection when user is authenticated
+ * - Exponential backoff reconnection on disconnect
+ * - Message routing to appropriate store handlers
+ * - Singleton connection shared across components
+ */
+
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
@@ -11,12 +22,23 @@ import {
   Message,
 } from '../types';
 
+/** Singleton WebSocket instance shared across hook calls */
 let wsInstance: WebSocket | null = null;
+/** Timeout handle for reconnection delay */
 let reconnectTimeout: number | null = null;
+/** Current reconnection attempt count for exponential backoff */
 let reconnectAttempts = 0;
+/** Maximum reconnection attempts before giving up */
 const MAX_RECONNECT_ATTEMPTS = 10;
+/** Base delay in ms for reconnection (doubles each attempt) */
 const RECONNECT_BASE_DELAY = 1000;
 
+/**
+ * React hook for WebSocket connection management.
+ * Connects automatically when user is authenticated.
+ * Handles all incoming message types and routes to store.
+ * @returns Object with connection state and send functions
+ */
 export function useWebSocket() {
   const { user } = useAuthStore();
   const {
@@ -196,6 +218,14 @@ export function useWebSocket() {
   };
 }
 
+/**
+ * Sends a chat message via WebSocket.
+ * Used for real-time message delivery instead of HTTP.
+ * @param conversationId - Target conversation ID
+ * @param content - Message text content
+ * @param clientMessageId - UUID for optimistic update tracking
+ * @returns True if message was sent, false if connection unavailable
+ */
 export function sendMessage(
   conversationId: string,
   content: string,
@@ -221,6 +251,12 @@ export function sendMessage(
   return true;
 }
 
+/**
+ * Sends a typing indicator event.
+ * Notifies other participants that user is typing.
+ * @param conversationId - Conversation where user is typing
+ * @param isTyping - True when starting to type, false when stopped
+ */
 export function sendTyping(conversationId: string, isTyping: boolean) {
   if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) {
     return;
@@ -236,6 +272,12 @@ export function sendTyping(conversationId: string, isTyping: boolean) {
   );
 }
 
+/**
+ * Sends read receipts for messages in a conversation.
+ * Notifies senders that their messages have been read.
+ * @param conversationId - Conversation containing the messages
+ * @param messageIds - Array of message IDs that were read
+ */
 export function sendReadReceipt(conversationId: string, messageIds: string[]) {
   if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) {
     return;

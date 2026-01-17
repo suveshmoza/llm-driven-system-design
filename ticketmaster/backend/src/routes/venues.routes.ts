@@ -1,9 +1,20 @@
+/**
+ * Venue routes for browsing venue information.
+ * Endpoints:
+ * - GET / - List all venues
+ * - GET /:id - Get single venue details
+ * - GET /:id/sections - Get sections within a venue
+ */
 import { Router, Request, Response } from 'express';
 import { eventService } from '../services/event.service.js';
 
+/** Express router for venue endpoints */
 const router = Router();
 
-// Get all venues
+/**
+ * GET /
+ * Lists all venues ordered by name.
+ */
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const venues = await eventService.getVenues();
@@ -14,7 +25,10 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// Get single venue
+/**
+ * GET /:id
+ * Retrieves details for a single venue by ID.
+ */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const venue = await eventService.getVenueById(req.params.id);
@@ -31,7 +45,11 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Get venue sections
+/**
+ * GET /:id/sections
+ * Retrieves all sections for a venue.
+ * Useful for displaying seat map structure.
+ */
 router.get('/:id/sections', async (req: Request, res: Response) => {
   try {
     const sections = await eventService.getVenueSections(req.params.id);

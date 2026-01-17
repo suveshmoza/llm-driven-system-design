@@ -4,6 +4,10 @@ import { pool } from '../shared/db.js';
 import { publishToSpreadsheet } from '../shared/redis.js';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Extended WebSocket interface with user and session properties.
+ * Tracks user identity and spreadsheet association for each connection.
+ */
 interface ExtendedWebSocket extends WebSocket {
   userId?: string;
   sessionId?: string;
@@ -13,14 +17,24 @@ interface ExtendedWebSocket extends WebSocket {
   isAlive?: boolean;
 }
 
+/**
+ * Represents a collaborative editing room for a single spreadsheet.
+ * Multiple users can join the same room to edit together.
+ */
 interface Room {
   clients: Set<ExtendedWebSocket>;
 }
 
-// Rooms by spreadsheet ID
+/**
+ * In-memory mapping of spreadsheet IDs to their active rooms.
+ * Each room contains all connected WebSocket clients.
+ */
 const rooms = new Map<string, Room>();
 
-// User colors for presence
+/**
+ * Predefined color palette for collaborator presence indicators.
+ * Colors cycle through the array as new users join.
+ */
 const COLORS = [
   '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
   '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
@@ -28,12 +42,27 @@ const COLORS = [
 ];
 
 let colorIndex = 0;
+
+/**
+ * Returns the next available color from the color palette.
+ * Cycles through colors to ensure visual distinction between collaborators.
+ *
+ * @returns A hex color code for the user's presence indicator
+ */
 function getNextColor(): string {
   const color = COLORS[colorIndex % COLORS.length];
   colorIndex++;
   return color;
 }
 
+/**
+ * Initializes the WebSocket server for real-time collaboration.
+ * Handles connection lifecycle, message routing, and room management.
+ * Implements heartbeat mechanism to detect and clean up stale connections.
+ *
+ * @param server - The HTTP server instance to attach WebSocket handling to
+ * @returns The configured WebSocketServer instance
+ */
 export function setupWebSocket(server: any) {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -120,6 +149,14 @@ export function setupWebSocket(server: any) {
   return wss;
 }
 
+/**
+ * Sends the complete spreadsheet state to a newly connected client.
+ * Includes spreadsheet metadata, sheets, cells, dimensions, and active collaborators.
+ * Creates a new spreadsheet if the requested one doesn't exist.
+ *
+ * @param ws - The WebSocket connection to send state to
+ * @param spreadsheetId - The spreadsheet to load state for
+ */
 async function sendInitialState(ws: ExtendedWebSocket, spreadsheetId: string) {
   try {
     // Get spreadsheet info
@@ -225,6 +262,13 @@ async function sendInitialState(ws: ExtendedWebSocket, spreadsheetId: string) {
   }
 }
 
+/**
+ * Routes incoming WebSocket messages to appropriate handlers.
+ * Supports cell edits, cursor movements, selections, and dimension changes.
+ *
+ * @param ws - The WebSocket connection that sent the message
+ * @param message - The parsed message object with type and payload
+ */
 async function handleMessage(ws: ExtendedWebSocket, message: any) {
   const { type, ...payload } = message;
 
@@ -258,6 +302,14 @@ async function handleMessage(ws: ExtendedWebSocket, message: any) {
   }
 }
 
+/**
+ * Handles cell edit operations from clients.
+ * Persists the change to the database and broadcasts to all room members.
+ * Evaluates formulas if the value starts with '='.
+ *
+ * @param ws - The WebSocket connection that made the edit
+ * @param payload - Contains sheetId, row, col, and value
+ */
 async function handleCellEdit(ws: ExtendedWebSocket, payload: any) {
   const { sheetId, row, col, value } = payload;
 
@@ -304,6 +356,13 @@ async function handleCellEdit(ws: ExtendedWebSocket, payload: any) {
   }
 }
 
+/**
+ * Handles cursor movement notifications from clients.
+ * Broadcasts cursor position to other collaborators for presence awareness.
+ *
+ * @param ws - The WebSocket connection that moved its cursor
+ * @param payload - Contains row and col of the cursor position
+ */
 function handleCursorMove(ws: ExtendedWebSocket, payload: any) {
   const { row, col } = payload;
 
@@ -317,6 +376,13 @@ function handleCursorMove(ws: ExtendedWebSocket, payload: any) {
   }, ws);
 }
 
+/**
+ * Handles selection range changes from clients.
+ * Broadcasts the selection to other collaborators for visual feedback.
+ *
+ * @param ws - The WebSocket connection that changed its selection
+ * @param payload - Contains the selection range object
+ */
 function handleSelectionChange(ws: ExtendedWebSocket, payload: any) {
   const { range } = payload;
 
@@ -329,6 +395,13 @@ function handleSelectionChange(ws: ExtendedWebSocket, payload: any) {
   }, ws);
 }
 
+/**
+ * Handles column resize operations from clients.
+ * Persists the new width to the database and broadcasts to collaborators.
+ *
+ * @param ws - The WebSocket connection that resized the column
+ * @param payload - Contains sheetId, col index, and new width
+ */
 async function handleResizeColumn(ws: ExtendedWebSocket, payload: any) {
   const { sheetId, col, width } = payload;
 
@@ -352,6 +425,13 @@ async function handleResizeColumn(ws: ExtendedWebSocket, payload: any) {
   }
 }
 
+/**
+ * Handles row resize operations from clients.
+ * Persists the new height to the database and broadcasts to collaborators.
+ *
+ * @param ws - The WebSocket connection that resized the row
+ * @param payload - Contains sheetId, row index, and new height
+ */
 async function handleResizeRow(ws: ExtendedWebSocket, payload: any) {
   const { sheetId, row, height } = payload;
 
@@ -375,6 +455,13 @@ async function handleResizeRow(ws: ExtendedWebSocket, payload: any) {
   }
 }
 
+/**
+ * Handles sheet rename operations from clients.
+ * Updates the sheet name in the database and broadcasts to collaborators.
+ *
+ * @param ws - The WebSocket connection that renamed the sheet
+ * @param payload - Contains sheetId and new name
+ */
 async function handleRenameSheet(ws: ExtendedWebSocket, payload: any) {
   const { sheetId, name } = payload;
 
@@ -392,6 +479,13 @@ async function handleRenameSheet(ws: ExtendedWebSocket, payload: any) {
   }
 }
 
+/**
+ * Handles client disconnection cleanup.
+ * Removes the client from the room and notifies remaining collaborators.
+ * Cleans up the room if no clients remain.
+ *
+ * @param ws - The WebSocket connection that disconnected
+ */
 function handleDisconnect(ws: ExtendedWebSocket) {
   if (!ws.spreadsheetId) return;
 
@@ -413,6 +507,14 @@ function handleDisconnect(ws: ExtendedWebSocket) {
   console.log(`User ${ws.userName} left spreadsheet ${ws.spreadsheetId}`);
 }
 
+/**
+ * Broadcasts a message to all clients in a spreadsheet room.
+ * Optionally excludes a specific client (typically the sender).
+ *
+ * @param spreadsheetId - The spreadsheet room to broadcast to
+ * @param message - The message object to send (will be JSON-stringified)
+ * @param exclude - Optional WebSocket connection to exclude from broadcast
+ */
 function broadcastToRoom(spreadsheetId: string, message: any, exclude?: ExtendedWebSocket) {
   const room = rooms.get(spreadsheetId);
   if (!room) return;
@@ -425,7 +527,14 @@ function broadcastToRoom(spreadsheetId: string, message: any, exclude?: Extended
   }
 }
 
-// Simple formula evaluator (demo only - use HyperFormula in production)
+/**
+ * Evaluates simple spreadsheet formulas.
+ * Supports basic SUM function and arithmetic expressions.
+ * This is a demo implementation - production systems should use HyperFormula.
+ *
+ * @param formula - The formula string starting with '='
+ * @returns The computed result as a string, or '#ERROR' if evaluation fails
+ */
 function evaluateFormula(formula: string): string {
   try {
     // Remove the = prefix

@@ -3,9 +3,17 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getUrlAnalytics, getRecentClicks } from '../services/analyticsService.js';
 
+/**
+ * Analytics router.
+ * Provides endpoints for viewing URL click analytics.
+ * All routes require authentication.
+ */
 const router = Router();
 
-// Get analytics for a URL
+/**
+ * GET /:shortCode - Get aggregated analytics for a URL
+ * Returns total clicks, daily trends, top referrers, and device breakdown.
+ */
 router.get(
   '/:shortCode',
   requireAuth,
@@ -23,7 +31,11 @@ router.get(
   })
 );
 
-// Get recent clicks for a URL
+/**
+ * GET /:shortCode/clicks - Get recent individual click events
+ * Returns detailed click-level data for analysis.
+ * Supports limit parameter for pagination.
+ */
 router.get(
   '/:shortCode/clicks',
   requireAuth,

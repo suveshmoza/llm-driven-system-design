@@ -1,18 +1,36 @@
+/**
+ * Authentication middleware for Express routes.
+ *
+ * Provides middleware functions to protect routes that require authentication
+ * and to distinguish between regular users and administrators.
+ */
 import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/auth.js';
 import type { User } from '../types/index.js';
 
-// Extend Express Request to include user
+/**
+ * Extends the Express Request interface to include user and session information.
+ * This allows authenticated routes to access user data via req.user.
+ */
 declare global {
   namespace Express {
     interface Request {
+      /** The authenticated user, if any. */
       user?: User;
+      /** The session ID from the cookie, if present. */
       sessionId?: string;
     }
   }
 }
 
-// Authentication middleware
+/**
+ * Middleware that requires a valid session.
+ * Returns 401 Unauthorized if no valid session is found.
+ *
+ * @param req - Express request object.
+ * @param res - Express response object.
+ * @param next - Express next function.
+ */
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -36,7 +54,14 @@ export async function authMiddleware(
   next();
 }
 
-// Optional auth - doesn't fail if not authenticated
+/**
+ * Middleware that attaches user information if authenticated, but does not fail otherwise.
+ * Useful for routes that work for both authenticated and anonymous users.
+ *
+ * @param req - Express request object.
+ * @param res - Express response object.
+ * @param next - Express next function.
+ */
 export async function optionalAuthMiddleware(
   req: Request,
   res: Response,
@@ -55,7 +80,14 @@ export async function optionalAuthMiddleware(
   next();
 }
 
-// Admin-only middleware
+/**
+ * Middleware that requires admin role.
+ * Must be used after authMiddleware. Returns 403 Forbidden if user is not an admin.
+ *
+ * @param req - Express request object (must have req.user set by authMiddleware).
+ * @param res - Express response object.
+ * @param next - Express next function.
+ */
 export async function adminMiddleware(
   req: Request,
   res: Response,

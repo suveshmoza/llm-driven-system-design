@@ -1,5 +1,8 @@
 import type { PaymentMethod } from '../types/index.js';
 
+/**
+ * Input data used for fraud risk evaluation.
+ */
 interface FraudEvaluationInput {
   amount: number;
   currency: string;
@@ -10,16 +13,23 @@ interface FraudEvaluationInput {
 }
 
 /**
- * Simple rule-based fraud detection service
- * In production, this would integrate with ML models and external services
+ * Rule-based fraud detection service for payment risk assessment.
+ * Evaluates transactions against configurable rules for amount, payment method,
+ * email patterns, and transaction velocity. In production, this would integrate
+ * with machine learning models and external fraud prevention services.
  */
 export class FraudService {
+  /** Score threshold at or above which transactions are automatically blocked */
   private blockThreshold = parseInt(process.env.FRAUD_BLOCK_THRESHOLD || '90', 10);
+  /** Score threshold at or above which transactions require manual review */
   private reviewThreshold = parseInt(process.env.FRAUD_REVIEW_THRESHOLD || '70', 10);
 
   /**
-   * Evaluate transaction risk and return a score from 0-100
-   * Higher score = higher risk
+   * Evaluates a transaction and returns a risk score from 0-100.
+   * Combines multiple rule-based checks for comprehensive risk assessment.
+   * Higher scores indicate higher fraud risk.
+   * @param input - Transaction details for evaluation
+   * @returns Risk score from 0 (low risk) to 100 (high risk)
    */
   async evaluate(input: FraudEvaluationInput): Promise<number> {
     let score = 0;
@@ -43,21 +53,28 @@ export class FraudService {
   }
 
   /**
-   * Check if score exceeds block threshold
+   * Determines if a risk score warrants automatic transaction blocking.
+   * @param score - Risk score from 0-100
+   * @returns True if score meets or exceeds block threshold
    */
   shouldBlock(score: number): boolean {
     return score >= this.blockThreshold;
   }
 
   /**
-   * Check if score requires review
+   * Determines if a risk score requires manual review before processing.
+   * @param score - Risk score from 0-100
+   * @returns True if score is in review range (between review and block thresholds)
    */
   requiresReview(score: number): boolean {
     return score >= this.reviewThreshold && score < this.blockThreshold;
   }
 
   /**
-   * Amount-based risk evaluation
+   * Evaluates risk based on transaction amount.
+   * Very small amounts may indicate card testing; large amounts increase risk.
+   * @param amount - Transaction amount in cents
+   * @returns Risk score contribution (0-30)
    */
   private evaluateAmount(amount: number): number {
     // Amount in cents
@@ -78,7 +95,10 @@ export class FraudService {
   }
 
   /**
-   * Payment method risk evaluation
+   * Evaluates risk based on payment method characteristics.
+   * Checks for test card numbers, prepaid cards, and expiring cards.
+   * @param method - Payment method details
+   * @returns Risk score contribution (0-35)
    */
   private evaluatePaymentMethod(method: PaymentMethod): number {
     let score = 0;
@@ -110,7 +130,10 @@ export class FraudService {
   }
 
   /**
-   * Email-based risk evaluation
+   * Evaluates risk based on customer email patterns.
+   * Checks for disposable email domains and random-looking addresses.
+   * @param email - Customer email address
+   * @returns Risk score contribution (0-35)
    */
   private evaluateEmail(email: string): number {
     let score = 0;
@@ -138,8 +161,12 @@ export class FraudService {
   }
 
   /**
-   * Velocity checks - transaction frequency
-   * In production, this would check actual transaction history
+   * Evaluates risk based on transaction velocity and frequency patterns.
+   * Checks for unusual patterns like multiple transactions from same card/IP/email.
+   * Note: Simplified implementation; production would query Redis/DB for actual history.
+   * @param merchantId - UUID of the merchant
+   * @param customerEmail - Optional customer email for lookup
+   * @returns Risk score contribution (0-10)
    */
   private async evaluateVelocity(
     merchantId: string,
@@ -158,7 +185,9 @@ export class FraudService {
   }
 
   /**
-   * Get risk level description
+   * Converts a numeric risk score to a human-readable risk level.
+   * @param score - Risk score from 0-100
+   * @returns Risk level classification
    */
   getRiskLevel(score: number): 'low' | 'medium' | 'high' | 'critical' {
     if (score < 30) return 'low';

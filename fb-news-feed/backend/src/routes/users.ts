@@ -1,11 +1,22 @@
+/**
+ * @fileoverview User management routes for profiles, following, and search.
+ * Handles user profile CRUD, follow/unfollow relationships, and user discovery.
+ * Implements feed management when following relationships change.
+ */
+
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/connection.js';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.js';
 import type { UpdateUserRequest, UserPublic } from '../types/index.js';
 
+/** Express router for user endpoints */
 const router = Router();
 
-// Get user profile
+/**
+ * GET /:username - Retrieves a user's public profile by username.
+ * Includes follow status for authenticated users viewing others' profiles.
+ * Returns is_self flag to help frontend render appropriate UI.
+ */
 router.get('/:username', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
@@ -46,7 +57,11 @@ router.get('/:username', optionalAuthMiddleware, async (req: Request, res: Respo
   }
 });
 
-// Update user profile
+/**
+ * PUT /me - Updates the authenticated user's profile.
+ * Supports partial updates for display_name, bio, and avatar_url.
+ * Returns the updated user profile on success.
+ */
 router.put('/me', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -91,7 +106,11 @@ router.put('/me', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Get user's posts
+/**
+ * GET /:username/posts - Retrieves posts by a specific user.
+ * Respects privacy settings: public posts visible to all, friends-only
+ * posts visible only to followers. Supports cursor-based pagination.
+ */
 router.get('/:username/posts', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
@@ -218,7 +237,11 @@ router.get('/:username/posts', optionalAuthMiddleware, async (req: Request, res:
   }
 });
 
-// Get user's followers
+/**
+ * GET /:username/followers - Lists users who follow the specified user.
+ * Returns paginated list with basic user info for rendering follower lists.
+ * Uses offset-based pagination for simplicity.
+ */
 router.get('/:username/followers', async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
@@ -257,7 +280,11 @@ router.get('/:username/followers', async (req: Request, res: Response) => {
   }
 });
 
-// Get user's following
+/**
+ * GET /:username/following - Lists users that the specified user follows.
+ * Returns paginated list with basic user info for rendering following lists.
+ * Uses offset-based pagination for simplicity.
+ */
 router.get('/:username/following', async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
@@ -296,7 +323,11 @@ router.get('/:username/following', async (req: Request, res: Response) => {
   }
 });
 
-// Follow user
+/**
+ * POST /:username/follow - Creates a follow relationship with another user.
+ * Updates follower/following counts on both users and populates the
+ * follower's feed with recent posts from the followed user (for non-celebrities).
+ */
 router.post('/:username/follow', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
@@ -375,7 +406,11 @@ router.post('/:username/follow', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// Unfollow user
+/**
+ * DELETE /:username/follow - Removes a follow relationship with another user.
+ * Updates follower/following counts and removes the unfollowed user's posts
+ * from the follower's personalized feed.
+ */
 router.delete('/:username/follow', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
@@ -433,7 +468,11 @@ router.delete('/:username/follow', authMiddleware, async (req: Request, res: Res
   }
 });
 
-// Search users
+/**
+ * GET / - Searches for users by username or display name.
+ * Requires at least 2 characters for search query.
+ * Results are ordered by follower count to surface popular users first.
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const query = req.query.q as string;

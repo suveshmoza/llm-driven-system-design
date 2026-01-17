@@ -3,8 +3,14 @@ import { query, queryOne } from '../db/index.js';
 import { getCached, setCache } from '../services/redis.js';
 import { authenticate, requireProfile, optionalAuth } from '../middleware/auth.js';
 
+/**
+ * Videos router.
+ * Provides video catalog access with filtering, search, and recommendations.
+ * Applies maturity filtering based on the selected profile.
+ */
 const router = Router();
 
+/** Database row type for video queries */
 interface VideoRow {
   id: string;
   title: string;
@@ -23,6 +29,7 @@ interface VideoRow {
   updated_at: Date;
 }
 
+/** Database row type for season queries */
 interface SeasonRow {
   id: string;
   video_id: string;
@@ -34,6 +41,7 @@ interface SeasonRow {
   created_at: Date;
 }
 
+/** Database row type for episode queries */
 interface EpisodeRow {
   id: string;
   season_id: string;
@@ -46,6 +54,12 @@ interface EpisodeRow {
   created_at: Date;
 }
 
+/**
+ * Maps database row to API response format (snake_case to camelCase).
+ *
+ * @param row - Database row with snake_case column names
+ * @returns Video object with camelCase property names
+ */
 function mapVideoRow(row: VideoRow) {
   return {
     id: row.id,
@@ -66,7 +80,8 @@ function mapVideoRow(row: VideoRow) {
 
 /**
  * GET /api/videos
- * List videos with optional filters
+ * Lists videos with optional type, genre, and search filters.
+ * Applies maturity filtering if a profile is selected.
  */
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
@@ -120,7 +135,8 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 
 /**
  * GET /api/videos/genres
- * Get list of all available genres
+ * Returns list of all unique genres in the catalog.
+ * Results are cached for 1 hour.
  */
 router.get('/genres', async (_req: Request, res: Response) => {
   try {
@@ -149,7 +165,8 @@ router.get('/genres', async (_req: Request, res: Response) => {
 
 /**
  * GET /api/videos/trending
- * Get trending videos
+ * Returns top 20 videos sorted by popularity score.
+ * Used for the "Trending Now" homepage row.
  */
 router.get('/trending', optionalAuth, async (req: Request, res: Response) => {
   try {
@@ -187,7 +204,8 @@ router.get('/trending', optionalAuth, async (req: Request, res: Response) => {
 
 /**
  * GET /api/videos/:id
- * Get video details with seasons/episodes
+ * Returns video details including seasons and episodes for series.
+ * Used for the video detail page.
  */
 router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
   try {
@@ -256,7 +274,8 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
 
 /**
  * GET /api/videos/:id/similar
- * Get similar videos based on genre overlap
+ * Returns videos with overlapping genres, sorted by genre match count.
+ * Used for "More Like This" recommendations on video detail page.
  */
 router.get('/:id/similar', optionalAuth, async (req: Request, res: Response) => {
   try {

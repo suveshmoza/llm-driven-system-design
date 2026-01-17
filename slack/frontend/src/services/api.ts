@@ -1,5 +1,21 @@
+/**
+ * @fileoverview API client for all backend HTTP requests.
+ * Provides typed API methods for auth, workspaces, channels, DMs, messages, and search.
+ * All requests include credentials for session-based authentication.
+ */
+
+/** Base URL for all API requests */
 const API_BASE = '/api';
 
+/**
+ * Generic HTTP request helper with error handling.
+ * Automatically includes credentials and JSON content type.
+ * @template T - Expected response type
+ * @param endpoint - API endpoint path (without /api prefix)
+ * @param options - Fetch options (method, body, headers, etc.)
+ * @returns Promise resolving to the typed response data
+ * @throws Error with message from API response on failure
+ */
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -21,7 +37,9 @@ async function request<T>(
   return response.json();
 }
 
-// Auth API
+/**
+ * Authentication API methods for login, registration, and profile management.
+ */
 export const authApi = {
   login: (email: string, password: string) =>
     request<{ message: string; user: import('../types').User }>('/auth/login', {
@@ -48,7 +66,9 @@ export const authApi = {
     }),
 };
 
-// Workspace API
+/**
+ * Workspace API methods for listing, creating, joining, and managing workspaces.
+ */
 export const workspaceApi = {
   list: () =>
     request<import('../types').Workspace[]>('/workspaces'),
@@ -75,7 +95,9 @@ export const workspaceApi = {
     request<import('../types').WorkspaceMember[]>(`/workspaces/${id}/members`),
 };
 
-// Channel API
+/**
+ * Channel API methods for listing, creating, joining, and managing channels.
+ */
 export const channelApi = {
   list: () =>
     request<import('../types').Channel[]>('/channels'),
@@ -108,7 +130,9 @@ export const channelApi = {
     request<{ message: string }>(`/channels/${id}/read`, { method: 'POST' }),
 };
 
-// DM API
+/**
+ * Direct message API methods for creating and retrieving DM conversations.
+ */
 export const dmApi = {
   list: () =>
     request<import('../types').DMChannel[]>('/dms'),
@@ -123,7 +147,9 @@ export const dmApi = {
     request<import('../types').DMChannel>(`/dms/${id}`),
 };
 
-// Message API
+/**
+ * Message API methods for sending, editing, deleting messages and managing reactions.
+ */
 export const messageApi = {
   list: (channelId: string, before?: number, limit?: number) => {
     const params = new URLSearchParams();
@@ -161,7 +187,9 @@ export const messageApi = {
     request<{ message: string }>(`/messages/${messageId}/reactions/${emoji}`, { method: 'DELETE' }),
 };
 
-// Search API
+/**
+ * Search API methods for full-text message search with filters.
+ */
 export const searchApi = {
   search: (query: string, filters?: { channel_id?: string; user_id?: string; from_date?: string; to_date?: string }) => {
     const params = new URLSearchParams({ q: query });

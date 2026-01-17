@@ -2,9 +2,17 @@ import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../db/index.js';
 import type { User } from '../types/index.js';
 
+/**
+ * Express router for user-related API endpoints.
+ * Provides user listing, lookup, and simplified login functionality.
+ */
 const router = Router();
 
-// Get all users (for testing - list contacts)
+/**
+ * GET /api/users
+ * Retrieves all registered users sorted by display name.
+ * Used to populate the contact list in the UI.
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const users = await query<User>(
@@ -17,7 +25,11 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get user by ID
+/**
+ * GET /api/users/:id
+ * Retrieves a single user by their unique ID.
+ * Returns 404 if the user does not exist.
+ */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -38,7 +50,12 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Simple login (for testing - no real auth)
+/**
+ * POST /api/users/login
+ * Simplified login endpoint for demo purposes.
+ * Looks up user by username and returns user data.
+ * Note: Production would require proper authentication.
+ */
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { username } = req.body;

@@ -3,10 +3,29 @@ import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
 
+/**
+ * Route definition for auction creation page (/create).
+ * Protected route - redirects unauthenticated users to login.
+ */
 export const Route = createFileRoute('/create')({
   component: CreateAuctionPage,
 });
 
+/**
+ * Auction creation form page.
+ *
+ * Allows authenticated users to create new auction listings with:
+ * - Item image upload with preview
+ * - Title and description
+ * - Pricing: starting price, optional reserve price, bid increment
+ * - Duration selection (1 hour to 7 days)
+ * - Snipe protection configuration
+ *
+ * Validates required fields before submission.
+ * Redirects to created auction on success.
+ *
+ * @returns JSX element for the create auction form
+ */
 function CreateAuctionPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();

@@ -2,12 +2,20 @@ import { Router, Response } from 'express';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { portfolioService } from '../services/portfolioService.js';
 
+/**
+ * Express router for portfolio management endpoints.
+ * All routes require authentication.
+ * Provides portfolio summary, positions, and account information.
+ */
 const router = Router();
 
 // All portfolio routes require authentication
 router.use(authMiddleware);
 
-// Get portfolio summary
+/**
+ * GET /api/portfolio
+ * Returns complete portfolio summary with holdings and P&L metrics.
+ */
 router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -19,7 +27,10 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Get all positions
+/**
+ * GET /api/portfolio/positions
+ * Returns all stock positions for the authenticated user.
+ */
 router.get('/positions', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -31,7 +42,10 @@ router.get('/positions', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Get specific position
+/**
+ * GET /api/portfolio/positions/:symbol
+ * Returns position details for a specific stock symbol.
+ */
 router.get('/positions/:symbol', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -49,7 +63,10 @@ router.get('/positions/:symbol', async (req: AuthenticatedRequest, res: Response
   }
 });
 
-// Get user account info
+/**
+ * GET /api/portfolio/account
+ * Returns account information including buying power and total equity.
+ */
 router.get('/account', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;

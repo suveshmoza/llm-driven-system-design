@@ -1,9 +1,18 @@
+/**
+ * @fileoverview Authentication middleware for Express routes.
+ * Provides session-based authentication using Redis for session storage.
+ * Includes required auth, optional auth, and admin-only middleware variants.
+ */
+
 import { Request, Response, NextFunction } from 'express';
 import { getSession } from '../models/redis.js';
 import pool from '../models/db.js';
 import type { User } from '../types/index.js';
 
-// Extend Express Request type
+/**
+ * Extends Express Request type to include authenticated user and session token.
+ * Available after successful authentication middleware execution.
+ */
 declare global {
   namespace Express {
     interface Request {
@@ -14,8 +23,14 @@ declare global {
 }
 
 /**
- * Authentication middleware
- * Checks for session token in cookie or Authorization header
+ * Authentication middleware that requires a valid session.
+ * Validates session token from cookie or Authorization header,
+ * then attaches the user object to req.user for route handlers.
+ *
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ * @returns 401 if not authenticated, otherwise calls next()
  */
 export async function authMiddleware(
   req: Request,
@@ -61,8 +76,13 @@ export async function authMiddleware(
 }
 
 /**
- * Optional authentication middleware
- * Sets user if authenticated, but doesn't block request if not
+ * Optional authentication middleware.
+ * Sets req.user if authenticated but doesn't block unauthenticated requests.
+ * Useful for routes that show different content for logged-in users.
+ *
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export async function optionalAuthMiddleware(
   req: Request,
@@ -98,8 +118,13 @@ export async function optionalAuthMiddleware(
 }
 
 /**
- * Admin-only middleware
- * Must be used after authMiddleware
+ * Admin-only access middleware.
+ * Must be used after authMiddleware to ensure req.user exists.
+ * Returns 403 if authenticated user is not an admin.
+ *
+ * @param req - Express request object (must have req.user set)
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export function adminMiddleware(
   req: Request,

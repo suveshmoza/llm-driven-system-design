@@ -10,9 +10,22 @@ import { emailService } from './emailService.js';
 import { v4 as uuidv4 } from 'uuid';
 import { parseISO, addMinutes, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 
+/**
+ * Service for managing bookings (scheduled meetings).
+ * Handles the full booking lifecycle: creation, retrieval, rescheduling, and cancellation.
+ * Implements double-booking prevention using PostgreSQL row-level locking and
+ * optimistic concurrency control via version fields.
+ */
 export class BookingService {
   /**
-   * Create a new booking with double-booking prevention
+   * Creates a new booking with double-booking prevention.
+   * Uses SELECT FOR UPDATE to lock the host's row during the booking transaction,
+   * ensuring concurrent booking attempts are serialized.
+   * Also enforces max bookings per day limits if configured.
+   * Sends confirmation emails asynchronously after successful booking.
+   * @param input - Booking details including meeting type, time, and invitee info
+   * @returns The newly created booking
+   * @throws Error if slot is unavailable, meeting type not found, or limit reached
    */
   async createBooking(input: CreateBookingInput): Promise<Booking> {
     const client = await pool.connect();
@@ -118,7 +131,9 @@ export class BookingService {
   }
 
   /**
-   * Get booking by ID
+   * Retrieves a booking by its unique ID.
+   * @param id - The UUID of the booking
+   * @returns The booking if found, null otherwise
    */
   async findById(id: string): Promise<Booking | null> {
     const result = await pool.query(
@@ -130,7 +145,10 @@ export class BookingService {
   }
 
   /**
-   * Get booking with full details
+   * Retrieves a booking with full related entity details.
+   * Includes meeting type name, duration, and host information.
+   * @param id - The UUID of the booking
+   * @returns Booking with details if found, null otherwise
    */
   async findByIdWithDetails(id: string): Promise<BookingWithDetails | null> {
     const result = await pool.query(
@@ -150,7 +168,12 @@ export class BookingService {
   }
 
   /**
-   * Get bookings for a user
+   * Retrieves all bookings for a host user with optional filtering.
+   * Includes full booking details with meeting type and host info.
+   * @param userId - The UUID of the host user
+   * @param status - Optional status filter ('confirmed', 'cancelled', 'rescheduled')
+   * @param upcoming - If true, only returns future bookings
+   * @returns Array of bookings sorted by start time ascending
    */
   async getBookingsForUser(
     userId: string,
@@ -187,7 +210,12 @@ export class BookingService {
   }
 
   /**
-   * Get bookings for a date range (used for availability calculation)
+   * Retrieves confirmed bookings within a date range for availability calculation.
+   * Used internally to determine busy periods when computing available slots.
+   * @param userId - The UUID of the host user
+   * @param startDate - Range start (inclusive)
+   * @param endDate - Range end (inclusive)
+   * @returns Array of confirmed bookings in the range
    */
   async getBookingsForDateRange(
     userId: string,
@@ -208,7 +236,15 @@ export class BookingService {
   }
 
   /**
-   * Reschedule a booking
+   * Reschedules a booking to a new time.
+   * Uses optimistic locking (version field) to prevent concurrent modification.
+   * Validates that the new time slot is available before updating.
+   * Sends reschedule notification email after success.
+   * @param id - The UUID of the booking to reschedule
+   * @param newStartTime - New start time in ISO 8601 format
+   * @param userId - Optional user ID for ownership verification
+   * @returns The updated booking
+   * @throws Error if booking not found, cancelled, or new slot unavailable
    */
   async reschedule(
     id: string,
@@ -298,7 +334,14 @@ export class BookingService {
   }
 
   /**
-   * Cancel a booking
+   * Cancels a booking.
+   * Frees up the time slot for new bookings.
+   * Sends cancellation notification email after success.
+   * @param id - The UUID of the booking to cancel
+   * @param reason - Optional cancellation reason for the notification
+   * @param userId - Optional user ID for ownership verification
+   * @returns The cancelled booking
+   * @throws Error if booking not found or already cancelled
    */
   async cancel(id: string, reason?: string, userId?: string): Promise<Booking> {
     const client = await pool.connect();
@@ -356,7 +399,10 @@ export class BookingService {
   }
 
   /**
-   * Get dashboard statistics
+   * Computes dashboard statistics for a host user.
+   * Provides aggregated counts of bookings for display on the dashboard.
+   * @param userId - The UUID of the host user
+   * @returns Statistics including total, upcoming, and time-period counts
    */
   async getDashboardStats(userId: string): Promise<DashboardStats> {
     const now = new Date();
@@ -402,7 +448,10 @@ export class BookingService {
   }
 
   /**
-   * Send confirmation emails
+   * Sends confirmation emails to both invitee and host.
+   * Called asynchronously after booking creation.
+   * @param booking - The newly created booking
+   * @param meetingType - Meeting type details for email content
    */
   private async sendConfirmationEmails(
     booking: Booking,
@@ -416,7 +465,10 @@ export class BookingService {
   }
 
   /**
-   * Invalidate availability cache
+   * Clears cached availability slots when bookings change.
+   * Ensures invitees see up-to-date availability.
+   * @param userId - The UUID of the host user
+   * @param meetingTypeId - The UUID of the affected meeting type
    */
   private async invalidateAvailabilityCache(
     userId: string,
@@ -429,4 +481,5 @@ export class BookingService {
   }
 }
 
+/** Singleton instance of BookingService for application-wide use */
 export const bookingService = new BookingService();

@@ -3,9 +3,16 @@
  *
  * SimHash creates a fingerprint that's similar for similar documents.
  * Articles with Hamming distance < 3 are considered duplicates.
+ * This is essential for clustering related articles into stories
+ * and avoiding duplicate content in the feed.
  */
 
-// Simple 64-bit hash function using FNV-1a
+/**
+ * Compute a 64-bit FNV-1a hash of a string.
+ * FNV-1a provides good distribution and is fast for short strings.
+ * @param str - The string to hash
+ * @returns 64-bit hash value as bigint
+ */
 function hash64(str: string): bigint {
   let hash = 14695981039346656037n;
   const fnvPrime = 1099511628211n;
@@ -18,7 +25,12 @@ function hash64(str: string): bigint {
   return hash;
 }
 
-// Tokenize text into words
+/**
+ * Tokenize text into lowercase words, filtering short words.
+ * Removes punctuation and splits on whitespace.
+ * @param text - Raw text to tokenize
+ * @returns Array of cleaned word tokens (length > 2)
+ */
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
@@ -27,7 +39,13 @@ function tokenize(text: string): string[] {
     .filter(word => word.length > 2);
 }
 
-// Generate n-grams from tokens
+/**
+ * Generate n-grams (word sequences) from tokens.
+ * N-grams capture phrase-level similarity beyond individual words.
+ * @param tokens - Array of word tokens
+ * @param n - Size of each n-gram (default: 3 for trigrams)
+ * @returns Array of n-gram strings (words joined with spaces)
+ */
 function getNgrams(tokens: string[], n: number = 3): string[] {
   const ngrams: string[] = [];
   for (let i = 0; i <= tokens.length - n; i++) {
@@ -37,7 +55,11 @@ function getNgrams(tokens: string[], n: number = 3): string[] {
 }
 
 /**
- * Compute SimHash fingerprint for text content
+ * Compute SimHash fingerprint for text content.
+ * Creates a 64-bit fingerprint where similar texts produce similar fingerprints.
+ * Uses both unigrams and trigrams for better accuracy.
+ * @param text - The text content to fingerprint
+ * @returns 64-bit SimHash fingerprint as bigint
  */
 export function computeSimHash(text: string): bigint {
   const tokens = tokenize(text);
@@ -76,7 +98,12 @@ export function computeSimHash(text: string): bigint {
 }
 
 /**
- * Calculate Hamming distance between two fingerprints
+ * Calculate Hamming distance between two fingerprints.
+ * Counts the number of bit positions where the fingerprints differ.
+ * Lower distance means more similar content.
+ * @param a - First fingerprint
+ * @param b - Second fingerprint
+ * @returns Number of differing bits (0-64)
  */
 export function hammingDistance(a: bigint, b: bigint): number {
   let xor = a ^ b;
@@ -89,14 +116,24 @@ export function hammingDistance(a: bigint, b: bigint): number {
 }
 
 /**
- * Check if two fingerprints are similar (Hamming distance < threshold)
+ * Check if two fingerprints are similar (likely near-duplicates).
+ * Uses Hamming distance with configurable threshold.
+ * @param fp1 - First fingerprint
+ * @param fp2 - Second fingerprint
+ * @param threshold - Maximum Hamming distance for similarity (default: 3)
+ * @returns True if fingerprints are within threshold distance
  */
 export function areSimilar(fp1: bigint, fp2: bigint, threshold: number = 3): boolean {
   return hammingDistance(fp1, fp2) < threshold;
 }
 
 /**
- * Find similar fingerprints from a list
+ * Find similar fingerprints from a list of candidates.
+ * Useful for finding existing stories that match a new article.
+ * @param target - The fingerprint to match against
+ * @param candidates - Array of {id, fingerprint} objects to search
+ * @param threshold - Maximum Hamming distance for similarity (default: 3)
+ * @returns Array of matching candidates with their distances, sorted by similarity
  */
 export function findSimilar(
   target: bigint,

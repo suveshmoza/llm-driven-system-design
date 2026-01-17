@@ -3,6 +3,22 @@ import { wsService } from '@/services/websocket';
 import { useChatStore } from '@/stores/chatStore';
 import type { WebSocketMessage } from '@/types';
 
+/**
+ * React hook that bridges the WebSocket service with the chat store.
+ * Sets up a subscription to incoming WebSocket messages and routes them
+ * to the chat store's message handler for state updates.
+ *
+ * This hook should be used once in the main app component to ensure
+ * all real-time updates (new messages, typing indicators, reactions, etc.)
+ * are processed and reflected in the UI.
+ *
+ * @returns Object containing convenience methods for sending WebSocket messages:
+ *   - sendMessage: Send a chat message
+ *   - sendTyping: Send typing indicator
+ *   - sendRead: Send read receipt
+ *   - sendReaction: Add/remove emoji reaction
+ *   - isConnected: Current connection status
+ */
 export function useWebSocket() {
   const handleMessage = useChatStore((state) => state.handleWebSocketMessage);
   const initialized = useRef(false);

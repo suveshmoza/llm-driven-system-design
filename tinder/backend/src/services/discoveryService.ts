@@ -2,6 +2,11 @@ import { pool, redis, elasticsearch } from '../db/index.js';
 import type { DiscoveryCard, Photo } from '../types/index.js';
 import { UserService } from './userService.js';
 
+/**
+ * Service responsible for generating the discovery swipe deck.
+ * Implements geo-based candidate search, preference filtering, and ranking algorithms.
+ * Uses Elasticsearch as primary search engine with PostgreSQL fallback.
+ */
 export class DiscoveryService {
   private userService: UserService;
 
@@ -9,7 +14,14 @@ export class DiscoveryService {
     this.userService = new UserService();
   }
 
-  // Get discovery deck for a user
+  /**
+   * Generates a ranked discovery deck for a user based on their preferences.
+   * Excludes already-swiped users and applies bidirectional preference matching.
+   * Prioritizes users who have already liked the requesting user.
+   * @param userId - The user requesting the discovery deck
+   * @param limit - Maximum number of cards to return (default: 20)
+   * @returns Array of discovery cards sorted by ranking score
+   */
   async getDiscoveryDeck(userId: string, limit: number = 20): Promise<DiscoveryCard[]> {
     const user = await this.userService.getUserById(userId);
     if (!user || user.latitude === null || user.longitude === null) {
@@ -60,7 +72,21 @@ export class DiscoveryService {
     return deckWithPhotos;
   }
 
-  // Elasticsearch geo search for candidates
+  /**
+   * Performs geo-based candidate search using Elasticsearch.
+   * Filters by distance, gender preferences, age range, and activity.
+   * Implements bidirectional matching to ensure candidates are interested in user's gender.
+   * @param latitude - User's latitude coordinate
+   * @param longitude - User's longitude coordinate
+   * @param radiusKm - Maximum search distance in kilometers
+   * @param interestedIn - Array of genders the user is interested in
+   * @param ageMin - Minimum age preference
+   * @param ageMax - Maximum age preference
+   * @param userGender - User's gender for bidirectional matching
+   * @param excludeIds - Set of user IDs to exclude (already swiped)
+   * @param limit - Maximum results to return
+   * @returns Array of discovery cards matching criteria
+   */
   private async geoCandidateSearch(
     latitude: number,
     longitude: number,
@@ -154,7 +180,20 @@ export class DiscoveryService {
     }
   }
 
-  // PostgreSQL fallback when Elasticsearch is unavailable
+  /**
+   * Fallback geo search using PostgreSQL with PostGIS when Elasticsearch is unavailable.
+   * Uses ST_DWithin for distance filtering and ST_Distance for sorting.
+   * @param latitude - User's latitude coordinate
+   * @param longitude - User's longitude coordinate
+   * @param radiusKm - Maximum search distance in kilometers
+   * @param interestedIn - Array of genders the user is interested in
+   * @param ageMin - Minimum age preference
+   * @param ageMax - Maximum age preference
+   * @param userGender - User's gender for bidirectional matching
+   * @param excludeIds - Set of user IDs to exclude
+   * @param limit - Maximum results to return
+   * @returns Array of discovery cards matching criteria
+   */
   private async postgresFallbackSearch(
     latitude: number,
     longitude: number,
@@ -210,7 +249,12 @@ export class DiscoveryService {
     }));
   }
 
-  // Get set of users already swiped on
+  /**
+   * Retrieves the set of users that the given user has already swiped on.
+   * Checks Redis cache first, falls back to PostgreSQL and populates cache.
+   * @param userId - The user's UUID
+   * @returns Set of user IDs that have been swiped on
+   */
   private async getSeenUsers(userId: string): Promise<Set<string>> {
     // Try Redis first
     const liked = await redis.smembers(`swipes:${userId}:liked`);
@@ -247,7 +291,14 @@ export class DiscoveryService {
     return seen;
   }
 
-  // Rank candidates by multiple factors
+  /**
+   * Ranks candidate profiles by multiple factors for optimal deck ordering.
+   * Prioritizes: 1) Users who liked the current user (potential match), 2) Profile completeness.
+   * @param userId - The requesting user's UUID
+   * @param user - The requesting user's data
+   * @param candidates - Array of candidates to rank
+   * @returns Sorted array of candidates with scores
+   */
   private async rankCandidates(
     userId: string,
     user: any,
@@ -279,7 +330,13 @@ export class DiscoveryService {
     return scored.map((s) => ({ ...s.candidate, score: s.score }));
   }
 
-  // Get users who have liked this user
+  /**
+   * Retrieves the set of users who have liked the given user.
+   * Used to boost those users in ranking (potential matches).
+   * Checks Redis cache first, falls back to PostgreSQL.
+   * @param userId - The user's UUID
+   * @returns Set of user IDs who have liked this user
+   */
   private async getWhoLikedUser(userId: string): Promise<Set<string>> {
     // Check Redis
     const cached = await redis.smembers(`likes:received:${userId}`);
@@ -305,7 +362,12 @@ export class DiscoveryService {
     return likers;
   }
 
-  // Calculate profile completeness
+  /**
+   * Calculates a profile completeness score (0-1).
+   * Rewards filled bio, job_title, company, and school fields.
+   * @param candidate - The discovery card to evaluate
+   * @returns Completeness score between 0 and 1
+   */
   private calculateProfileCompleteness(candidate: DiscoveryCard): number {
     let score = 0;
     const fields = ['bio', 'job_title', 'company', 'school'];
@@ -317,7 +379,12 @@ export class DiscoveryService {
     return score;
   }
 
-  // Format distance for display
+  /**
+   * Formats distance in kilometers to a human-readable string in miles.
+   * Rounds to provide privacy (not exact location).
+   * @param distanceKm - Distance in kilometers
+   * @returns Formatted distance string (e.g., "5 miles away")
+   */
   private formatDistance(distanceKm: number): string {
     const distanceMiles = distanceKm * 0.621371;
     if (distanceMiles < 1) {

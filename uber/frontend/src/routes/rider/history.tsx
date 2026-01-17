@@ -1,8 +1,15 @@
+/**
+ * Rider ride history page - displays past rides for the current rider.
+ * Protected route that requires rider authentication.
+ */
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import api from '../../services/api';
 
+/**
+ * Ride history item structure for display.
+ */
 interface RideHistoryItem {
   id: string;
   status: string;
@@ -16,6 +23,12 @@ interface RideHistoryItem {
   completedAt?: string;
 }
 
+/**
+ * Ride history page showing past rides for the current rider.
+ * Displays ride details including pickup/dropoff, driver info, fare, and status.
+ *
+ * @returns Rider history page component
+ */
 function RiderHistoryPage() {
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
@@ -42,7 +55,18 @@ function RiderHistoryPage() {
     fetchHistory();
   }, [user, navigate]);
 
+  /**
+   * Format cents as USD currency string.
+   * @param cents - Amount in cents
+   * @returns Formatted currency string
+   */
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+  /**
+   * Format ISO date string as localized date.
+   * @param dateStr - ISO date string
+   * @returns Localized date string
+   */
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString();
 
   if (!user) return null;

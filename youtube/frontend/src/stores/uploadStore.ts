@@ -2,20 +2,43 @@ import { create } from 'zustand';
 import { UploadSession, UploadProgress, TranscodingStatus } from '../types';
 import { api } from '../services/api';
 
+/**
+ * Upload state interface for the upload store.
+ * Manages video upload progress, transcoding status, and upload lifecycle.
+ */
 interface UploadState {
+  /** Current upload progress information */
   currentUpload: UploadProgress | null;
+  /** Status of video transcoding after upload completes */
   transcodingStatus: TranscodingStatus | null;
+  /** Whether an upload is currently in progress */
   isUploading: boolean;
+  /** Error message from the last failed upload operation */
   error: string | null;
 
+  /** Start uploading a video file with metadata */
   startUpload: (file: File, title: string, description: string, categories: string[], tags: string[]) => Promise<string>;
+  /** Cancel the current upload in progress */
   cancelUpload: () => Promise<void>;
+  /** Check transcoding progress for an uploaded video */
   checkTranscodingStatus: (videoId: string) => Promise<void>;
+  /** Clear upload state after completion or cancellation */
   clearUpload: () => void;
 }
 
+/**
+ * Chunk size for chunked uploads (5MB).
+ * Files larger than 50MB are uploaded in chunks for reliability
+ * and to support resumable uploads on poor connections.
+ */
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 
+/**
+ * Global upload store for managing video upload operations.
+ * Supports both simple uploads for small files (<50MB) and chunked
+ * uploads for larger files. Tracks upload progress and provides
+ * cancellation support. After upload, monitors transcoding status.
+ */
 export const useUploadStore = create<UploadState>((set, get) => ({
   currentUpload: null,
   transcodingStatus: null,

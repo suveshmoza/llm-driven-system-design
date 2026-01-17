@@ -1,9 +1,19 @@
+/**
+ * @fileoverview Click aggregation service for pre-computed analytics.
+ * Maintains aggregation tables at minute, hour, and day granularity
+ * to enable fast analytical queries without scanning raw events.
+ * Uses UPSERT pattern for atomic counter updates.
+ */
+
 import type { ClickEvent, ClickAggregate, AggregateQueryParams, AggregateQueryResult } from '../types/index.js';
 import { query } from './database.js';
 import { getUniqueUserCount } from './redis.js';
 
 /**
- * Get minute bucket from a date
+ * Truncates a date to minute granularity for aggregation bucketing.
+ *
+ * @param date - Source date
+ * @returns Date with seconds and milliseconds set to zero
  */
 function getMinuteBucket(date: Date): Date {
   const d = new Date(date);
@@ -12,7 +22,10 @@ function getMinuteBucket(date: Date): Date {
 }
 
 /**
- * Get hour bucket from a date
+ * Truncates a date to hour granularity for aggregation bucketing.
+ *
+ * @param date - Source date
+ * @returns Date with minutes, seconds, and milliseconds set to zero
  */
 function getHourBucket(date: Date): Date {
   const d = new Date(date);
@@ -21,7 +34,10 @@ function getHourBucket(date: Date): Date {
 }
 
 /**
- * Get day bucket from a date
+ * Truncates a date to day granularity for aggregation bucketing.
+ *
+ * @param date - Source date
+ * @returns Date with hours, minutes, seconds, and milliseconds set to zero
  */
 function getDayBucket(date: Date): Date {
   const d = new Date(date);
@@ -30,7 +46,11 @@ function getDayBucket(date: Date): Date {
 }
 
 /**
- * Update all aggregation tables for a click event
+ * Updates all aggregation tables (minute, hour, day) for a processed click.
+ * Called synchronously during click ingestion to maintain real-time accuracy.
+ * Uses Redis HyperLogLog for unique user estimation in minute aggregates.
+ *
+ * @param click - The click event to aggregate
  */
 export async function updateAggregates(click: ClickEvent): Promise<void> {
   const minuteBucket = getMinuteBucket(click.timestamp);
@@ -52,7 +72,12 @@ export async function updateAggregates(click: ClickEvent): Promise<void> {
 }
 
 /**
- * Upsert minute-level aggregation
+ * Upserts minute-level aggregation with unique user count from HyperLogLog.
+ * Uses ON CONFLICT for atomic increment of click and fraud counters.
+ *
+ * @param click - Click event being aggregated
+ * @param timeBucket - Minute-granularity time bucket
+ * @param uniqueUsers - Estimated unique user count from Redis HLL
  */
 async function upsertMinuteAggregate(
   click: ClickEvent,
@@ -85,7 +110,11 @@ async function upsertMinuteAggregate(
 }
 
 /**
- * Upsert hour-level aggregation
+ * Upserts hour-level aggregation with atomic counter increments.
+ * Uses ON CONFLICT for atomic increment of click and fraud counters.
+ *
+ * @param click - Click event being aggregated
+ * @param timeBucket - Hour-granularity time bucket
  */
 async function upsertHourAggregate(click: ClickEvent, timeBucket: Date): Promise<void> {
   const sql = `
@@ -113,7 +142,11 @@ async function upsertHourAggregate(click: ClickEvent, timeBucket: Date): Promise
 }
 
 /**
- * Upsert day-level aggregation
+ * Upserts day-level aggregation with atomic counter increments.
+ * Uses ON CONFLICT for atomic increment of click and fraud counters.
+ *
+ * @param click - Click event being aggregated
+ * @param timeBucket - Day-granularity time bucket
  */
 async function upsertDayAggregate(click: ClickEvent, timeBucket: Date): Promise<void> {
   const sql = `
@@ -141,7 +174,12 @@ async function upsertDayAggregate(click: ClickEvent, timeBucket: Date): Promise<
 }
 
 /**
- * Query aggregated click data
+ * Queries pre-aggregated click data with flexible filtering and grouping.
+ * Automatically selects the appropriate aggregation table based on granularity.
+ * Supports filtering by campaign, advertiser, ad, and time range.
+ *
+ * @param params - Query parameters including time range, filters, and grouping
+ * @returns Aggregated data with totals and query timing
  */
 export async function queryAggregates(params: AggregateQueryParams): Promise<AggregateQueryResult> {
   const startTime = Date.now();
@@ -252,7 +290,14 @@ export async function queryAggregates(params: AggregateQueryParams): Promise<Agg
 }
 
 /**
- * Get summary statistics for a campaign
+ * Generates a comprehensive summary for a specific campaign.
+ * Returns total metrics, fraud statistics, and breakdowns by country and device.
+ * Useful for campaign performance dashboards.
+ *
+ * @param campaignId - Campaign identifier to summarize
+ * @param startTime - Start of the reporting period
+ * @param endTime - End of the reporting period
+ * @returns Campaign summary with totals and dimension breakdowns
  */
 export async function getCampaignSummary(
   campaignId: string,
@@ -336,7 +381,12 @@ export async function getCampaignSummary(
 }
 
 /**
- * Get real-time stats for the last N minutes
+ * Retrieves real-time click statistics for the last N minutes.
+ * Queries minute-level aggregations for live dashboard display.
+ * Returns time series data and calculated throughput metrics.
+ *
+ * @param minutes - Number of minutes to look back (default: 60, max: 1440)
+ * @returns Time series data with per-minute counts and averages
  */
 export async function getRealTimeStats(
   minutes: number = 60

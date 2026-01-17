@@ -1,11 +1,27 @@
+/**
+ * Zustand store for spreadsheet state management.
+ * Handles real-time collaboration, cell editing, selection, and WebSocket communication.
+ * Uses sparse cell storage for efficient memory usage with large grids.
+ *
+ * @module stores/spreadsheet
+ */
+
 import { create } from 'zustand';
 
+/**
+ * Represents the data and computed value of a single cell.
+ * Uses sparse storage - only non-empty cells are stored.
+ */
 export interface CellData {
   rawValue: string | null;
   computedValue: string | null;
   format?: CellFormat;
 }
 
+/**
+ * Cell formatting options for visual presentation.
+ * Applied per-cell and synced across collaborators.
+ */
 export interface CellFormat {
   bold?: boolean;
   italic?: boolean;
@@ -15,6 +31,10 @@ export interface CellFormat {
   fontSize?: number;
 }
 
+/**
+ * Defines a rectangular range of cells for selection.
+ * Used for both user selection and collaborator highlighting.
+ */
 export interface CellRange {
   startRow: number;
   startCol: number;
@@ -22,6 +42,10 @@ export interface CellRange {
   endCol: number;
 }
 
+/**
+ * Represents a connected collaborator with their presence state.
+ * Color is assigned server-side for visual distinction.
+ */
 export interface Collaborator {
   userId: string;
   name: string;
@@ -30,12 +54,20 @@ export interface Collaborator {
   selection?: CellRange;
 }
 
+/**
+ * Represents a single sheet within a spreadsheet.
+ * Each spreadsheet can contain multiple sheets.
+ */
 export interface Sheet {
   id: string;
   name: string;
   sheet_index: number;
 }
 
+/**
+ * Complete spreadsheet state and actions interface.
+ * Combines document state, selection state, and collaboration features.
+ */
 interface SpreadsheetState {
   // Connection
   spreadsheetId: string | null;
@@ -99,9 +131,16 @@ interface SpreadsheetState {
   moveActiveCell: (direction: 'up' | 'down' | 'left' | 'right') => void;
 }
 
+/** Default column width in pixels */
 const DEFAULT_COLUMN_WIDTH = 100;
+
+/** Default row height in pixels */
 const DEFAULT_ROW_HEIGHT = 32;
 
+/**
+ * Main Zustand store for spreadsheet state.
+ * Provides reactive state updates and actions for the spreadsheet UI.
+ */
 export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   // Initial state
   spreadsheetId: null,
@@ -123,6 +162,13 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   editingCell: null,
   editValue: '',
 
+  /**
+   * Establishes WebSocket connection to the collaboration server.
+   * Sets up message handlers for real-time sync.
+   *
+   * @param spreadsheetId - The spreadsheet to connect to
+   * @param userName - Display name for this user
+   */
   connect: (spreadsheetId: string, userName = 'Anonymous') => {
     const wsUrl = `ws://localhost:3001/ws?spreadsheetId=${spreadsheetId}&name=${encodeURIComponent(userName)}`;
     const ws = new WebSocket(wsUrl);
@@ -149,6 +195,10 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     set({ ws });
   },
 
+  /**
+   * Closes the WebSocket connection and resets state.
+   * Should be called on component unmount.
+   */
   disconnect: () => {
     const { ws } = get();
     if (ws) {
@@ -163,6 +213,14 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     });
   },
 
+  /**
+   * Updates a cell value and sends it to the server.
+   * Uses optimistic update for immediate UI feedback.
+   *
+   * @param row - Cell row index (0-based)
+   * @param col - Cell column index (0-based)
+   * @param value - The raw cell value (may include formulas)
+   */
   setCell: (row: number, col: number, value: string) => {
     const { ws, activeSheetId, cells } = get();
 
@@ -184,10 +242,24 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     }
   },
 
+  /**
+   * Retrieves cell data for a specific position.
+   *
+   * @param row - Cell row index (0-based)
+   * @param col - Cell column index (0-based)
+   * @returns CellData if cell exists, undefined otherwise
+   */
   getCell: (row: number, col: number) => {
     return get().cells.get(`${row}-${col}`);
   },
 
+  /**
+   * Sets the active cell and notifies collaborators.
+   * Also initializes a single-cell selection.
+   *
+   * @param row - Cell row index (0-based)
+   * @param col - Cell column index (0-based)
+   */
   setActiveCell: (row: number, col: number) => {
     const { ws } = get();
     set({
@@ -201,6 +273,11 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     }
   },
 
+  /**
+   * Sets the current selection range and notifies collaborators.
+   *
+   * @param range - The cell range to select, or null to clear
+   */
   setSelection: (range: CellRange | null) => {
     const { ws } = get();
     set({ selection: range });
@@ -210,9 +287,19 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     }
   },
 
+  /** Begins a drag selection operation */
   startSelecting: () => set({ isSelecting: true }),
+
+  /** Ends a drag selection operation */
   stopSelecting: () => set({ isSelecting: false }),
 
+  /**
+   * Extends the current selection to include the specified cell.
+   * Only works while isSelecting is true.
+   *
+   * @param row - Target row to extend selection to
+   * @param col - Target column to extend selection to
+   */
   extendSelection: (row: number, col: number) => {
     const { selection, isSelecting } = get();
     if (!isSelecting || !selection) return;
@@ -226,6 +313,13 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     });
   },
 
+  /**
+   * Enters edit mode for a cell.
+   * Loads existing cell value into the edit buffer.
+   *
+   * @param row - Cell row to edit
+   * @param col - Cell column to edit
+   */
   startEditing: (row: number, col: number) => {
     const cell = get().getCell(row, col);
     set({
@@ -234,10 +328,19 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     });
   },
 
+  /**
+   * Updates the current edit buffer value.
+   *
+   * @param value - The new edit value
+   */
   setEditValue: (value: string) => {
     set({ editValue: value });
   },
 
+  /**
+   * Commits the current edit to the cell and exits edit mode.
+   * Sends the change to the server.
+   */
   commitEdit: () => {
     const { editingCell, editValue, setCell } = get();
     if (editingCell) {
@@ -246,10 +349,17 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     set({ editingCell: null, editValue: '' });
   },
 
+  /** Cancels the current edit and exits edit mode without saving */
   cancelEdit: () => {
     set({ editingCell: null, editValue: '' });
   },
 
+  /**
+   * Resizes a column and broadcasts to collaborators.
+   *
+   * @param col - Column index to resize
+   * @param width - New width in pixels
+   */
   resizeColumn: (col: number, width: number) => {
     const { ws, activeSheetId, columnWidths } = get();
     const newWidths = new Map(columnWidths);
@@ -266,6 +376,12 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     }
   },
 
+  /**
+   * Resizes a row and broadcasts to collaborators.
+   *
+   * @param row - Row index to resize
+   * @param height - New height in pixels
+   */
   resizeRow: (row: number, height: number) => {
     const { ws, activeSheetId, rowHeights } = get();
     const newHeights = new Map(rowHeights);
@@ -282,6 +398,13 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     }
   },
 
+  /**
+   * Checks if a cell is within the current selection.
+   *
+   * @param row - Cell row to check
+   * @param col - Cell column to check
+   * @returns true if cell is selected
+   */
   isSelected: (row: number, col: number) => {
     const { selection } = get();
     if (!selection) return false;
@@ -294,11 +417,24 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
   },
 
+  /**
+   * Checks if a cell is the currently active cell.
+   *
+   * @param row - Cell row to check
+   * @param col - Cell column to check
+   * @returns true if cell is the active cell
+   */
   isActiveCell: (row: number, col: number) => {
     const { activeCell } = get();
     return activeCell?.row === row && activeCell?.col === col;
   },
 
+  /**
+   * Moves the active cell in the specified direction.
+   * Handles keyboard navigation (arrow keys).
+   *
+   * @param direction - Direction to move: up, down, left, or right
+   */
   moveActiveCell: (direction) => {
     const { activeCell, setActiveCell } = get();
     if (!activeCell) {
@@ -327,7 +463,14 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   },
 }));
 
-// Handle incoming WebSocket messages
+/**
+ * Processes incoming WebSocket messages and updates store state.
+ * Handles state sync, cell updates, and collaborator presence.
+ *
+ * @param message - The parsed WebSocket message
+ * @param set - Zustand set function
+ * @param get - Zustand get function
+ */
 function handleWebSocketMessage(
   message: any,
   set: (partial: Partial<SpreadsheetState>) => void,
@@ -455,7 +598,13 @@ function handleWebSocketMessage(
   }
 }
 
-// Utility to get column letter (A, B, C, ..., Z, AA, AB, ...)
+/**
+ * Converts a 0-based column index to a spreadsheet column letter.
+ * Supports multi-letter columns (A, B, ..., Z, AA, AB, ...).
+ *
+ * @param index - 0-based column index
+ * @returns Column letter(s) like 'A', 'B', 'AA', etc.
+ */
 export function getColumnLetter(index: number): string {
   let letter = '';
   let num = index;

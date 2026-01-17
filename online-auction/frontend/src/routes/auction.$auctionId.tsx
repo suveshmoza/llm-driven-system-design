@@ -8,10 +8,30 @@ import { BidForm } from '../components/BidForm';
 import { BidHistory } from '../components/BidHistory';
 import type { AuctionDetail, WebSocketMessage } from '../types';
 
+/**
+ * Route definition for auction detail page (/auction/:auctionId).
+ * Dynamic route with auction ID parameter.
+ */
 export const Route = createFileRoute('/auction/$auctionId')({
   component: AuctionPage,
 });
 
+/**
+ * Auction detail page component.
+ *
+ * Displays comprehensive auction information:
+ * - Item image and description
+ * - Current price and countdown timer
+ * - Bid form (for non-owners)
+ * - Complete bid history
+ * - Watch/unwatch toggle
+ *
+ * Subscribes to WebSocket for real-time updates on:
+ * - New bids (updates price and refetches bid history)
+ * - Auction end events
+ *
+ * @returns JSX element for the auction detail page
+ */
 function AuctionPage() {
   const { auctionId } = Route.useParams();
   const navigate = useNavigate();

@@ -1,10 +1,22 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Props for the AuthModal component.
+ */
 interface AuthModalProps {
+  /** Callback to close the modal */
   onClose: () => void;
 }
 
+/**
+ * Authentication modal component for login and registration.
+ * Provides a form that toggles between login and registration modes.
+ * Handles form submission, displays errors from the auth store,
+ * and closes automatically on successful authentication.
+ *
+ * @param props.onClose - Called when modal should be dismissed
+ */
 export default function AuthModal({ onClose }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');

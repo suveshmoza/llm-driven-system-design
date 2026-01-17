@@ -3,33 +3,78 @@ import type { FileItem, SyncStatus, Conflict } from '../types';
 import { api } from '../services/api';
 import { wsService, isFileEvent } from '../services/websocket';
 
+/**
+ * File store interface defining state and actions for iCloud Drive.
+ *
+ * Manages the complete file browsing experience including navigation,
+ * file operations, upload tracking, and conflict resolution.
+ */
 interface FileStore {
+  /** Files in the current directory */
   files: FileItem[];
+  /** Current directory path being viewed */
   currentPath: string;
+  /** Set of selected file IDs for batch operations */
   selectedFiles: Set<string>;
+  /** Whether files are currently loading */
   isLoading: boolean;
+  /** Error message from the most recent operation */
   error: string | null;
+  /** Unresolved sync conflicts requiring user action */
   conflicts: Conflict[];
+  /** Upload progress by filename (0-100) */
   uploadProgress: Map<string, number>;
 
+  /** Navigates to a new directory path */
   setCurrentPath: (path: string) => void;
+  /** Fetches files for the current or specified path */
   loadFiles: (path?: string) => Promise<void>;
+  /** Creates a new folder in the current directory */
   createFolder: (name: string) => Promise<void>;
+  /** Uploads a single file to the current directory */
   uploadFile: (file: File) => Promise<void>;
+  /** Uploads multiple files to the current directory */
   uploadFiles: (files: File[]) => Promise<void>;
+  /** Downloads a file to the user's device */
   downloadFile: (fileId: string, fileName: string) => Promise<void>;
+  /** Soft-deletes a file */
   deleteFile: (fileId: string) => Promise<void>;
+  /** Renames a file */
   renameFile: (fileId: string, newName: string) => Promise<void>;
+  /** Adds a file to the selection */
   selectFile: (fileId: string) => void;
+  /** Removes a file from the selection */
   deselectFile: (fileId: string) => void;
+  /** Toggles a file's selection state */
   toggleSelection: (fileId: string) => void;
+  /** Clears all selected files */
   clearSelection: () => void;
+  /** Fetches unresolved sync conflicts */
   loadConflicts: () => Promise<void>;
+  /** Resolves a sync conflict with the specified strategy */
   resolveConflict: (fileId: string, resolution: 'use-local' | 'use-server', keepBoth?: boolean) => Promise<void>;
+  /** Clears the current error message */
   clearError: () => void;
+  /** Subscribes to WebSocket file change events */
   subscribeToChanges: () => void;
 }
 
+/**
+ * Global file store for iCloud Drive functionality.
+ *
+ * This Zustand store manages all state related to file browsing and operations
+ * in iCloud Drive. It handles:
+ *
+ * - **Navigation**: Tracks current path and file listing
+ * - **File Operations**: Upload, download, rename, delete with optimistic updates
+ * - **Selection**: Multi-select for batch operations
+ * - **Sync Conflicts**: Detection and resolution of version conflicts
+ * - **Real-time Updates**: WebSocket subscription for cross-device sync
+ * - **Upload Progress**: Tracking for user feedback during uploads
+ *
+ * Files are fetched from the API and cached in the store. The store subscribes
+ * to WebSocket events to refresh when changes occur on other devices.
+ */
 export const useFileStore = create<FileStore>((set, get) => ({
   files: [],
   currentPath: '/',

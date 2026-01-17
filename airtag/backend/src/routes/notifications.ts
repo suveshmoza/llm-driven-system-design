@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { notificationService } from '../services/notificationService.js';
 
+/**
+ * Notification routes for managing user notifications.
+ * Handles device found alerts, unknown tracker warnings, and system messages.
+ * All routes require authentication and are prefixed with /api/notifications.
+ */
 const router = Router();
 
 // All routes require authentication
@@ -9,7 +14,8 @@ router.use(requireAuth);
 
 /**
  * GET /api/notifications
- * Get notifications for the current user
+ * Get notifications for the authenticated user.
+ * Supports optional query params: unreadOnly, limit.
  */
 router.get('/', async (req, res) => {
   try {
@@ -32,7 +38,7 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /api/notifications/unread-count
- * Get unread notification count
+ * Get the count of unread notifications for badge display.
  */
 router.get('/unread-count', async (req, res) => {
   try {
@@ -46,7 +52,7 @@ router.get('/unread-count', async (req, res) => {
 
 /**
  * POST /api/notifications/:id/read
- * Mark a notification as read
+ * Mark a single notification as read.
  */
 router.post('/:id/read', async (req, res) => {
   try {
@@ -67,7 +73,7 @@ router.post('/:id/read', async (req, res) => {
 
 /**
  * POST /api/notifications/read-all
- * Mark all notifications as read
+ * Mark all notifications as read for the authenticated user.
  */
 router.post('/read-all', async (req, res) => {
   try {
@@ -81,7 +87,7 @@ router.post('/read-all', async (req, res) => {
 
 /**
  * DELETE /api/notifications/:id
- * Delete a notification
+ * Permanently delete a notification.
  */
 router.delete('/:id', async (req, res) => {
   try {

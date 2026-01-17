@@ -2,6 +2,11 @@ import { Router, Response } from 'express';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { watchlistService, priceAlertService } from '../services/watchlistService.js';
 
+/**
+ * Express router for watchlist and price alert endpoints.
+ * All routes require authentication.
+ * Handles CRUD operations for watchlists, items, and price alerts.
+ */
 const router = Router();
 
 // All watchlist routes require authentication
@@ -9,7 +14,10 @@ router.use(authMiddleware);
 
 // ==================== WATCHLISTS ====================
 
-// Get all watchlists
+/**
+ * GET /api/watchlists
+ * Returns all watchlists for the authenticated user with items and quotes.
+ */
 router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -21,7 +29,10 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Create new watchlist
+/**
+ * POST /api/watchlists
+ * Creates a new watchlist with the specified name.
+ */
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -40,7 +51,10 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Delete watchlist
+/**
+ * DELETE /api/watchlists/:watchlistId
+ * Deletes a watchlist and all its items.
+ */
 router.delete('/:watchlistId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -52,7 +66,10 @@ router.delete('/:watchlistId', async (req: AuthenticatedRequest, res: Response) 
   }
 });
 
-// Add symbol to watchlist
+/**
+ * POST /api/watchlists/:watchlistId/items
+ * Adds a stock symbol to the specified watchlist.
+ */
 router.post('/:watchlistId/items', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -75,7 +92,10 @@ router.post('/:watchlistId/items', async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-// Remove symbol from watchlist
+/**
+ * DELETE /api/watchlists/:watchlistId/items/:symbol
+ * Removes a stock symbol from the specified watchlist.
+ */
 router.delete('/:watchlistId/items/:symbol', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -93,7 +113,10 @@ router.delete('/:watchlistId/items/:symbol', async (req: AuthenticatedRequest, r
 
 // ==================== PRICE ALERTS ====================
 
-// Get all alerts
+/**
+ * GET /api/watchlists/alerts
+ * Returns all price alerts for the authenticated user.
+ */
 router.get('/alerts', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -105,7 +128,11 @@ router.get('/alerts', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// Create alert
+/**
+ * POST /api/watchlists/alerts
+ * Creates a new price alert for a stock symbol.
+ * Alerts trigger when price goes above or below target.
+ */
 router.post('/alerts', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;

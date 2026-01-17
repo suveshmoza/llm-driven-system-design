@@ -1,13 +1,28 @@
+/**
+ * @fileoverview Feed generation routes for personalized and explore feeds.
+ * Implements the hybrid push/pull model by merging pre-computed feed items
+ * with celebrity posts fetched at read time. Applies ranking and diversity.
+ */
+
 import { Router, Request, Response } from 'express';
 import { pool, redis } from '../db/connection.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { calculatePostScore } from '../services/fanout.js';
 
+/** Express router for feed endpoints */
 const router = Router();
 
+/**
+ * Threshold for classifying users as celebrities (pull-based feed).
+ * Must match the threshold in fanout.ts for consistent behavior.
+ */
 const CELEBRITY_THRESHOLD = 10000;
 
-// Get personalized feed
+/**
+ * GET / - Returns the authenticated user's personalized home feed.
+ * Combines pre-computed feed items (push model) with celebrity posts (pull model).
+ * Ranks posts by engagement, recency, and affinity, then applies diversity rules.
+ */
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -253,7 +268,11 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Get trending/explore feed (public posts)
+/**
+ * GET /explore - Returns trending public posts from the last 7 days.
+ * Available to all users without authentication.
+ * Ranks posts by weighted engagement score (likes + comments*2 + shares*3).
+ */
 router.get('/explore', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 20;

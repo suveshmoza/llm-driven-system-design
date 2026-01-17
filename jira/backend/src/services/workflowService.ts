@@ -12,9 +12,16 @@ import {
   User,
 } from '../types/index.js';
 
-const WORKFLOW_CACHE_TTL = 3600; // 1 hour
+/** Cache TTL for workflow data in seconds (1 hour) */
+const WORKFLOW_CACHE_TTL = 3600;
 
-// Get workflow by ID with caching
+/**
+ * Retrieves a workflow by ID with all statuses and transitions.
+ * Results are cached in Redis to avoid repeated database queries.
+ *
+ * @param workflowId - ID of the workflow
+ * @returns Workflow with statuses and transitions, or null if not found
+ */
 export async function getWorkflow(workflowId: number): Promise<WorkflowWithStatuses | null> {
   const cacheKey = `workflow:${workflowId}`;
   const cached = await cacheGet<WorkflowWithStatuses>(cacheKey);
@@ -56,7 +63,12 @@ export async function getWorkflow(workflowId: number): Promise<WorkflowWithStatu
   return result;
 }
 
-// Get workflow by project ID
+/**
+ * Retrieves the workflow assigned to a project.
+ *
+ * @param projectId - UUID of the project
+ * @returns Workflow with statuses and transitions, or null if not found
+ */
 export async function getWorkflowByProject(projectId: string): Promise<WorkflowWithStatuses | null> {
   const { rows } = await query<{ workflow_id: number }>(
     'SELECT workflow_id FROM projects WHERE id = $1',
@@ -67,7 +79,15 @@ export async function getWorkflowByProject(projectId: string): Promise<WorkflowW
   return getWorkflow(rows[0].workflow_id);
 }
 
-// Get available transitions for an issue
+/**
+ * Gets all transitions available for an issue from its current status.
+ * Checks transition conditions against the user and their project roles.
+ *
+ * @param issue - The issue to get transitions for
+ * @param user - User requesting the transitions
+ * @param projectRoles - Roles the user has in the project
+ * @returns Array of available transitions
+ */
 export async function getAvailableTransitions(
   issue: Issue,
   user: User,
@@ -105,7 +125,18 @@ export async function getAvailableTransitions(
   return availableTransitions;
 }
 
-// Execute a transition
+/**
+ * Executes a workflow transition on an issue.
+ * Validates conditions and validators, updates the issue status,
+ * records history, and runs post-functions.
+ *
+ * @param issue - Issue to transition
+ * @param transitionId - ID of the transition to execute
+ * @param user - User executing the transition
+ * @param projectRoles - Roles the user has in the project
+ * @param updateData - Additional data for validators
+ * @returns Result object with success status and error message or new status ID
+ */
 export async function executeTransition(
   issue: Issue,
   transitionId: number,
@@ -174,7 +205,16 @@ export async function executeTransition(
   return { success: true, newStatusId: transition.to_status_id };
 }
 
-// Check a single condition
+/**
+ * Checks if a transition condition is satisfied.
+ * Supports: always, user_in_role, issue_assignee, user_in_group.
+ *
+ * @param condition - Condition to check
+ * @param issue - Issue being transitioned
+ * @param user - User attempting the transition
+ * @param projectRoles - User's roles in the project
+ * @returns True if condition is satisfied
+ */
 async function checkCondition(
   condition: TransitionCondition,
   issue: Issue,
@@ -201,7 +241,15 @@ async function checkCondition(
   }
 }
 
-// Run a validator
+/**
+ * Runs a transition validator to check issue data.
+ * Supports: field_required, field_value.
+ *
+ * @param validator - Validator to run
+ * @param issue - Issue being validated
+ * @param updateData - Additional data provided during transition
+ * @returns Object with passed status and optional error message
+ */
 async function runValidator(
   validator: TransitionValidator,
   issue: Issue,
@@ -230,7 +278,15 @@ async function runValidator(
   }
 }
 
-// Run a post-function
+/**
+ * Runs a post-function after a successful transition.
+ * Supports: assign_to_current_user, clear_field, update_field, send_notification.
+ *
+ * @param postFunc - Post-function to run
+ * @param issue - Issue that was transitioned
+ * @param user - User who executed the transition
+ * @param transition - The transition that was executed
+ */
 async function runPostFunction(
   postFunc: TransitionPostFunction,
   issue: Issue,
@@ -266,7 +322,14 @@ async function runPostFunction(
   }
 }
 
-// Record status change in history
+/**
+ * Records a status change in issue history for audit trail.
+ *
+ * @param issueId - ID of the issue
+ * @param userId - ID of the user who made the change
+ * @param oldStatusId - Previous status ID
+ * @param newStatusId - New status ID
+ */
 async function recordStatusHistory(
   issueId: number,
   userId: string,
@@ -288,7 +351,13 @@ async function recordStatusHistory(
   );
 }
 
-// Create a new workflow
+/**
+ * Creates a new workflow definition.
+ *
+ * @param name - Workflow name
+ * @param description - Optional description
+ * @returns Newly created workflow
+ */
 export async function createWorkflow(
   name: string,
   description?: string
@@ -300,7 +369,17 @@ export async function createWorkflow(
   return rows[0];
 }
 
-// Create a status for a workflow
+/**
+ * Creates a status in a workflow.
+ * Invalidates the workflow cache.
+ *
+ * @param workflowId - ID of the workflow
+ * @param name - Status name
+ * @param category - Status category (todo, in_progress, done)
+ * @param color - Hex color code
+ * @param position - Sort position
+ * @returns Newly created status
+ */
 export async function createStatus(
   workflowId: number,
   name: string,
@@ -318,7 +397,19 @@ export async function createStatus(
   return rows[0];
 }
 
-// Create a transition
+/**
+ * Creates a transition between statuses in a workflow.
+ * Invalidates the workflow cache.
+ *
+ * @param workflowId - ID of the workflow
+ * @param name - Transition name (displayed to users)
+ * @param fromStatusId - Source status ID (null = from any)
+ * @param toStatusId - Target status ID
+ * @param conditions - Array of conditions to check
+ * @param validators - Array of validators to run
+ * @param postFunctions - Array of post-functions to execute
+ * @returns Newly created transition
+ */
 export async function createTransition(
   workflowId: number,
   name: string,
@@ -338,13 +429,22 @@ export async function createTransition(
   return rows[0];
 }
 
-// Get all workflows
+/**
+ * Retrieves all workflow definitions.
+ *
+ * @returns Array of all workflows
+ */
 export async function getAllWorkflows(): Promise<Workflow[]> {
   const { rows } = await query<Workflow>('SELECT * FROM workflows ORDER BY name');
   return rows;
 }
 
-// Get statuses for a workflow
+/**
+ * Retrieves all statuses for a workflow.
+ *
+ * @param workflowId - ID of the workflow
+ * @returns Array of statuses ordered by position
+ */
 export async function getStatuses(workflowId: number): Promise<Status[]> {
   const { rows } = await query<Status>(
     'SELECT * FROM statuses WHERE workflow_id = $1 ORDER BY position',
@@ -353,13 +453,25 @@ export async function getStatuses(workflowId: number): Promise<Status[]> {
   return rows;
 }
 
-// Get status by ID
+/**
+ * Retrieves a status by its ID.
+ *
+ * @param statusId - ID of the status
+ * @returns Status or null if not found
+ */
 export async function getStatus(statusId: number): Promise<Status | null> {
   const { rows } = await query<Status>('SELECT * FROM statuses WHERE id = $1', [statusId]);
   return rows[0] || null;
 }
 
-// Update status
+/**
+ * Updates a status definition.
+ * Invalidates the workflow cache.
+ *
+ * @param statusId - ID of the status to update
+ * @param updates - Partial status data to update
+ * @returns Updated status or null if not found
+ */
 export async function updateStatus(
   statusId: number,
   updates: Partial<Pick<Status, 'name' | 'category' | 'color' | 'position'>>

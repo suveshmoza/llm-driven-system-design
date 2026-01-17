@@ -2,6 +2,10 @@ import { query, queryOne, execute } from '../db/postgres.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { DesignFile, CanvasData, FileVersion } from '../types/index.js';
 
+/**
+ * Database row type for files table.
+ * Maps PostgreSQL columns to TypeScript types with null handling.
+ */
 interface FileRow {
   id: string;
   name: string;
@@ -14,6 +18,10 @@ interface FileRow {
   updated_at: Date;
 }
 
+/**
+ * Database row type for file_versions table.
+ * Maps version snapshot data from PostgreSQL.
+ */
 interface VersionRow {
   id: string;
   file_id: string;
@@ -25,7 +33,17 @@ interface VersionRow {
   is_auto_save: boolean;
 }
 
+/**
+ * Service for managing design files and their versions.
+ * Handles CRUD operations for files and version history management.
+ * Provides the persistence layer for the collaborative design platform.
+ */
 export class FileService {
+  /**
+   * Retrieves all files, ordered by most recently updated.
+   * @param userId - Optional user ID to filter files (not yet implemented)
+   * @returns Promise resolving to array of design files
+   */
   // Get all files for a user
   async getFiles(userId?: string): Promise<DesignFile[]> {
     const files = await query<FileRow>(
@@ -34,6 +52,11 @@ export class FileService {
     return files.map(this.mapFileRow);
   }
 
+  /**
+   * Retrieves all files belonging to a specific project.
+   * @param projectId - The project ID to filter by
+   * @returns Promise resolving to array of design files in the project
+   */
   // Get files by project
   async getFilesByProject(projectId: string): Promise<DesignFile[]> {
     const files = await query<FileRow>(
@@ -43,6 +66,11 @@ export class FileService {
     return files.map(this.mapFileRow);
   }
 
+  /**
+   * Retrieves a single file by its ID.
+   * @param fileId - The unique file identifier
+   * @returns Promise resolving to the design file or null if not found
+   */
   // Get a single file
   async getFile(fileId: string): Promise<DesignFile | null> {
     const file = await queryOne<FileRow>(
@@ -52,6 +80,15 @@ export class FileService {
     return file ? this.mapFileRow(file) : null;
   }
 
+  /**
+   * Creates a new design file with an empty canvas.
+   * Initializes with a default page structure.
+   * @param name - Display name for the file
+   * @param ownerId - ID of the user creating the file
+   * @param projectId - Optional project to associate the file with
+   * @param teamId - Optional team to share the file with
+   * @returns Promise resolving to the newly created design file
+   */
   // Create a new file
   async createFile(name: string, ownerId: string, projectId?: string, teamId?: string): Promise<DesignFile> {
     const id = uuidv4();
@@ -71,6 +108,12 @@ export class FileService {
     return file;
   }
 
+  /**
+   * Updates the canvas data for a file.
+   * Called when operations modify the design content.
+   * @param fileId - The file to update
+   * @param canvasData - The new canvas state to persist
+   */
   // Update file canvas data
   async updateCanvasData(fileId: string, canvasData: CanvasData): Promise<void> {
     await execute(
@@ -79,6 +122,11 @@ export class FileService {
     );
   }
 
+  /**
+   * Updates the display name of a file.
+   * @param fileId - The file to rename
+   * @param name - The new name for the file
+   */
   // Update file name
   async updateFileName(fileId: string, name: string): Promise<void> {
     await execute(
@@ -87,11 +135,24 @@ export class FileService {
     );
   }
 
+  /**
+   * Permanently deletes a file and its associated data.
+   * @param fileId - The file to delete
+   */
   // Delete a file
   async deleteFile(fileId: string): Promise<void> {
     await execute(`DELETE FROM files WHERE id = $1`, [fileId]);
   }
 
+  /**
+   * Creates a version snapshot of the current file state.
+   * Used for both auto-save and manual version creation.
+   * @param fileId - The file to snapshot
+   * @param userId - The user creating the version
+   * @param name - Optional name for the version
+   * @param isAutoSave - Whether this is an automatic save (default true)
+   * @returns Promise resolving to the created version
+   */
   // Create a version snapshot
   async createVersion(fileId: string, userId: string, name?: string, isAutoSave = true): Promise<FileVersion> {
     const file = await this.getFile(fileId);
@@ -121,6 +182,13 @@ export class FileService {
     return this.mapVersionRow(version);
   }
 
+  /**
+   * Retrieves the version history for a file.
+   * Returns versions in descending order (newest first).
+   * @param fileId - The file to get history for
+   * @param limit - Maximum number of versions to return (default 50)
+   * @returns Promise resolving to array of file versions
+   */
   // Get version history
   async getVersionHistory(fileId: string, limit = 50): Promise<FileVersion[]> {
     const versions = await query<VersionRow>(
@@ -130,6 +198,13 @@ export class FileService {
     return versions.map(this.mapVersionRow);
   }
 
+  /**
+   * Restores a file to a previous version state.
+   * Creates a new version marking the restore for audit trail.
+   * @param fileId - The file to restore
+   * @param versionId - The version to restore to
+   * @param userId - The user performing the restore
+   */
   // Restore a version
   async restoreVersion(fileId: string, versionId: string, userId: string): Promise<void> {
     const version = await queryOne<VersionRow>(
@@ -146,6 +221,12 @@ export class FileService {
     await this.createVersion(fileId, userId, `Restored from version ${version.version_number}`, false);
   }
 
+  /**
+   * Maps a database row to a DesignFile object.
+   * Handles null-to-undefined conversion for optional fields.
+   * @param row - The database row to map
+   * @returns The mapped DesignFile object
+   */
   private mapFileRow(row: FileRow): DesignFile {
     return {
       id: row.id,
@@ -160,6 +241,12 @@ export class FileService {
     };
   }
 
+  /**
+   * Maps a database row to a FileVersion object.
+   * Handles null-to-undefined conversion for optional fields.
+   * @param row - The database row to map
+   * @returns The mapped FileVersion object
+   */
   private mapVersionRow(row: VersionRow): FileVersion {
     return {
       id: row.id,
@@ -174,4 +261,8 @@ export class FileService {
   }
 }
 
+/**
+ * Singleton instance of the FileService.
+ * Used throughout the application for file operations.
+ */
 export const fileService = new FileService();

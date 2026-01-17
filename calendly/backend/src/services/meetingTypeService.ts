@@ -6,9 +6,19 @@ import {
 } from '../types/index.js';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Service for managing meeting types (event types).
+ * Meeting types define the scheduling options hosts offer to invitees,
+ * such as "30-minute intro call" or "1-hour consultation".
+ * Uses Redis caching for performance optimization.
+ */
 export class MeetingTypeService {
   /**
-   * Create a new meeting type
+   * Creates a new meeting type for a user.
+   * Invalidates the user's meeting types cache after creation.
+   * @param userId - The UUID of the host user creating the meeting type
+   * @param input - Meeting type configuration including name, slug, duration, and buffers
+   * @returns The newly created meeting type
    */
   async create(userId: string, input: CreateMeetingTypeInput): Promise<MeetingType> {
     const id = uuidv4();
@@ -40,7 +50,10 @@ export class MeetingTypeService {
   }
 
   /**
-   * Get meeting type by ID
+   * Retrieves a meeting type by its unique ID.
+   * Results are cached in Redis for 1 hour.
+   * @param id - The UUID of the meeting type
+   * @returns The meeting type if found, null otherwise
    */
   async findById(id: string): Promise<MeetingType | null> {
     const cacheKey = `meeting_type:${id}`;
@@ -66,7 +79,11 @@ export class MeetingTypeService {
   }
 
   /**
-   * Get meeting type by user ID and slug
+   * Finds a meeting type by user ID and slug combination.
+   * Slugs are unique per user for creating friendly booking URLs.
+   * @param userId - The UUID of the host user
+   * @param slug - The URL-friendly slug identifier
+   * @returns The meeting type if found, null otherwise
    */
   async findBySlug(userId: string, slug: string): Promise<MeetingType | null> {
     const result = await pool.query(
@@ -78,7 +95,11 @@ export class MeetingTypeService {
   }
 
   /**
-   * Get all meeting types for a user
+   * Retrieves all meeting types for a user.
+   * Results are cached in Redis for 5 minutes.
+   * @param userId - The UUID of the host user
+   * @param activeOnly - If true, only returns active (bookable) meeting types
+   * @returns Array of meeting types sorted by creation date
    */
   async findByUserId(userId: string, activeOnly: boolean = false): Promise<MeetingType[]> {
     const cacheKey = `meeting_types:${userId}:${activeOnly}`;
@@ -102,7 +123,12 @@ export class MeetingTypeService {
   }
 
   /**
-   * Update a meeting type
+   * Updates an existing meeting type.
+   * Validates ownership and invalidates related caches after update.
+   * @param id - The UUID of the meeting type to update
+   * @param userId - The UUID of the user (for ownership verification)
+   * @param updates - Partial update object with fields to modify
+   * @returns The updated meeting type if found and owned by user, null otherwise
    */
   async update(
     id: string,
@@ -160,7 +186,11 @@ export class MeetingTypeService {
   }
 
   /**
-   * Delete a meeting type
+   * Permanently deletes a meeting type.
+   * Validates ownership and removes all related cache entries.
+   * @param id - The UUID of the meeting type to delete
+   * @param userId - The UUID of the user (for ownership verification)
+   * @returns true if deleted, false if not found or not owned by user
    */
   async delete(id: string, userId: string): Promise<boolean> {
     const result = await pool.query(
@@ -179,7 +209,11 @@ export class MeetingTypeService {
   }
 
   /**
-   * Get meeting type with user info (for public booking page)
+   * Retrieves a meeting type with host user information.
+   * Used for public booking pages where invitees need host details.
+   * Only returns active meeting types.
+   * @param id - The UUID of the meeting type
+   * @returns Meeting type with user_name, user_email, user_timezone, or null
    */
   async findByIdWithUser(id: string): Promise<(MeetingType & { user_name: string; user_email: string; user_timezone: string }) | null> {
     const result = await pool.query(
@@ -194,4 +228,5 @@ export class MeetingTypeService {
   }
 }
 
+/** Singleton instance of MeetingTypeService for application-wide use */
 export const meetingTypeService = new MeetingTypeService();

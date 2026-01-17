@@ -4,20 +4,46 @@ import { db } from './database.js';
 import { presence } from './redis.js';
 import type { ClientInfo, CursorPosition, SelectionRange, OperationData } from '../types/index.js';
 
-const SNAPSHOT_INTERVAL = 50; // Save snapshot every 50 operations
+/**
+ * Interval for saving document snapshots (in number of operations).
+ * Snapshots are taken every N operations to enable efficient document loading.
+ */
+const SNAPSHOT_INTERVAL = 50;
 
 /**
  * DocumentState manages the in-memory state of an active document
  * and handles OT operations.
+ *
+ * This class is the core of the collaborative editing server. It:
+ * - Maintains the current document content and version in memory
+ * - Tracks connected clients and their cursor positions
+ * - Applies incoming operations using OT transformation
+ * - Persists operations to the database
+ * - Periodically saves snapshots for efficient loading
+ *
+ * One instance is created per active document (documents with connected clients).
+ * When the last client disconnects, the state is persisted and unloaded.
  */
 export class DocumentState {
+  /** The document's UUID */
   documentId: string;
+  /** Current server version number (monotonically increasing) */
   version: number;
+  /** Current document content */
   content: string;
+  /** Map of connected clients by client ID */
   clients: Map<string, ClientInfo>;
+  /** Whether the document is currently loading from the database */
   private loading: boolean;
+  /** Promise for the loading operation (for deduplication) */
   private loadPromise: Promise<void> | null;
 
+  /**
+   * Create a new DocumentState instance.
+   * Call load() after construction to initialize from the database.
+   *
+   * @param documentId - The document's UUID
+   */
   constructor(documentId: string) {
     this.documentId = documentId;
     this.version = 0;
@@ -28,7 +54,11 @@ export class DocumentState {
   }
 
   /**
-   * Load the document state from the database
+   * Load the document state from the database.
+   *
+   * Loads the latest snapshot and replays any operations since that snapshot.
+   * Also loads the current presence list from Redis.
+   * Safe to call multiple times; subsequent calls wait for the first load.
    */
   async load(): Promise<void> {
     if (this.loadPromise) {
@@ -64,7 +94,10 @@ export class DocumentState {
   }
 
   /**
-   * Add a client to this document
+   * Add a client to this document.
+   * Updates both in-memory state and Redis presence.
+   *
+   * @param client - The client information to add
    */
   async addClient(client: ClientInfo): Promise<void> {
     this.clients.set(client.clientId, client);
@@ -72,7 +105,10 @@ export class DocumentState {
   }
 
   /**
-   * Remove a client from this document
+   * Remove a client from this document.
+   * Updates both in-memory state and Redis presence.
+   *
+   * @param clientId - The client's session ID to remove
    */
   async removeClient(clientId: string): Promise<void> {
     this.clients.delete(clientId);
@@ -80,7 +116,11 @@ export class DocumentState {
   }
 
   /**
-   * Update a client's cursor position
+   * Update a client's cursor position.
+   * Updates both in-memory state and Redis presence.
+   *
+   * @param clientId - The client's session ID
+   * @param cursor - The new cursor position
    */
   async updateCursor(clientId: string, cursor: CursorPosition): Promise<void> {
     const client = this.clients.get(clientId);
@@ -91,7 +131,11 @@ export class DocumentState {
   }
 
   /**
-   * Update a client's selection
+   * Update a client's text selection.
+   * Updates both in-memory state and Redis presence.
+   *
+   * @param clientId - The client's session ID
+   * @param selection - The new selection range, or null to clear
    */
   async updateSelection(
     clientId: string,
@@ -105,7 +149,21 @@ export class DocumentState {
   }
 
   /**
-   * Apply an operation from a client
+   * Apply an operation from a client.
+   *
+   * This is the core OT logic. The operation is transformed against any
+   * concurrent operations that happened since the client's known version,
+   * then applied to the document and persisted.
+   *
+   * Also updates all other clients' cursor positions to account for
+   * the text changes.
+   *
+   * @param clientId - The ID of the client sending the operation
+   * @param userId - The ID of the user who made the change
+   * @param clientVersion - The server version the client's operation was based on
+   * @param operation - The operation data from the client
+   * @returns The new version and the transformed operation
+   * @throws Error if the operation cannot be applied
    */
   async applyOperation(
     clientId: string,
@@ -172,14 +230,18 @@ export class DocumentState {
   }
 
   /**
-   * Save a snapshot of the current document state
+   * Save a snapshot of the current document state.
+   * Snapshots enable efficient document loading by avoiding full replay.
    */
   async saveSnapshot(): Promise<void> {
     await db.saveSnapshot(this.documentId, this.version, this.content);
   }
 
   /**
-   * Get the current document state for a new client
+   * Get the current document state for a new client.
+   * Returns everything needed to initialize a client's editor.
+   *
+   * @returns Object containing version, content, and connected clients
    */
   getInitState(): {
     version: number;

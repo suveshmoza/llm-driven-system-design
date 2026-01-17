@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Channel routes for managing workspace channels.
+ * Handles channel CRUD, membership, and unread tracking.
+ * Supports both public and private channels.
+ */
+
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../db/index.js';
@@ -6,7 +12,11 @@ import type { Channel, ChannelMember } from '../types/index.js';
 
 const router = Router();
 
-// Get channels for current workspace
+/**
+ * GET /channels - List channels in the current workspace.
+ * Returns all public channels plus private channels the user is a member of.
+ * Includes membership status and unread message counts.
+ */
 router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const workspaceId = req.session.workspaceId;
@@ -37,7 +47,10 @@ router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Respons
   }
 });
 
-// Create channel
+/**
+ * POST /channels - Create a new channel in the current workspace.
+ * The creator is automatically added as a member.
+ */
 router.post('/', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, topic, description, is_private } = req.body;
@@ -86,7 +99,10 @@ router.post('/', requireAuth, requireWorkspace, async (req: Request, res: Respon
   }
 });
 
-// Get channel details
+/**
+ * GET /channels/:id - Get details of a specific channel.
+ * Requires membership for private channels.
+ */
 router.get('/:id', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query<Channel>(
@@ -121,7 +137,10 @@ router.get('/:id', requireAuth, requireWorkspace, async (req: Request, res: Resp
   }
 });
 
-// Update channel
+/**
+ * PUT /channels/:id - Update channel topic or description.
+ * Allows members to update channel metadata.
+ */
 router.put('/:id', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { topic, description } = req.body;
@@ -148,7 +167,10 @@ router.put('/:id', requireAuth, requireWorkspace, async (req: Request, res: Resp
   }
 });
 
-// Join channel
+/**
+ * POST /channels/:id/join - Join a public channel.
+ * Returns 403 for private channels (requires invitation).
+ */
 router.post('/:id/join', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const channelId = req.params.id;
@@ -182,7 +204,10 @@ router.post('/:id/join', requireAuth, requireWorkspace, async (req: Request, res
   }
 });
 
-// Leave channel
+/**
+ * POST /channels/:id/leave - Leave a channel.
+ * Removes the user from channel membership.
+ */
 router.post('/:id/leave', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     await query(
@@ -197,7 +222,10 @@ router.post('/:id/leave', requireAuth, requireWorkspace, async (req: Request, re
   }
 });
 
-// Get channel members
+/**
+ * GET /channels/:id/members - List all members of a channel.
+ * Returns user profiles with join timestamps.
+ */
 router.get('/:id/members', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query(
@@ -216,7 +244,10 @@ router.get('/:id/members', requireAuth, requireWorkspace, async (req: Request, r
   }
 });
 
-// Mark channel as read
+/**
+ * POST /channels/:id/read - Mark a channel as read.
+ * Updates the user's last_read_at timestamp for unread tracking.
+ */
 router.post('/:id/read', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     await query(

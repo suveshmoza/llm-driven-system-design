@@ -1,21 +1,49 @@
+/**
+ * File chunking and hashing utilities for the deduplication system.
+ * Files are split into fixed-size chunks that are hashed for content-addressing.
+ * This enables efficient storage through deduplication and resumable uploads.
+ * @module utils/chunking
+ */
+
 import crypto from 'crypto';
 
-const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '4194304', 10); // 4MB default
+/**
+ * Default chunk size in bytes (4MB).
+ * Configurable via CHUNK_SIZE environment variable.
+ * 4MB balances deduplication efficiency with upload reliability.
+ */
+const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '4194304', 10);
 
 export { CHUNK_SIZE };
 
-// Calculate SHA-256 hash of data
+/**
+ * Calculates the SHA-256 hash of a data buffer.
+ * Used for content-addressing chunks and verifying upload integrity.
+ * @param data - Buffer to hash
+ * @returns Hex-encoded SHA-256 hash string
+ */
 export function calculateHash(data: Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-// Calculate content hash from chunk hashes
+/**
+ * Calculates a content hash from an ordered list of chunk hashes.
+ * This provides a unique identifier for a file based on its content.
+ * @param chunkHashes - Array of chunk hash strings in order
+ * @returns Hex-encoded SHA-256 hash representing the complete file content
+ */
 export function calculateContentHash(chunkHashes: string[]): string {
   const combined = chunkHashes.join('');
   return crypto.createHash('sha256').update(combined).digest('hex');
 }
 
-// Split buffer into fixed-size chunks
+/**
+ * Splits a buffer into fixed-size chunks.
+ * Used for breaking large files into manageable pieces for upload and storage.
+ * @param data - Buffer to split
+ * @param chunkSize - Size of each chunk in bytes (defaults to CHUNK_SIZE)
+ * @returns Array of Buffer chunks
+ */
 export function splitIntoChunks(data: Buffer, chunkSize: number = CHUNK_SIZE): Buffer[] {
   const chunks: Buffer[] = [];
   let offset = 0;
@@ -29,17 +57,32 @@ export function splitIntoChunks(data: Buffer, chunkSize: number = CHUNK_SIZE): B
   return chunks;
 }
 
-// Calculate number of chunks for a file
+/**
+ * Calculates the number of chunks needed to store a file.
+ * @param fileSize - Total file size in bytes
+ * @param chunkSize - Size of each chunk (defaults to CHUNK_SIZE)
+ * @returns Number of chunks required
+ */
 export function calculateChunkCount(fileSize: number, chunkSize: number = CHUNK_SIZE): number {
   return Math.ceil(fileSize / chunkSize);
 }
 
-// Generate random token
+/**
+ * Generates a cryptographically secure random token.
+ * Used for session tokens and shared link URLs.
+ * @param length - Desired token length in characters (default 32)
+ * @returns Random hex string token
+ */
 export function generateToken(length: number = 32): string {
   return crypto.randomBytes(length).toString('hex').substring(0, length);
 }
 
-// Get MIME type from filename
+/**
+ * Determines the MIME type based on file extension.
+ * Used for setting Content-Type headers on downloads and file previews.
+ * @param filename - Name of the file including extension
+ * @returns MIME type string, or 'application/octet-stream' for unknown types
+ */
 export function getMimeType(filename: string): string {
   const ext = filename.toLowerCase().split('.').pop() || '';
 
@@ -98,7 +141,11 @@ export function getMimeType(filename: string): string {
   return mimeTypes[ext] || 'application/octet-stream';
 }
 
-// Format bytes to human readable
+/**
+ * Formats a byte count into a human-readable string.
+ * @param bytes - Number of bytes
+ * @returns Formatted string like "1.5 MB" or "256 KB"
+ */
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
 

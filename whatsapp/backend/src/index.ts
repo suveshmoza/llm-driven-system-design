@@ -1,3 +1,17 @@
+/**
+ * WhatsApp Backend Server Entry Point
+ *
+ * This module initializes and configures the Express server with:
+ * - Session management via Redis for distributed session storage
+ * - CORS configuration for frontend communication
+ * - RESTful API routes for auth, conversations, and messages
+ * - WebSocket server for real-time messaging
+ * - Health check endpoint for monitoring
+ *
+ * The server supports horizontal scaling by using Redis for session
+ * storage and pub/sub for cross-server WebSocket message routing.
+ */
+
 import express from 'express';
 import { createServer } from 'http';
 import session from 'express-session';

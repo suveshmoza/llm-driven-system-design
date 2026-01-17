@@ -4,8 +4,24 @@ import redis from '../db/redis.js';
 import { generateCryptogram, generateAuthCode, validateCryptogram } from '../utils/crypto.js';
 import { PaymentRequest, PaymentResult, Transaction } from '../types/index.js';
 
+/**
+ * Service responsible for processing Apple Pay transactions.
+ * Handles the complete payment flow including cryptogram generation,
+ * network authorization simulation, and transaction recording.
+ * Also manages refunds and transaction history retrieval.
+ */
 export class PaymentService {
-  // Process a payment
+  /**
+   * Processes a payment transaction for a user.
+   * Validates the card and merchant, generates a cryptogram (simulating
+   * Secure Element operation), authorizes through the simulated network,
+   * and records the transaction. Updates the Application Transaction Counter
+   * and caches recent transactions for quick access.
+   *
+   * @param userId - The ID of the user making the payment
+   * @param request - Payment details including card, amount, merchant, and type
+   * @returns PaymentResult with success status, transaction ID, and auth code or error
+   */
   async processPayment(
     userId: string,
     request: PaymentRequest
@@ -113,7 +129,18 @@ export class PaymentService {
     }
   }
 
-  // Simulate network authorization
+  /**
+   * Simulates card network authorization (Visa, Mastercard, Amex).
+   * In a real implementation, this would connect to the actual card
+   * networks for real-time authorization. Includes test scenarios
+   * for demonstrating declined transactions.
+   *
+   * @param card - The provisioned card being charged
+   * @param amount - The transaction amount
+   * @param merchant - The merchant receiving the payment
+   * @param cryptogram - The payment cryptogram for verification
+   * @returns Authorization result with approval status and auth code or decline reason
+   */
   private async simulateNetworkAuthorization(
     card: any,
     amount: number,
@@ -153,7 +180,16 @@ export class PaymentService {
     return { approved: true, authCode };
   }
 
-  // Increment Application Transaction Counter
+  /**
+   * Increments the Application Transaction Counter for a token.
+   * The ATC is used to prevent replay attacks by ensuring each
+   * cryptogram is unique. In a real Secure Element, this counter
+   * is stored in tamper-resistant hardware.
+   *
+   * @param deviceId - The device containing the token
+   * @param tokenRef - The token reference
+   * @returns The new ATC value
+   */
   private async incrementATC(deviceId: string, tokenRef: string): Promise<number> {
     const seKey = `se:${deviceId}:${tokenRef}`;
     const seData = await redis.get(seKey);
@@ -168,7 +204,15 @@ export class PaymentService {
     return 0;
   }
 
-  // Get transaction by ID
+  /**
+   * Retrieves a specific transaction by ID.
+   * Ensures the transaction belongs to the requesting user
+   * by joining with their provisioned cards.
+   *
+   * @param userId - The user's unique identifier
+   * @param transactionId - The transaction's unique identifier
+   * @returns The transaction if found and owned by user, null otherwise
+   */
   async getTransaction(
     userId: string,
     transactionId: string
@@ -182,7 +226,19 @@ export class PaymentService {
     return result.rows[0] || null;
   }
 
-  // Get user's transactions
+  /**
+   * Retrieves a paginated list of transactions for a user.
+   * Supports filtering by card ID and status. Returns transactions
+   * with card details (last4, network) for display purposes.
+   *
+   * @param userId - The user's unique identifier
+   * @param options - Query options for pagination and filtering
+   * @param options.limit - Maximum number of transactions to return (default: 50)
+   * @param options.offset - Number of transactions to skip (default: 0)
+   * @param options.cardId - Filter by specific card ID
+   * @param options.status - Filter by transaction status
+   * @returns Object with transactions array and total count
+   */
   async getTransactions(
     userId: string,
     options: {
@@ -232,7 +288,17 @@ export class PaymentService {
     };
   }
 
-  // Refund a transaction
+  /**
+   * Processes a refund for a previously approved transaction.
+   * Creates a new transaction record with negative amount and
+   * updates the original transaction status to 'refunded'.
+   * Supports partial refunds when amount is specified.
+   *
+   * @param merchantId - The merchant's unique identifier
+   * @param transactionId - The original transaction to refund
+   * @param amount - Optional partial refund amount (defaults to full refund)
+   * @returns Object with success status and refund transaction ID or error
+   */
   async refundTransaction(
     merchantId: string,
     transactionId: string,
@@ -287,4 +353,5 @@ export class PaymentService {
   }
 }
 
+/** Singleton instance of the PaymentService */
 export const paymentService = new PaymentService();

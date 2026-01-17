@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Analytics API routes for querying aggregated click data.
+ * Provides endpoints for time-series queries, campaign summaries,
+ * and real-time statistics. Supports flexible grouping and filtering.
+ */
+
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { queryAggregates, getCampaignSummary, getRealTimeStats } from '../services/aggregation.js';
@@ -5,7 +11,10 @@ import { getRealTimeGlobalClicks, getRealTimeCampaignClicks, getRealTimeAdClicks
 
 const router = Router();
 
-// Validation schema for aggregate queries
+/**
+ * Zod validation schema for aggregate query parameters.
+ * Supports time range, entity filters, and grouping options.
+ */
 const aggregateQuerySchema = z.object({
   campaign_id: z.string().optional(),
   advertiser_id: z.string().optional(),
@@ -18,7 +27,13 @@ const aggregateQuerySchema = z.object({
 
 /**
  * GET /api/v1/analytics/aggregate
- * Query aggregated click data
+ * Queries pre-aggregated click data with flexible filtering and grouping.
+ * Supports minute/hour/day granularity and country/device breakdowns.
+ *
+ * @query start_time - ISO datetime string for range start
+ * @query end_time - ISO datetime string for range end
+ * @query granularity - Time bucket size: minute, hour, or day
+ * @query group_by - Comma-separated dimensions: country, device_type
  */
 router.get('/aggregate', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -56,7 +71,12 @@ router.get('/aggregate', async (req: Request, res: Response): Promise<void> => {
 
 /**
  * GET /api/v1/analytics/campaign/:campaignId/summary
- * Get summary statistics for a campaign
+ * Returns comprehensive statistics for a specific campaign.
+ * Includes totals, fraud metrics, and top countries/devices.
+ *
+ * @param campaignId - Campaign identifier
+ * @query start_time - ISO datetime string for range start
+ * @query end_time - ISO datetime string for range end
  */
 router.get('/campaign/:campaignId/summary', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -88,7 +108,10 @@ router.get('/campaign/:campaignId/summary', async (req: Request, res: Response):
 
 /**
  * GET /api/v1/analytics/realtime
- * Get real-time click statistics from the last N minutes
+ * Returns click statistics from the last N minutes (from PostgreSQL).
+ * Useful for dashboard time-series charts.
+ *
+ * @query minutes - Lookback period in minutes (1-1440, default: 60)
  */
 router.get('/realtime', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -114,7 +137,8 @@ router.get('/realtime', async (req: Request, res: Response): Promise<void> => {
 
 /**
  * GET /api/v1/analytics/realtime/global
- * Get real-time global click counts from Redis
+ * Returns global real-time click counts directly from Redis.
+ * Fastest option for live dashboards showing system-wide metrics.
  */
 router.get('/realtime/global', async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -131,7 +155,9 @@ router.get('/realtime/global', async (_req: Request, res: Response): Promise<voi
 
 /**
  * GET /api/v1/analytics/realtime/campaign/:campaignId
- * Get real-time click counts for a specific campaign
+ * Returns real-time click counts for a specific campaign from Redis.
+ *
+ * @param campaignId - Campaign identifier
  */
 router.get('/realtime/campaign/:campaignId', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -149,7 +175,9 @@ router.get('/realtime/campaign/:campaignId', async (req: Request, res: Response)
 
 /**
  * GET /api/v1/analytics/realtime/ad/:adId
- * Get real-time click counts for a specific ad
+ * Returns real-time click counts for a specific ad from Redis.
+ *
+ * @param adId - Advertisement identifier
  */
 router.get('/realtime/ad/:adId', async (req: Request, res: Response): Promise<void> => {
   try {

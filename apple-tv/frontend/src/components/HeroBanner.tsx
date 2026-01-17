@@ -3,10 +3,30 @@ import { Play, Plus, Info } from 'lucide-react';
 import type { Content } from '../types';
 import { formatDurationHuman, formatYear } from '../utils';
 
+/**
+ * Props for the HeroBanner component.
+ */
 interface HeroBannerProps {
+  /** Featured content to display in the hero section */
   content: Content;
 }
 
+/**
+ * Full-width hero banner for featuring prominent content.
+ * Displays a large background image with content details and action buttons.
+ * Used as the primary visual element at the top of the home page.
+ *
+ * Features:
+ * - Full-viewport-height background image with gradient overlays
+ * - Content metadata (year, duration, rating, HDR badge)
+ * - Genre tags
+ * - Description text with line clamping
+ * - Play, My List, and Details action buttons
+ * - Animated title entrance
+ *
+ * @param props - HeroBannerProps with content to feature
+ * @returns Hero banner section with featured content
+ */
 export function HeroBanner({ content }: HeroBannerProps) {
   return (
     <div className="relative h-[70vh] min-h-[500px] w-full">

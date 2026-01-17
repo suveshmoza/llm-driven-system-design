@@ -2,7 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import { validateSession } from '../services/authService.js';
 import { User } from '../types/index.js';
 
-// Extend Express Request type
+/**
+ * Extends Express Request interface to include authenticated user.
+ * When auth middleware runs successfully, req.user will be populated.
+ */
 declare global {
   namespace Express {
     interface Request {
@@ -11,6 +14,14 @@ declare global {
   }
 }
 
+/**
+ * Authentication middleware that requires a valid session.
+ * Extracts token from cookie or Authorization header, validates the session,
+ * and attaches the user to the request object. Returns 401 if not authenticated.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ */
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -46,6 +57,14 @@ export async function authMiddleware(
   }
 }
 
+/**
+ * Optional authentication middleware that doesn't require a valid session.
+ * Attempts to authenticate but allows request to proceed even if unauthenticated.
+ * Useful for endpoints that behave differently for logged-in users.
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ */
 export async function optionalAuthMiddleware(
   req: Request,
   res: Response,
@@ -75,6 +94,14 @@ export async function optionalAuthMiddleware(
   }
 }
 
+/**
+ * Admin authorization middleware that requires admin role.
+ * Must be used after authMiddleware to ensure req.user is populated.
+ * Returns 403 Forbidden if user is not an admin.
+ * @param req - Express request object with user attached
+ * @param res - Express response object
+ * @param next - Express next function
+ */
 export function adminMiddleware(
   req: Request,
   res: Response,

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Direct message routes for private conversations.
+ * Handles DM channel creation and retrieval. DMs are implemented as
+ * special channels with is_dm=true and exactly 2+ members.
+ */
+
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../db/index.js';
@@ -6,7 +12,10 @@ import type { Channel } from '../types/index.js';
 
 const router = Router();
 
-// Get direct messages for current workspace
+/**
+ * GET /dms - List all direct message conversations for the current user.
+ * Returns DM channels with other member info, last message, and timestamp.
+ */
 router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const workspaceId = req.session.workspaceId;
@@ -41,7 +50,11 @@ router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Respons
   }
 });
 
-// Create or get direct message channel
+/**
+ * POST /dms - Create or get a direct message channel.
+ * If a DM with the exact same members exists, returns the existing channel.
+ * Otherwise creates a new DM channel with all specified users.
+ */
 router.post('/', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     const { user_ids } = req.body;
@@ -112,7 +125,10 @@ router.post('/', requireAuth, requireWorkspace, async (req: Request, res: Respon
   }
 });
 
-// Get DM channel details
+/**
+ * GET /dms/:id - Get details of a specific DM conversation.
+ * Requires membership in the DM. Returns channel info with member profiles.
+ */
 router.get('/:id', requireAuth, requireWorkspace, async (req: Request, res: Response): Promise<void> => {
   try {
     // Check membership

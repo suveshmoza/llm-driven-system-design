@@ -1,3 +1,10 @@
+/**
+ * Main entry point for the local delivery backend server.
+ * Initializes Express, connects to PostgreSQL and Redis,
+ * sets up WebSocket server, and configures API routes.
+ *
+ * @module index
+ */
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -15,11 +22,17 @@ import adminRoutes from './routes/admin.js';
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000');
 
-// Middleware
+/**
+ * CORS and JSON body parsing middleware.
+ * Allows cross-origin requests for frontend development.
+ */
 app.use(cors());
 app.use(express.json());
 
-// Request logging
+/**
+ * Request logging middleware.
+ * Logs HTTP method, path, status code, and response time for debugging.
+ */
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -29,7 +42,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check
+/**
+ * Health check endpoint for load balancer and monitoring.
+ * Verifies database and Redis connectivity.
+ */
 app.get('/health', async (_req, res) => {
   try {
     // Check database
@@ -53,14 +69,19 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// API Routes
+/**
+ * API Routes registration.
+ * All routes are prefixed with /api/v1 for versioning.
+ */
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/merchants', merchantRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/driver', driverRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
-// 404 handler
+/**
+ * 404 handler for unknown routes.
+ */
 app.use((_req, res) => {
   res.status(404).json({
     success: false,
@@ -68,7 +89,9 @@ app.use((_req, res) => {
   });
 });
 
-// Error handler
+/**
+ * Global error handler for unhandled exceptions.
+ */
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
@@ -77,13 +100,21 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   });
 });
 
-// Create HTTP server
+/**
+ * HTTP server instance.
+ * WebSocket server is attached to this for connection upgrades.
+ */
 const server = createServer(app);
 
-// Setup WebSocket
+/**
+ * Attach WebSocket server for real-time communication.
+ */
 setupWebSocket(server);
 
-// Start server
+/**
+ * Initializes database and Redis connections, then starts the HTTP server.
+ * Logs connection status and available endpoints.
+ */
 async function start() {
   try {
     // Connect to Redis
@@ -106,7 +137,10 @@ async function start() {
   }
 }
 
-// Graceful shutdown
+/**
+ * Graceful shutdown handlers.
+ * Closes all connections cleanly when receiving termination signals.
+ */
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down...');
   server.close();

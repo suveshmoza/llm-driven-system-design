@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Block management routes for the content editing system.
+ * Blocks are the fundamental content units that compose pages. This module
+ * handles CRUD operations and logs operations for real-time sync via CRDT.
+ */
+
 import { Router, Request, Response } from 'express';
 import pool from '../models/db.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -8,12 +14,13 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
-// All block routes require authentication
+// Apply authentication to all block routes
 router.use(authMiddleware);
 
 /**
  * GET /api/blocks
- * Get blocks for a page
+ * Lists blocks for a page, optionally filtered by parent_block_id.
+ * Returns blocks ordered by their fractional index position.
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -71,7 +78,8 @@ router.get('/', async (req: Request, res: Response) => {
 
 /**
  * POST /api/blocks
- * Create a new block
+ * Creates a new block within a page.
+ * Uses fractional indexing and logs the operation for real-time sync.
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -182,7 +190,8 @@ router.post('/', async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/blocks/:id
- * Update a block
+ * Updates block properties, content, type, or position.
+ * Increments version number and logs operation for sync.
  */
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
@@ -289,7 +298,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/blocks/:id
- * Delete a block and its children
+ * Deletes a block and all its child blocks (via cascade).
+ * Logs the deletion operation for real-time sync.
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -344,7 +354,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 /**
  * POST /api/blocks/:id/move
- * Move a block to a new position
+ * Moves a block to a new position within or between parent blocks.
+ * Recalculates fractional index position and logs the move operation.
  */
 router.post('/:id/move', async (req: Request, res: Response) => {
   try {
@@ -450,7 +461,8 @@ router.post('/:id/move', async (req: Request, res: Response) => {
 
 /**
  * POST /api/blocks/batch
- * Batch create/update/delete blocks
+ * Processes multiple block operations (insert, update, delete) atomically.
+ * Uses a database transaction to ensure all-or-nothing execution.
  */
 router.post('/batch', async (req: Request, res: Response) => {
   try {

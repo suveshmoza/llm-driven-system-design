@@ -2,12 +2,31 @@ import { Link } from '@tanstack/react-router';
 import type { Hotel } from '@/types';
 import { formatCurrency, generateStars, getAmenityLabel } from '@/utils';
 
+/**
+ * Props for the HotelCard component.
+ */
 interface HotelCardProps {
+  /** Hotel data to display */
   hotel: Hotel;
+  /** Optional check-in date to pass to hotel detail page */
   checkIn?: string;
+  /** Optional check-out date to pass to hotel detail page */
   checkOut?: string;
 }
 
+/**
+ * Clickable hotel card for search results and listings.
+ * Displays hotel image, star rating, name, location, amenities, and pricing.
+ *
+ * Links to the hotel detail page with optional date parameters preserved
+ * for availability checking.
+ *
+ * @param props - Component props
+ * @param props.hotel - Hotel data to display
+ * @param props.checkIn - Optional check-in date to preserve in link
+ * @param props.checkOut - Optional check-out date to preserve in link
+ * @returns Clickable card linking to hotel detail page
+ */
 export function HotelCard({ hotel, checkIn, checkOut }: HotelCardProps) {
   const searchParams = new URLSearchParams();
   if (checkIn) searchParams.set('checkIn', checkIn);

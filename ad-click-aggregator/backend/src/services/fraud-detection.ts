@@ -1,14 +1,33 @@
+/**
+ * @fileoverview Fraud detection service for identifying invalid ad clicks.
+ * Implements velocity-based detection (clicks per IP/user) and pattern matching.
+ * Protects advertisers from click fraud and bots while allowing legitimate traffic.
+ */
+
 import type { ClickEvent, FraudDetectionResult } from '../types/index.js';
 import { trackIpClicks, trackUserClicks } from './redis.js';
 
-// Fraud detection thresholds
-const IP_CLICK_THRESHOLD = 100; // Max clicks per IP per minute
-const USER_CLICK_THRESHOLD = 50; // Max clicks per user per minute
+/** Maximum clicks per IP per minute before flagging as fraud */
+const IP_CLICK_THRESHOLD = 100;
 
-// Known fraudulent patterns (in production, this would be from a database)
+/** Maximum clicks per user per minute before flagging as fraud */
+const USER_CLICK_THRESHOLD = 50;
+
+/**
+ * In-memory set of known fraudulent IP hashes.
+ * In production, this would be backed by a database or external service.
+ */
 const KNOWN_FRAUDULENT_IPS = new Set<string>();
+
+/**
+ * In-memory set of known fraudulent user IDs.
+ * In production, this would be backed by a database or external service.
+ */
 const KNOWN_FRAUDULENT_USERS = new Set<string>();
 
+/**
+ * Context for fraud checks including request metadata.
+ */
 export interface FraudCheckContext {
   ipHash?: string;
   userId?: string;
@@ -18,8 +37,12 @@ export interface FraudCheckContext {
 }
 
 /**
- * Detect potential fraud in a click event
- * Returns fraud detection result with reason if fraudulent
+ * Analyzes a click event for potential fraud using multiple detection strategies.
+ * Checks against known bad actors, velocity limits, and suspicious patterns.
+ * Returns confidence score (0-1) indicating likelihood of fraud.
+ *
+ * @param click - The click event to analyze
+ * @returns Detection result with fraud flag, reason, and confidence score
  */
 export async function detectFraud(click: ClickEvent): Promise<FraudDetectionResult> {
   const reasons: string[] = [];
@@ -70,7 +93,12 @@ export async function detectFraud(click: ClickEvent): Promise<FraudDetectionResu
 }
 
 /**
- * Check for suspicious click patterns
+ * Identifies suspicious click patterns that may indicate bot activity.
+ * Checks for timing anomalies and missing device fingerprint data.
+ * In production, this would integrate with ML models.
+ *
+ * @param click - The click event to analyze
+ * @returns True if suspicious patterns detected, false otherwise
  */
 function isSuspiciousPattern(click: ClickEvent): boolean {
   // Check for suspicious timing patterns (e.g., exactly on the second)
@@ -88,28 +116,40 @@ function isSuspiciousPattern(click: ClickEvent): boolean {
 }
 
 /**
- * Add an IP to the known fraudulent list
+ * Adds an IP hash to the known fraudulent list.
+ * All future clicks from this IP will be flagged with high confidence.
+ *
+ * @param ipHash - Hashed IP address to flag
  */
 export function flagFraudulentIp(ipHash: string): void {
   KNOWN_FRAUDULENT_IPS.add(ipHash);
 }
 
 /**
- * Add a user to the known fraudulent list
+ * Adds a user ID to the known fraudulent list.
+ * All future clicks from this user will be flagged with high confidence.
+ *
+ * @param userId - User identifier to flag
  */
 export function flagFraudulentUser(userId: string): void {
   KNOWN_FRAUDULENT_USERS.add(userId);
 }
 
 /**
- * Check if an IP is flagged as fraudulent
+ * Checks if an IP hash is in the known fraudulent list.
+ *
+ * @param ipHash - Hashed IP address to check
+ * @returns True if IP is flagged as fraudulent
  */
 export function isIpFlagged(ipHash: string): boolean {
   return KNOWN_FRAUDULENT_IPS.has(ipHash);
 }
 
 /**
- * Check if a user is flagged as fraudulent
+ * Checks if a user ID is in the known fraudulent list.
+ *
+ * @param userId - User identifier to check
+ * @returns True if user is flagged as fraudulent
  */
 export function isUserFlagged(userId: string): boolean {
   return KNOWN_FRAUDULENT_USERS.has(userId);

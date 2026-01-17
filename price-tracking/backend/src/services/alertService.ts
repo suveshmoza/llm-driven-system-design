@@ -3,6 +3,10 @@ import { publishAlert, cacheDelete } from '../db/redis.js';
 import { Alert, UserProduct, Product } from '../types/index.js';
 import logger from '../utils/logger.js';
 
+/**
+ * Represents a price change event to be processed for alert generation.
+ * Used by the scraper worker when a product's price changes.
+ */
 export interface PriceChangeEvent {
   product_id: string;
   old_price: number | null;
@@ -10,6 +14,13 @@ export interface PriceChangeEvent {
   change_pct: number;
 }
 
+/**
+ * Processes a price change event and creates alerts for subscribed users.
+ * Checks each user's subscription settings (target price, notify on any drop)
+ * and generates appropriate alerts. Alerts are persisted to the database
+ * and published via Redis for real-time notification delivery.
+ * @param event - The price change event containing old and new prices
+ */
 export async function processPriceChange(event: PriceChangeEvent): Promise<void> {
   const { product_id, old_price, new_price } = event;
 
@@ -68,6 +79,12 @@ export async function processPriceChange(event: PriceChangeEvent): Promise<void>
   }
 }
 
+/**
+ * Creates alert records in the database and publishes to Redis.
+ * Batch processes multiple alerts for efficiency.
+ * Invalidates user alert caches to ensure fresh data on next read.
+ * @param alerts - Array of alert objects to create
+ */
 async function createAlerts(
   alerts: Array<{
     user_id: string;
@@ -100,6 +117,14 @@ async function createAlerts(
   }
 }
 
+/**
+ * Retrieves a user's alerts with associated product information.
+ * Supports filtering to show only unread alerts.
+ * @param userId - The user ID
+ * @param unreadOnly - If true, only returns unread alerts
+ * @param limit - Maximum number of alerts to return (default: 50)
+ * @returns Array of alerts with embedded product objects
+ */
 export async function getUserAlerts(
   userId: string,
   unreadOnly: boolean = false,
@@ -127,6 +152,13 @@ export async function getUserAlerts(
   }));
 }
 
+/**
+ * Marks a single alert as read.
+ * Invalidates the user's alert cache.
+ * @param alertId - The alert ID to mark as read
+ * @param userId - The user ID (for authorization)
+ * @returns The updated alert or null if not found/unauthorized
+ */
 export async function markAlertAsRead(alertId: string, userId: string): Promise<Alert | null> {
   const result = await query<Alert>(
     `UPDATE alerts
@@ -143,6 +175,12 @@ export async function markAlertAsRead(alertId: string, userId: string): Promise<
   return null;
 }
 
+/**
+ * Marks all of a user's alerts as read.
+ * Used for "mark all as read" functionality.
+ * @param userId - The user ID
+ * @returns The number of alerts marked as read
+ */
 export async function markAllAlertsAsRead(userId: string): Promise<number> {
   const result = await query<{ id: string }>(
     `UPDATE alerts
@@ -156,6 +194,12 @@ export async function markAllAlertsAsRead(userId: string): Promise<number> {
   return result.length;
 }
 
+/**
+ * Gets the count of unread alerts for a user.
+ * Used for badge display in the navigation header.
+ * @param userId - The user ID
+ * @returns Number of unread alerts
+ */
 export async function getUnreadAlertCount(userId: string): Promise<number> {
   const result = await queryOne<{ count: number }>(
     'SELECT COUNT(*)::integer as count FROM alerts WHERE user_id = $1 AND is_read = false',
@@ -164,6 +208,12 @@ export async function getUnreadAlertCount(userId: string): Promise<number> {
   return result?.count || 0;
 }
 
+/**
+ * Permanently deletes an alert.
+ * @param alertId - The alert ID to delete
+ * @param userId - The user ID (for authorization)
+ * @returns True if deleted, false if not found/unauthorized
+ */
 export async function deleteAlert(alertId: string, userId: string): Promise<boolean> {
   const result = await query<{ id: string }>(
     'DELETE FROM alerts WHERE id = $1 AND user_id = $2 RETURNING id',

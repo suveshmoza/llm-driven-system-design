@@ -1,10 +1,28 @@
 import type { Bid } from '../types';
 
+/**
+ * Props for the BidHistory component.
+ */
 interface BidHistoryProps {
+  /** Array of bids to display, ordered by amount descending */
   bids: Bid[];
+  /** Current user's ID to highlight their bids */
   currentUserId?: string;
 }
 
+/**
+ * Component displaying the bid history for an auction.
+ *
+ * Shows all bids in chronological order with visual distinction for:
+ * - Highest bid (green highlighting)
+ * - Current user's bids (ring highlight)
+ * - Auto-bids (badge indicator)
+ *
+ * Displays empty state message when no bids exist.
+ *
+ * @param props - Component props with bids array and current user ID
+ * @returns JSX element for the bid history list
+ */
 export function BidHistory({ bids, currentUserId }: BidHistoryProps) {
   if (bids.length === 0) {
     return (

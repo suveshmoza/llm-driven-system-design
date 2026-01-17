@@ -1,7 +1,18 @@
+/**
+ * Registration page route component.
+ * Handles new user account creation for both riders and drivers.
+ */
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Registration page with user type selection (rider/driver).
+ * Driver registration includes additional vehicle information fields.
+ * Redirects to home page on successful registration.
+ *
+ * @returns Registration page component
+ */
 function RegisterPage() {
   const [userType, setUserType] = useState<'rider' | 'driver'>('rider');
   const [formData, setFormData] = useState({

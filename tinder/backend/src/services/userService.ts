@@ -362,7 +362,13 @@ export class UserService {
     );
   }
 
-  // Get all users (admin)
+  /**
+   * Retrieves a paginated list of all users for admin dashboard.
+   * Includes total count for pagination UI.
+   * @param limit - Maximum number of users to return (default: 50)
+   * @param offset - Number of users to skip (for pagination)
+   * @returns Object with users array and total count
+   */
   async getAllUsers(limit: number = 50, offset: number = 0): Promise<{ users: User[]; total: number }> {
     const [usersResult, countResult] = await Promise.all([
       pool.query(

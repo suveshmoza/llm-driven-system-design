@@ -2,9 +2,18 @@ import { Router, Request, Response } from 'express';
 import { query } from '../db/index.js';
 import type { Call, CallParticipant } from '../types/index.js';
 
+/**
+ * Express router for call-related API endpoints.
+ * Provides call history retrieval and call detail lookup.
+ */
 const router = Router();
 
-// Get call history for a user
+/**
+ * GET /api/calls/history/:userId
+ * Retrieves paginated call history for a specific user.
+ * Includes participant details with user information.
+ * Supports limit and offset query parameters for pagination.
+ */
 router.get('/history/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
@@ -45,7 +54,12 @@ router.get('/history/:userId', async (req: Request, res: Response) => {
   }
 });
 
-// Get call details
+/**
+ * GET /api/calls/:id
+ * Retrieves detailed information for a specific call.
+ * Includes all participants with their user profiles.
+ * Returns 404 if the call does not exist.
+ */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

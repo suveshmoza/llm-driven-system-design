@@ -8,12 +8,21 @@ import {
 } from '../services/alertService.js';
 import { authMiddleware } from '../middleware/auth.js';
 
+/**
+ * Alert routes for managing price drop notifications.
+ * All routes require authentication. Users can view, mark as read,
+ * and delete alerts triggered by price changes.
+ * @module routes/alerts
+ */
 const router = Router();
 
-// All routes require authentication
+/** All alert routes require authentication */
 router.use(authMiddleware);
 
-// Get user's alerts
+/**
+ * GET / - Retrieves all alerts for the authenticated user.
+ * Query params: unread_only (boolean), limit (number, default: 50)
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { unread_only, limit = '50' } = req.query;
@@ -28,7 +37,10 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get unread alert count
+/**
+ * GET /count - Returns the count of unread alerts.
+ * Used for notification badge in the header.
+ */
 router.get('/count', async (req: Request, res: Response) => {
   try {
     const count = await getUnreadAlertCount(req.user!.id);
@@ -38,7 +50,9 @@ router.get('/count', async (req: Request, res: Response) => {
   }
 });
 
-// Mark alert as read
+/**
+ * PATCH /:alertId/read - Marks a single alert as read.
+ */
 router.patch('/:alertId/read', async (req: Request, res: Response) => {
   try {
     const { alertId } = req.params;
@@ -55,7 +69,10 @@ router.patch('/:alertId/read', async (req: Request, res: Response) => {
   }
 });
 
-// Mark all alerts as read
+/**
+ * POST /read-all - Marks all of user's alerts as read.
+ * Convenience endpoint for clearing notification badge.
+ */
 router.post('/read-all', async (req: Request, res: Response) => {
   try {
     const count = await markAllAlertsAsRead(req.user!.id);
@@ -65,7 +82,9 @@ router.post('/read-all', async (req: Request, res: Response) => {
   }
 });
 
-// Delete alert
+/**
+ * DELETE /:alertId - Permanently deletes an alert.
+ */
 router.delete('/:alertId', async (req: Request, res: Response) => {
   try {
     const { alertId } = req.params;

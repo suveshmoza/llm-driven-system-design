@@ -511,6 +511,9 @@ export class OrderService {
     console.log('Limit order matcher started');
   }
 
+  /**
+   * Stops the background limit order matcher.
+   */
   stopLimitOrderMatcher(): void {
     if (this.executionInterval) {
       clearInterval(this.executionInterval);
@@ -518,6 +521,12 @@ export class OrderService {
     }
   }
 
+  /**
+   * Checks all pending limit/stop orders and executes matching ones.
+   * For limit buys, executes when ask <= limit price.
+   * For limit sells, executes when bid >= limit price.
+   * For stop orders, triggers based on stop price thresholds.
+   */
   private async matchLimitOrders(): Promise<void> {
     try {
       // Get all pending/submitted limit orders
@@ -569,4 +578,8 @@ export class OrderService {
   }
 }
 
+/**
+ * Singleton instance of the OrderService.
+ * Manages all order operations for the trading platform.
+ */
 export const orderService = new OrderService();

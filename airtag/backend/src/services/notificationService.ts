@@ -2,9 +2,18 @@ import pool from '../db/pool.js';
 import { Notification } from '../types/index.js';
 import redis from '../db/redis.js';
 
+/**
+ * Service for managing user notifications.
+ * Handles creating, fetching, and managing notifications for device events,
+ * security alerts, and system messages. Uses Redis pub/sub for real-time delivery.
+ */
 export class NotificationService {
   /**
-   * Create a new notification
+   * Create a new notification and broadcast it via Redis pub/sub.
+   * Clients subscribed to the user's channel receive real-time updates.
+   *
+   * @param data - Notification data including user, type, and message
+   * @returns The created notification
    */
   async createNotification(data: {
     user_id: string;
@@ -30,7 +39,11 @@ export class NotificationService {
   }
 
   /**
-   * Get notifications for a user
+   * Get notifications for a user with optional filtering.
+   *
+   * @param userId - The ID of the user to fetch notifications for
+   * @param options - Filter options for unread-only and limit
+   * @returns Array of notifications sorted by creation date descending
    */
   async getNotifications(
     userId: string,
@@ -50,7 +63,12 @@ export class NotificationService {
   }
 
   /**
-   * Mark a notification as read
+   * Mark a single notification as read.
+   * Verifies the notification belongs to the user.
+   *
+   * @param notificationId - The UUID of the notification
+   * @param userId - The ID of the user who should own the notification
+   * @returns True if the notification was updated, false if not found
    */
   async markAsRead(notificationId: string, userId: string): Promise<boolean> {
     const result = await pool.query(
@@ -61,7 +79,10 @@ export class NotificationService {
   }
 
   /**
-   * Mark all notifications as read for a user
+   * Mark all unread notifications as read for a user.
+   *
+   * @param userId - The ID of the user
+   * @returns Number of notifications that were marked as read
    */
   async markAllAsRead(userId: string): Promise<number> {
     const result = await pool.query(
@@ -72,7 +93,12 @@ export class NotificationService {
   }
 
   /**
-   * Delete a notification
+   * Delete a notification.
+   * Verifies the notification belongs to the user.
+   *
+   * @param notificationId - The UUID of the notification
+   * @param userId - The ID of the user who should own the notification
+   * @returns True if the notification was deleted, false if not found
    */
   async deleteNotification(notificationId: string, userId: string): Promise<boolean> {
     const result = await pool.query(
@@ -83,7 +109,11 @@ export class NotificationService {
   }
 
   /**
-   * Get unread count for a user
+   * Get the count of unread notifications for a user.
+   * Used for displaying badge counts in the UI.
+   *
+   * @param userId - The ID of the user
+   * @returns Count of unread notifications
    */
   async getUnreadCount(userId: string): Promise<number> {
     const result = await pool.query(
@@ -94,7 +124,10 @@ export class NotificationService {
   }
 
   /**
-   * Get notification statistics (for admin)
+   * Get notification statistics for the admin dashboard.
+   * Provides total counts, unread counts, and breakdown by type.
+   *
+   * @returns Statistics object with counts and breakdowns
    */
   async getNotificationStats(): Promise<{
     total: number;

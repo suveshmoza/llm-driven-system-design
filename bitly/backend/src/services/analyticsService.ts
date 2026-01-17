@@ -1,7 +1,12 @@
 import { query } from '../utils/database.js';
 import { ClickEvent, ClickEventInput, UrlAnalytics } from '../models/types.js';
 
-// Parse user agent to detect device type
+/**
+ * Parses a User-Agent string to determine device type.
+ * Used for analytics to segment traffic by device category.
+ * @param userAgent - The User-Agent header value
+ * @returns Device type: 'mobile', 'tablet', 'desktop', 'bot', or 'unknown'
+ */
 function parseDeviceType(userAgent: string | undefined): string {
   if (!userAgent) return 'unknown';
 
@@ -19,7 +24,11 @@ function parseDeviceType(userAgent: string | undefined): string {
   return 'desktop';
 }
 
-// Record a click event
+/**
+ * Records a click event in the database.
+ * Called asynchronously during redirects to capture analytics data.
+ * @param input - Click event data including short code and request metadata
+ */
 export async function recordClick(input: ClickEventInput): Promise<void> {
   const deviceType = parseDeviceType(input.user_agent);
 
@@ -36,7 +45,12 @@ export async function recordClick(input: ClickEventInput): Promise<void> {
   );
 }
 
-// Get analytics for a URL
+/**
+ * Retrieves aggregated analytics data for a single URL.
+ * Includes total clicks, daily trends, referrer sources, and device breakdown.
+ * @param shortCode - The short code to get analytics for
+ * @returns Promise resolving to analytics data or null if URL not found
+ */
 export async function getUrlAnalytics(shortCode: string): Promise<UrlAnalytics | null> {
   // Get total clicks
   const totalResult = await query<{ count: string }>(
@@ -106,7 +120,13 @@ export async function getUrlAnalytics(shortCode: string): Promise<UrlAnalytics |
   };
 }
 
-// Get recent clicks for a URL
+/**
+ * Retrieves recent individual click events for a URL.
+ * Used for detailed click-level analysis.
+ * @param shortCode - The short code to get clicks for
+ * @param limit - Maximum number of clicks to return (default: 100)
+ * @returns Promise resolving to array of click events
+ */
 export async function getRecentClicks(
   shortCode: string,
   limit: number = 100
@@ -120,7 +140,11 @@ export async function getRecentClicks(
   );
 }
 
-// Get global analytics (for admin dashboard)
+/**
+ * Retrieves platform-wide analytics data for the admin dashboard.
+ * Includes total clicks, today's activity, hourly trends, and top URLs.
+ * @returns Promise resolving to global analytics data
+ */
 export async function getGlobalAnalytics(): Promise<{
   totalClicks: number;
   clicksToday: number;

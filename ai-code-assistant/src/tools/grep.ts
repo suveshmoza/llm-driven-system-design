@@ -1,5 +1,12 @@
 /**
- * Grep Tool - Search file contents
+ * Grep Tool - Search file contents.
+ *
+ * This tool enables the AI assistant to search for patterns in file contents
+ * across the codebase. It's essential for finding usages, understanding code
+ * relationships, and locating specific implementations. Uses regex patterns
+ * for powerful and flexible searching.
+ *
+ * @module tools/grep
  */
 
 import * as fs from 'fs/promises';
@@ -7,12 +14,30 @@ import * as path from 'path';
 import { glob as globAsync } from 'glob';
 import type { Tool, ToolContext, ToolResult } from '../types/index.js';
 
+/**
+ * Represents a single match from a grep search.
+ */
 interface GrepMatch {
+  /** Relative path to the file containing the match */
   file: string;
+  /** Line number where the match was found (1-indexed) */
   line: number;
+  /** The content of the matching line */
   content: string;
 }
 
+/**
+ * GrepTool implementation for searching file contents.
+ *
+ * Features:
+ * - Searches using regular expression patterns
+ * - Supports case-insensitive search
+ * - Can filter files by glob pattern
+ * - Returns file path, line number, and matching content
+ * - Limits results to prevent overwhelming output
+ *
+ * This tool does not require user approval as it only reads files.
+ */
 export const GrepTool: Tool = {
   name: 'Grep',
   description: 'Search for a pattern in file contents. Returns matching lines with context.',

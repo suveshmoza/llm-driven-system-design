@@ -3,6 +3,18 @@ import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Eye, EyeOff } from 'lucide-react';
 
+/**
+ * Login page component for user authentication.
+ * Provides email/password form with password visibility toggle.
+ * Redirects to profile selection on successful login.
+ *
+ * Features:
+ * - Email and password input fields
+ * - Show/hide password toggle
+ * - Error message display
+ * - Link to registration page
+ * - Demo credentials display for testing
+ */
 function LoginPage() {
   const navigate = useNavigate();
   const { login, isLoading, error, clearError } = useAuthStore();
@@ -116,6 +128,10 @@ function LoginPage() {
   );
 }
 
+/**
+ * Route configuration for the login page (/login).
+ * Provides user authentication entry point.
+ */
 export const Route = createFileRoute('/login')({
   component: LoginPage,
 });

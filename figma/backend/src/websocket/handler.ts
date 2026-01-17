@@ -6,6 +6,10 @@ import { fileService } from '../services/fileService.js';
 import { presenceService } from '../services/presenceService.js';
 import { operationService } from '../services/operationService.js';
 
+/**
+ * Extended WebSocket with additional properties for tracking user state.
+ * Adds user identification and file subscription information.
+ */
 interface ExtendedWebSocket extends WebSocket {
   id: string;
   userId?: string;
@@ -15,13 +19,32 @@ interface ExtendedWebSocket extends WebSocket {
   isAlive: boolean;
 }
 
+/**
+ * Map of file IDs to connected WebSocket clients.
+ * Enables broadcasting to all users viewing a specific file.
+ */
 // Map of fileId -> Set of connected clients
 const fileClients = new Map<string, Set<ExtendedWebSocket>>();
 
+/**
+ * Pending operations awaiting batch broadcast.
+ * Operations are batched for network efficiency.
+ */
 // Pending operations batch
 const pendingOperations = new Map<string, Operation[]>();
+
+/**
+ * Batch interval for operation broadcasts in milliseconds.
+ * Trades off latency for reduced network overhead.
+ */
 const BATCH_INTERVAL = 50; // 50ms batching window
 
+/**
+ * Sets up the WebSocket server for real-time collaboration.
+ * Handles client connections, message routing, and heartbeat monitoring.
+ * @param server - The HTTP server to attach the WebSocket server to
+ * @returns The configured WebSocketServer instance
+ */
 export function setupWebSocket(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -90,6 +113,11 @@ export function setupWebSocket(server: Server): WebSocketServer {
   return wss;
 }
 
+/**
+ * Routes incoming WebSocket messages to appropriate handlers.
+ * @param ws - The WebSocket connection
+ * @param message - The parsed message to handle
+ */
 async function handleMessage(ws: ExtendedWebSocket, message: WSMessage): Promise<void> {
   switch (message.type) {
     case 'subscribe':
@@ -112,6 +140,12 @@ async function handleMessage(ws: ExtendedWebSocket, message: WSMessage): Promise
   }
 }
 
+/**
+ * Handles a client subscribing to a file for real-time updates.
+ * Sends current file state and presence, notifies other users.
+ * @param ws - The WebSocket connection
+ * @param message - The subscribe message with file and user info
+ */
 async function handleSubscribe(ws: ExtendedWebSocket, message: WSMessage): Promise<void> {
   const payload = message.payload as {
     fileId: string;
@@ -182,6 +216,11 @@ async function handleSubscribe(ws: ExtendedWebSocket, message: WSMessage): Promi
   console.log(`User ${userName} (${userId}) subscribed to file ${fileId}`);
 }
 
+/**
+ * Handles a client unsubscribing from a file.
+ * Cleans up presence and notifies remaining users.
+ * @param ws - The WebSocket connection
+ */
 async function handleUnsubscribe(ws: ExtendedWebSocket): Promise<void> {
   if (!ws.fileId) return;
 
@@ -214,6 +253,12 @@ async function handleUnsubscribe(ws: ExtendedWebSocket): Promise<void> {
   ws.fileId = undefined;
 }
 
+/**
+ * Handles incoming design operations from a client.
+ * Processes, stores, acknowledges, and broadcasts operations.
+ * @param ws - The WebSocket connection
+ * @param message - The operation message with operations array
+ */
 async function handleOperation(ws: ExtendedWebSocket, message: WSMessage): Promise<void> {
   if (!ws.fileId || !ws.userId) {
     sendError(ws, 'Not subscribed to any file');
@@ -260,6 +305,12 @@ async function handleOperation(ws: ExtendedWebSocket, message: WSMessage): Promi
   });
 }
 
+/**
+ * Handles presence updates from a client (cursor, selection, viewport).
+ * Broadcasts immediately to other users for low-latency collaboration.
+ * @param ws - The WebSocket connection
+ * @param message - The presence message with cursor/selection data
+ */
 async function handlePresence(ws: ExtendedWebSocket, message: WSMessage): Promise<void> {
   if (!ws.fileId || !ws.userId) {
     return;
@@ -287,6 +338,12 @@ async function handlePresence(ws: ExtendedWebSocket, message: WSMessage): Promis
   }, ws);
 }
 
+/**
+ * Handles a sync request from a client.
+ * Returns current file state and any operations since the given timestamp.
+ * @param ws - The WebSocket connection
+ * @param message - The sync message with optional sinceTimestamp
+ */
 async function handleSync(ws: ExtendedWebSocket, message: WSMessage): Promise<void> {
   if (!ws.fileId) {
     sendError(ws, 'Not subscribed to any file');
@@ -320,17 +377,33 @@ async function handleSync(ws: ExtendedWebSocket, message: WSMessage): Promise<vo
   });
 }
 
+/**
+ * Handles WebSocket disconnection.
+ * Cleans up resources and notifies other users.
+ * @param ws - The disconnected WebSocket
+ */
 function handleDisconnect(ws: ExtendedWebSocket): void {
   console.log(`WebSocket client disconnected: ${ws.id}`);
   handleUnsubscribe(ws);
 }
 
+/**
+ * Sends a message to a single WebSocket client.
+ * Checks connection state before sending.
+ * @param ws - The target WebSocket
+ * @param message - The message to send
+ */
 function send(ws: ExtendedWebSocket, message: WSMessage): void {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(message));
   }
 }
 
+/**
+ * Sends an error message to a WebSocket client.
+ * @param ws - The target WebSocket
+ * @param error - The error message string
+ */
 function sendError(ws: ExtendedWebSocket, error: string): void {
   send(ws, {
     type: 'error',

@@ -175,6 +175,12 @@ export const api = {
     return handleResponse<{ auction: import('../types').Auction }>(response);
   },
 
+  /**
+   * Deletes an auction (only available before any bids are placed).
+   *
+   * @param id - Auction ID to delete
+   * @returns Confirmation message
+   */
   async deleteAuction(id: string) {
     const response = await fetch(`${API_BASE}/auctions/${id}`, {
       method: 'DELETE',
@@ -183,6 +189,13 @@ export const api = {
     return handleResponse<{ message: string }>(response);
   },
 
+  /**
+   * Adds an auction to the user's watchlist.
+   * Users receive notifications for watched auctions.
+   *
+   * @param id - Auction ID to watch
+   * @returns Confirmation message
+   */
   async watchAuction(id: string) {
     const response = await fetch(`${API_BASE}/auctions/${id}/watch`, {
       method: 'POST',
@@ -191,6 +204,12 @@ export const api = {
     return handleResponse<{ message: string }>(response);
   },
 
+  /**
+   * Removes an auction from the user's watchlist.
+   *
+   * @param id - Auction ID to unwatch
+   * @returns Confirmation message
+   */
   async unwatchAuction(id: string) {
     const response = await fetch(`${API_BASE}/auctions/${id}/watch`, {
       method: 'DELETE',
@@ -199,6 +218,11 @@ export const api = {
     return handleResponse<{ message: string }>(response);
   },
 
+  /**
+   * Retrieves all auctions in the user's watchlist.
+   *
+   * @returns List of watched auctions
+   */
   async getWatchlist() {
     const response = await fetch(`${API_BASE}/auctions/user/watchlist`, {
       credentials: 'include',
@@ -206,6 +230,11 @@ export const api = {
     return handleResponse<{ auctions: import('../types').Auction[] }>(response);
   },
 
+  /**
+   * Retrieves all auctions created by the current user.
+   *
+   * @returns List of user's auction listings
+   */
   async getSellingAuctions() {
     const response = await fetch(`${API_BASE}/auctions/user/selling`, {
       credentials: 'include',
@@ -213,6 +242,11 @@ export const api = {
     return handleResponse<{ auctions: import('../types').Auction[] }>(response);
   },
 
+  /**
+   * Retrieves auctions where the user has placed bids.
+   *
+   * @returns List of auctions with user's bid activity
+   */
   async getBidHistory() {
     const response = await fetch(`${API_BASE}/auctions/user/bids`, {
       credentials: 'include',
@@ -220,7 +254,16 @@ export const api = {
     return handleResponse<{ auctions: import('../types').Auction[] }>(response);
   },
 
-  // Bids
+  // ============ Bids ============
+
+  /**
+   * Places a manual bid on an auction.
+   * Uses optimistic locking to prevent race conditions.
+   *
+   * @param auctionId - Target auction ID
+   * @param amount - Bid amount in dollars
+   * @returns Bid result including new price and winning status
+   */
   async placeBid(auctionId: string, amount: number) {
     const response = await fetch(`${API_BASE}/bids/${auctionId}`, {
       method: 'POST',
@@ -235,6 +278,14 @@ export const api = {
     }>(response);
   },
 
+  /**
+   * Configures automatic bidding for an auction.
+   * System will automatically outbid competitors up to the max amount.
+   *
+   * @param auctionId - Target auction ID
+   * @param maxAmount - Maximum amount willing to bid
+   * @returns Auto-bid configuration and current status
+   */
   async setAutoBid(auctionId: string, maxAmount: number) {
     const response = await fetch(`${API_BASE}/bids/${auctionId}/auto`, {
       method: 'POST',
@@ -249,6 +300,12 @@ export const api = {
     }>(response);
   },
 
+  /**
+   * Cancels automatic bidding for an auction.
+   *
+   * @param auctionId - Target auction ID
+   * @returns Confirmation message
+   */
   async cancelAutoBid(auctionId: string) {
     const response = await fetch(`${API_BASE}/bids/${auctionId}/auto`, {
       method: 'DELETE',
@@ -257,6 +314,12 @@ export const api = {
     return handleResponse<{ message: string }>(response);
   },
 
+  /**
+   * Retrieves bid history for an auction.
+   *
+   * @param auctionId - Target auction ID
+   * @returns List of bids in chronological order
+   */
   async getBids(auctionId: string) {
     const response = await fetch(`${API_BASE}/bids/${auctionId}`, {
       credentials: 'include',
@@ -264,7 +327,14 @@ export const api = {
     return handleResponse<{ bids: import('../types').Bid[] }>(response);
   },
 
-  // Notifications
+  // ============ Notifications ============
+
+  /**
+   * Retrieves user notifications (outbid, won, sold, etc.).
+   *
+   * @param unreadOnly - If true, only returns unread notifications
+   * @returns Notification list and unread count
+   */
   async getNotifications(unreadOnly = false) {
     const response = await fetch(
       `${API_BASE}/notifications?unread_only=${unreadOnly}`,
@@ -278,6 +348,12 @@ export const api = {
     }>(response);
   },
 
+  /**
+   * Marks a single notification as read.
+   *
+   * @param id - Notification ID
+   * @returns Updated notification
+   */
   async markNotificationRead(id: string) {
     const response = await fetch(`${API_BASE}/notifications/${id}/read`, {
       method: 'PUT',
@@ -286,6 +362,11 @@ export const api = {
     return handleResponse<{ notification: import('../types').Notification }>(response);
   },
 
+  /**
+   * Marks all notifications as read in bulk.
+   *
+   * @returns Confirmation message
+   */
   async markAllNotificationsRead() {
     const response = await fetch(`${API_BASE}/notifications/read-all`, {
       method: 'PUT',
@@ -294,7 +375,14 @@ export const api = {
     return handleResponse<{ message: string }>(response);
   },
 
-  // Admin
+  // ============ Admin ============
+
+  /**
+   * Fetches platform-wide statistics for admin dashboard.
+   * Includes user counts, auction stats, and WebSocket metrics.
+   *
+   * @returns Platform statistics
+   */
   async getAdminStats() {
     const response = await fetch(`${API_BASE}/admin/stats`, {
       credentials: 'include',
@@ -312,6 +400,15 @@ export const api = {
     }>(response);
   },
 
+  /**
+   * Fetches paginated list of users for admin management.
+   *
+   * @param params - Optional pagination and search parameters
+   * @param params.page - Page number
+   * @param params.limit - Users per page
+   * @param params.search - Search term for username/email
+   * @returns List of users
+   */
   async getAdminUsers(params?: { page?: number; limit?: number; search?: string }) {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -325,6 +422,14 @@ export const api = {
     return handleResponse<{ users: import('../types').User[] }>(response);
   },
 
+  /**
+   * Updates a user's role (user or admin).
+   * Admin-only operation.
+   *
+   * @param userId - Target user ID
+   * @param role - New role to assign
+   * @returns Updated user data
+   */
   async updateUserRole(userId: string, role: 'user' | 'admin') {
     const response = await fetch(`${API_BASE}/admin/users/${userId}/role`, {
       method: 'PUT',
@@ -335,6 +440,13 @@ export const api = {
     return handleResponse<{ user: import('../types').User }>(response);
   },
 
+  /**
+   * Forces an auction to close immediately.
+   * Admin emergency action for problematic auctions.
+   *
+   * @param id - Auction ID to force close
+   * @returns Confirmation message
+   */
   async forceCloseAuction(id: string) {
     const response = await fetch(`${API_BASE}/admin/auctions/${id}/close`, {
       method: 'POST',

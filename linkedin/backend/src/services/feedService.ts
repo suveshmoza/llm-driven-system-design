@@ -3,7 +3,15 @@ import { cacheGet, cacheSet, cacheDel } from '../utils/redis.js';
 import { getFirstDegreeConnections } from './connectionService.js';
 import type { Post, PostComment, User } from '../types/index.js';
 
-// Create a post
+/**
+ * Creates a new post in the feed.
+ * Invalidates feed caches for the author's connections so they see the new post.
+ *
+ * @param userId - The author's user ID
+ * @param content - The text content of the post
+ * @param imageUrl - Optional image attachment URL
+ * @returns The newly created post
+ */
 export async function createPost(
   userId: number,
   content: string,
@@ -25,7 +33,12 @@ export async function createPost(
   return post!;
 }
 
-// Get post by ID
+/**
+ * Retrieves a single post by ID with author information.
+ *
+ * @param postId - The post's unique identifier
+ * @returns The post with author details, or null if not found
+ */
 export async function getPostById(postId: number): Promise<Post | null> {
   return queryOne<Post>(
     `SELECT p.*,
@@ -43,7 +56,16 @@ export async function getPostById(postId: number): Promise<Post | null> {
   );
 }
 
-// Update post
+/**
+ * Updates an existing post.
+ * Only the author can modify their posts.
+ *
+ * @param postId - The post's unique identifier
+ * @param userId - The user ID (for ownership verification)
+ * @param content - The new post content
+ * @param imageUrl - Optional new image URL
+ * @returns The updated post, or null if not found/unauthorized
+ */
 export async function updatePost(
   postId: number,
   userId: number,
@@ -58,7 +80,14 @@ export async function updatePost(
   );
 }
 
-// Delete post
+/**
+ * Deletes a post from the feed.
+ * Only the author can delete their posts.
+ *
+ * @param postId - The post's unique identifier
+ * @param userId - The user ID (for ownership verification)
+ * @returns True if deleted, false if not found/unauthorized
+ */
 export async function deletePost(postId: number, userId: number): Promise<boolean> {
   const count = await execute(
     `DELETE FROM posts WHERE id = $1 AND user_id = $2`,
@@ -67,7 +96,15 @@ export async function deletePost(postId: number, userId: number): Promise<boolea
   return count > 0;
 }
 
-// Get user's posts
+/**
+ * Retrieves posts by a specific user.
+ * Used for profile pages to show a user's activity.
+ *
+ * @param userId - The author's user ID
+ * @param offset - Number of posts to skip (default: 0)
+ * @param limit - Maximum posts to return (default: 20)
+ * @returns Array of posts with author information
+ */
 export async function getUserPosts(userId: number, offset = 0, limit = 20): Promise<Post[]> {
   return query<Post>(
     `SELECT p.*,
@@ -87,7 +124,19 @@ export async function getUserPosts(userId: number, offset = 0, limit = 20): Prom
   );
 }
 
-// Get feed for user (posts from connections)
+/**
+ * Generates a personalized feed for a user.
+ * Shows posts from the user and their 1st-degree connections.
+ * Posts are ranked using a multi-factor scoring algorithm:
+ * - Engagement (likes + comments * 2) weighted at 30%
+ * - Recency with time decay weighted at 50%
+ * - User's own posts get a 20-point boost
+ *
+ * @param userId - The user viewing the feed
+ * @param offset - Number of posts to skip (default: 0)
+ * @param limit - Maximum posts to return (default: 20)
+ * @returns Array of ranked posts with author info and like status
+ */
 export async function getFeed(
   userId: number,
   offset = 0,
@@ -132,7 +181,14 @@ export async function getFeed(
   return posts;
 }
 
-// Like a post
+/**
+ * Adds a like to a post.
+ * Idempotent - calling multiple times has no additional effect.
+ * Updates the post's like count for display.
+ *
+ * @param userId - The user liking the post
+ * @param postId - The post to like
+ */
 export async function likePost(userId: number, postId: number): Promise<void> {
   await execute(
     `INSERT INTO post_likes (user_id, post_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -144,7 +200,13 @@ export async function likePost(userId: number, postId: number): Promise<void> {
   );
 }
 
-// Unlike a post
+/**
+ * Removes a like from a post.
+ * Updates the post's like count for display.
+ *
+ * @param userId - The user unliking the post
+ * @param postId - The post to unlike
+ */
 export async function unlikePost(userId: number, postId: number): Promise<void> {
   await execute(
     `DELETE FROM post_likes WHERE user_id = $1 AND post_id = $2`,
@@ -156,7 +218,15 @@ export async function unlikePost(userId: number, postId: number): Promise<void> 
   );
 }
 
-// Add comment
+/**
+ * Adds a comment to a post.
+ * Increments the post's comment count for display.
+ *
+ * @param postId - The post to comment on
+ * @param userId - The user writing the comment
+ * @param content - The comment text
+ * @returns The newly created comment
+ */
 export async function addComment(
   postId: number,
   userId: number,
@@ -177,7 +247,15 @@ export async function addComment(
   return comment!;
 }
 
-// Get comments for a post
+/**
+ * Retrieves comments for a post with author information.
+ * Ordered chronologically (oldest first for threaded display).
+ *
+ * @param postId - The post's unique identifier
+ * @param offset - Number of comments to skip (default: 0)
+ * @param limit - Maximum comments to return (default: 50)
+ * @returns Array of comments with author details
+ */
 export async function getPostComments(postId: number, offset = 0, limit = 50): Promise<PostComment[]> {
   return query<PostComment>(
     `SELECT c.*,
@@ -197,7 +275,15 @@ export async function getPostComments(postId: number, offset = 0, limit = 50): P
   );
 }
 
-// Delete comment
+/**
+ * Deletes a comment from a post.
+ * Only the comment author can delete it.
+ * Decrements the post's comment count.
+ *
+ * @param commentId - The comment's unique identifier
+ * @param userId - The user ID (for ownership verification)
+ * @returns True if deleted, false if not found/unauthorized
+ */
 export async function deleteComment(commentId: number, userId: number): Promise<boolean> {
   const comment = await queryOne<{ post_id: number }>(
     `DELETE FROM post_comments WHERE id = $1 AND user_id = $2 RETURNING post_id`,
@@ -215,7 +301,14 @@ export async function deleteComment(commentId: number, userId: number): Promise<
   return false;
 }
 
-// Get post likes
+/**
+ * Retrieves users who liked a post.
+ * Used for displaying the "liked by" list.
+ *
+ * @param postId - The post's unique identifier
+ * @param limit - Maximum users to return (default: 50)
+ * @returns Array of users who liked the post
+ */
 export async function getPostLikes(postId: number, limit = 50): Promise<User[]> {
   return query<User>(
     `SELECT u.id, u.first_name, u.last_name, u.headline, u.profile_image_url

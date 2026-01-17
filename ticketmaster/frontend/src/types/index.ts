@@ -1,5 +1,11 @@
-// Types for the Ticketmaster frontend
+/**
+ * Type definitions for the Ticketmaster frontend.
+ * These types mirror the backend API responses and define the client-side data model.
+ */
 
+/**
+ * Represents an authenticated user's profile.
+ */
 export interface User {
   id: string;
   email: string;
@@ -7,6 +13,9 @@ export interface User {
   role: 'user' | 'admin';
 }
 
+/**
+ * Represents a physical venue where events are held.
+ */
 export interface Venue {
   id: string;
   name: string;
@@ -18,6 +27,9 @@ export interface Venue {
   image_url: string | null;
 }
 
+/**
+ * Represents an event with full venue details.
+ */
 export interface Event {
   id: string;
   name: string;
@@ -37,6 +49,9 @@ export interface Event {
   venue: Venue;
 }
 
+/**
+ * Represents a single seat displayed in the seat map.
+ */
 export interface Seat {
   id: string;
   row: string;
@@ -46,6 +61,9 @@ export interface Seat {
   status: 'available' | 'held' | 'sold';
 }
 
+/**
+ * Aggregated availability data for a venue section.
+ */
 export interface SectionAvailability {
   section: string;
   available: number;
@@ -55,6 +73,9 @@ export interface SectionAvailability {
   seats: Seat[];
 }
 
+/**
+ * Active seat reservation during checkout.
+ */
 export interface Reservation {
   event_id: string;
   seats: EventSeat[];
@@ -62,6 +83,9 @@ export interface Reservation {
   expires_at: string;
 }
 
+/**
+ * Seat details from an event (used in reservations).
+ */
 export interface EventSeat {
   id: string;
   event_id: string;
@@ -73,6 +97,9 @@ export interface EventSeat {
   status: string;
 }
 
+/**
+ * User's ticket order with optional event details.
+ */
 export interface Order {
   id: string;
   user_id: string;
@@ -89,18 +116,29 @@ export interface Order {
   venue_city?: string;
 }
 
+/**
+ * User's position and status in the virtual waiting room.
+ */
 export interface QueueStatus {
   position: number;
   status: 'waiting' | 'active' | 'not_in_queue';
   estimated_wait_seconds: number;
 }
 
+/**
+ * Generic API response wrapper.
+ * @template T - The type of data in the response
+ */
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
 }
 
+/**
+ * Paginated API response with metadata.
+ * @template T - The type of items in the data array
+ */
 export interface PaginatedResponse<T> {
   success: boolean;
   data: T[];

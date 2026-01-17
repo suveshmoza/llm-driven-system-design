@@ -16,6 +16,27 @@ import {
 import { usePlayerStore } from '../stores/playerStore';
 import { formatDuration, getResolutionLabel } from '../utils';
 
+/**
+ * Full-screen video player component with complete playback controls.
+ * Provides Netflix-style viewing experience with auto-hiding controls,
+ * keyboard shortcuts, quality selection, and progress persistence.
+ *
+ * Features:
+ * - Play/pause, seek forward/backward controls
+ * - Volume control with mute toggle
+ * - Fullscreen toggle
+ * - Quality selection for adaptive streaming
+ * - Subtitle toggle (UI only in demo)
+ * - Keyboard shortcuts (Space/K for play, arrows for seek/volume, M for mute, F for fullscreen)
+ * - Auto-hiding controls during playback
+ * - Draggable progress bar with scrubber
+ * - Periodic progress saving for resume functionality
+ *
+ * Note: This is a demo player using simulated playback. In production,
+ * this would integrate with HLS.js or a native video element for actual streaming.
+ *
+ * @returns Full-screen video player interface
+ */
 export function VideoPlayer() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);

@@ -1,12 +1,21 @@
+/**
+ * Inference service for ML model predictions.
+ * Provides API endpoints for classifying drawings using trained models.
+ * Currently uses heuristic-based classification; replace with actual ML inference in production.
+ * @module inference
+ */
+
 import express from 'express'
 import cors from 'cors'
 import { pool } from '../shared/db.js'
 import { getModel } from '../shared/storage.js'
 
 const app = express()
+
+/** Port for the inference service (default: 3003) */
 const PORT = parseInt(process.env.PORT || '3003')
 
-// Shape names (must match training)
+/** Shape class names - must match training data order */
 const SHAPE_NAMES = ['circle', 'heart', 'line', 'square', 'triangle']
 
 // Middleware
@@ -18,7 +27,10 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'inference' })
 })
 
-// Get current model info
+/**
+ * GET /api/inference/model/info - Returns information about the active model.
+ * Returns 404 if no model is active (train and activate one first).
+ */
 app.get('/api/inference/model/info', async (_req, res) => {
   try {
     const result = await pool.query(`
@@ -51,10 +63,11 @@ app.get('/api/inference/model/info', async (_req, res) => {
   }
 })
 
-// Classify a drawing
-// Note: For a real implementation, you'd run actual inference here.
-// This is a simplified version that demonstrates the API structure.
-// In production, you'd use TensorFlow.js or a Python sidecar for inference.
+/**
+ * POST /api/inference/classify - Classifies a drawing.
+ * Accepts stroke data and returns predicted shape with confidence scores.
+ * Note: Currently uses heuristic analysis. For production, integrate actual ML model.
+ */
 app.post('/api/inference/classify', async (req, res) => {
   try {
     const { strokes, canvas } = req.body
@@ -107,21 +120,38 @@ app.post('/api/inference/classify', async (req, res) => {
   }
 })
 
-// Simple stroke analysis for demo (replace with real ML inference)
+/**
+ * Represents a point in a stroke.
+ */
 interface StrokePoint {
   x: number
   y: number
 }
 
+/**
+ * Represents a stroke with its points.
+ */
 interface Stroke {
   points: StrokePoint[]
 }
 
+/**
+ * Canvas dimensions.
+ */
 interface Canvas {
   width: number
   height: number
 }
 
+/**
+ * Analyzes stroke data using heuristics to predict the drawn shape.
+ * This is a placeholder for real ML inference - uses bounding box aspect ratio,
+ * stroke count, and other simple features to make predictions.
+ *
+ * @param strokes - Array of strokes from the drawing
+ * @param canvas - Canvas dimensions
+ * @returns Prediction with shape name, confidence, and all class probabilities
+ */
 function analyzeStrokes(strokes: Stroke[], canvas: Canvas) {
   const allPoints: StrokePoint[] = strokes.flatMap((s) => s.points)
 

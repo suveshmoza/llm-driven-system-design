@@ -1,3 +1,7 @@
+/**
+ * Represents a user in the FaceTime system.
+ * Used for displaying contacts and call participants.
+ */
 export interface User {
   id: string;
   username: string;
@@ -6,6 +10,10 @@ export interface User {
   role?: 'user' | 'admin';
 }
 
+/**
+ * Represents the current state of a call in the application.
+ * Tracks call lifecycle from initiation through connection to ending.
+ */
 export interface CallState {
   callId: string;
   caller: User | null;
@@ -17,6 +25,10 @@ export interface CallState {
   isGroup: boolean;
 }
 
+/**
+ * Generic WebSocket message structure for signaling.
+ * Used for all communication with the signaling server.
+ */
 export interface WebSocketMessage {
   type: string;
   callId?: string;
@@ -25,16 +37,28 @@ export interface WebSocketMessage {
   timestamp?: number;
 }
 
+/**
+ * ICE server configuration for WebRTC peer connections.
+ * Supports STUN and TURN servers with optional credentials.
+ */
 export interface ICEServer {
   urls: string | string[];
   username?: string;
   credential?: string;
 }
 
+/**
+ * Response from the TURN credentials endpoint.
+ * Contains array of ICE servers for WebRTC configuration.
+ */
 export interface TurnCredentials {
   iceServers: ICEServer[];
 }
 
+/**
+ * Represents a historical call record from the API.
+ * Includes call metadata and all participant information.
+ */
 export interface CallHistoryItem {
   id: string;
   initiator_id: string;

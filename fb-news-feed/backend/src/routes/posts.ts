@@ -1,12 +1,23 @@
+/**
+ * @fileoverview Post management routes for CRUD operations and engagement.
+ * Handles post creation with automatic fan-out, likes, comments, and deletion.
+ * Integrates with affinity scoring to improve future feed personalization.
+ */
+
 import { Router, Request, Response } from 'express';
 import { pool, redis } from '../db/connection.js';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.js';
 import { fanoutPost, removeFanout, updateAffinity, calculatePostScore } from '../services/fanout.js';
 import type { CreatePostRequest, PostWithAuthor } from '../types/index.js';
 
+/** Express router for post endpoints */
 const router = Router();
 
-// Create post
+/**
+ * POST / - Creates a new post and distributes it to followers' feeds.
+ * Triggers fan-out service to push post to followers (for non-celebrities)
+ * or store in celebrity post cache (for celebrities).
+ */
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -50,7 +61,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Get single post
+/**
+ * GET /:postId - Retrieves a single post by ID with author info.
+ * Respects privacy settings and updates affinity score for views.
+ * Returns is_liked status for authenticated users.
+ */
 router.get('/:postId', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -125,7 +140,11 @@ router.get('/:postId', optionalAuthMiddleware, async (req: Request, res: Respons
   }
 });
 
-// Delete post
+/**
+ * DELETE /:postId - Soft-deletes a post and removes it from all feeds.
+ * Only the post author or admin can delete a post.
+ * Triggers fan-out removal to clean up followers' feeds.
+ */
 router.delete('/:postId', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -163,7 +182,11 @@ router.delete('/:postId', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
-// Like post
+/**
+ * POST /:postId/like - Adds a like to a post.
+ * Updates affinity score between liker and post author.
+ * Caches like in Redis for fast lookup and atomic count updates.
+ */
 router.post('/:postId/like', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -217,7 +240,11 @@ router.post('/:postId/like', authMiddleware, async (req: Request, res: Response)
   }
 });
 
-// Unlike post
+/**
+ * DELETE /:postId/like - Removes a like from a post.
+ * Updates Redis cache and decrements like count.
+ * Does not affect affinity score (interactions are additive only).
+ */
 router.delete('/:postId/like', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -251,7 +278,11 @@ router.delete('/:postId/like', authMiddleware, async (req: Request, res: Respons
   }
 });
 
-// Get post comments
+/**
+ * GET /:postId/comments - Retrieves comments for a post with author info.
+ * Returns paginated list ordered by creation time (oldest first).
+ * Uses offset-based pagination for simplicity.
+ */
 router.get('/:postId/comments', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -312,7 +343,11 @@ router.get('/:postId/comments', optionalAuthMiddleware, async (req: Request, res
   }
 });
 
-// Create comment
+/**
+ * POST /:postId/comments - Adds a comment to a post.
+ * Updates comment count and affinity score with post author.
+ * Returns the created comment with author info.
+ */
 router.post('/:postId/comments', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
@@ -368,7 +403,11 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// Delete comment
+/**
+ * DELETE /:postId/comments/:commentId - Deletes a comment from a post.
+ * Only the comment author or admin can delete a comment.
+ * Decrements the post's comment count.
+ */
 router.delete('/:postId/comments/:commentId', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId, commentId } = req.params;

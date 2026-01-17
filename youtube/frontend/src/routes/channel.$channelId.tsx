@@ -6,10 +6,20 @@ import { useAuthStore } from '../stores/authStore';
 import VideoCard from '../components/VideoCard';
 import { formatSubscriberCount, getAvatarUrl } from '../utils/format';
 
+/**
+ * Channel page route configuration.
+ * Dynamic route that accepts a channelId parameter.
+ */
 export const Route = createFileRoute('/channel/$channelId')({
   component: ChannelPage,
 });
 
+/**
+ * Channel page component displaying a creator's profile and videos.
+ * Shows channel banner, avatar, name, subscriber count, description,
+ * subscribe button, and a grid of the channel's uploaded videos.
+ * Allows channel owners to access their studio from here.
+ */
 function ChannelPage() {
   const { channelId } = Route.useParams();
   const { user } = useAuthStore();

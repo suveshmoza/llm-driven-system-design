@@ -3,7 +3,12 @@ import type { User, Document, DocumentSnapshot, OperationRecord, OperationData }
 
 const { Pool } = pg;
 
-// Database connection pool
+/**
+ * PostgreSQL connection pool for the collaborative editor database.
+ *
+ * Uses environment variables for configuration with sensible defaults
+ * for local development.
+ */
 const pool = new Pool({
   user: process.env.DB_USER || 'collab',
   password: process.env.DB_PASSWORD || 'collab123',
@@ -12,11 +17,35 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'collaborative_editor',
 });
 
+/**
+ * Database access layer for the collaborative editor.
+ *
+ * Provides methods for:
+ * - User management (getUser, getUsers)
+ * - Document CRUD (getDocument, getDocuments, createDocument, updateDocumentTitle)
+ * - Snapshot management (getLatestSnapshot, saveSnapshot)
+ * - Operation log (getOperationsSince, saveOperation)
+ *
+ * All methods use the connection pool for efficient database access.
+ */
 export const db = {
+  /**
+   * Execute a raw SQL query.
+   *
+   * @param text - The SQL query string with $1, $2, etc. placeholders
+   * @param params - Array of parameter values
+   * @returns The query result
+   */
   async query<T = unknown>(text: string, params?: unknown[]): Promise<pg.QueryResult<T>> {
     return pool.query(text, params);
   },
 
+  /**
+   * Get a user by ID.
+   *
+   * @param userId - The user's UUID
+   * @returns The user object or null if not found
+   */
   async getUser(userId: string): Promise<User | null> {
     const result = await pool.query<{
       id: string;
@@ -37,6 +66,12 @@ export const db = {
     };
   },
 
+  /**
+   * Get all users in the system.
+   * Returns users sorted alphabetically by username.
+   *
+   * @returns Array of all users
+   */
   async getUsers(): Promise<User[]> {
     const result = await pool.query<{
       id: string;
@@ -52,6 +87,12 @@ export const db = {
     }));
   },
 
+  /**
+   * Get a document by ID.
+   *
+   * @param documentId - The document's UUID
+   * @returns The document object or null if not found
+   */
   async getDocument(documentId: string): Promise<Document | null> {
     const result = await pool.query<{
       id: string;
@@ -74,6 +115,12 @@ export const db = {
     };
   },
 
+  /**
+   * Get all documents in the system.
+   * Returns documents sorted by last update time (most recent first).
+   *
+   * @returns Array of all documents
+   */
   async getDocuments(): Promise<Document[]> {
     const result = await pool.query<{
       id: string;
@@ -91,6 +138,14 @@ export const db = {
     }));
   },
 
+  /**
+   * Create a new document.
+   * Also creates an initial empty snapshot at version 0.
+   *
+   * @param title - The document title
+   * @param ownerId - The ID of the user creating the document
+   * @returns The newly created document
+   */
   async createDocument(title: string, ownerId: string): Promise<Document> {
     const result = await pool.query<{
       id: string;
@@ -121,6 +176,13 @@ export const db = {
     };
   },
 
+  /**
+   * Update a document's title.
+   * Also updates the document's timestamp.
+   *
+   * @param documentId - The document's UUID
+   * @param title - The new title
+   */
   async updateDocumentTitle(documentId: string, title: string): Promise<void> {
     await pool.query(
       'UPDATE documents SET title = $1, updated_at = NOW() WHERE id = $2',
@@ -128,6 +190,14 @@ export const db = {
     );
   },
 
+  /**
+   * Get the most recent snapshot for a document.
+   * Snapshots are periodic checkpoints used to avoid replaying
+   * the entire operation log on document load.
+   *
+   * @param documentId - The document's UUID
+   * @returns The latest snapshot or null if none exists
+   */
   async getLatestSnapshot(documentId: string): Promise<DocumentSnapshot | null> {
     const result = await pool.query<{
       document_id: string;
@@ -152,6 +222,14 @@ export const db = {
     };
   },
 
+  /**
+   * Save a document snapshot.
+   * Uses upsert to handle both new snapshots and updates.
+   *
+   * @param documentId - The document's UUID
+   * @param version - The version number for this snapshot
+   * @param content - The full document content
+   */
   async saveSnapshot(
     documentId: string,
     version: number,
@@ -165,6 +243,14 @@ export const db = {
     );
   },
 
+  /**
+   * Get all operations after a given version.
+   * Used to replay operations when loading a document or syncing.
+   *
+   * @param documentId - The document's UUID
+   * @param version - The version to start from (exclusive)
+   * @returns Array of operations ordered by version
+   */
   async getOperationsSince(
     documentId: string,
     version: number
@@ -195,6 +281,19 @@ export const db = {
     }));
   },
 
+  /**
+   * Save an operation to the operation log.
+   * Also updates the document's timestamp.
+   *
+   * Operations are stored as JSON and form the authoritative history
+   * of all changes made to a document.
+   *
+   * @param documentId - The document's UUID
+   * @param version - The server-assigned version number
+   * @param clientId - The ID of the client session
+   * @param userId - The ID of the user who made the change
+   * @param operation - The operation data to save
+   */
   async saveOperation(
     documentId: string,
     version: number,
@@ -215,6 +314,10 @@ export const db = {
     );
   },
 
+  /**
+   * Close the database connection pool.
+   * Should be called during graceful shutdown.
+   */
   async close(): Promise<void> {
     await pool.end();
   },

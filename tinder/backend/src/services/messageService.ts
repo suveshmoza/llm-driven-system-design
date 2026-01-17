@@ -2,6 +2,11 @@ import { pool, redis } from '../db/index.js';
 import type { Message, ConversationMessage } from '../types/index.js';
 import { MatchService } from './matchService.js';
 
+/**
+ * Service responsible for chat messaging between matched users.
+ * Handles message CRUD, read receipts, and real-time delivery via Redis pub/sub.
+ * Ensures only matched users can exchange messages.
+ */
 export class MessageService {
   private matchService: MatchService;
 
@@ -9,7 +14,15 @@ export class MessageService {
     this.matchService = new MatchService();
   }
 
-  // Send a message
+  /**
+   * Sends a message within a match conversation.
+   * Validates sender is part of the match before allowing message.
+   * Publishes to Redis for real-time WebSocket delivery.
+   * @param matchId - The match conversation ID
+   * @param senderId - The user sending the message
+   * @param content - Message text content
+   * @returns The created message or null if unauthorized
+   */
   async sendMessage(
     matchId: string,
     senderId: string,
@@ -48,7 +61,16 @@ export class MessageService {
     return message;
   }
 
-  // Get messages for a match
+  /**
+   * Retrieves messages for a match conversation with pagination.
+   * Automatically marks retrieved messages as read by the requesting user.
+   * Returns messages in reverse chronological order (newest first).
+   * @param matchId - The match conversation ID
+   * @param userId - The requesting user (must be part of match)
+   * @param limit - Maximum messages to return (default: 50)
+   * @param before - Cursor for pagination (timestamp)
+   * @returns Array of messages with ownership flag
+   */
   async getMessages(
     matchId: string,
     userId: string,
@@ -91,7 +113,12 @@ export class MessageService {
     }));
   }
 
-  // Mark messages as read
+  /**
+   * Marks all unread messages in a match as read by the specified user.
+   * Only marks messages sent by the other user (not own messages).
+   * @param matchId - The match conversation ID
+   * @param userId - The user who read the messages
+   */
   async markAsRead(matchId: string, userId: string): Promise<void> {
     await pool.query(
       `UPDATE messages
@@ -101,7 +128,12 @@ export class MessageService {
     );
   }
 
-  // Get unread message count
+  /**
+   * Gets total unread message count across all matches for a user.
+   * Used for badge display on navigation.
+   * @param userId - The user's UUID
+   * @returns Total unread message count
+   */
   async getUnreadCount(userId: string): Promise<number> {
     const result = await pool.query(
       `SELECT COUNT(*) FROM messages m
@@ -115,7 +147,11 @@ export class MessageService {
     return parseInt(result.rows[0].count);
   }
 
-  // Get unread count per match
+  /**
+   * Gets unread message count per match for conversation list badges.
+   * @param userId - The user's UUID
+   * @returns Map of matchId to unread count
+   */
   async getUnreadCountByMatch(userId: string): Promise<Map<string, number>> {
     const result = await pool.query(
       `SELECT m.match_id, COUNT(*) as unread
@@ -135,7 +171,13 @@ export class MessageService {
     return counts;
   }
 
-  // Publish message to Redis for real-time delivery
+  /**
+   * Publishes a message event to Redis for real-time WebSocket delivery.
+   * The WebSocket gateway subscribes to user channels and forwards to connected clients.
+   * @param recipientId - The user who should receive the message
+   * @param matchId - The match conversation ID
+   * @param message - The message data to publish
+   */
   private async publishMessage(
     recipientId: string,
     matchId: string,
@@ -155,7 +197,13 @@ export class MessageService {
     await redis.publish(`user:${recipientId}`, payload);
   }
 
-  // Publish match notification
+  /**
+   * Publishes a new match notification to Redis for real-time delivery.
+   * Notifies the user when someone they liked also liked them back.
+   * @param userId - The user to notify
+   * @param matchId - The new match ID
+   * @param matchedUser - Basic info about the matched user
+   */
   async publishMatchNotification(
     userId: string,
     matchId: string,
@@ -170,7 +218,10 @@ export class MessageService {
     await redis.publish(`user:${userId}`, payload);
   }
 
-  // Get message stats for admin
+  /**
+   * Retrieves aggregate messaging statistics for admin dashboard.
+   * @returns Statistics including total messages, today's count, and average per match
+   */
   async getMessageStats(): Promise<{
     totalMessages: number;
     messagesToday: number;

@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Metrics API routes for ingestion and querying.
+ *
+ * Exposes REST endpoints for:
+ * - High-throughput metric data ingestion (POST /ingest)
+ * - Time-series queries with aggregation (POST /query)
+ * - Latest value and statistics retrieval
+ * - Metric metadata exploration (names, tags, definitions)
+ */
+
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { ingestMetrics, getMetricDefinitions, getMetricNames, getTagKeys, getTagValues } from '../services/metricsService.js';
@@ -5,7 +15,9 @@ import { queryMetrics, getLatestValue, getMetricStats } from '../services/queryS
 
 const router = Router();
 
-// Schema for metric ingestion
+/**
+ * Zod schema for validating individual metric data points during ingestion.
+ */
 const MetricDataPointSchema = z.object({
   name: z.string().min(1).max(255),
   value: z.number(),
@@ -13,11 +25,22 @@ const MetricDataPointSchema = z.object({
   timestamp: z.number().optional(),
 });
 
+/**
+ * Zod schema for validating bulk ingestion requests.
+ * Accepts 1-10,000 metrics per request for batch efficiency.
+ */
 const IngestRequestSchema = z.object({
   metrics: z.array(MetricDataPointSchema).min(1).max(10000),
 });
 
-// Ingest metrics
+/**
+ * POST /ingest
+ * Ingests an array of metric data points into the time-series database.
+ * Adds current timestamp to any metrics missing a timestamp.
+ *
+ * @body {metrics: MetricDataPoint[]} - Array of metric data points
+ * @returns {accepted: number} - Count of successfully ingested metrics
+ */
 router.post('/ingest', async (req: Request, res: Response) => {
   try {
     const validation = IngestRequestSchema.safeParse(req.body);
@@ -46,7 +69,9 @@ router.post('/ingest', async (req: Request, res: Response) => {
   }
 });
 
-// Query metrics
+/**
+ * Zod schema for validating time-series query requests.
+ */
 const QueryRequestSchema = z.object({
   metric_name: z.string().min(1),
   tags: z.record(z.string()).optional(),
@@ -57,6 +82,13 @@ const QueryRequestSchema = z.object({
   group_by: z.array(z.string()).optional(),
 });
 
+/**
+ * POST /query
+ * Executes a time-series query with aggregation and optional grouping.
+ *
+ * @body {metric_name, start_time, end_time, aggregation?, interval?, group_by?}
+ * @returns {results: QueryResult[]} - Array of time-series results
+ */
 router.post('/query', async (req: Request, res: Response) => {
   try {
     const validation = QueryRequestSchema.safeParse(req.body);
@@ -87,7 +119,14 @@ router.post('/query', async (req: Request, res: Response) => {
   }
 });
 
-// Get latest value for a metric
+/**
+ * GET /latest/:metricName
+ * Retrieves the most recent value for a specific metric.
+ *
+ * @param metricName - The metric name to query
+ * @query tags - Optional JSON-encoded tag filters
+ * @returns {value, time} - Latest value and its timestamp
+ */
 router.get('/latest/:metricName', async (req: Request, res: Response) => {
   try {
     const { metricName } = req.params;
@@ -106,7 +145,16 @@ router.get('/latest/:metricName', async (req: Request, res: Response) => {
   }
 });
 
-// Get statistics for a metric
+/**
+ * GET /stats/:metricName
+ * Calculates aggregate statistics for a metric over a time range.
+ *
+ * @param metricName - The metric name to analyze
+ * @query start_time - Start of time range (default: 1 hour ago)
+ * @query end_time - End of time range (default: now)
+ * @query tags - Optional JSON-encoded tag filters
+ * @returns {min, max, avg, count} - Aggregate statistics
+ */
 router.get('/stats/:metricName', async (req: Request, res: Response) => {
   try {
     const { metricName } = req.params;
@@ -131,7 +179,14 @@ router.get('/stats/:metricName', async (req: Request, res: Response) => {
   }
 });
 
-// Get metric definitions
+/**
+ * GET /definitions
+ * Retrieves metric definitions (metric name + tag combinations).
+ *
+ * @query name - Optional metric name filter
+ * @query tags - Optional JSON-encoded tag filter
+ * @returns {definitions: MetricDefinition[]} - Array of metric definitions
+ */
 router.get('/definitions', async (req: Request, res: Response) => {
   try {
     const name = req.query.name as string | undefined;
@@ -146,7 +201,12 @@ router.get('/definitions', async (req: Request, res: Response) => {
   }
 });
 
-// Get metric names
+/**
+ * GET /names
+ * Retrieves all unique metric names in the system.
+ *
+ * @returns {names: string[]} - Array of metric names
+ */
 router.get('/names', async (req: Request, res: Response) => {
   try {
     const names = await getMetricNames();
@@ -157,7 +217,13 @@ router.get('/names', async (req: Request, res: Response) => {
   }
 });
 
-// Get tag keys
+/**
+ * GET /tags/keys
+ * Retrieves all unique tag keys across metric definitions.
+ *
+ * @query metric_name - Optional filter to scope to a specific metric
+ * @returns {keys: string[]} - Array of tag key names
+ */
 router.get('/tags/keys', async (req: Request, res: Response) => {
   try {
     const metricName = req.query.metric_name as string | undefined;
@@ -169,7 +235,14 @@ router.get('/tags/keys', async (req: Request, res: Response) => {
   }
 });
 
-// Get tag values
+/**
+ * GET /tags/values/:key
+ * Retrieves all unique values for a specific tag key.
+ *
+ * @param key - The tag key to get values for
+ * @query metric_name - Optional filter to scope to a specific metric
+ * @returns {values: string[]} - Array of tag values
+ */
 router.get('/tags/values/:key', async (req: Request, res: Response) => {
   try {
     const { key } = req.params;

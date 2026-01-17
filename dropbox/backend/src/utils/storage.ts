@@ -1,6 +1,14 @@
+/**
+ * MinIO/S3 object storage utilities for chunk storage and retrieval.
+ * Chunks are stored in a content-addressed manner using their SHA-256 hash.
+ * Supports presigned URLs for direct client uploads/downloads.
+ * @module utils/storage
+ */
+
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+// MinIO connection configuration from environment variables
 const endpoint = process.env.MINIO_ENDPOINT || 'localhost';
 const port = process.env.MINIO_PORT || '9000';
 const useSSL = process.env.MINIO_USE_SSL === 'true';
@@ -8,6 +16,10 @@ const accessKey = process.env.MINIO_ACCESS_KEY || 'minioadmin';
 const secretKey = process.env.MINIO_SECRET_KEY || 'minioadmin123';
 const bucket = process.env.MINIO_BUCKET || 'dropbox-chunks';
 
+/**
+ * S3-compatible client configured for MinIO.
+ * forcePathStyle is required for MinIO compatibility.
+ */
 export const s3Client = new S3Client({
   endpoint: `${useSSL ? 'https' : 'http'}://${endpoint}:${port}`,
   region: 'us-east-1',
@@ -18,9 +30,16 @@ export const s3Client = new S3Client({
   forcePathStyle: true, // Required for MinIO
 });
 
+/** Name of the S3 bucket where chunks are stored */
 export const BUCKET_NAME = bucket;
 
-// Upload a chunk to storage
+/**
+ * Uploads a chunk to object storage.
+ * Chunks are stored with their hash as the key for content-addressing.
+ * @param hash - SHA-256 hash of the chunk data (used as storage key)
+ * @param data - Raw chunk data to store
+ * @returns Storage key where the chunk was saved
+ */
 export async function uploadChunk(hash: string, data: Buffer): Promise<string> {
   const key = getChunkKey(hash);
 
@@ -34,7 +53,12 @@ export async function uploadChunk(hash: string, data: Buffer): Promise<string> {
   return key;
 }
 
-// Download a chunk from storage
+/**
+ * Downloads a chunk from object storage.
+ * Streams the response body and concatenates into a Buffer.
+ * @param hash - SHA-256 hash identifying the chunk
+ * @returns Raw chunk data as a Buffer
+ */
 export async function downloadChunk(hash: string): Promise<Buffer> {
   const key = getChunkKey(hash);
 
@@ -53,7 +77,12 @@ export async function downloadChunk(hash: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-// Check if chunk exists
+/**
+ * Checks if a chunk already exists in storage.
+ * Used for deduplication - skip uploading chunks that already exist.
+ * @param hash - SHA-256 hash of the chunk to check
+ * @returns true if chunk exists, false otherwise
+ */
 export async function chunkExists(hash: string): Promise<boolean> {
   const key = getChunkKey(hash);
 
@@ -68,7 +97,11 @@ export async function chunkExists(hash: string): Promise<boolean> {
   }
 }
 
-// Delete a chunk
+/**
+ * Deletes a chunk from object storage.
+ * Called during garbage collection when reference count reaches zero.
+ * @param hash - SHA-256 hash of the chunk to delete
+ */
 export async function deleteChunk(hash: string): Promise<void> {
   const key = getChunkKey(hash);
 
@@ -78,7 +111,13 @@ export async function deleteChunk(hash: string): Promise<void> {
   }));
 }
 
-// Generate presigned URL for direct upload
+/**
+ * Generates a presigned URL for direct chunk upload from the client.
+ * Enables large file uploads without proxying through the API server.
+ * @param hash - SHA-256 hash for the chunk being uploaded
+ * @param expiresIn - URL validity in seconds (default 1 hour)
+ * @returns Presigned URL for PUT request
+ */
 export async function getUploadPresignedUrl(hash: string, expiresIn: number = 3600): Promise<string> {
   const key = getChunkKey(hash);
 
@@ -91,7 +130,13 @@ export async function getUploadPresignedUrl(hash: string, expiresIn: number = 36
   return getSignedUrl(s3Client, command, { expiresIn });
 }
 
-// Generate presigned URL for download
+/**
+ * Generates a presigned URL for direct chunk download.
+ * Enables parallel chunk downloads directly from storage.
+ * @param hash - SHA-256 hash of the chunk to download
+ * @param expiresIn - URL validity in seconds (default 1 hour)
+ * @returns Presigned URL for GET request
+ */
 export async function getDownloadPresignedUrl(hash: string, expiresIn: number = 3600): Promise<string> {
   const key = getChunkKey(hash);
 
@@ -103,7 +148,12 @@ export async function getDownloadPresignedUrl(hash: string, expiresIn: number = 
   return getSignedUrl(s3Client, command, { expiresIn });
 }
 
-// Helper to get chunk storage key (organized by first 2 chars of hash)
+/**
+ * Generates the storage key for a chunk.
+ * Chunks are organized into subdirectories by hash prefix for better filesystem performance.
+ * @param hash - SHA-256 hash of the chunk
+ * @returns Storage key path (e.g., "chunks/ab/abcdef123...")
+ */
 function getChunkKey(hash: string): string {
   const prefix = hash.substring(0, 2);
   return `chunks/${prefix}/${hash}`;

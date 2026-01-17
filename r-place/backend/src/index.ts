@@ -1,3 +1,12 @@
+/**
+ * Main application entry point for the r/place backend server.
+ *
+ * Initializes and starts:
+ * - Express HTTP server with middleware
+ * - WebSocket server for real-time updates
+ * - Periodic canvas snapshot scheduler
+ * - Graceful shutdown handlers
+ */
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -13,9 +22,16 @@ import { SNAPSHOT_INTERVAL_MS } from './config.js';
 
 const app = express();
 const server = createServer(app);
+
+/** Server port, configurable via PORT environment variable. */
 const PORT = parseInt(process.env.PORT || '3000');
 
-// Middleware
+/**
+ * Middleware configuration.
+ * - CORS: Allows frontend to make credentialed requests
+ * - JSON: Parses JSON request bodies
+ * - Cookie: Parses session cookies
+ */
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
@@ -23,11 +39,14 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Routes
+/** Route mounting for API endpoints. */
 app.use('/api/auth', authRoutes);
 app.use('/api/canvas', canvasRoutes);
 
-// Health check
+/**
+ * GET /health - Health check endpoint.
+ * Verifies connectivity to Redis and PostgreSQL.
+ */
 app.get('/health', async (req, res) => {
   try {
     // Check Redis
@@ -40,7 +59,10 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// API info
+/**
+ * GET /api - API information endpoint.
+ * Returns available endpoints and version information.
+ */
 app.get('/api', (req, res) => {
   res.json({
     name: 'r/place API',
@@ -53,10 +75,15 @@ app.get('/api', (req, res) => {
   });
 });
 
-// Setup WebSocket
+/** Initialize WebSocket server for real-time communication. */
 setupWebSocket(server);
 
-// Initialize and start server
+/**
+ * Starts the server and initializes all required services.
+ * - Initializes or loads existing canvas state
+ * - Starts periodic snapshot scheduler
+ * - Begins listening for HTTP/WebSocket connections
+ */
 async function start() {
   try {
     // Initialize canvas
@@ -79,7 +106,10 @@ async function start() {
   }
 }
 
-// Graceful shutdown
+/**
+ * Graceful shutdown handler for SIGTERM signal.
+ * Closes all connections before exiting.
+ */
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
   server.close();
@@ -88,6 +118,10 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
+/**
+ * Graceful shutdown handler for SIGINT signal (Ctrl+C).
+ * Closes all connections before exiting.
+ */
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
   server.close();

@@ -1,5 +1,15 @@
+/**
+ * RSS and Atom feed parsing utilities.
+ * Provides unified parsing for RSS 2.0, RSS 1.0 (RDF), and Atom feed formats.
+ * Essential for ingesting content from diverse news sources.
+ */
+
 import { XMLParser } from 'fast-xml-parser';
 
+/**
+ * Normalized representation of a feed item.
+ * Provides a consistent interface regardless of source feed format.
+ */
 export interface RSSItem {
   title: string;
   link: string;
@@ -13,6 +23,10 @@ export interface RSSItem {
   'dc:creator'?: string;
 }
 
+/**
+ * Normalized representation of an RSS/Atom feed.
+ * Contains feed metadata and an array of items.
+ */
 export interface RSSFeed {
   title: string;
   link: string;
@@ -20,13 +34,18 @@ export interface RSSFeed {
   items: RSSItem[];
 }
 
+/** XML parser configured for RSS/Atom parsing with attribute handling */
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
 });
 
 /**
- * Parse RSS/Atom feed XML content
+ * Parse RSS/Atom feed XML content into a normalized structure.
+ * Automatically detects and handles RSS 2.0, Atom, and RDF (RSS 1.0) formats.
+ * @param xml - Raw XML string from feed fetch
+ * @returns Parsed feed with normalized items
+ * @throws Error if feed format is not recognized
  */
 export function parseRSS(xml: string): RSSFeed {
   const parsed = parser.parse(xml);
@@ -68,6 +87,12 @@ export function parseRSS(xml: string): RSSFeed {
   throw new Error('Unknown feed format');
 }
 
+/**
+ * Normalize RSS 2.0/RDF items to a consistent format.
+ * Handles single items or arrays, and various content field names.
+ * @param items - Raw items from parsed XML (may be single object or array)
+ * @returns Array of normalized RSSItem objects
+ */
 function normalizeItems(items: unknown): RSSItem[] {
   if (!items) return [];
   const itemArray = Array.isArray(items) ? items : [items];
@@ -84,6 +109,12 @@ function normalizeItems(items: unknown): RSSItem[] {
   }));
 }
 
+/**
+ * Normalize Atom feed entries to a consistent format.
+ * Maps Atom-specific fields to the common RSSItem interface.
+ * @param entries - Raw Atom entries from parsed XML
+ * @returns Array of normalized RSSItem objects
+ */
 function normalizeAtomEntries(entries: unknown): RSSItem[] {
   if (!entries) return [];
   const entryArray = Array.isArray(entries) ? entries : [entries];
@@ -100,6 +131,12 @@ function normalizeAtomEntries(entries: unknown): RSSItem[] {
   }));
 }
 
+/**
+ * Extract text content from various Atom text constructs.
+ * Handles plain strings, text nodes, and objects with #text or $t properties.
+ * @param value - Atom text construct (string, object, or null)
+ * @returns Extracted text string
+ */
 function extractText(value: unknown): string {
   if (!value) return '';
   if (typeof value === 'string') return value;
@@ -110,6 +147,13 @@ function extractText(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Extract link URL from Atom link elements.
+ * Handles various link formats: string, single object, or array of link objects.
+ * Prefers 'alternate' rel type when multiple links exist.
+ * @param link - Atom link element (string, object, or array)
+ * @returns Extracted URL string
+ */
 function extractAtomLink(link: unknown): string {
   if (!link) return '';
   if (typeof link === 'string') return link;
@@ -123,6 +167,12 @@ function extractAtomLink(link: unknown): string {
   return '';
 }
 
+/**
+ * Extract author name from Atom author element.
+ * Handles string or object with name property.
+ * @param author - Atom author element
+ * @returns Author name string
+ */
 function extractAtomAuthor(author: unknown): string {
   if (!author) return '';
   if (typeof author === 'string') return author;
@@ -133,6 +183,12 @@ function extractAtomAuthor(author: unknown): string {
   return '';
 }
 
+/**
+ * Extract category terms from Atom category elements.
+ * Handles single or multiple categories with term or label attributes.
+ * @param category - Atom category element(s)
+ * @returns Array of category strings
+ */
 function extractAtomCategories(category: unknown): string[] {
   if (!category) return [];
   const cats = Array.isArray(category) ? category : [category];
@@ -140,7 +196,10 @@ function extractAtomCategories(category: unknown): string[] {
 }
 
 /**
- * Clean HTML from text content
+ * Remove HTML tags and decode entities from text content.
+ * Strips scripts, styles, and all markup while preserving text content.
+ * @param html - HTML string to clean
+ * @returns Plain text with HTML removed and entities decoded
  */
 export function stripHtml(html: string): string {
   return html
@@ -158,7 +217,11 @@ export function stripHtml(html: string): string {
 }
 
 /**
- * Extract a summary from text content
+ * Extract a summary from text content, truncating intelligently.
+ * Attempts to break at sentence boundaries when possible.
+ * @param text - Full text content (may contain HTML)
+ * @param maxLength - Maximum summary length in characters (default: 300)
+ * @returns Truncated summary, ending at sentence boundary if possible
  */
 export function extractSummary(text: string, maxLength = 300): string {
   const cleaned = stripHtml(text);

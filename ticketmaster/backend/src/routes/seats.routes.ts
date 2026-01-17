@@ -1,10 +1,24 @@
+/**
+ * Seat routes for viewing availability and managing seat reservations.
+ * Endpoints:
+ * - GET /:eventId/availability - Get seat availability by section
+ * - GET /:eventId/sections/:section - Get individual seats for a section
+ * - POST /:eventId/reserve - Reserve selected seats
+ * - POST /:eventId/release - Release reserved seats
+ * - GET /reservation - Get current reservation for session
+ */
 import { Router, Request, Response } from 'express';
 import { seatService } from '../services/seat.service.js';
 import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
+/** Express router for seat endpoints */
 const router = Router();
 
-// Get seat availability for an event
+/**
+ * GET /:eventId/availability
+ * Returns seat availability grouped by section.
+ * Optionally filter by section name via query parameter.
+ */
 router.get('/:eventId/availability', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { section } = req.query;
@@ -20,7 +34,11 @@ router.get('/:eventId/availability', optionalAuthMiddleware, async (req: Request
   }
 });
 
-// Get seats for a specific section
+/**
+ * GET /:eventId/sections/:section
+ * Returns all individual seats for a specific section.
+ * Used to render the seat map UI.
+ */
 router.get('/:eventId/sections/:section', async (req: Request, res: Response) => {
   try {
     const seats = await seatService.getSectionSeats(req.params.eventId, req.params.section);
@@ -31,7 +49,11 @@ router.get('/:eventId/sections/:section', async (req: Request, res: Response) =>
   }
 });
 
-// Reserve seats
+/**
+ * POST /:eventId/reserve
+ * Reserves selected seats for the authenticated user's session.
+ * Seats are held for 10 minutes. Maximum 10 seats per reservation.
+ */
 router.post('/:eventId/reserve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { seat_ids } = req.body;
@@ -66,7 +88,11 @@ router.post('/:eventId/reserve', authMiddleware, async (req: AuthenticatedReques
   }
 });
 
-// Release seats
+/**
+ * POST /:eventId/release
+ * Releases previously reserved seats back to available status.
+ * Only releases seats held by the current session.
+ */
 router.post('/:eventId/release', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { seat_ids } = req.body;
@@ -85,7 +111,11 @@ router.post('/:eventId/release', authMiddleware, async (req: AuthenticatedReques
   }
 });
 
-// Get current reservation
+/**
+ * GET /reservation
+ * Returns the current active reservation for the authenticated session.
+ * Returns null data if no reservation exists.
+ */
 router.get('/reservation', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const reservation = await seatService.getReservation(req.sessionId!);

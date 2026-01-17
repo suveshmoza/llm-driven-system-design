@@ -1,11 +1,25 @@
+/**
+ * Queue routes for virtual waiting room functionality.
+ * Manages user access during high-demand event sales.
+ * Endpoints:
+ * - POST /:eventId/join - Join the waiting room queue
+ * - GET /:eventId/status - Check queue position
+ * - POST /:eventId/leave - Leave the queue
+ * - GET /:eventId/stats - Get queue statistics (public)
+ */
 import { Router, Response } from 'express';
 import { waitingRoomService } from '../services/waiting-room.service.js';
 import { eventService } from '../services/event.service.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
+/** Express router for queue endpoints */
 const router = Router();
 
-// Join waiting room queue
+/**
+ * POST /:eventId/join
+ * Joins the virtual waiting room queue for a high-demand event.
+ * If the event doesn't have waiting room enabled, returns active status immediately.
+ */
 router.post('/:eventId/join', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const eventId = req.params.eventId;
@@ -39,7 +53,11 @@ router.post('/:eventId/join', authMiddleware, async (req: AuthenticatedRequest, 
   }
 });
 
-// Get queue status
+/**
+ * GET /:eventId/status
+ * Returns the user's current position and status in the queue.
+ * Status can be: waiting, active, or not_in_queue.
+ */
 router.get('/:eventId/status', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const eventId = req.params.eventId;
@@ -72,7 +90,11 @@ router.get('/:eventId/status', authMiddleware, async (req: AuthenticatedRequest,
   }
 });
 
-// Leave queue
+/**
+ * POST /:eventId/leave
+ * Removes the user from the queue and/or active set.
+ * Called when user navigates away or explicitly leaves.
+ */
 router.post('/:eventId/leave', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await waitingRoomService.leaveQueue(req.params.eventId, req.sessionId!);
@@ -83,7 +105,11 @@ router.post('/:eventId/leave', authMiddleware, async (req: AuthenticatedRequest,
   }
 });
 
-// Get queue stats (for display purposes)
+/**
+ * GET /:eventId/stats
+ * Returns public queue statistics (queue length, active count, estimated wait).
+ * Does not require authentication.
+ */
 router.get('/:eventId/stats', async (req, res: Response) => {
   try {
     const stats = await waitingRoomService.getQueueStats(req.params.eventId);

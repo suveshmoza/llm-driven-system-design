@@ -1,10 +1,29 @@
 import { useCountdown } from '../hooks/useCountdown';
 
+/**
+ * Props for the CountdownTimer component.
+ */
 interface CountdownTimerProps {
+  /** ISO date string for when the countdown should reach zero */
   endTime: string;
+  /** Display size variant */
   size?: 'sm' | 'md' | 'lg';
 }
 
+/**
+ * Visual countdown timer component for auction end times.
+ *
+ * Displays time remaining in HH:MM:SS format with optional days.
+ * Features urgency styling when less than 5 minutes remain:
+ * - Red color
+ * - Pulsing animation
+ * - "Ending Soon!" label
+ *
+ * Shows "Auction Ended" when countdown reaches zero.
+ *
+ * @param props - Component props with end time and size variant
+ * @returns JSX element for the countdown display
+ */
 export function CountdownTimer({ endTime, size = 'md' }: CountdownTimerProps) {
   const { days, hours, minutes, seconds, isExpired, totalSeconds } =
     useCountdown(endTime);

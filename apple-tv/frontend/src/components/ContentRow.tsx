@@ -3,12 +3,31 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Content, ContinueWatching } from '../types';
 import { ContentCard } from './ContentCard';
 
+/**
+ * Props for the ContentRow component.
+ */
 interface ContentRowProps {
+  /** Section title displayed above the row */
   title: string;
+  /** Array of content items or continue watching items to display */
   items: (Content | ContinueWatching)[];
+  /** Whether to show progress bars on cards (for Continue Watching) */
   showProgress?: boolean;
 }
 
+/**
+ * Horizontal scrollable row of content cards with navigation controls.
+ * Used for displaying content sections like "Trending", "New Releases", or "Continue Watching".
+ *
+ * Features:
+ * - Horizontal scroll with smooth animation
+ * - Left/right navigation buttons
+ * - Hidden scrollbar for clean appearance
+ * - Supports both regular content and continue watching items with progress
+ *
+ * @param props - ContentRowProps with title and items to display
+ * @returns Scrollable content row section
+ */
 export function ContentRow({ title, items, showProgress }: ContentRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 

@@ -1,3 +1,10 @@
+/**
+ * Driver management routes for the delivery platform.
+ * Handles driver status (online/offline), location updates, order management,
+ * and offer acceptance/rejection. All routes require driver authentication.
+ *
+ * @module routes/driver
+ */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authenticate, requireDriver } from '../middleware/auth.js';

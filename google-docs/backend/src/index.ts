@@ -1,3 +1,9 @@
+/**
+ * Main entry point for the Google Docs clone backend server.
+ * Configures Express middleware, mounts API routes, and initializes WebSocket server.
+ * Supports running multiple instances for load balancing via PORT environment variable.
+ */
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -11,7 +17,10 @@ import commentsRoutes from './routes/comments.js';
 import suggestionsRoutes from './routes/suggestions.js';
 import { initWebSocket } from './services/collaboration.js';
 
+/** Express application instance */
 const app = express();
+
+/** Server port, configurable for running multiple instances */
 const port = parseInt(process.env.PORT || '3001');
 
 // Middleware
@@ -22,40 +31,49 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-// Health check
+/**
+ * Health check endpoint for load balancer monitoring.
+ * Returns server identifier to verify which instance handled the request.
+ */
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', server: `server-${port}` });
 });
 
-// API routes
+/** Mount API route handlers under /api prefix */
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/documents', versionsRoutes);
 app.use('/api/documents', commentsRoutes);
 app.use('/api/documents', suggestionsRoutes);
 
-// Error handler
+/**
+ * Global error handler for uncaught exceptions in routes.
+ * Logs error details and returns generic error response.
+ */
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-// Create HTTP server
+/** HTTP server instance for Express and WebSocket */
 const server = createServer(app);
 
-// Create WebSocket server
+/** WebSocket server for real-time collaboration, mounted at /ws path */
 const wss = new WebSocketServer({ server, path: '/ws' });
 
-// Initialize WebSocket handling
+/** Initialize WebSocket handlers for document collaboration */
 initWebSocket(wss);
 
-// Start server
+/** Start the HTTP server and log connection details */
 server.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
   console.log(`WebSocket server on ws://localhost:${port}/ws`);
 });
 
-// Graceful shutdown
+/**
+ * Graceful shutdown handler for SIGTERM signal.
+ * Closes HTTP server and waits for connections to drain before exiting.
+ */
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
   server.close(() => {

@@ -1,3 +1,13 @@
+/**
+ * WebSocket server for real-time pixel updates.
+ *
+ * Handles bidirectional communication with clients for:
+ * - Broadcasting pixel updates to all connected clients
+ * - Sending initial canvas state on connection
+ * - Managing connection lifecycle and heartbeats
+ *
+ * Uses Redis pub/sub to coordinate updates across multiple server instances.
+ */
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { parse as parseCookie } from 'cookie';
@@ -7,12 +17,30 @@ import { authService } from '../services/auth.js';
 import { REDIS_KEYS } from '../config.js';
 import type { PixelEvent, User } from '../types/index.js';
 
+/**
+ * Extended WebSocket interface with user identification and health tracking.
+ */
 interface ExtendedWebSocket extends WebSocket {
+  /** User ID if authenticated. */
   userId?: string;
+  /** Username if authenticated. */
   username?: string;
+  /** Health check flag for detecting dead connections. */
   isAlive: boolean;
 }
 
+/**
+ * Initializes and configures the WebSocket server.
+ *
+ * Sets up:
+ * - Redis pub/sub subscription for pixel updates
+ * - Connection handling with authentication
+ * - Heartbeat mechanism for connection health
+ * - Broadcast functionality for real-time updates
+ *
+ * @param server - The HTTP server to attach the WebSocket server to.
+ * @returns The configured WebSocketServer instance.
+ */
 export function setupWebSocket(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -27,7 +55,10 @@ export function setupWebSocket(server: Server): WebSocketServer {
     }
   });
 
-  // Handle incoming pixel events from Redis
+  /**
+   * Handles incoming pixel events from Redis pub/sub.
+   * Deserializes the event and broadcasts to all connected WebSocket clients.
+   */
   redisSub.on('message', (channel, message) => {
     if (channel === REDIS_KEYS.PIXEL_CHANNEL) {
       const event: PixelEvent = JSON.parse(message);
@@ -35,7 +66,12 @@ export function setupWebSocket(server: Server): WebSocketServer {
     }
   });
 
-  // Broadcast pixel update to all connected clients
+  /**
+   * Broadcasts a pixel update event to all connected clients.
+   * Filters out clients with closed connections.
+   *
+   * @param event - The pixel event to broadcast.
+   */
   function broadcastPixel(event: PixelEvent): void {
     const message = JSON.stringify({
       type: 'pixel',
@@ -49,7 +85,11 @@ export function setupWebSocket(server: Server): WebSocketServer {
     });
   }
 
-  // Handle new WebSocket connections
+  /**
+   * Handles new WebSocket connections.
+   * Authenticates the user via session cookie, sends initial canvas state,
+   * and sets up event handlers for the connection lifecycle.
+   */
   wss.on('connection', async (ws: ExtendedWebSocket, req) => {
     ws.isAlive = true;
 
@@ -70,7 +110,12 @@ export function setupWebSocket(server: Server): WebSocketServer {
     clients.add(ws);
     console.log(`WebSocket client connected: ${user?.username || 'anonymous'} (${clients.size} total)`);
 
-    // Send initial canvas state
+    /**
+     * Sends initial state to the newly connected client:
+     * - Full canvas data
+     * - Connection confirmation with user info
+     * - Cooldown status if authenticated
+     */
     try {
       const canvasBase64 = await canvasService.getCanvasBase64();
       ws.send(JSON.stringify({
@@ -108,12 +153,17 @@ export function setupWebSocket(server: Server): WebSocketServer {
       }));
     }
 
-    // Handle ping/pong for connection health
+    /**
+     * Responds to ping messages to maintain connection health.
+     */
     ws.on('pong', () => {
       ws.isAlive = true;
     });
 
-    // Handle incoming messages from client
+    /**
+     * Handles incoming messages from the client.
+     * Currently only processes ping messages for keepalive.
+     */
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data.toString());
@@ -126,7 +176,9 @@ export function setupWebSocket(server: Server): WebSocketServer {
       }
     });
 
-    // Handle disconnection
+    /**
+     * Cleans up when a client disconnects.
+     */
     ws.on('close', () => {
       clients.delete(ws);
       console.log(`WebSocket client disconnected: ${ws.username || 'anonymous'} (${clients.size} total)`);
@@ -138,7 +190,10 @@ export function setupWebSocket(server: Server): WebSocketServer {
     });
   });
 
-  // Heartbeat interval to detect dead connections
+  /**
+   * Heartbeat interval to detect and clean up dead connections.
+   * Runs every 30 seconds, terminating connections that don't respond to pings.
+   */
   const heartbeatInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
       const extWs = ws as ExtendedWebSocket;

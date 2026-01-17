@@ -9,9 +9,18 @@ import {
   deleteUrl,
 } from '../services/urlService.js';
 
+/**
+ * URL management router.
+ * Provides CRUD operations for shortened URLs.
+ * Routes: POST /, GET /, GET /:shortCode, PATCH /:shortCode, DELETE /:shortCode
+ */
 const router = Router();
 
-// Create a short URL
+/**
+ * POST / - Create a new shortened URL
+ * Accepts long_url, optional custom_code, and optional expires_in.
+ * Optionally associates URL with authenticated user.
+ */
 router.post(
   '/',
   optionalAuth,
@@ -39,7 +48,11 @@ router.post(
   })
 );
 
-// Get user's URLs (requires auth)
+/**
+ * GET / - List authenticated user's URLs
+ * Supports pagination via limit and offset query parameters.
+ * Requires authentication.
+ */
 router.get(
   '/',
   requireAuth,
@@ -53,7 +66,11 @@ router.get(
   })
 );
 
-// Get URL details
+/**
+ * GET /:shortCode - Get URL details
+ * Returns full URL information for display.
+ * Filters by user ID if authenticated.
+ */
 router.get(
   '/:shortCode',
   optionalAuth,
@@ -71,7 +88,11 @@ router.get(
   })
 );
 
-// Update URL (requires auth)
+/**
+ * PATCH /:shortCode - Update URL properties
+ * Allows updating is_active and expires_at.
+ * Requires authentication and URL ownership.
+ */
 router.patch(
   '/:shortCode',
   requireAuth,
@@ -93,7 +114,11 @@ router.patch(
   })
 );
 
-// Delete URL (requires auth)
+/**
+ * DELETE /:shortCode - Soft-delete a URL
+ * Marks the URL as inactive (soft delete).
+ * Requires authentication and URL ownership.
+ */
 router.delete(
   '/:shortCode',
   requireAuth,

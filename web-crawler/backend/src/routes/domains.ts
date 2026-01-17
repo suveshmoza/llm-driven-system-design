@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Express routes for domain management.
+ *
+ * These endpoints provide API access to domain-level information:
+ * - List of all crawled domains with statistics
+ * - Domain-specific settings (crawl delay, allow/block)
+ * - robots.txt content and refresh functionality
+ *
+ * @module routes/domains
+ */
+
 import { Router, Request, Response } from 'express';
 import { pool } from '../models/database.js';
 import { robotsService } from '../services/robots.js';
@@ -6,7 +17,15 @@ const router = Router();
 
 /**
  * GET /api/domains
- * Get all crawled domains
+ *
+ * Returns a paginated list of all crawled domains with statistics.
+ * Used by the Domains view in the dashboard.
+ *
+ * @query limit - Maximum domains to return (default: 50, max: 100)
+ * @query offset - Number of domains to skip for pagination
+ * @query sortBy - Column to sort by (domain, page_count, crawl_delay, created_at)
+ * @query order - Sort order (asc or desc, default: desc)
+ * @returns Object with domains array, total count, and pagination info
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -42,7 +61,12 @@ router.get('/', async (req: Request, res: Response) => {
 
 /**
  * GET /api/domains/:domain
- * Get details for a specific domain
+ *
+ * Returns detailed information about a specific domain.
+ * Includes all columns from the domains table.
+ *
+ * @param domain - Domain hostname to look up
+ * @returns Complete domain record
  */
 router.get('/:domain', async (req: Request, res: Response) => {
   try {
@@ -67,7 +91,12 @@ router.get('/:domain', async (req: Request, res: Response) => {
 
 /**
  * GET /api/domains/:domain/robots
- * Get robots.txt for a domain
+ *
+ * Returns the cached robots.txt content for a domain.
+ * Useful for debugging crawl permission issues.
+ *
+ * @param domain - Domain hostname
+ * @returns Object with domain, robotsTxt content, and fetch timestamp
  */
 router.get('/:domain/robots', async (req: Request, res: Response) => {
   try {
@@ -96,7 +125,17 @@ router.get('/:domain/robots', async (req: Request, res: Response) => {
 
 /**
  * POST /api/domains/:domain/refresh-robots
- * Force refresh robots.txt for a domain
+ *
+ * Forces a fresh fetch of robots.txt for a domain.
+ * Clears all caches (memory, Redis) and fetches from the network.
+ *
+ * Use this when:
+ * - A site has updated their robots.txt
+ * - Cache appears stale or incorrect
+ * - Debugging permission issues
+ *
+ * @param domain - Domain hostname
+ * @returns Updated robots.txt info including new content and crawl delay
  */
 router.post('/:domain/refresh-robots', async (req: Request, res: Response) => {
   try {
@@ -124,7 +163,15 @@ router.post('/:domain/refresh-robots', async (req: Request, res: Response) => {
 
 /**
  * PUT /api/domains/:domain/settings
- * Update domain settings
+ *
+ * Updates crawl settings for a specific domain.
+ * Allows overriding the auto-detected crawl delay and
+ * allowing/blocking a domain entirely.
+ *
+ * @param domain - Domain hostname
+ * @body crawlDelay - Custom crawl delay in seconds
+ * @body isAllowed - Whether crawling is allowed for this domain
+ * @returns Success message
  */
 router.put('/:domain/settings', async (req: Request, res: Response) => {
   try {

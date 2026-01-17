@@ -4,11 +4,20 @@ import pool from '../utils/db.js';
 import { authenticate } from '../middleware/auth.js';
 import type { DocumentListItem, DocumentWithPermission, PermissionLevel } from '../types/index.js';
 
+/**
+ * Documents router handling CRUD operations for collaborative documents.
+ * Manages document ownership, permissions, and sharing functionality.
+ * All routes require authentication.
+ */
 const router = Router();
 
 /**
  * GET /api/documents
- * List all documents accessible to the user
+ * Lists all documents accessible to the authenticated user.
+ * Returns owned documents and documents shared with the user.
+ * Excludes soft-deleted documents.
+ *
+ * @returns {ApiResponse<{documents: DocumentListItem[]}>} List of accessible documents
  */
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
@@ -46,7 +55,12 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 
 /**
  * POST /api/documents
- * Create a new document
+ * Creates a new document with the authenticated user as owner.
+ * Initializes document with empty ProseMirror content structure.
+ * Creates initial version (version 0) for version history.
+ *
+ * @param req.body.title - Optional document title (defaults to "Untitled Document")
+ * @returns {ApiResponse<{document: Document}>} Newly created document
  */
 router.post('/', authenticate, async (req: Request, res: Response) => {
   try {
@@ -91,7 +105,12 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
 
 /**
  * GET /api/documents/:id
- * Get document by ID
+ * Retrieves a specific document by ID with full content.
+ * Checks user has at least view permission (owner or shared).
+ * Includes owner information and user's permission level.
+ *
+ * @param req.params.id - Document UUID
+ * @returns {ApiResponse<{document: DocumentWithPermission}>} Document with content and metadata
  */
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -154,7 +173,12 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/documents/:id
- * Update document title
+ * Updates document metadata (currently only title).
+ * Requires owner or edit permission.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.body.title - New document title
+ * @returns {ApiResponse<{document: Document}>} Updated document
  */
 router.patch('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -202,7 +226,12 @@ router.patch('/:id', authenticate, async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/documents/:id
- * Soft delete a document
+ * Soft deletes a document (sets is_deleted flag).
+ * Only the document owner can delete.
+ * Document remains in database for potential recovery.
+ *
+ * @param req.params.id - Document UUID
+ * @returns {ApiResponse<void>} Success message
  */
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -234,7 +263,14 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
 /**
  * POST /api/documents/:id/share
- * Share document with another user
+ * Shares a document with another user by email.
+ * Creates permission record by user_id if user exists, or by email for future users.
+ * Only the document owner can share.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.body.email - Email of user to share with
+ * @param req.body.permission_level - Permission level: 'view', 'comment', or 'edit'
+ * @returns {ApiResponse<void>} Success message
  */
 router.post('/:id/share', authenticate, async (req: Request, res: Response) => {
   try {
@@ -305,7 +341,12 @@ router.post('/:id/share', authenticate, async (req: Request, res: Response) => {
 
 /**
  * GET /api/documents/:id/permissions
- * Get document permissions
+ * Lists all permission grants for a document.
+ * Only the document owner can view permissions.
+ * Includes user names and avatar colors for granted users.
+ *
+ * @param req.params.id - Document UUID
+ * @returns {ApiResponse<{permissions: DocumentPermission[]}>} List of permission records
  */
 router.get('/:id/permissions', authenticate, async (req: Request, res: Response) => {
   try {
@@ -348,7 +389,13 @@ router.get('/:id/permissions', authenticate, async (req: Request, res: Response)
 
 /**
  * DELETE /api/documents/:id/permissions/:permissionId
- * Remove a permission
+ * Removes a specific permission grant from a document.
+ * Only the document owner can modify permissions.
+ * Revokes the user's access to the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.permissionId - Permission record UUID to remove
+ * @returns {ApiResponse<void>} Success message
  */
 router.delete('/:id/permissions/:permissionId', authenticate, async (req: Request, res: Response) => {
   try {
@@ -387,4 +434,5 @@ router.delete('/:id/permissions/:permissionId', authenticate, async (req: Reques
   }
 });
 
+/** Exports the documents router for mounting in the main application */
 export default router;

@@ -3,10 +3,19 @@ import { useEffect } from 'react';
 import { useVideoStore } from '../stores/videoStore';
 import VideoCard from '../components/VideoCard';
 
+/**
+ * Home page route configuration.
+ * This is the main landing page at "/" showing recommendations or search results.
+ */
 export const Route = createFileRoute('/')({
   component: HomePage,
 });
 
+/**
+ * Home page component displaying video recommendations or search results.
+ * Shows personalized video recommendations by default, or search results
+ * when a search query is active. Includes loading states and empty states.
+ */
 function HomePage() {
   const { recommendations, searchResults, searchQuery, isLoading, fetchRecommendations } = useVideoStore();
 

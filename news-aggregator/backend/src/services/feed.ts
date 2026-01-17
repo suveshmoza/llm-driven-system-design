@@ -1,6 +1,13 @@
+/**
+ * Feed service for generating personalized news feeds.
+ * Implements multi-signal ranking combining relevance, freshness, quality, and trending.
+ * Provides feeds for personalized content, topic filtering, breaking news, and trending stories.
+ */
+
 import { query, queryOne } from '../db/postgres.js';
 import { getCache, setCache } from '../db/redis.js';
 
+/** Represents a clustered news story with multiple article sources */
 interface Story {
   id: string;
   title: string;
@@ -16,6 +23,7 @@ interface Story {
   articles?: ArticleSummary[];
 }
 
+/** Brief article information for story listings */
 interface ArticleSummary {
   id: string;
   source_id: string;
@@ -26,6 +34,7 @@ interface ArticleSummary {
   published_at: Date;
 }
 
+/** User profile data for personalization */
 interface UserProfile {
   user_id: string;
   topic_weights: Map<string, number>;
@@ -33,10 +42,12 @@ interface UserProfile {
   blocked_sources: string[];
 }
 
+/** Story with computed ranking score */
 interface FeedItem extends Story {
   score: number;
 }
 
+/** Paginated feed response */
 interface FeedResponse {
   stories: FeedItem[];
   next_cursor: string | null;
@@ -44,7 +55,14 @@ interface FeedResponse {
 }
 
 /**
- * Get personalized feed for a user
+ * Get personalized feed for a user.
+ * Applies multi-signal ranking (relevance, freshness, quality, trending)
+ * with diversity penalties to avoid topic clustering.
+ * Results are cached for 2 minutes.
+ * @param userId - User ID for personalization (null for anonymous)
+ * @param cursor - Pagination cursor from previous response
+ * @param limit - Number of stories to return (default: 20)
+ * @returns Paginated feed response with scored stories
  */
 export async function getPersonalizedFeed(
   userId: string | null,
@@ -104,7 +122,12 @@ export async function getPersonalizedFeed(
 }
 
 /**
- * Get feed filtered by topic
+ * Get feed filtered by a specific topic.
+ * Returns stories matching the topic, ordered by velocity and recency.
+ * @param topic - Topic name to filter by
+ * @param cursor - Pagination cursor from previous response
+ * @param limit - Number of stories to return (default: 20)
+ * @returns Paginated feed response for the topic
  */
 export async function getTopicFeed(
   topic: string,
@@ -146,7 +169,10 @@ export async function getTopicFeed(
 }
 
 /**
- * Get breaking news stories
+ * Get breaking news stories.
+ * Returns stories marked as breaking or with high velocity (> 0.5 articles/min).
+ * @param limit - Maximum number of stories to return (default: 10)
+ * @returns Array of breaking news stories with their articles
  */
 export async function getBreakingNews(limit: number = 10): Promise<FeedItem[]> {
   const stories = await query<Story>(
@@ -170,7 +196,10 @@ export async function getBreakingNews(limit: number = 10): Promise<FeedItem[]> {
 }
 
 /**
- * Get trending stories
+ * Get trending stories based on article coverage.
+ * Returns stories from the last 24 hours with the most article coverage.
+ * @param limit - Maximum number of stories to return (default: 10)
+ * @returns Array of trending stories with their articles
  */
 export async function getTrendingStories(limit: number = 10): Promise<FeedItem[]> {
   const stories = await query<Story>(
@@ -193,7 +222,10 @@ export async function getTrendingStories(limit: number = 10): Promise<FeedItem[]
 }
 
 /**
- * Get a single story with all its articles
+ * Get a single story with all its articles.
+ * Returns full story details with up to 20 article sources.
+ * @param storyId - The story UUID to retrieve
+ * @returns Story with articles, or null if not found
  */
 export async function getStory(storyId: string): Promise<Story | null> {
   const story = await queryOne<Story>(
@@ -213,7 +245,10 @@ export async function getStory(storyId: string): Promise<Story | null> {
 }
 
 /**
- * Get articles for a story
+ * Get articles belonging to a story.
+ * @param storyId - The story UUID
+ * @param limit - Maximum number of articles to return
+ * @returns Array of article summaries with source information
  */
 async function getStoryArticles(storyId: string, limit: number): Promise<ArticleSummary[]> {
   return query<ArticleSummary>(
@@ -228,7 +263,10 @@ async function getStoryArticles(storyId: string, limit: number): Promise<Article
 }
 
 /**
- * Get candidate stories for ranking
+ * Get candidate stories for ranking.
+ * Retrieves recent stories to be scored and filtered.
+ * @param limit - Maximum number of candidates to retrieve
+ * @returns Array of stories from the last 48 hours
  */
 async function getCandidateStories(limit: number): Promise<Story[]> {
   return query<Story>(
@@ -243,7 +281,10 @@ async function getCandidateStories(limit: number): Promise<Story[]> {
 }
 
 /**
- * Get user profile for personalization
+ * Get user profile for personalization.
+ * Combines explicit preferences with learned topic weights from reading behavior.
+ * @param userId - The user's UUID
+ * @returns User profile with topic weights and source preferences
  */
 async function getUserProfile(userId: string): Promise<UserProfile | null> {
   const prefs = await queryOne<{
@@ -282,7 +323,16 @@ async function getUserProfile(userId: string): Promise<UserProfile | null> {
 }
 
 /**
- * Calculate story score for ranking
+ * Calculate story score for feed ranking.
+ * Combines multiple signals:
+ * - Relevance (35%): Topic match with user interests
+ * - Freshness (25%): Exponential decay with 6-hour half-life
+ * - Quality (20%): Source diversity (multi-source coverage)
+ * - Trending (10%): Story velocity (articles/minute)
+ * - Breaking bonus (+30%): Boost for breaking news
+ * @param story - The story to score
+ * @param profile - User profile for relevance scoring (null for anonymous)
+ * @returns Normalized score between 0 and ~1.3 (with breaking boost)
  */
 function calculateStoryScore(story: Story, profile: UserProfile | null): number {
   // Relevance (topic match)
@@ -318,7 +368,10 @@ function calculateStoryScore(story: Story, profile: UserProfile | null): number 
 }
 
 /**
- * Apply diversity penalty to avoid topic clusters
+ * Apply diversity penalty to avoid topic clustering in the feed.
+ * Reduces scores for repeated topics to ensure variety.
+ * @param stories - Array of scored stories
+ * @returns Stories with adjusted scores, re-sorted by new scores
  */
 function applyDiversityPenalty(stories: FeedItem[]): FeedItem[] {
   const result: FeedItem[] = [];

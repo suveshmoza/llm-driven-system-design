@@ -2,11 +2,25 @@ import { Link } from '@tanstack/react-router';
 import { Video } from '../types';
 import { formatDuration, formatViewCount, timeAgo, getPlaceholderThumbnail, getAvatarUrl } from '../utils/format';
 
+/**
+ * Props for the VideoCard component.
+ */
 interface VideoCardProps {
+  /** Video data to display */
   video: Video;
+  /** Display layout: 'grid' for thumbnail-first, 'list' for horizontal */
   layout?: 'grid' | 'list';
 }
 
+/**
+ * Video thumbnail card component.
+ * Displays a video preview with thumbnail, title, channel info,
+ * view count, and publish date. Supports both grid (vertical) and
+ * list (horizontal) layouts for different page contexts.
+ *
+ * @param props.video - Video object containing metadata
+ * @param props.layout - Display layout ('grid' or 'list')
+ */
 export default function VideoCard({ video, layout = 'grid' }: VideoCardProps) {
   const thumbnailUrl = video.thumbnailUrl || getPlaceholderThumbnail(video.title);
 

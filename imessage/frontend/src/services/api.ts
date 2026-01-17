@@ -156,25 +156,57 @@ export const api = {
       body: JSON.stringify({ userId }),
     }),
 
+  /**
+   * Creates a group conversation with multiple participants.
+   * @param name - Display name for the group
+   * @param participantIds - Array of user UUIDs to include in the group
+   * @returns Promise with the created group conversation
+   */
   createGroupConversation: (name: string, participantIds: string[]) =>
     request<{ conversation: import('@/types').Conversation }>('/conversations/group', {
       method: 'POST',
       body: JSON.stringify({ name, participantIds }),
     }),
 
+  /**
+   * Adds a new participant to an existing group conversation.
+   * Requires admin role in the conversation.
+   * @param conversationId - The UUID of the conversation
+   * @param userId - The UUID of the user to add
+   * @returns Promise that resolves when participant is added
+   */
   addParticipant: (conversationId: string, userId: string) =>
     request(`/conversations/${conversationId}/participants`, {
       method: 'POST',
       body: JSON.stringify({ userId }),
     }),
 
+  /**
+   * Removes a participant from a group conversation.
+   * Requires admin role in the conversation.
+   * @param conversationId - The UUID of the conversation
+   * @param userId - The UUID of the user to remove
+   * @returns Promise that resolves when participant is removed
+   */
   removeParticipant: (conversationId: string, userId: string) =>
     request(`/conversations/${conversationId}/participants/${userId}`, { method: 'DELETE' }),
 
+  /**
+   * Allows current user to leave a group conversation.
+   * @param conversationId - The UUID of the conversation to leave
+   * @returns Promise that resolves when user has left
+   */
   leaveConversation: (conversationId: string) =>
     request(`/conversations/${conversationId}/leave`, { method: 'DELETE' }),
 
   // Messages
+  /**
+   * Retrieves messages for a conversation with pagination support.
+   * Supports cursor-based pagination using before/after message IDs.
+   * @param conversationId - The UUID of the conversation
+   * @param options - Pagination options: limit (default 50), before/after message ID
+   * @returns Promise with array of messages
+   */
   getMessages: (conversationId: string, options?: { limit?: number; before?: string; after?: string }) => {
     const params = new URLSearchParams();
     if (options?.limit) params.set('limit', options.limit.toString());
@@ -186,36 +218,79 @@ export const api = {
     );
   },
 
+  /**
+   * Sends a new message to a conversation via REST API.
+   * For real-time messaging, prefer using WebSocket sendMessage instead.
+   * @param conversationId - The UUID of the conversation
+   * @param content - The message text content
+   * @param options - Optional contentType and replyToId for threaded replies
+   * @returns Promise with the created message
+   */
   sendMessage: (conversationId: string, content: string, options?: { contentType?: string; replyToId?: string }) =>
     request<{ message: import('@/types').Message }>(`/messages/conversation/${conversationId}`, {
       method: 'POST',
       body: JSON.stringify({ content, ...options }),
     }),
 
+  /**
+   * Edits an existing message content. Only the sender can edit their messages.
+   * @param messageId - The UUID of the message to edit
+   * @param content - The new message content
+   * @returns Promise that resolves when message is updated
+   */
   editMessage: (messageId: string, content: string) =>
     request(`/messages/${messageId}`, {
       method: 'PATCH',
       body: JSON.stringify({ content }),
     }),
 
+  /**
+   * Deletes a message. Only the sender can delete their messages.
+   * @param messageId - The UUID of the message to delete
+   * @returns Promise that resolves when message is deleted
+   */
   deleteMessage: (messageId: string) =>
     request(`/messages/${messageId}`, { method: 'DELETE' }),
 
+  /**
+   * Adds an emoji reaction to a message.
+   * @param messageId - The UUID of the message to react to
+   * @param reaction - The emoji reaction string
+   * @returns Promise that resolves when reaction is added
+   */
   addReaction: (messageId: string, reaction: string) =>
     request(`/messages/${messageId}/reactions`, {
       method: 'POST',
       body: JSON.stringify({ reaction }),
     }),
 
+  /**
+   * Removes an emoji reaction from a message.
+   * @param messageId - The UUID of the message
+   * @param reaction - The emoji reaction to remove
+   * @returns Promise that resolves when reaction is removed
+   */
   removeReaction: (messageId: string, reaction: string) =>
     request(`/messages/${messageId}/reactions/${encodeURIComponent(reaction)}`, { method: 'DELETE' }),
 
+  /**
+   * Marks messages in a conversation as read up to a specific message.
+   * Updates read receipts for other participants to see.
+   * @param conversationId - The UUID of the conversation
+   * @param messageId - The UUID of the last read message
+   * @returns Promise that resolves when read status is updated
+   */
   markAsRead: (conversationId: string, messageId: string) =>
     request(`/messages/conversation/${conversationId}/read`, {
       method: 'POST',
       body: JSON.stringify({ messageId }),
     }),
 
+  /**
+   * Retrieves read receipts for a conversation showing who has read which messages.
+   * @param conversationId - The UUID of the conversation
+   * @returns Promise with array of read receipt objects
+   */
   getReadReceipts: (conversationId: string) =>
     request<{ receipts: import('@/types').ReadReceipt[] }>(
       `/messages/conversation/${conversationId}/read-receipts`

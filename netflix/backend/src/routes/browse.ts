@@ -3,8 +3,14 @@ import { query, queryOne } from '../db/index.js';
 import { getCached, setCache } from '../services/redis.js';
 import { authenticate, requireProfile } from '../middleware/auth.js';
 
+/**
+ * Browse router.
+ * Provides personalized homepage, continue watching, My List, and search functionality.
+ * Implements Netflix-style personalization with maturity filtering.
+ */
 const router = Router();
 
+/** Database row type for video queries */
 interface VideoRow {
   id: string;
   title: string;
@@ -20,6 +26,7 @@ interface VideoRow {
   popularity_score: number;
 }
 
+/** Database row type for continue watching queries (joined video/episode data) */
 interface ContinueWatchingRow {
   video_id: string | null;
   episode_id: string | null;
@@ -41,16 +48,24 @@ interface ContinueWatchingRow {
   s_season_number: number | null;
 }
 
+/** Database row type for My List queries */
 interface MyListRow {
   video_id: string;
   added_at: Date;
 }
 
+/** Database row type for profile settings */
 interface ProfileRow {
   maturity_level: number;
   language: string;
 }
 
+/**
+ * Maps database row to API response format (snake_case to camelCase).
+ *
+ * @param row - Database row with snake_case column names
+ * @returns Video object with camelCase property names
+ */
 function mapVideoRow(row: VideoRow) {
   return {
     id: row.id,
@@ -70,7 +85,8 @@ function mapVideoRow(row: VideoRow) {
 
 /**
  * GET /api/browse/homepage
- * Get personalized homepage rows
+ * Returns personalized homepage rows (Continue Watching, My List, Trending, etc.).
+ * Results are cached per-profile for 5 minutes.
  */
 router.get('/homepage', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -194,7 +210,7 @@ router.get('/homepage', authenticate, requireProfile, async (req: Request, res: 
 
 /**
  * GET /api/browse/continue-watching
- * Get continue watching list
+ * Returns in-progress content for the current profile.
  */
 router.get('/continue-watching', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -213,7 +229,7 @@ router.get('/continue-watching', authenticate, requireProfile, async (req: Reque
 
 /**
  * GET /api/browse/my-list
- * Get user's My List
+ * Returns user's saved content list.
  */
 router.get('/my-list', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -232,7 +248,7 @@ router.get('/my-list', authenticate, requireProfile, async (req: Request, res: R
 
 /**
  * POST /api/browse/my-list/:videoId
- * Add video to My List
+ * Adds a video to the user's My List.
  */
 router.post('/my-list/:videoId', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -254,7 +270,7 @@ router.post('/my-list/:videoId', authenticate, requireProfile, async (req: Reque
 
 /**
  * DELETE /api/browse/my-list/:videoId
- * Remove video from My List
+ * Removes a video from the user's My List.
  */
 router.delete('/my-list/:videoId', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -274,7 +290,7 @@ router.delete('/my-list/:videoId', authenticate, requireProfile, async (req: Req
 
 /**
  * GET /api/browse/my-list/:videoId/check
- * Check if video is in My List
+ * Checks if a video is in the user's My List.
  */
 router.get('/my-list/:videoId/check', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -294,7 +310,7 @@ router.get('/my-list/:videoId/check', authenticate, requireProfile, async (req: 
 
 /**
  * GET /api/browse/search
- * Search videos
+ * Searches videos by title, description, or genre.
  */
 router.get('/search', authenticate, requireProfile, async (req: Request, res: Response) => {
   try {
@@ -326,8 +342,18 @@ router.get('/search', authenticate, requireProfile, async (req: Request, res: Re
   }
 });
 
-// Helper functions
+// =========================================================
+// Helper functions for homepage row generation
+// =========================================================
 
+/**
+ * Gets in-progress content for the "Continue Watching" row.
+ * Returns items that are 5-95% complete.
+ *
+ * @param profileId - Current profile ID
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of continue watching items with progress info
+ */
 async function getContinueWatching(profileId: string, maturityLevel: number) {
   const items = await query<ContinueWatchingRow>(
     `SELECT
@@ -379,6 +405,13 @@ async function getContinueWatching(profileId: string, maturityLevel: number) {
   }));
 }
 
+/**
+ * Gets videos in the user's My List.
+ *
+ * @param profileId - Current profile ID
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of saved videos
+ */
 async function getMyList(profileId: string, maturityLevel: number) {
   const videos = await query<VideoRow>(
     `SELECT v.* FROM videos v
@@ -392,6 +425,12 @@ async function getMyList(profileId: string, maturityLevel: number) {
   return videos.map(mapVideoRow);
 }
 
+/**
+ * Gets trending videos sorted by popularity score.
+ *
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of trending videos
+ */
 async function getTrending(maturityLevel: number) {
   const videos = await query<VideoRow>(
     `SELECT * FROM videos
@@ -404,6 +443,13 @@ async function getTrending(maturityLevel: number) {
   return videos.map(mapVideoRow);
 }
 
+/**
+ * Gets the user's top genres based on watch history.
+ * Falls back to default genres if no history exists.
+ *
+ * @param profileId - Current profile ID
+ * @returns Array of genre names sorted by watch frequency
+ */
 async function getTopGenres(profileId: string): Promise<string[]> {
   const result = await query<{ genre: string; count: string }>(
     `SELECT unnest(v.genres) as genre, COUNT(*) as count
@@ -424,6 +470,13 @@ async function getTopGenres(profileId: string): Promise<string[]> {
   return result.map((r) => r.genre);
 }
 
+/**
+ * Gets videos matching a specific genre.
+ *
+ * @param genre - Genre name to filter by
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of videos in the genre
+ */
 async function getByGenre(genre: string, maturityLevel: number) {
   const videos = await query<VideoRow>(
     `SELECT * FROM videos
@@ -437,6 +490,13 @@ async function getByGenre(genre: string, maturityLevel: number) {
   return videos.map(mapVideoRow);
 }
 
+/**
+ * Gets recently watched videos for "Because you watched" recommendations.
+ *
+ * @param profileId - Current profile ID
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of recently watched videos
+ */
 async function getRecentlyWatched(profileId: string, maturityLevel: number) {
   const videos = await query<VideoRow>(
     `SELECT DISTINCT v.* FROM videos v
@@ -451,6 +511,13 @@ async function getRecentlyWatched(profileId: string, maturityLevel: number) {
   return videos.map(mapVideoRow);
 }
 
+/**
+ * Gets videos similar to a given video based on genre overlap.
+ *
+ * @param videoId - Video ID to find similar content for
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of similar videos sorted by genre overlap count
+ */
 async function getSimilarVideos(videoId: string, maturityLevel: number) {
   const video = await queryOne<{ genres: string[] }>(
     'SELECT genres FROM videos WHERE id = $1',
@@ -472,6 +539,12 @@ async function getSimilarVideos(videoId: string, maturityLevel: number) {
   return videos.map(mapVideoRow);
 }
 
+/**
+ * Gets recently released content (2023+).
+ *
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of new releases sorted by release year
+ */
 async function getNewReleases(maturityLevel: number) {
   const videos = await query<VideoRow>(
     `SELECT * FROM videos
@@ -485,6 +558,13 @@ async function getNewReleases(maturityLevel: number) {
   return videos.map(mapVideoRow);
 }
 
+/**
+ * Gets videos filtered by content type (movie or series).
+ *
+ * @param type - Content type filter
+ * @param maturityLevel - Profile's maturity level for filtering
+ * @returns Array of videos of the specified type
+ */
 async function getByType(type: 'movie' | 'series', maturityLevel: number) {
   const videos = await query<VideoRow>(
     `SELECT * FROM videos

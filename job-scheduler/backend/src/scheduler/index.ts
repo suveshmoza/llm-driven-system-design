@@ -1,3 +1,10 @@
+/**
+ * Scheduler service for the job scheduler system.
+ * Scans for due jobs, creates executions, and enqueues them for worker processing.
+ * Uses leader election to ensure only one scheduler is active at a time.
+ * @module scheduler
+ */
+
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -8,11 +15,20 @@ import { logger } from '../utils/logger';
 import { JobStatus } from '../types';
 import { migrate } from '../db/migrate';
 
+/** Unique instance ID for this scheduler, used in leader election */
 const INSTANCE_ID = process.env.SCHEDULER_INSTANCE_ID || `scheduler-${Date.now()}`;
+/** How often to scan for due jobs in milliseconds */
 const SCAN_INTERVAL_MS = parseInt(process.env.SCAN_INTERVAL_MS || '1000', 10);
+/** Leader lock TTL in seconds */
 const LEADER_LOCK_TTL = parseInt(process.env.LEADER_LOCK_TTL || '30', 10);
+/** How often to check for stalled jobs in milliseconds */
 const STALE_RECOVERY_INTERVAL_MS = 60000; // 1 minute
 
+/**
+ * Main scheduler class that coordinates job scheduling.
+ * Runs three loops: scan for due jobs, recover stalled executions, and process retries.
+ * Only the leader instance actively schedules; others wait for failover.
+ */
 class Scheduler {
   private leaderElection: LeaderElection;
   private running: boolean = false;
@@ -20,6 +36,7 @@ class Scheduler {
   private recoveryLoopHandle: NodeJS.Timeout | null = null;
   private retryLoopHandle: NodeJS.Timeout | null = null;
 
+  /** Initializes the scheduler with leader election configuration */
   constructor() {
     this.leaderElection = new LeaderElection(
       INSTANCE_ID,
@@ -28,6 +45,10 @@ class Scheduler {
     );
   }
 
+  /**
+   * Starts the scheduler service.
+   * Runs migrations, then starts the scan, recovery, and retry loops.
+   */
   async start(): Promise<void> {
     logger.info(`Starting scheduler instance: ${INSTANCE_ID}`);
     this.running = true;
@@ -47,6 +68,10 @@ class Scheduler {
     logger.info('Scheduler started');
   }
 
+  /**
+   * Stops the scheduler service gracefully.
+   * Clears all loop timers and releases leadership.
+   */
   async stop(): Promise<void> {
     logger.info('Stopping scheduler...');
     this.running = false;
@@ -70,6 +95,10 @@ class Scheduler {
     logger.info('Scheduler stopped');
   }
 
+  /**
+   * Main scheduling loop that scans for due jobs.
+   * Tries to acquire leadership, then processes due jobs if leader.
+   */
   private async runScanLoop(): Promise<void> {
     while (this.running) {
       try {
@@ -92,6 +121,10 @@ class Scheduler {
     }
   }
 
+  /**
+   * Scans for jobs that are due to run and enqueues them.
+   * Creates execution records and updates job status.
+   */
   private async scanDueJobs(): Promise<void> {
     const dueJobs = await db.getDueJobs(100);
 
@@ -127,6 +160,10 @@ class Scheduler {
     }
   }
 
+  /**
+   * Recovery loop that finds and re-enqueues stalled executions.
+   * Runs periodically to handle worker crashes or timeouts.
+   */
   private runRecoveryLoop(): void {
     this.recoveryLoopHandle = setInterval(async () => {
       if (!this.running || !this.leaderElection.getIsLeader()) {
@@ -157,6 +194,10 @@ class Scheduler {
     }, STALE_RECOVERY_INTERVAL_MS);
   }
 
+  /**
+   * Retry loop that schedules pending retries.
+   * Checks for executions ready for retry and enqueues them.
+   */
   private runRetryLoop(): void {
     this.retryLoopHandle = setInterval(async () => {
       if (!this.running || !this.leaderElection.getIsLeader()) {
@@ -195,10 +236,18 @@ class Scheduler {
     }, 5000); // Check every 5 seconds
   }
 
+  /**
+   * Helper function for async delays.
+   * @param ms - Milliseconds to sleep
+   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * Checks if this scheduler instance is the current leader.
+   * @returns True if this instance holds the leader lock
+   */
   isLeader(): boolean {
     return this.leaderElection.getIsLeader();
   }

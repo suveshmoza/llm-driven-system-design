@@ -1,7 +1,22 @@
+/**
+ * API client for communicating with the Ticketmaster backend.
+ * Provides typed methods for all API endpoints with automatic session handling.
+ */
 import type { ApiResponse, PaginatedResponse, User, Event, SectionAvailability, Reservation, Order, QueueStatus } from '../types';
 
+/** Base URL for API requests */
 const API_BASE = '/api/v1';
 
+/**
+ * Generic fetch wrapper that handles authentication and error responses.
+ * Automatically includes session ID from localStorage and handles credentials.
+ *
+ * @template T - The expected response type
+ * @param endpoint - API endpoint path (will be appended to API_BASE)
+ * @param options - Fetch request options
+ * @returns Parsed JSON response
+ * @throws Error with message from API or generic failure message
+ */
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -29,7 +44,10 @@ async function fetchApi<T>(
   return data;
 }
 
-// Auth API
+/**
+ * Authentication API methods.
+ * Handles user registration, login, logout, and profile retrieval.
+ */
 export const authApi = {
   register: async (email: string, password: string, name: string) => {
     return fetchApi<ApiResponse<User>>('/auth/register', {
@@ -60,7 +78,10 @@ export const authApi = {
   },
 };
 
-// Events API
+/**
+ * Events API methods.
+ * Provides event listing and detail retrieval.
+ */
 export const eventsApi = {
   getAll: async (params?: { category?: string; status?: string; search?: string; page?: number; limit?: number }) => {
     const queryParams = new URLSearchParams();
@@ -79,7 +100,10 @@ export const eventsApi = {
   },
 };
 
-// Seats API
+/**
+ * Seats API methods.
+ * Handles seat availability queries and reservation management.
+ */
 export const seatsApi = {
   getAvailability: async (eventId: string, section?: string) => {
     const query = section ? `?section=${section}` : '';
@@ -109,7 +133,10 @@ export const seatsApi = {
   },
 };
 
-// Queue API
+/**
+ * Queue API methods.
+ * Manages virtual waiting room interactions for high-demand events.
+ */
 export const queueApi = {
   join: async (eventId: string) => {
     return fetchApi<ApiResponse<QueueStatus>>(`/queue/${eventId}/join`, { method: 'POST' });
@@ -128,7 +155,10 @@ export const queueApi = {
   },
 };
 
-// Checkout API
+/**
+ * Checkout API methods.
+ * Handles purchase completion and order management.
+ */
 export const checkoutApi = {
   checkout: async (paymentMethod: string) => {
     return fetchApi<ApiResponse<{ order: Order; message: string }>>('/checkout', {

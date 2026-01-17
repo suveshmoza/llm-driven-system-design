@@ -2,6 +2,10 @@ import { pool } from '../database.js';
 import { quoteService } from './quoteService.js';
 import type { Position, User } from '../types/index.js';
 
+/**
+ * Represents a single stock holding with calculated metrics.
+ * Enriches raw position data with current prices and P&L calculations.
+ */
 export interface PortfolioHolding {
   symbol: string;
   name: string;
@@ -15,6 +19,10 @@ export interface PortfolioHolding {
   dayChangePercent: number;
 }
 
+/**
+ * Aggregated portfolio view with all holdings and summary metrics.
+ * Provides a complete snapshot of a user's investment position.
+ */
 export interface PortfolioSummary {
   totalValue: number;
   totalCost: number;
@@ -26,7 +34,20 @@ export interface PortfolioSummary {
   holdings: PortfolioHolding[];
 }
 
+/**
+ * Service for portfolio management and calculations.
+ * Combines position data with real-time quotes to provide
+ * comprehensive portfolio views with P&L metrics.
+ */
 export class PortfolioService {
+  /**
+   * Gets a complete portfolio summary for a user.
+   * Calculates total value, gains/losses, and day changes
+   * by combining positions with current market prices.
+   * @param userId - ID of the portfolio owner
+   * @returns Promise resolving to portfolio summary with holdings
+   * @throws Error if user is not found
+   */
   async getPortfolio(userId: string): Promise<PortfolioSummary> {
     // Get user buying power
     const userResult = await pool.query<User>(
@@ -102,6 +123,12 @@ export class PortfolioService {
     };
   }
 
+  /**
+   * Gets a specific position for a user and symbol.
+   * @param userId - ID of the position owner
+   * @param symbol - Stock ticker symbol (case-insensitive)
+   * @returns Promise resolving to position or null if not found
+   */
   async getPosition(userId: string, symbol: string): Promise<Position | null> {
     const result = await pool.query<Position>(
       'SELECT * FROM positions WHERE user_id = $1 AND symbol = $2',
@@ -110,6 +137,11 @@ export class PortfolioService {
     return result.rows[0] || null;
   }
 
+  /**
+   * Gets all positions for a user.
+   * @param userId - ID of the position owner
+   * @returns Promise resolving to array of positions sorted by symbol
+   */
   async getPositions(userId: string): Promise<Position[]> {
     const result = await pool.query<Position>(
       'SELECT * FROM positions WHERE user_id = $1 ORDER BY symbol',
@@ -119,4 +151,8 @@ export class PortfolioService {
   }
 }
 
+/**
+ * Singleton instance of the PortfolioService.
+ * Handles portfolio calculations and position queries.
+ */
 export const portfolioService = new PortfolioService();

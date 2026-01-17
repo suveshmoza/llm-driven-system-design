@@ -1,3 +1,9 @@
+/**
+ * Main entry point for the Price Tracker API server.
+ * Configures Express with middleware, routes, and starts the HTTP server.
+ * Handles graceful shutdown on SIGTERM/SIGINT.
+ * @module index
+ */
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -15,7 +21,10 @@ import redis from './db/redis.js';
 
 dotenv.config();
 
+/** Express application instance */
 const app = express();
+
+/** Server port from environment or default to 3000 */
 const PORT = process.env.PORT || 3000;
 
 // Middleware
@@ -35,7 +44,10 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Health check
+/**
+ * Health check endpoint for load balancers and monitoring.
+ * Verifies database and Redis connectivity.
+ */
 app.get('/health', async (req, res) => {
   try {
     // Check database connection
@@ -67,7 +79,10 @@ app.use('/api/v1/admin', adminRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Graceful shutdown
+/**
+ * Graceful shutdown handler.
+ * Closes database and Redis connections before exiting.
+ */
 async function shutdown() {
   logger.info('Shutting down gracefully...');
 

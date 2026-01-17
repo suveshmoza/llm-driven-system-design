@@ -2,12 +2,28 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { StreamingInfo, Resolution } from '../types';
 import { formatDuration } from '../utils/format';
 
+/**
+ * Props for the VideoPlayer component.
+ */
 interface VideoPlayerProps {
+  /** Streaming info containing video URLs and metadata */
   streamingInfo: StreamingInfo;
+  /** Callback for progress updates (position, duration) */
   onProgress?: (position: number, duration: number) => void;
+  /** Initial playback position in seconds for resume */
   initialPosition?: number;
 }
 
+/**
+ * Custom video player component with YouTube-style controls.
+ * Features include play/pause, seek bar, volume control, quality
+ * selection, fullscreen toggle, and progress reporting for watch
+ * history tracking. Supports multiple video resolutions.
+ *
+ * @param props.streamingInfo - Video streaming configuration
+ * @param props.onProgress - Callback fired periodically during playback
+ * @param props.initialPosition - Starting position for resuming playback
+ */
 export default function VideoPlayer({ streamingInfo, onProgress, initialPosition = 0 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

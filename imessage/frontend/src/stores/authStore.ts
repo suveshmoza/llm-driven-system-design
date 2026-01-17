@@ -4,21 +4,56 @@ import type { User } from '@/types';
 import { api } from '@/services/api';
 import { wsService } from '@/services/websocket';
 
+/**
+ * Authentication state interface.
+ * Tracks the current user, their device, authentication token, and loading state.
+ */
 interface AuthState {
+  /** Currently authenticated user, or null if not logged in */
   user: User | null;
+  /** Current device identifier for multi-device support */
   deviceId: string | null;
+  /** JWT authentication token */
   token: string | null;
+  /** Whether the user is currently authenticated */
   isAuthenticated: boolean;
+  /** Whether authentication check is in progress */
   isLoading: boolean;
 
   // Actions
+  /**
+   * Authenticates user with credentials.
+   * @param usernameOrEmail - Username or email address
+   * @param password - User's password
+   */
   login: (usernameOrEmail: string, password: string) => Promise<void>;
+  /**
+   * Creates a new user account.
+   * @param username - Unique username
+   * @param email - Email address
+   * @param password - Password (min 6 characters)
+   * @param displayName - Optional display name
+   */
   register: (username: string, email: string, password: string, displayName?: string) => Promise<void>;
+  /** Logs out the current user and cleans up session */
   logout: () => Promise<void>;
+  /** Validates existing token and restores session on app load */
   checkAuth: () => Promise<void>;
+  /**
+   * Updates the current user in state (for profile updates).
+   * @param user - Updated user object
+   */
   setUser: (user: User) => void;
 }
 
+/**
+ * Zustand store for authentication state management.
+ * Persists the JWT token to localStorage for session restoration.
+ * Automatically connects WebSocket on successful authentication.
+ *
+ * This store is the source of truth for user authentication state
+ * throughout the application.
+ */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({

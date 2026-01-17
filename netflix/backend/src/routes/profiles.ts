@@ -3,8 +3,14 @@ import { query, queryOne } from '../db/index.js';
 import { authenticate } from '../middleware/auth.js';
 import { setSession, getSession } from '../services/redis.js';
 
+/**
+ * Profiles router.
+ * Manages user profiles within an account (CRUD operations and profile selection).
+ * Each account can have up to 5 profiles with independent viewing history.
+ */
 const router = Router();
 
+/** Database row type for profile queries */
 interface ProfileRow {
   id: string;
   account_id: string;
@@ -19,7 +25,7 @@ interface ProfileRow {
 
 /**
  * GET /api/profiles
- * Get all profiles for current account
+ * Returns all profiles for the authenticated account.
  */
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
@@ -48,7 +54,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 
 /**
  * POST /api/profiles
- * Create a new profile
+ * Creates a new profile for the account (max 5 profiles allowed).
  */
 router.post('/', authenticate, async (req: Request, res: Response) => {
   try {
@@ -107,7 +113,7 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
 
 /**
  * PUT /api/profiles/:id
- * Update a profile
+ * Updates profile settings (name, avatar, maturity level, etc.).
  */
 router.put('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -161,7 +167,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/profiles/:id
- * Delete a profile
+ * Deletes a profile (cannot delete the last remaining profile).
  */
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -200,7 +206,8 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
 /**
  * POST /api/profiles/:id/select
- * Select a profile for the current session
+ * Selects a profile for the current session.
+ * Updates the session in Redis to include the selected profile ID.
  */
 router.post('/:id/select', authenticate, async (req: Request, res: Response) => {
   try {

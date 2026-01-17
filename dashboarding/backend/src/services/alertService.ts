@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Alert rules management and evaluation service.
+ *
+ * Provides complete lifecycle management for alerting:
+ * - CRUD operations for alert rules (threshold-based conditions on metrics)
+ * - Alert instance tracking (firing/resolved states)
+ * - Periodic evaluation engine that checks all enabled rules
+ * - Notification dispatch (console logging and webhook support)
+ */
+
 import pool from '../db/pool.js';
 import redis from '../db/redis.js';
 import { queryMetrics } from './queryService.js';
@@ -9,7 +19,21 @@ import type {
   AlertSeverity,
 } from '../types/index.js';
 
-// Alert rule CRUD
+/**
+ * Creates a new alert rule in the database.
+ *
+ * @param options - Alert rule configuration
+ * @param options.name - Display name for the alert
+ * @param options.description - Optional description of what the alert monitors
+ * @param options.metricName - The metric to evaluate
+ * @param options.tags - Tag filters for the metric (defaults to {})
+ * @param options.condition - Threshold condition with operator, threshold, and aggregation
+ * @param options.windowSeconds - Time window for evaluation (defaults to 300s)
+ * @param options.severity - Alert severity level (defaults to 'warning')
+ * @param options.notifications - Notification channels (defaults to console)
+ * @param options.enabled - Whether the rule is active (defaults to true)
+ * @returns The newly created alert rule
+ */
 export async function createAlertRule(options: {
   name: string;
   description?: string;
@@ -54,6 +78,12 @@ export async function createAlertRule(options: {
   return result.rows[0];
 }
 
+/**
+ * Retrieves a single alert rule by ID.
+ *
+ * @param id - The alert rule UUID
+ * @returns The alert rule, or null if not found
+ */
 export async function getAlertRule(id: string): Promise<AlertRule | null> {
   const result = await pool.query<AlertRule>(
     'SELECT * FROM alert_rules WHERE id = $1',
@@ -62,6 +92,13 @@ export async function getAlertRule(id: string): Promise<AlertRule | null> {
   return result.rows[0] || null;
 }
 
+/**
+ * Retrieves alert rules with optional filtering.
+ *
+ * @param options - Filter options
+ * @param options.enabled - Filter by enabled/disabled status
+ * @returns Array of matching alert rules, sorted by creation date descending
+ */
 export async function getAlertRules(options?: {
   enabled?: boolean;
 }): Promise<AlertRule[]> {
@@ -79,6 +116,16 @@ export async function getAlertRules(options?: {
   return result.rows;
 }
 
+/**
+ * Updates an existing alert rule's properties.
+ *
+ * Only provided fields are updated; others remain unchanged.
+ * Automatically updates the updated_at timestamp.
+ *
+ * @param id - The alert rule UUID to update
+ * @param updates - Partial object with fields to update
+ * @returns The updated alert rule, or null if not found
+ */
 export async function updateAlertRule(
   id: string,
   updates: Partial<{
@@ -156,12 +203,26 @@ export async function updateAlertRule(
   return result.rows[0] || null;
 }
 
+/**
+ * Deletes an alert rule and all its instances (via CASCADE).
+ *
+ * @param id - The alert rule UUID to delete
+ * @returns true if deleted, false if not found
+ */
 export async function deleteAlertRule(id: string): Promise<boolean> {
   const result = await pool.query('DELETE FROM alert_rules WHERE id = $1', [id]);
   return result.rowCount !== null && result.rowCount > 0;
 }
 
-// Alert instances
+/**
+ * Retrieves alert instances (historical and active alerts).
+ *
+ * @param options - Query options
+ * @param options.ruleId - Filter by specific alert rule
+ * @param options.status - Filter by firing/resolved status
+ * @param options.limit - Maximum number of results
+ * @returns Array of alert instances, sorted by fired_at descending
+ */
 export async function getAlertInstances(options?: {
   ruleId?: string;
   status?: 'firing' | 'resolved';
@@ -191,6 +252,13 @@ export async function getAlertInstances(options?: {
   return result.rows;
 }
 
+/**
+ * Creates a new firing alert instance for a rule.
+ *
+ * @param ruleId - The alert rule that triggered
+ * @param value - The metric value that caused the alert
+ * @returns The newly created alert instance with 'firing' status
+ */
 export async function createAlertInstance(
   ruleId: string,
   value: number
@@ -204,6 +272,14 @@ export async function createAlertInstance(
   return result.rows[0];
 }
 
+/**
+ * Marks an alert instance as resolved.
+ *
+ * Sets the status to 'resolved' and records the resolution timestamp.
+ *
+ * @param id - The alert instance UUID to resolve
+ * @returns The updated alert instance, or null if not found
+ */
 export async function resolveAlertInstance(id: string): Promise<AlertInstance | null> {
   const result = await pool.query<AlertInstance>(
     `UPDATE alert_instances
@@ -215,7 +291,13 @@ export async function resolveAlertInstance(id: string): Promise<AlertInstance | 
   return result.rows[0] || null;
 }
 
-// Alert evaluation
+/**
+ * Evaluates a comparison condition against a numeric value.
+ *
+ * @param value - The metric value to evaluate
+ * @param condition - The condition with operator and threshold
+ * @returns true if the condition is met (alert should fire)
+ */
 function evaluateCondition(value: number, condition: AlertCondition): boolean {
   const { operator, threshold } = condition;
   switch (operator) {
@@ -236,6 +318,15 @@ function evaluateCondition(value: number, condition: AlertCondition): boolean {
   }
 }
 
+/**
+ * Evaluates a single alert rule against current metric data.
+ *
+ * Queries metrics for the rule's time window and calculates the
+ * aggregated value. Compares against the threshold condition.
+ *
+ * @param rule - The alert rule to evaluate
+ * @returns Object with shouldFire boolean and current aggregated value
+ */
 export async function evaluateAlertRule(rule: AlertRule): Promise<{
   shouldFire: boolean;
   currentValue: number | null;
@@ -285,7 +376,17 @@ export async function evaluateAlertRule(rule: AlertRule): Promise<{
   return { shouldFire, currentValue };
 }
 
-// Run alert evaluation for all enabled rules
+/**
+ * Evaluates all enabled alert rules and manages alert lifecycle.
+ *
+ * For each enabled rule:
+ * - Queries current metric value
+ * - Creates new alert instance if condition met and not already firing
+ * - Resolves existing alert if condition no longer met
+ * - Sends notifications for newly firing alerts
+ *
+ * @returns Promise that resolves when all rules have been evaluated
+ */
 export async function evaluateAllAlerts(): Promise<void> {
   const rules = await getAlertRules({ enabled: true });
 
@@ -318,6 +419,17 @@ export async function evaluateAllAlerts(): Promise<void> {
   }
 }
 
+/**
+ * Dispatches notifications for a firing alert through configured channels.
+ *
+ * Currently supports:
+ * - console: Logs alert to stdout (useful for development/debugging)
+ * - webhook: Placeholder for HTTP webhook integration
+ *
+ * @param rule - The alert rule that triggered
+ * @param instance - The alert instance being notified about
+ * @param value - The metric value that triggered the alert
+ */
 async function sendNotifications(
   rule: AlertRule,
   instance: AlertInstance,
@@ -346,9 +458,21 @@ async function sendNotifications(
   );
 }
 
-// Start periodic alert evaluation
+/**
+ * Reference to the alert evaluation interval timer.
+ * Used to stop the evaluator on shutdown.
+ */
 let alertInterval: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * Starts the periodic alert evaluation background process.
+ *
+ * Runs evaluateAllAlerts on a fixed interval. Only one evaluator
+ * can be active at a time - calling this again will restart with
+ * the new interval.
+ *
+ * @param intervalSeconds - Seconds between evaluation cycles (default: 30)
+ */
 export function startAlertEvaluator(intervalSeconds: number = 30): void {
   if (alertInterval) {
     clearInterval(alertInterval);
@@ -368,6 +492,11 @@ export function startAlertEvaluator(intervalSeconds: number = 30): void {
   evaluateAllAlerts().catch(console.error);
 }
 
+/**
+ * Stops the periodic alert evaluation process.
+ *
+ * Should be called during graceful shutdown to clean up the interval.
+ */
 export function stopAlertEvaluator(): void {
   if (alertInterval) {
     clearInterval(alertInterval);

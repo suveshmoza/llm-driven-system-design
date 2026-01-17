@@ -1,9 +1,22 @@
+/**
+ * User Routes Module
+ *
+ * Express router handling HTTP endpoints for user operations.
+ * Provides REST API for user CRUD and ban management.
+ *
+ * @module routes/users
+ */
+
 import { Router, Request, Response } from 'express';
 import { userService } from '../services/userService.js';
 
+/** Express router for user-related endpoints */
 const router = Router();
 
-// Get all users
+/**
+ * GET /api/users
+ * Retrieves all users in the system.
+ */
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const users = await userService.getAllUsers();
@@ -14,7 +27,10 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// Get user by ID
+/**
+ * GET /api/users/:userId
+ * Retrieves a single user by ID.
+ */
 router.get('/:userId', async (req: Request, res: Response) => {
   try {
     const user = await userService.getUser(req.params.userId);
@@ -28,7 +44,11 @@ router.get('/:userId', async (req: Request, res: Response) => {
   }
 });
 
-// Create user
+/**
+ * POST /api/users
+ * Creates a new user account.
+ * Body: { username: string, display_name: string, avatar_url?: string }
+ */
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { username, display_name, avatar_url } = req.body;
@@ -43,7 +63,11 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// Ban user
+/**
+ * POST /api/users/:userId/ban
+ * Bans a user globally or from a specific stream.
+ * Body: { banned_by: string, reason?: string, stream_id?: string, expires_at?: string }
+ */
 router.post('/:userId/ban', async (req: Request, res: Response) => {
   try {
     const { banned_by, reason, stream_id, expires_at } = req.body;
@@ -64,7 +88,11 @@ router.post('/:userId/ban', async (req: Request, res: Response) => {
   }
 });
 
-// Unban user
+/**
+ * DELETE /api/users/:userId/ban
+ * Removes a ban from a user.
+ * Query params: stream_id (optional, for stream-specific unban)
+ */
 router.delete('/:userId/ban', async (req: Request, res: Response) => {
   try {
     const { stream_id } = req.query;

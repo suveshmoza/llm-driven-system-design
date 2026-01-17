@@ -1,6 +1,18 @@
+/**
+ * Admin user seeder.
+ * Creates a default admin user for initial system access.
+ * Safe to run multiple times - skips if admin already exists.
+ * @module db/seed-admin
+ */
+
 import bcrypt from 'bcrypt'
 import { pool } from '../shared/db.js'
 
+/**
+ * Seeds the default admin user if one doesn't exist.
+ * Creates user with email "admin@scaleai.local" and password "admin123".
+ * WARNING: Change these credentials in production!
+ */
 async function seedAdminUser() {
   try {
     console.log('Creating admin user...')

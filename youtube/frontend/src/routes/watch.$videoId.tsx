@@ -9,10 +9,21 @@ import VideoCard from '../components/VideoCard';
 import CommentSection from '../components/CommentSection';
 import { formatViewCount, formatSubscriberCount, timeAgo, getAvatarUrl } from '../utils/format';
 
+/**
+ * Video watch page route configuration.
+ * Dynamic route that accepts a videoId parameter.
+ */
 export const Route = createFileRoute('/watch/$videoId')({
   component: WatchPage,
 });
 
+/**
+ * Video watch page component.
+ * Displays the video player, video metadata (title, description, stats),
+ * channel information with subscribe button, like/dislike actions,
+ * comments section, and recommended videos sidebar. Handles video
+ * progress tracking for watch history.
+ */
 function WatchPage() {
   const { videoId } = Route.useParams();
   const { user } = useAuthStore();

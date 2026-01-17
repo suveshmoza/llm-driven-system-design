@@ -3,10 +3,23 @@ import { useUploadStore } from '../stores/uploadStore';
 import { useNavigate } from '@tanstack/react-router';
 import { formatFileSize } from '../utils/format';
 
+/**
+ * Props for the UploadModal component.
+ */
 interface UploadModalProps {
+  /** Callback to close the modal */
   onClose: () => void;
 }
 
+/**
+ * Video upload modal component.
+ * Guides users through a multi-step upload process: file selection,
+ * metadata entry (title, description, categories, tags), upload
+ * progress display, and completion confirmation. Supports drag-and-drop
+ * file selection and navigates to the video page on success.
+ *
+ * @param props.onClose - Called when modal should be dismissed
+ */
 export default function UploadModal({ onClose }: UploadModalProps) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);

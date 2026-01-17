@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Search API controller.
+ * Handles search requests, suggestions, trending queries, and search history.
+ * All search operations support both authenticated and anonymous users.
+ */
+
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import {
@@ -9,7 +15,12 @@ import {
 } from '../services/searchService.js';
 import type { SearchRequest, SearchFilters, PostType, Visibility } from '../types/index.js';
 
-// POST /api/v1/search
+/**
+ * Handles POST /api/v1/search - Main search endpoint.
+ * Executes a search query with optional filters and returns paginated results.
+ * @param req - Request with query, filters, and pagination in body
+ * @param res - Response with search results or error
+ */
 export async function search(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { query, filters, pagination } = req.body;
@@ -37,7 +48,12 @@ export async function search(req: AuthenticatedRequest, res: Response): Promise<
   }
 }
 
-// GET /api/v1/search/suggestions
+/**
+ * Handles GET /api/v1/search/suggestions - Typeahead suggestions.
+ * Returns search suggestions based on a prefix query.
+ * @param req - Request with 'q' query parameter for prefix
+ * @param res - Response with suggestions array or error
+ */
 export async function suggestions(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { q, limit } = req.query;
@@ -60,7 +76,12 @@ export async function suggestions(req: AuthenticatedRequest, res: Response): Pro
   }
 }
 
-// GET /api/v1/search/recent
+/**
+ * Handles GET /api/v1/search/recent - User's recent searches.
+ * Returns the authenticated user's recent search queries.
+ * @param req - Authenticated request
+ * @param res - Response with recent searches array or error
+ */
 export async function recentSearches(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {
@@ -81,7 +102,12 @@ export async function recentSearches(req: AuthenticatedRequest, res: Response): 
   }
 }
 
-// GET /api/v1/search/trending
+/**
+ * Handles GET /api/v1/search/trending - Trending searches.
+ * Returns the most popular search queries across all users.
+ * @param req - Request with optional limit parameter
+ * @param res - Response with trending searches array or error
+ */
 export async function trending(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { limit } = req.query;
@@ -96,7 +122,12 @@ export async function trending(req: AuthenticatedRequest, res: Response): Promis
   }
 }
 
-// DELETE /api/v1/search/history
+/**
+ * Handles DELETE /api/v1/search/history - Clear user's search history.
+ * Deletes all search history records for the authenticated user.
+ * @param req - Authenticated request
+ * @param res - Response with success status or error
+ */
 export async function clearHistory(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     if (!req.userId) {
@@ -112,7 +143,12 @@ export async function clearHistory(req: AuthenticatedRequest, res: Response): Pr
   }
 }
 
-// GET /api/v1/search/filters
+/**
+ * Handles GET /api/v1/search/filters - Available filter options.
+ * Returns the available filter values for post types, visibility, and sort options.
+ * @param _req - Request (unused)
+ * @param res - Response with filter options
+ */
 export async function getFilters(_req: AuthenticatedRequest, res: Response): Promise<void> {
   // Return available filter options
   const filters = {

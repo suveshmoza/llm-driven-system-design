@@ -2,11 +2,24 @@ import pool from '../db/pool.js';
 import bcrypt from 'bcrypt';
 import { User } from '../types/index.js';
 
+/** Number of bcrypt salt rounds for password hashing */
 const SALT_ROUNDS = 10;
 
+/**
+ * Service for user account management.
+ * Handles registration, authentication, and profile management.
+ * Uses bcrypt for secure password hashing.
+ */
 export class UserService {
   /**
-   * Create a new user
+   * Create a new user account.
+   * Hashes the password using bcrypt before storage.
+   *
+   * @param data - User registration data
+   * @param data.email - User's email address (must be unique)
+   * @param data.password - User's plaintext password
+   * @param data.name - User's display name
+   * @returns The created user (includes password_hash)
    */
   async createUser(data: {
     email: string;
@@ -26,7 +39,11 @@ export class UserService {
   }
 
   /**
-   * Find user by email
+   * Find a user by their email address.
+   * Used for login and duplicate email checking.
+   *
+   * @param email - Email address to search for
+   * @returns The user if found, null otherwise
    */
   async findByEmail(email: string): Promise<User | null> {
     const result = await pool.query(
@@ -37,7 +54,11 @@ export class UserService {
   }
 
   /**
-   * Find user by ID
+   * Find a user by their unique ID.
+   * Used for session validation and profile lookups.
+   *
+   * @param id - User's UUID
+   * @returns The user if found, null otherwise
    */
   async findById(id: string): Promise<User | null> {
     const result = await pool.query(
@@ -48,14 +69,23 @@ export class UserService {
   }
 
   /**
-   * Verify password
+   * Verify a password against the stored hash.
+   * Uses bcrypt's timing-safe comparison.
+   *
+   * @param user - The user to verify password for
+   * @param password - Plaintext password to verify
+   * @returns True if password matches, false otherwise
    */
   async verifyPassword(user: User, password: string): Promise<boolean> {
     return bcrypt.compare(password, user.password_hash);
   }
 
   /**
-   * Update user profile
+   * Update a user's profile information.
+   *
+   * @param userId - The UUID of the user to update
+   * @param data - Fields to update (name and/or email)
+   * @returns The updated user, or null if not found
    */
   async updateUser(
     userId: string,
@@ -90,7 +120,12 @@ export class UserService {
   }
 
   /**
-   * Change password
+   * Change a user's password.
+   * Hashes the new password using bcrypt.
+   *
+   * @param userId - The UUID of the user
+   * @param newPassword - The new plaintext password
+   * @returns True if password was changed, false if user not found
    */
   async changePassword(userId: string, newPassword: string): Promise<boolean> {
     const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
@@ -104,7 +139,10 @@ export class UserService {
   }
 
   /**
-   * Get all users (for admin)
+   * Get all users (excluding password hashes).
+   * Admin-only operation for user management.
+   *
+   * @returns Array of all users sorted by creation date descending
    */
   async getAllUsers(): Promise<User[]> {
     const result = await pool.query(
@@ -114,7 +152,9 @@ export class UserService {
   }
 
   /**
-   * Get user statistics (for admin)
+   * Get user statistics for the admin dashboard.
+   *
+   * @returns Statistics with total users, admin count, and new users this week
    */
   async getUserStats(): Promise<{ total: number; admins: number; thisWeek: number }> {
     const total = await pool.query(`SELECT COUNT(*) as count FROM users`);

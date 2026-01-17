@@ -3,14 +3,36 @@ import type { User, AuthState } from '../types';
 import { api } from '../services/api';
 import { wsService } from '../services/websocket';
 
+/**
+ * Extended auth store interface with action methods.
+ *
+ * Combines the authentication state with methods to manage
+ * user sessions, including login, registration, and logout.
+ */
 interface AuthStore extends AuthState {
+  /** Authenticates user with email/password and establishes session */
   login: (email: string, password: string, deviceName?: string) => Promise<void>;
+  /** Creates new user account and logs in */
   register: (email: string, password: string, deviceName?: string) => Promise<void>;
+  /** Terminates session and disconnects WebSocket */
   logout: () => Promise<void>;
+  /** Restores session from existing cookie on page load */
   checkAuth: () => Promise<void>;
+  /** Clears any displayed error message */
   clearError: () => void;
 }
 
+/**
+ * Global authentication state store using Zustand.
+ *
+ * Manages user authentication state across the application. This store is
+ * the source of truth for whether a user is logged in, their profile data,
+ * and their current device ID. It also manages the WebSocket connection
+ * lifecycle, connecting on login and disconnecting on logout.
+ *
+ * The store persists session state via httpOnly cookies managed by the
+ * backend, but maintains client-side state for UI rendering and route guards.
+ */
 export const useAuthStore = create<AuthStore>((set, get) => ({
   user: null,
   deviceId: null,

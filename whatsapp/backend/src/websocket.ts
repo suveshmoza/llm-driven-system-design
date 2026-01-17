@@ -18,14 +18,29 @@ import {
 } from './services/messageService.js';
 import { WSMessage, WSChatMessage, WSTypingMessage, WSReadReceiptMessage } from './types/index.js';
 
+/**
+ * Extended WebSocket interface with user-specific properties.
+ * Tracks the authenticated user and connection health.
+ */
 interface AuthenticatedSocket extends WebSocket {
   userId: string;
   isAlive: boolean;
 }
 
-// Map of userId -> WebSocket connection on this server
+/**
+ * Map of userId to their active WebSocket connection on this server.
+ * Used for local message delivery before falling back to Redis pub/sub.
+ */
 const connections = new Map<string, AuthenticatedSocket>();
 
+/**
+ * Sets up the WebSocket server for real-time messaging.
+ * Handles authentication, message routing, typing indicators, and presence.
+ * Supports horizontal scaling via Redis pub/sub for cross-server communication.
+ * @param server - HTTP server to attach WebSocket to
+ * @param sessionMiddleware - Express session middleware for authentication
+ * @returns The configured WebSocketServer instance
+ */
 export function setupWebSocket(server: Server, sessionMiddleware: any): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -159,6 +174,12 @@ export function setupWebSocket(server: Server, sessionMiddleware: any): WebSocke
   return wss;
 }
 
+/**
+ * Routes incoming WebSocket messages to appropriate handlers.
+ * Supports message, typing, and read receipt events.
+ * @param socket - The authenticated WebSocket connection
+ * @param message - The parsed WebSocket message
+ */
 async function handleWebSocketMessage(socket: AuthenticatedSocket, message: WSMessage) {
   const userId = socket.userId;
 
@@ -184,6 +205,13 @@ async function handleWebSocketMessage(socket: AuthenticatedSocket, message: WSMe
   }
 }
 
+/**
+ * Handles sending a chat message.
+ * Persists to database, sends acknowledgment, and routes to all participants.
+ * Uses local delivery for same-server recipients, Redis pub/sub for others.
+ * @param socket - The sender's WebSocket connection
+ * @param message - The message payload with conversation and content
+ */
 async function handleChatMessage(socket: AuthenticatedSocket, message: WSChatMessage) {
   const userId = socket.userId;
   const { conversationId, content, contentType, mediaUrl } = message.payload;
@@ -288,6 +316,12 @@ async function handleChatMessage(socket: AuthenticatedSocket, message: WSChatMes
   }
 }
 
+/**
+ * Handles typing indicator events.
+ * Stores typing state in Redis with auto-expiry and broadcasts to participants.
+ * @param socket - The typing user's WebSocket connection
+ * @param message - The typing event payload
+ */
 async function handleTyping(socket: AuthenticatedSocket, message: WSTypingMessage) {
   const userId = socket.userId;
   const { conversationId } = message.payload;
@@ -338,6 +372,12 @@ async function handleTyping(socket: AuthenticatedSocket, message: WSTypingMessag
   }
 }
 
+/**
+ * Handles read receipt events.
+ * Marks messages as read in database and notifies senders.
+ * @param socket - The reader's WebSocket connection
+ * @param message - The read receipt payload with conversation and message IDs
+ */
 async function handleReadReceipt(socket: AuthenticatedSocket, message: WSReadReceiptMessage) {
   const userId = socket.userId;
   const { conversationId, messageIds } = message.payload;
@@ -363,6 +403,15 @@ async function handleReadReceipt(socket: AuthenticatedSocket, message: WSReadRec
   }
 }
 
+/**
+ * Sends a delivery or read receipt to a message sender.
+ * Routes through local connection or Redis pub/sub based on recipient's server.
+ * @param recipientUserId - The message sender to notify
+ * @param messageId - The message that was delivered/read
+ * @param readerId - The user who received/read the message
+ * @param status - Either 'delivered' or 'read'
+ * @param allMessageIds - Optional array of all message IDs being marked
+ */
 async function notifyDeliveryReceipt(
   recipientUserId: string,
   messageId: string,
@@ -400,6 +449,12 @@ async function notifyDeliveryReceipt(
   }
 }
 
+/**
+ * Broadcasts a user's presence change to all connected users.
+ * In production, this would be more selective based on contact lists.
+ * @param userId - The user whose presence changed
+ * @param status - The new presence status ('online' or 'offline')
+ */
 async function broadcastPresence(userId: string, status: 'online' | 'offline') {
   // Get user's recent conversations and notify participants
   // For simplicity, we'll broadcast to users who have active connections
@@ -426,6 +481,11 @@ async function broadcastPresence(userId: string, status: 'online' | 'offline') {
   // This is simplified - in production you'd track interested users
 }
 
+/**
+ * Handles messages received from Redis pub/sub.
+ * Processes cross-server message delivery, typing events, and receipts.
+ * @param data - The parsed message from Redis
+ */
 async function handleRedisMessage(data: any) {
   switch (data.type) {
     case 'deliver_message': {
@@ -471,12 +531,23 @@ async function handleRedisMessage(data: any) {
   }
 }
 
+/**
+ * Safely sends a message to a WebSocket connection.
+ * Checks connection state before sending to avoid errors.
+ * @param socket - The WebSocket to send to
+ * @param message - The message object to serialize and send
+ */
 function sendToSocket(socket: WebSocket, message: any) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(message));
   }
 }
 
+/**
+ * Returns the number of active WebSocket connections on this server.
+ * Used for health checks and load monitoring.
+ * @returns The count of connected users
+ */
 export function getConnectionCount(): number {
   return connections.size;
 }

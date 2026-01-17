@@ -1,3 +1,9 @@
+/**
+ * Unit tests for the Collection service API.
+ * Uses vitest with mocked shared modules (db, storage, cache).
+ * @module collection/app.test
+ */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import request from 'supertest'
 

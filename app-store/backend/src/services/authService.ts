@@ -198,6 +198,13 @@ export class AuthService {
     return true;
   }
 
+  /**
+   * Upgrades a user account to developer status.
+   * Creates a developer profile and updates the user's role.
+   * @param userId - User's UUID
+   * @param data - Developer account information
+   * @throws Error if user is already a developer
+   */
   async becomeDeveloper(userId: string, data: {
     name: string;
     email: string;
@@ -221,4 +228,5 @@ export class AuthService {
   }
 }
 
+/** Singleton instance of the authentication service */
 export const authService = new AuthService();

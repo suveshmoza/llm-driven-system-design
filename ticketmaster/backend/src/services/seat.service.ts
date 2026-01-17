@@ -1,11 +1,31 @@
+/**
+ * Seat service for managing seat availability, reservations, and holds.
+ * Implements distributed locking using Redis to prevent double-booking.
+ * This is the core service for the ticket inventory management system.
+ */
 import { query, withTransaction } from '../db/pool.js';
 import redis from '../db/redis.js';
 import type { EventSeat, SeatAvailability, SeatInfo } from '../types/index.js';
 
-const HOLD_DURATION = 600; // 10 minutes in seconds
-const AVAILABILITY_CACHE_TTL = 5; // 5 seconds during high traffic
+/** Duration in seconds that seats are held during checkout (10 minutes) */
+const HOLD_DURATION = 600;
+/** Cache TTL for availability data - kept very short for high accuracy during sales */
+const AVAILABILITY_CACHE_TTL = 5;
 
+/**
+ * Service class for seat-related operations.
+ * Handles seat availability queries, reservations, and hold management.
+ */
 export class SeatService {
+  /**
+   * Retrieves seat availability for an event, optionally filtered by section.
+   * Groups seats by section and calculates availability statistics.
+   * Results are briefly cached to handle high traffic during sales.
+   *
+   * @param eventId - The event to get availability for
+   * @param section - Optional section name to filter by
+   * @returns Array of section availability data with individual seats
+   */
   async getSeatAvailability(eventId: string, section?: string): Promise<SeatAvailability[]> {
     const cacheKey = `availability:${eventId}:${section || 'all'}`;
 
@@ -79,6 +99,13 @@ export class SeatService {
     return availability;
   }
 
+  /**
+   * Retrieves all seats for a specific section of an event.
+   *
+   * @param eventId - The event ID
+   * @param section - The section name
+   * @returns Array of seat information for the section
+   */
   async getSectionSeats(eventId: string, section: string): Promise<SeatInfo[]> {
     const result = await query(
       `SELECT id, row, seat_number, price, price_tier, status
@@ -98,6 +125,20 @@ export class SeatService {
     }));
   }
 
+  /**
+   * Reserves seats for a user's checkout session.
+   * Uses a two-phase locking strategy:
+   * 1. Acquire Redis locks for fast, distributed exclusion
+   * 2. Update database with FOR UPDATE NOWAIT for ACID compliance
+   *
+   * Seats are held for HOLD_DURATION seconds before expiring.
+   *
+   * @param sessionId - The user's session ID (used as lock holder)
+   * @param eventId - The event ID
+   * @param seatIds - Array of seat IDs to reserve
+   * @returns Object containing reserved seats and expiration time
+   * @throws Error if any seats are unavailable
+   */
   async reserveSeats(
     sessionId: string,
     eventId: string,
@@ -200,6 +241,14 @@ export class SeatService {
     }
   }
 
+  /**
+   * Releases previously reserved seats back to available status.
+   * Called when user abandons checkout or explicitly clears selection.
+   *
+   * @param sessionId - The session that holds the seats
+   * @param eventId - The event ID
+   * @param seatIds - Array of seat IDs to release
+   */
   async releaseSeats(sessionId: string, eventId: string, seatIds: string[]): Promise<void> {
     // Release Redis locks
     for (const seatId of seatIds) {
@@ -238,6 +287,13 @@ export class SeatService {
     await this.invalidateAvailabilityCache(eventId);
   }
 
+  /**
+   * Retrieves the current reservation for a session.
+   * Returns reservation details including all held seats.
+   *
+   * @param sessionId - The session ID to look up
+   * @returns Reservation details or null if no active reservation
+   */
   async getReservation(sessionId: string): Promise<{
     event_id: string;
     seat_ids: string[];
@@ -265,6 +321,13 @@ export class SeatService {
     };
   }
 
+  /**
+   * Background job that releases seats with expired holds.
+   * Called periodically to free up abandoned reservations.
+   * Updates database and clears Redis locks.
+   *
+   * @returns Number of seats that were released
+   */
   async cleanupExpiredHolds(): Promise<number> {
     // Find expired holds
     const expired = await query(`
@@ -318,6 +381,14 @@ export class SeatService {
     return expired.rows.length;
   }
 
+  /**
+   * Releases a Redis lock for a seat if owned by the specified session.
+   * Only releases if the current lock holder matches the session ID.
+   *
+   * @param eventId - The event ID
+   * @param seatId - The seat ID
+   * @param sessionId - The session claiming ownership
+   */
   private async releaseSeatLock(eventId: string, seatId: string, sessionId: string): Promise<void> {
     const lockKey = `seat_lock:${eventId}:${seatId}`;
     const currentHolder = await redis.get(lockKey);
@@ -326,6 +397,12 @@ export class SeatService {
     }
   }
 
+  /**
+   * Invalidates all cached availability data for an event.
+   * Called after seat status changes to ensure fresh data.
+   *
+   * @param eventId - The event ID to invalidate cache for
+   */
   private async invalidateAvailabilityCache(eventId: string): Promise<void> {
     const keys = await redis.keys(`availability:${eventId}:*`);
     if (keys.length > 0) {
@@ -335,4 +412,5 @@ export class SeatService {
   }
 }
 
+/** Singleton instance of SeatService for use throughout the application */
 export const seatService = new SeatService();

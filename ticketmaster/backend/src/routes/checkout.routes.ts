@@ -1,10 +1,23 @@
+/**
+ * Checkout routes for processing purchases and managing orders.
+ * Endpoints:
+ * - POST / - Complete a purchase from active reservation
+ * - GET /orders - List user's orders
+ * - GET /orders/:id - Get single order details
+ * - POST /orders/:id/cancel - Cancel an order
+ */
 import { Router, Response } from 'express';
 import { checkoutService } from '../services/checkout.service.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware.js';
 
+/** Express router for checkout endpoints */
 const router = Router();
 
-// Process checkout
+/**
+ * POST /
+ * Completes a ticket purchase from the user's active reservation.
+ * Requires a payment_method in request body.
+ */
 router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { payment_method } = req.body;
@@ -34,7 +47,11 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
   }
 });
 
-// Get user orders
+/**
+ * GET /orders
+ * Returns all orders for the authenticated user.
+ * Includes event and venue details.
+ */
 router.get('/orders', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const orders = await checkoutService.getOrdersByUser(req.userId!);
@@ -45,7 +62,11 @@ router.get('/orders', authMiddleware, async (req: AuthenticatedRequest, res: Res
   }
 });
 
-// Get single order
+/**
+ * GET /orders/:id
+ * Returns detailed information for a specific order.
+ * Includes seat information for ticket display.
+ */
 router.get('/orders/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const order = await checkoutService.getOrderById(req.params.id, req.userId!);
@@ -62,7 +83,11 @@ router.get('/orders/:id', authMiddleware, async (req: AuthenticatedRequest, res:
   }
 });
 
-// Cancel order
+/**
+ * POST /orders/:id/cancel
+ * Cancels a completed order and releases seats back to inventory.
+ * Only completed orders can be cancelled.
+ */
 router.post('/orders/:id/cancel', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await checkoutService.cancelOrder(req.params.id, req.userId!);

@@ -1,18 +1,43 @@
+/**
+ * @fileoverview Fan-out service for distributing posts to followers' feeds.
+ * Implements a hybrid push/pull strategy to optimize for different user types:
+ * - Regular users (< 10K followers): Push model for low-latency feed updates
+ * - Celebrities (>= 10K followers): Pull model to avoid write amplification
+ */
+
 import { pool, redis } from '../db/connection.js';
 
+/**
+ * Threshold for classifying users as celebrities.
+ * Users with this many or more followers use pull-based feed distribution.
+ */
 const CELEBRITY_THRESHOLD = 10000;
+
+/**
+ * Maximum number of posts to keep in a user's cached feed.
+ * Older posts are trimmed to maintain reasonable memory usage.
+ */
 const FEED_SIZE_LIMIT = 1000;
 
+/**
+ * Result of a fan-out operation.
+ */
 export interface FanoutResult {
+  /** Whether the operation completed successfully */
   success: boolean;
+  /** Number of followers who received the post in their feed */
   followersNotified: number;
 }
 
 /**
- * Fan-out service for distributing posts to followers' feeds
- * Implements hybrid fan-out strategy:
- * - Regular users (< 10K followers): Push model (fan-out on write)
- * - Celebrities (>= 10K followers): Pull model (fetch at read time)
+ * Distributes a new post to all followers' feeds using hybrid push/pull strategy.
+ * For regular users, the post is immediately written to all followers' feeds.
+ * For celebrities, the post is stored in a Redis sorted set for pull at read time.
+ *
+ * @param postId - The unique identifier of the post to distribute
+ * @param authorId - The user ID of the post author
+ * @param createdAt - Timestamp when the post was created (used for scoring)
+ * @returns Promise resolving to FanoutResult with success status and notification count
  */
 export async function fanoutPost(
   postId: string,
@@ -106,7 +131,13 @@ export async function fanoutPost(
 }
 
 /**
- * Remove a post from all followers' feeds (when post is deleted)
+ * Removes a deleted post from all followers' feeds.
+ * Cleans up both the PostgreSQL feed_items table and Redis cache entries.
+ * Also removes from celebrity_posts if the author was a celebrity.
+ *
+ * @param postId - The unique identifier of the post to remove
+ * @param authorId - The user ID of the post author (for finding followers)
+ * @returns Promise that resolves when cleanup is complete
  */
 export async function removeFanout(postId: string, authorId: string): Promise<void> {
   try {
@@ -136,7 +167,14 @@ export async function removeFanout(postId: string, authorId: string): Promise<vo
 }
 
 /**
- * Update affinity score between two users based on interaction
+ * Updates the affinity score between two users based on their interactions.
+ * Affinity scores influence feed ranking, surfacing content from users
+ * you interact with frequently. Different interaction types have different weights.
+ *
+ * @param userId - The user performing the interaction
+ * @param targetUserId - The user whose content was interacted with
+ * @param interactionType - Type of interaction (like, comment, share, or view)
+ * @returns Promise that resolves when the score is updated
  */
 export async function updateAffinity(
   userId: string,
@@ -172,7 +210,15 @@ export async function updateAffinity(
 }
 
 /**
- * Calculate ranking score for a post
+ * Calculates a ranking score for a post based on engagement, recency, and affinity.
+ * The formula balances multiple factors:
+ * - Engagement: likes, comments (3x), shares (5x) weighted by importance
+ * - Recency decay: exponential decay with ~12 hour half-life
+ * - Affinity boost: up to 2x boost for content from close connections
+ *
+ * @param post - Post data with engagement metrics and creation timestamp
+ * @param affinityScore - Optional affinity score between viewer and author (0-100+)
+ * @returns Numeric score for ranking posts in the feed (higher is better)
  */
 export function calculatePostScore(
   post: {

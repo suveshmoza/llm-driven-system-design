@@ -4,14 +4,44 @@ import { User } from '../types';
 import api from '../services/api';
 import wsService from '../services/websocket';
 
+/**
+ * Authentication state interface for the Zustand store.
+ * Manages user session, authentication state, and login/registration actions.
+ */
 interface AuthState {
+  /** Currently authenticated user or null if not logged in */
   user: User | null;
+  /** JWT token for API authentication */
   token: string | null;
+  /** Whether an authentication operation is in progress */
   isLoading: boolean;
+  /** Error message from the last failed authentication attempt */
   error: string | null;
 
+  /**
+   * Authenticate user with email and password.
+   * @param email - User's email address
+   * @param password - User's password
+   */
   login: (email: string, password: string) => Promise<void>;
+
+  /**
+   * Register a new rider account.
+   * @param email - Email address for the new account
+   * @param password - Password for the new account
+   * @param name - User's display name
+   * @param phone - Optional phone number
+   */
   registerRider: (email: string, password: string, name: string, phone?: string) => Promise<void>;
+
+  /**
+   * Register a new driver account with vehicle information.
+   * @param email - Email address for the new account
+   * @param password - Password for the new account
+   * @param name - Driver's display name
+   * @param phone - Driver's phone number
+   * @param vehicle - Vehicle details for ride matching
+   */
   registerDriver: (
     email: string,
     password: string,
@@ -25,11 +55,39 @@ interface AuthState {
       licensePlate: string;
     }
   ) => Promise<void>;
+
+  /** End the current user session */
   logout: () => Promise<void>;
+
+  /** Verify existing token and restore session on app startup */
   checkAuth: () => Promise<void>;
+
+  /** Clear any authentication error messages */
   clearError: () => void;
 }
 
+/**
+ * Zustand store for authentication state management.
+ * Handles user login, registration, and session persistence.
+ *
+ * Key features:
+ * - Persists token to localStorage for session restoration
+ * - Automatically connects WebSocket on successful authentication
+ * - Supports both rider and driver registration flows
+ *
+ * @example
+ * ```tsx
+ * const { user, login, logout } = useAuthStore();
+ *
+ * // Login
+ * await login('user@example.com', 'password');
+ *
+ * // Check if authenticated
+ * if (user) {
+ *   console.log(`Logged in as ${user.name}`);
+ * }
+ * ```
+ */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -48,7 +106,7 @@ export const useAuthStore = create<AuthState>()(
           localStorage.setItem('token', token);
           set({ user, token, isLoading: false });
 
-          // Connect WebSocket
+          // Connect WebSocket for real-time updates
           wsService.connect(token).catch(console.error);
         } catch (error) {
           set({ error: (error as Error).message, isLoading: false });
@@ -94,7 +152,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           await api.auth.logout();
         } catch {
-          // Ignore errors during logout
+          // Ignore errors during logout - proceed with local cleanup
         }
 
         localStorage.removeItem('token');
@@ -114,8 +172,10 @@ export const useAuthStore = create<AuthState>()(
           const user = result.user as User;
           set({ user, token });
 
+          // Reconnect WebSocket with existing token
           wsService.connect(token).catch(console.error);
         } catch {
+          // Token invalid or expired - clear session
           localStorage.removeItem('token');
           set({ user: null, token: null });
         }
@@ -125,6 +185,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'uber-auth',
+      // Only persist the token, not the full user object
       partialize: (state) => ({ token: state.token }),
     }
   )

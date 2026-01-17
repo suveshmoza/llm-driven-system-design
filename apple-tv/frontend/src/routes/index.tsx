@@ -6,6 +6,17 @@ import { useContentStore } from '../stores/contentStore';
 import { recommendationsApi } from '../services/api';
 import type { RecommendationSection } from '../types';
 
+/**
+ * Home page component displaying the main streaming catalog.
+ * Shows featured content, continue watching, and personalized recommendations.
+ * This is the primary landing page for authenticated users.
+ *
+ * Features:
+ * - Hero banner with featured content
+ * - "Continue Watching" row with progress indicators (when profile selected)
+ * - Personalized recommendation sections
+ * - Featured content carousel
+ */
 function HomePage() {
   const { user, currentProfile } = useAuthStore();
   const { featured, continueWatching, fetchFeatured, fetchContinueWatching } = useContentStore();
@@ -89,6 +100,10 @@ function HomePage() {
   );
 }
 
+/**
+ * Route configuration for the home page (/).
+ * Main entry point showing the streaming catalog.
+ */
 export const Route = createFileRoute('/')({
   component: HomePage,
 });

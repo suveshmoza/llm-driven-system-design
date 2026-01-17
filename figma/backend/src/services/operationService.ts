@@ -3,6 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Operation, CanvasData, DesignObject } from '../types/index.js';
 import { fileService } from './fileService.js';
 
+/**
+ * Database row type for operations table.
+ * Maps PostgreSQL columns to TypeScript types.
+ */
 interface OperationRow {
   id: string;
   file_id: string;
@@ -17,21 +21,48 @@ interface OperationRow {
   created_at: Date;
 }
 
+/**
+ * Lamport clock for ordering operations across distributed clients.
+ * Ensures causal ordering even with clock skew between clients.
+ */
 // Simple Lamport clock for ordering
 let lamportClock = Date.now();
 
+/**
+ * Service for processing CRDT-style operations on design files.
+ * Handles operation ordering, conflict resolution, and persistence.
+ * Provides the foundation for real-time collaborative editing.
+ */
 export class OperationService {
+  /**
+   * Generates the next Lamport timestamp for an operation.
+   * Ensures monotonically increasing timestamps.
+   * @returns The next timestamp value
+   */
   // Generate next timestamp
   getNextTimestamp(): number {
     lamportClock = Math.max(lamportClock + 1, Date.now());
     return lamportClock;
   }
 
+  /**
+   * Updates the Lamport clock based on a received timestamp.
+   * Ensures the local clock stays ahead of any received timestamp.
+   * @param receivedTimestamp - Timestamp from a received operation
+   */
   // Update clock based on received timestamp
   updateClock(receivedTimestamp: number): void {
     lamportClock = Math.max(lamportClock, receivedTimestamp) + 1;
   }
 
+  /**
+   * Applies an operation to canvas data and returns the new state.
+   * Handles create, update, delete, and move operations.
+   * Uses Last-Writer-Wins for conflict resolution.
+   * @param canvasData - The current canvas state
+   * @param operation - The operation to apply
+   * @returns The new canvas state after applying the operation
+   */
   // Apply operation to canvas data
   applyOperation(canvasData: CanvasData, operation: Operation): CanvasData {
     const newData = { ...canvasData, objects: [...canvasData.objects] };
@@ -80,6 +111,13 @@ export class OperationService {
     return newData;
   }
 
+  /**
+   * Sets a nested property on an object using dot notation path.
+   * Used for partial property updates in update operations.
+   * @param obj - The object to modify
+   * @param path - Dot-separated path to the property
+   * @param value - The value to set
+   */
   // Set nested property using dot notation
   private setNestedProperty(obj: Record<string, unknown>, path: string, value: unknown): void {
     const parts = path.split('.');
@@ -96,6 +134,10 @@ export class OperationService {
     current[parts[parts.length - 1]] = value;
   }
 
+  /**
+   * Persists an operation to the database for history and replay.
+   * @param operation - The operation to store
+   */
   // Store operation in database
   async storeOperation(operation: Operation): Promise<void> {
     await execute(
@@ -116,6 +158,13 @@ export class OperationService {
     );
   }
 
+  /**
+   * Retrieves operations that occurred after a given timestamp.
+   * Used for client synchronization and catching up missed operations.
+   * @param fileId - The file to get operations for
+   * @param sinceTimestamp - Only return operations after this timestamp
+   * @returns Promise resolving to array of operations
+   */
   // Get operations since a timestamp
   async getOperationsSince(fileId: string, sinceTimestamp: number): Promise<Operation[]> {
     const rows = await query<OperationRow>(
@@ -125,6 +174,12 @@ export class OperationService {
     return rows.map(this.mapOperationRow);
   }
 
+  /**
+   * Processes an operation: updates clock, applies to canvas, stores, and persists.
+   * The main entry point for handling incoming operations.
+   * @param operation - The operation to process
+   * @returns Promise resolving to the new canvas state
+   */
   // Process and apply operation
   async processOperation(operation: Operation): Promise<CanvasData> {
     this.updateClock(operation.timestamp);
@@ -145,6 +200,18 @@ export class OperationService {
     return newCanvasData;
   }
 
+  /**
+   * Factory method to create a new operation with proper metadata.
+   * Generates ID and timestamp for the operation.
+   * @param fileId - The file this operation applies to
+   * @param userId - The user performing the operation
+   * @param operationType - The type of operation
+   * @param objectId - The object being modified
+   * @param newValue - The new value (for create/update/move)
+   * @param oldValue - The previous value (for update/delete)
+   * @param propertyPath - Dot-path to specific property (for partial updates)
+   * @returns A new Operation object ready for processing
+   */
   // Create an operation
   createOperation(
     fileId: string,
@@ -169,6 +236,12 @@ export class OperationService {
     };
   }
 
+  /**
+   * Maps a database row to an Operation object.
+   * Handles type conversion and null-to-undefined mapping.
+   * @param row - The database row to map
+   * @returns The mapped Operation object
+   */
   private mapOperationRow(row: OperationRow): Operation {
     return {
       id: row.id,
@@ -185,4 +258,8 @@ export class OperationService {
   }
 }
 
+/**
+ * Singleton instance of the OperationService.
+ * Used throughout the application for operation processing.
+ */
 export const operationService = new OperationService();

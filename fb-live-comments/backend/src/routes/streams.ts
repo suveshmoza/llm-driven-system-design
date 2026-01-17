@@ -1,11 +1,26 @@
+/**
+ * Stream Routes Module
+ *
+ * Express router handling HTTP endpoints for stream operations.
+ * Provides REST API for stream CRUD, comments, reactions, and metrics.
+ * WebSocket is preferred for real-time operations; these endpoints
+ * serve as HTTP fallbacks and for initial data loading.
+ *
+ * @module routes/streams
+ */
+
 import { Router, Request, Response } from 'express';
 import { streamService } from '../services/streamService.js';
 import { commentService } from '../services/commentService.js';
 import { reactionService } from '../services/reactionService.js';
 
+/** Express router for stream-related endpoints */
 const router = Router();
 
-// Get all streams
+/**
+ * GET /api/streams
+ * Retrieves all streams (live and ended).
+ */
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const streams = await streamService.getAllStreams();
@@ -16,7 +31,10 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// Get live streams
+/**
+ * GET /api/streams/live
+ * Retrieves only currently live streams.
+ */
 router.get('/live', async (_req: Request, res: Response) => {
   try {
     const streams = await streamService.getLiveStreams();
@@ -27,7 +45,10 @@ router.get('/live', async (_req: Request, res: Response) => {
   }
 });
 
-// Get single stream
+/**
+ * GET /api/streams/:streamId
+ * Retrieves a single stream by ID.
+ */
 router.get('/:streamId', async (req: Request, res: Response) => {
   try {
     const stream = await streamService.getStream(req.params.streamId);
@@ -41,7 +62,11 @@ router.get('/:streamId', async (req: Request, res: Response) => {
   }
 });
 
-// Create stream
+/**
+ * POST /api/streams
+ * Creates a new live stream.
+ * Body: { title: string, creator_id: string, description?: string, video_url?: string }
+ */
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { title, creator_id, description, video_url } = req.body;
@@ -56,7 +81,10 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// End stream
+/**
+ * POST /api/streams/:streamId/end
+ * Ends a live stream by setting status to 'ended'.
+ */
 router.post('/:streamId/end', async (req: Request, res: Response) => {
   try {
     const stream = await streamService.endStream(req.params.streamId);
@@ -70,7 +98,11 @@ router.post('/:streamId/end', async (req: Request, res: Response) => {
   }
 });
 
-// Get stream comments
+/**
+ * GET /api/streams/:streamId/comments
+ * Retrieves recent comments for a stream.
+ * Query params: limit (default 50)
+ */
 router.get('/:streamId/comments', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
@@ -82,7 +114,11 @@ router.get('/:streamId/comments', async (req: Request, res: Response) => {
   }
 });
 
-// Post comment (HTTP fallback, prefer WebSocket)
+/**
+ * POST /api/streams/:streamId/comments
+ * Posts a comment to a stream (HTTP fallback, prefer WebSocket).
+ * Body: { user_id: string, content: string, parent_id?: string }
+ */
 router.post('/:streamId/comments', async (req: Request, res: Response) => {
   try {
     const { user_id, content, parent_id } = req.body;
@@ -103,7 +139,10 @@ router.post('/:streamId/comments', async (req: Request, res: Response) => {
   }
 });
 
-// Get stream reactions
+/**
+ * GET /api/streams/:streamId/reactions
+ * Retrieves aggregated reaction counts for a stream.
+ */
 router.get('/:streamId/reactions', async (req: Request, res: Response) => {
   try {
     const counts = await reactionService.getReactionCounts(req.params.streamId);
@@ -114,7 +153,10 @@ router.get('/:streamId/reactions', async (req: Request, res: Response) => {
   }
 });
 
-// Get stream metrics
+/**
+ * GET /api/streams/:streamId/metrics
+ * Retrieves stream metrics (viewer count, comment count).
+ */
 router.get('/:streamId/metrics', async (req: Request, res: Response) => {
   try {
     const metrics = await streamService.getStreamMetrics(req.params.streamId);

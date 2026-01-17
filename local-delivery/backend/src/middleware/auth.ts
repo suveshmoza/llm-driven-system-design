@@ -2,7 +2,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { getSessionByToken, getUserById } from '../services/authService.js';
 import type { User } from '../types/index.js';
 
-// Extend Express Request to include user
+/**
+ * Extends the Express Request type to include authenticated user information.
+ * Available on all routes that use the authenticate middleware.
+ */
 declare global {
   namespace Express {
     interface Request {
@@ -12,6 +15,16 @@ declare global {
   }
 }
 
+/**
+ * Express middleware that validates session tokens and attaches user to request.
+ * Extracts Bearer token from Authorization header, validates via Redis/DB,
+ * and populates req.user and req.userId for downstream handlers.
+ * Returns 401 if token missing, invalid, or expired.
+ *
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Next middleware function
+ */
 export async function authenticate(
   req: Request,
   res: Response,
@@ -50,6 +63,13 @@ export async function authenticate(
   }
 }
 
+/**
+ * Creates a middleware factory that restricts access to specific user roles.
+ * Use after authenticate middleware to enforce role-based permissions.
+ *
+ * @param roles - Array of allowed role names
+ * @returns Express middleware that checks user role
+ */
 export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
@@ -66,6 +86,10 @@ export function requireRole(...roles: string[]) {
   };
 }
 
+/**
+ * Middleware allowing only customers (and admins) to access a route.
+ * Used for order placement, cart operations, and rating submissions.
+ */
 export function requireCustomer(
   req: Request,
   res: Response,
@@ -74,6 +98,10 @@ export function requireCustomer(
   return requireRole('customer', 'admin')(req, res, next);
 }
 
+/**
+ * Middleware allowing only drivers (and admins) to access a route.
+ * Used for driver status updates, location tracking, and order management.
+ */
 export function requireDriver(
   req: Request,
   res: Response,
@@ -82,6 +110,10 @@ export function requireDriver(
   return requireRole('driver', 'admin')(req, res, next);
 }
 
+/**
+ * Middleware allowing only merchants (and admins) to access a route.
+ * Used for menu management and order status updates.
+ */
 export function requireMerchant(
   req: Request,
   res: Response,
@@ -90,6 +122,10 @@ export function requireMerchant(
   return requireRole('merchant', 'admin')(req, res, next);
 }
 
+/**
+ * Middleware allowing only admins to access a route.
+ * Used for dashboard, analytics, and system management.
+ */
 export function requireAdmin(
   req: Request,
   res: Response,

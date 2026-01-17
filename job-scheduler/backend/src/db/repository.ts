@@ -1,3 +1,10 @@
+/**
+ * Repository module providing data access for jobs, executions, and metrics.
+ * This is the primary data layer for the job scheduler, implementing all
+ * CRUD operations and specialized queries for scheduling and monitoring.
+ * @module db/repository
+ */
+
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, transaction } from './pool';
 import {
@@ -16,6 +23,13 @@ import cronParser from 'cron-parser';
 
 // === Job Operations ===
 
+/**
+ * Creates a new job in the database.
+ * Parses cron expressions to calculate the next run time for recurring jobs.
+ * @param input - Job creation parameters
+ * @returns The created job record
+ * @throws Error if cron expression is invalid
+ */
 export async function createJob(input: CreateJobInput): Promise<Job> {
   const id = uuidv4();
   let nextRunTime: Date | null = null;
@@ -63,14 +77,32 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
   return result;
 }
 
+/**
+ * Retrieves a job by its unique identifier.
+ * @param id - UUID of the job
+ * @returns The job record or null if not found
+ */
 export async function getJob(id: string): Promise<Job | null> {
   return queryOne<Job>('SELECT * FROM jobs WHERE id = $1', [id]);
 }
 
+/**
+ * Retrieves a job by its unique name.
+ * Used for deduplication when creating jobs.
+ * @param name - Unique name of the job
+ * @returns The job record or null if not found
+ */
 export async function getJobByName(name: string): Promise<Job | null> {
   return queryOne<Job>('SELECT * FROM jobs WHERE name = $1', [name]);
 }
 
+/**
+ * Lists jobs with pagination and optional status filtering.
+ * @param page - Page number (1-indexed)
+ * @param limit - Maximum jobs per page
+ * @param status - Optional status filter
+ * @returns Paginated response with job list and metadata
+ */
 export async function listJobs(
   page: number = 1,
   limit: number = 20,
@@ -104,6 +136,14 @@ export async function listJobs(
   };
 }
 
+/**
+ * Lists jobs with aggregated execution statistics.
+ * Joins with execution data to provide success/failure counts and timing info.
+ * Used in the dashboard and job list views.
+ * @param page - Page number (1-indexed)
+ * @param limit - Maximum jobs per page
+ * @returns Paginated response with job stats
+ */
 export async function listJobsWithStats(
   page: number = 1,
   limit: number = 20
@@ -146,6 +186,15 @@ export async function listJobsWithStats(
   };
 }
 
+/**
+ * Updates an existing job with new values.
+ * Only provided fields are updated; others remain unchanged.
+ * Recalculates next_run_time if the schedule changes.
+ * @param id - UUID of the job to update
+ * @param input - Fields to update
+ * @returns Updated job record or null if not found
+ * @throws Error if new cron expression is invalid
+ */
 export async function updateJob(id: string, input: UpdateJobInput): Promise<Job | null> {
   const existingJob = await getJob(id);
   if (!existingJob) {
@@ -203,6 +252,12 @@ export async function updateJob(id: string, input: UpdateJobInput): Promise<Job 
   return result;
 }
 
+/**
+ * Permanently deletes a job and its associated executions.
+ * Cascade deletion is handled by the database foreign key constraints.
+ * @param id - UUID of the job to delete
+ * @returns True if the job was deleted, false if not found
+ */
 export async function deleteJob(id: string): Promise<boolean> {
   const result = await query('DELETE FROM jobs WHERE id = $1 RETURNING id', [id]);
   if (result.length > 0) {
@@ -212,6 +267,12 @@ export async function deleteJob(id: string): Promise<boolean> {
   return false;
 }
 
+/**
+ * Updates the status of a job.
+ * @param id - UUID of the job
+ * @param status - New status value
+ * @returns Updated job or null if not found
+ */
 export async function updateJobStatus(id: string, status: JobStatus): Promise<Job | null> {
   return queryOne<Job>(
     'UPDATE jobs SET status = $1 WHERE id = $2 RETURNING *',
@@ -219,10 +280,20 @@ export async function updateJobStatus(id: string, status: JobStatus): Promise<Jo
   );
 }
 
+/**
+ * Pauses a job, preventing it from being scheduled.
+ * @param id - UUID of the job to pause
+ * @returns Updated job or null if not found
+ */
 export async function pauseJob(id: string): Promise<Job | null> {
   return updateJobStatus(id, JobStatus.PAUSED);
 }
 
+/**
+ * Resumes a paused job, recalculating the next run time for recurring jobs.
+ * @param id - UUID of the job to resume
+ * @returns Updated job or null if not found or not paused
+ */
 export async function resumeJob(id: string): Promise<Job | null> {
   const job = await getJob(id);
   if (!job || job.status !== JobStatus.PAUSED) {
@@ -244,6 +315,14 @@ export async function resumeJob(id: string): Promise<Job | null> {
 
 // === Scheduler Operations ===
 
+/**
+ * Retrieves jobs due for execution.
+ * Uses FOR UPDATE SKIP LOCKED for distributed safety when multiple
+ * scheduler instances are running. Only returns jobs scheduled in the
+ * last 5 minutes to avoid processing stale schedules.
+ * @param limit - Maximum number of jobs to retrieve
+ * @returns Array of jobs ready to be scheduled
+ */
 export async function getDueJobs(limit: number = 100): Promise<Job[]> {
   // Use FOR UPDATE SKIP LOCKED for distributed scheduling safety
   return query<Job>(
@@ -258,6 +337,12 @@ export async function getDueJobs(limit: number = 100): Promise<Job[]> {
   );
 }
 
+/**
+ * Calculates and sets the next run time for a recurring job.
+ * Called after a job execution completes to schedule the next occurrence.
+ * @param jobId - UUID of the job
+ * @returns Updated job or null if not found or not recurring
+ */
 export async function scheduleNextRun(jobId: string): Promise<Job | null> {
   const job = await getJob(jobId);
   if (!job || !job.schedule) {
@@ -280,6 +365,14 @@ export async function scheduleNextRun(jobId: string): Promise<Job | null> {
 
 // === Execution Operations ===
 
+/**
+ * Creates a new execution record for a job.
+ * Executions track individual runs including timing, status, and results.
+ * @param jobId - UUID of the job being executed
+ * @param scheduledAt - When the execution was scheduled (defaults to now)
+ * @param attempt - Attempt number for retry tracking (defaults to 1)
+ * @returns The created execution record
+ */
 export async function createExecution(
   jobId: string,
   scheduledAt: Date = new Date(),
@@ -299,10 +392,21 @@ export async function createExecution(
   return result;
 }
 
+/**
+ * Retrieves an execution by its unique identifier.
+ * @param id - UUID of the execution
+ * @returns Execution record or null if not found
+ */
 export async function getExecution(id: string): Promise<JobExecution | null> {
   return queryOne<JobExecution>('SELECT * FROM job_executions WHERE id = $1', [id]);
 }
 
+/**
+ * Retrieves an execution with its associated job data.
+ * Used when worker needs both execution and job details.
+ * @param id - UUID of the execution
+ * @returns Execution with embedded job or null if not found
+ */
 export async function getExecutionWithJob(id: string): Promise<(JobExecution & { job: Job }) | null> {
   const result = await queryOne<JobExecution & { job: Job }>(
     `SELECT e.*, row_to_json(j.*) as job
@@ -314,6 +418,14 @@ export async function getExecutionWithJob(id: string): Promise<(JobExecution & {
   return result;
 }
 
+/**
+ * Lists executions with pagination and optional filtering.
+ * @param jobId - Optional job UUID to filter by
+ * @param page - Page number (1-indexed)
+ * @param limit - Maximum executions per page
+ * @param status - Optional status filter
+ * @returns Paginated response with execution list
+ */
 export async function listExecutions(
   jobId?: string,
   page: number = 1,
@@ -363,6 +475,13 @@ export async function listExecutions(
   };
 }
 
+/**
+ * Updates an execution record with new values.
+ * Used to update status, timing, results, and error information.
+ * @param id - UUID of the execution
+ * @param updates - Fields to update
+ * @returns Updated execution or null if not found
+ */
 export async function updateExecution(
   id: string,
   updates: Partial<Omit<JobExecution, 'id' | 'job_id' | 'created_at'>>
@@ -402,6 +521,12 @@ export async function updateExecution(
   );
 }
 
+/**
+ * Retrieves executions in PENDING_RETRY status that are ready for retry.
+ * Uses FOR UPDATE SKIP LOCKED for safe concurrent processing.
+ * @param limit - Maximum number of executions to retrieve
+ * @returns Array of executions ready for retry
+ */
 export async function getRetryableExecutions(limit: number = 50): Promise<JobExecution[]> {
   return query<JobExecution>(
     `SELECT * FROM job_executions
@@ -416,6 +541,15 @@ export async function getRetryableExecutions(limit: number = 50): Promise<JobExe
 
 // === Execution Logs ===
 
+/**
+ * Adds a log entry for an execution.
+ * Handlers use this to record progress, warnings, and errors during execution.
+ * @param executionId - UUID of the execution
+ * @param level - Log level (info, warn, error)
+ * @param message - Log message
+ * @param metadata - Optional structured metadata
+ * @returns The created log entry
+ */
 export async function addExecutionLog(
   executionId: string,
   level: 'info' | 'warn' | 'error',
@@ -436,6 +570,12 @@ export async function addExecutionLog(
   return result;
 }
 
+/**
+ * Retrieves log entries for an execution.
+ * @param executionId - UUID of the execution
+ * @param limit - Maximum number of log entries
+ * @returns Array of log entries in chronological order
+ */
 export async function getExecutionLogs(
   executionId: string,
   limit: number = 100
@@ -451,6 +591,11 @@ export async function getExecutionLogs(
 
 // === Metrics ===
 
+/**
+ * Retrieves aggregated system metrics for dashboard display.
+ * Provides counts of jobs, executions, and completion statistics.
+ * @returns Object with various system metrics
+ */
 export async function getSystemMetrics(): Promise<{
   total_jobs: number;
   active_jobs: number;
@@ -497,6 +642,12 @@ export async function getSystemMetrics(): Promise<{
   };
 }
 
+/**
+ * Retrieves hourly execution statistics for charting.
+ * Used to display execution trends over time in the dashboard.
+ * @param hours - Number of hours of history to retrieve
+ * @returns Array of hourly statistics with completion counts and durations
+ */
 export async function getExecutionStats(
   hours: number = 24
 ): Promise<

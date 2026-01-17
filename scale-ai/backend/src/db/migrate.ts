@@ -1,3 +1,10 @@
+/**
+ * Database migration runner.
+ * Executes SQL migration files in order to set up the database schema.
+ * Idempotent - safe to run multiple times; skips already-applied migrations.
+ * @module db/migrate
+ */
+
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -5,6 +12,11 @@ import { pool } from '../shared/db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+/**
+ * Runs all SQL migration files from the migrations directory.
+ * Migrations are sorted alphabetically and executed in order.
+ * "Already exists" errors are treated as success (idempotent design).
+ */
 async function migrate() {
   console.log('Running database migrations...')
 

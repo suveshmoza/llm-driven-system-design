@@ -3,11 +3,24 @@ import { redis } from '../redis.js';
 import { quoteService } from './quoteService.js';
 import type { Watchlist, WatchlistItem, PriceAlert, Quote } from '../types/index.js';
 
+/**
+ * Watchlist with items enriched with current quote data.
+ */
 export interface WatchlistWithItems extends Watchlist {
   items: Array<WatchlistItem & { quote?: Quote }>;
 }
 
+/**
+ * Service for managing user watchlists.
+ * Allows users to create lists of stocks to track,
+ * with each item enriched with real-time quote data.
+ */
 export class WatchlistService {
+  /**
+   * Gets all watchlists for a user with enriched quote data.
+   * @param userId - ID of the watchlist owner
+   * @returns Promise resolving to array of watchlists with items and quotes
+   */
   async getWatchlists(userId: string): Promise<WatchlistWithItems[]> {
     const watchlistsResult = await pool.query<Watchlist>(
       'SELECT * FROM watchlists WHERE user_id = $1 ORDER BY created_at',
@@ -33,6 +46,12 @@ export class WatchlistService {
     return watchlists;
   }
 
+  /**
+   * Creates a new watchlist for a user.
+   * @param userId - ID of the watchlist owner
+   * @param name - Display name for the watchlist
+   * @returns Promise resolving to the created watchlist
+   */
   async createWatchlist(userId: string, name: string): Promise<Watchlist> {
     const result = await pool.query<Watchlist>(
       'INSERT INTO watchlists (user_id, name) VALUES ($1, $2) RETURNING *',
@@ -41,6 +60,12 @@ export class WatchlistService {
     return result.rows[0];
   }
 
+  /**
+   * Deletes a watchlist and all its items.
+   * @param userId - ID of the watchlist owner (for authorization)
+   * @param watchlistId - ID of the watchlist to delete
+   * @throws Error if watchlist not found or not owned by user
+   */
   async deleteWatchlist(userId: string, watchlistId: string): Promise<void> {
     const result = await pool.query(
       'DELETE FROM watchlists WHERE id = $1 AND user_id = $2',
@@ -52,6 +77,14 @@ export class WatchlistService {
     }
   }
 
+  /**
+   * Adds a stock symbol to a watchlist.
+   * @param userId - ID of the watchlist owner (for authorization)
+   * @param watchlistId - ID of the target watchlist
+   * @param symbol - Stock ticker symbol to add
+   * @returns Promise resolving to the created watchlist item
+   * @throws Error if watchlist not found or symbol invalid
+   */
   async addToWatchlist(
     userId: string,
     watchlistId: string,
@@ -81,6 +114,13 @@ export class WatchlistService {
     return result.rows[0];
   }
 
+  /**
+   * Removes a stock symbol from a watchlist.
+   * @param userId - ID of the watchlist owner (for authorization)
+   * @param watchlistId - ID of the target watchlist
+   * @param symbol - Stock ticker symbol to remove
+   * @throws Error if watchlist not found
+   */
   async removeFromWatchlist(
     userId: string,
     watchlistId: string,
@@ -103,9 +143,20 @@ export class WatchlistService {
   }
 }
 
+/**
+ * Service for managing user price alerts.
+ * Allows users to set alerts that trigger when stock prices
+ * cross specified thresholds. Triggered alerts are stored in Redis
+ * for real-time notification delivery.
+ */
 export class PriceAlertService {
   private checkInterval: NodeJS.Timeout | null = null;
 
+  /**
+   * Gets all price alerts for a user.
+   * @param userId - ID of the alert owner
+   * @returns Promise resolving to array of alerts, newest first
+   */
   async getAlerts(userId: string): Promise<PriceAlert[]> {
     const result = await pool.query<PriceAlert>(
       'SELECT * FROM price_alerts WHERE user_id = $1 ORDER BY created_at DESC',
@@ -114,6 +165,15 @@ export class PriceAlertService {
     return result.rows;
   }
 
+  /**
+   * Creates a new price alert for a user.
+   * @param userId - ID of the alert owner
+   * @param symbol - Stock ticker symbol to monitor
+   * @param targetPrice - Price threshold to trigger alert
+   * @param condition - Trigger when price goes 'above' or 'below' target
+   * @returns Promise resolving to the created alert
+   * @throws Error if symbol is invalid
+   */
   async createAlert(
     userId: string,
     symbol: string,
@@ -135,6 +195,12 @@ export class PriceAlertService {
     return result.rows[0];
   }
 
+  /**
+   * Deletes a price alert.
+   * @param userId - ID of the alert owner (for authorization)
+   * @param alertId - ID of the alert to delete
+   * @throws Error if alert not found or not owned by user
+   */
   async deleteAlert(userId: string, alertId: string): Promise<void> {
     const result = await pool.query(
       'DELETE FROM price_alerts WHERE id = $1 AND user_id = $2',
@@ -146,7 +212,11 @@ export class PriceAlertService {
     }
   }
 
-  // Start background process to check alerts
+  /**
+   * Starts the background alert checker.
+   * Periodically monitors all untriggered alerts against current prices
+   * and stores triggered alerts in Redis for notification.
+   */
   startAlertChecker(): void {
     if (this.checkInterval) return;
 
@@ -157,6 +227,9 @@ export class PriceAlertService {
     console.log('Price alert checker started');
   }
 
+  /**
+   * Stops the background alert checker.
+   */
   stopAlertChecker(): void {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
@@ -164,6 +237,10 @@ export class PriceAlertService {
     }
   }
 
+  /**
+   * Checks all untriggered alerts against current prices.
+   * Triggers alerts when conditions are met and stores them in Redis.
+   */
   private async checkAlerts(): Promise<void> {
     try {
       const alertsResult = await pool.query<PriceAlert>(
@@ -214,15 +291,33 @@ export class PriceAlertService {
     }
   }
 
+  /**
+   * Gets triggered alerts for a user from Redis.
+   * @param userId - ID of the alert owner
+   * @returns Promise resolving to array of triggered alert details
+   */
   async getTriggeredAlerts(userId: string): Promise<unknown[]> {
     const alerts = await redis.lrange(`alerts:${userId}`, 0, -1);
     return alerts.map((a) => JSON.parse(a));
   }
 
+  /**
+   * Clears all triggered alerts for a user from Redis.
+   * @param userId - ID of the alert owner
+   */
   async clearTriggeredAlerts(userId: string): Promise<void> {
     await redis.del(`alerts:${userId}`);
   }
 }
 
+/**
+ * Singleton instance of the WatchlistService.
+ * Manages user watchlists for tracking stocks.
+ */
 export const watchlistService = new WatchlistService();
+
+/**
+ * Singleton instance of the PriceAlertService.
+ * Manages user price alerts and background monitoring.
+ */
 export const priceAlertService = new PriceAlertService();

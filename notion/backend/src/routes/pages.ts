@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Page management routes for creating, reading, updating, and deleting pages.
+ * Pages form a hierarchical tree structure within workspaces and can contain blocks
+ * or act as databases with structured data.
+ */
+
 import { Router, Request, Response } from 'express';
 import pool from '../models/db.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -6,12 +12,13 @@ import type { Page } from '../types/index.js';
 
 const router = Router();
 
-// All page routes require authentication
+// Apply authentication to all page routes
 router.use(authMiddleware);
 
 /**
  * GET /api/pages
- * Get all pages for a workspace (optionally filtered)
+ * Lists pages within a workspace, optionally filtered by parent_id or database type.
+ * Returns pages ordered by their fractional index position.
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -68,7 +75,8 @@ router.get('/', async (req: Request, res: Response) => {
 
 /**
  * POST /api/pages
- * Create a new page
+ * Creates a new page or database within a workspace.
+ * Uses fractional indexing for position to allow O(1) insertions.
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -173,7 +181,8 @@ router.post('/', async (req: Request, res: Response) => {
 
 /**
  * GET /api/pages/:id
- * Get a specific page with its blocks
+ * Gets a specific page with its blocks, child pages, and database views.
+ * Provides all data needed to render the page editor.
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -245,7 +254,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/pages/:id
- * Update a page
+ * Updates page properties such as title, icon, cover image, or parent.
+ * Moving a page updates its position in the hierarchy.
  */
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
@@ -329,7 +339,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/pages/:id
- * Archive a page (soft delete)
+ * Archives a page by default, or permanently deletes it with ?permanent=true.
+ * Archived pages can be restored later.
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -380,7 +391,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 /**
  * GET /api/pages/:id/tree
- * Get page hierarchy tree
+ * Returns the ancestor chain (breadcrumb path) from root to this page.
+ * Uses a recursive CTE for efficient hierarchy traversal.
  */
 router.get('/:id/tree', async (req: Request, res: Response) => {
   try {

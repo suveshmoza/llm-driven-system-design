@@ -15,13 +15,35 @@ import {
 import { generateUUID, isExpired, parseExpiration } from "../utils/index.js";
 import { tokenRegistry } from "./tokenRegistry.js";
 
+/**
+ * Push Notification Service.
+ *
+ * Handles the core notification delivery logic including:
+ * - Sending to individual devices or topics
+ * - Store-and-forward for offline devices
+ * - Collapse ID deduplication
+ * - Priority-based queuing
+ * - Expiration handling
+ */
 export class PushService {
+  /** Unique identifier for this server instance, used for pub/sub routing */
   private serverId: string;
 
   constructor() {
     this.serverId = `server-${process.env.PORT || 3000}`;
   }
 
+  /**
+   * Sends a notification to a device by its raw token.
+   * Creates a notification record and attempts immediate delivery.
+   * If device is offline, queues for later delivery.
+   *
+   * @param deviceToken - Raw 64-character hex device token
+   * @param payload - APNs notification payload
+   * @param options - Delivery options (priority, expiration, collapse ID)
+   * @returns Notification ID and delivery status
+   * @throws Error if device token is not registered
+   */
   async sendToDevice(
     deviceToken: string,
     payload: NotificationPayload,
@@ -72,6 +94,16 @@ export class PushService {
     };
   }
 
+  /**
+   * Sends a notification to a device by its server-assigned ID.
+   * Similar to sendToDevice but uses the internal device ID.
+   *
+   * @param deviceId - Server-assigned device UUID
+   * @param payload - APNs notification payload
+   * @param options - Delivery options (priority, expiration, collapse ID)
+   * @returns Notification ID and delivery status
+   * @throws Error if device ID is invalid
+   */
   async sendToDeviceById(
     deviceId: string,
     payload: NotificationPayload,
@@ -122,6 +154,15 @@ export class PushService {
     };
   }
 
+  /**
+   * Sends a notification to all devices subscribed to a topic.
+   * Iterates through subscribers and sends individually to each device.
+   *
+   * @param topic - Topic name to broadcast to
+   * @param payload - APNs notification payload
+   * @param options - Delivery options (priority, expiration, collapse ID)
+   * @returns Notification ID, status, and count of queued devices
+   */
   async sendToTopic(
     topic: string,
     payload: NotificationPayload,
@@ -169,6 +210,14 @@ export class PushService {
     };
   }
 
+  /**
+   * Attempts to deliver a notification to a device.
+   * If device is online (connected via WebSocket), publishes for immediate delivery.
+   * If offline, stores in pending queue for later delivery.
+   *
+   * @param notification - Pending notification to deliver
+   * @returns Object indicating if notification was delivered or queued
+   */
   private async deliverNotification(
     notification: PendingNotification
   ): Promise<{ delivered: boolean; queued: boolean }> {
@@ -202,6 +251,13 @@ export class PushService {
     return { delivered: false, queued: true };
   }
 
+  /**
+   * Stores a notification for later delivery when device comes online.
+   * Handles collapse ID deduplication by replacing older notifications.
+   * Also enqueues by priority for background processing.
+   *
+   * @param notification - Notification to store
+   */
   private async storeForDelivery(notification: PendingNotification): Promise<void> {
     const { id, device_id, payload, priority, expiration, collapse_id } =
       notification;
@@ -231,6 +287,12 @@ export class PushService {
     await this.updateNotificationStatus(id, "queued");
   }
 
+  /**
+   * Updates a notification's status in the database.
+   *
+   * @param notificationId - Notification UUID
+   * @param status - New status to set
+   */
   async updateNotificationStatus(
     notificationId: string,
     status: NotificationStatus
@@ -241,6 +303,13 @@ export class PushService {
     );
   }
 
+  /**
+   * Marks a notification as successfully delivered.
+   * Creates a delivery log entry and removes from pending queue.
+   * Called when device acknowledges receipt via WebSocket.
+   *
+   * @param notificationId - Notification UUID
+   */
   async markDelivered(notificationId: string): Promise<void> {
     await db.query(
       `UPDATE notifications SET status = 'delivered', updated_at = NOW() WHERE id = $1`,
@@ -260,6 +329,13 @@ export class PushService {
     ]);
   }
 
+  /**
+   * Gets all pending notifications for a device.
+   * Excludes expired notifications, ordered by priority (high first) then age.
+   *
+   * @param deviceId - Device UUID
+   * @returns Array of pending notifications
+   */
   async getPendingNotifications(deviceId: string): Promise<PendingNotification[]> {
     const result = await db.query<PendingNotification>(
       `SELECT * FROM pending_notifications
@@ -272,6 +348,13 @@ export class PushService {
     return result.rows;
   }
 
+  /**
+   * Delivers all pending notifications when a device reconnects.
+   * Called when device establishes WebSocket connection.
+   *
+   * @param deviceId - Device UUID
+   * @returns Number of notifications delivered
+   */
   async deliverPendingToDevice(deviceId: string): Promise<number> {
     const pending = await this.getPendingNotifications(deviceId);
     let deliveredCount = 0;
@@ -295,6 +378,12 @@ export class PushService {
     return deliveredCount;
   }
 
+  /**
+   * Retrieves a notification by its ID.
+   *
+   * @param notificationId - Notification UUID
+   * @returns Notification record or null if not found
+   */
   async getNotification(notificationId: string): Promise<Notification | null> {
     const result = await db.query<Notification>(
       `SELECT * FROM notifications WHERE id = $1`,
@@ -308,6 +397,13 @@ export class PushService {
     return result.rows[0];
   }
 
+  /**
+   * Lists notifications with optional filters and pagination.
+   * Used for admin dashboard notification list.
+   *
+   * @param options - Filter options (deviceId, status, limit, offset)
+   * @returns Object with notifications array and total count
+   */
   async getNotifications(
     options: {
       deviceId?: string;
@@ -350,6 +446,12 @@ export class PushService {
     return { notifications: result.rows, total };
   }
 
+  /**
+   * Gets aggregate statistics about all notifications.
+   * Used for admin dashboard overview.
+   *
+   * @returns Counts by status (total, pending, queued, delivered, failed, expired)
+   */
   async getNotificationStats(): Promise<{
     total: number;
     pending: number;
@@ -386,6 +488,13 @@ export class PushService {
     };
   }
 
+  /**
+   * Cleans up expired notifications from the system.
+   * Updates status to "expired" and removes from pending queue.
+   * Called periodically to prevent queue buildup.
+   *
+   * @returns Number of notifications cleaned up
+   */
   async cleanupExpiredNotifications(): Promise<number> {
     // Update expired notifications
     const result = await db.query(
@@ -404,4 +513,8 @@ export class PushService {
   }
 }
 
+/**
+ * Singleton instance of the Push Service.
+ * Use this throughout the application for notification delivery.
+ */
 export const pushService = new PushService();

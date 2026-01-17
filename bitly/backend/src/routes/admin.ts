@@ -12,12 +12,22 @@ import { getGlobalAnalytics } from '../services/analyticsService.js';
 import { getAllUsers, updateUserRole, deactivateUser } from '../services/authService.js';
 import { getKeyPoolStats, repopulateKeyPool } from '../services/keyService.js';
 
+/**
+ * Admin router.
+ * Provides system administration endpoints for managing URLs, users, and key pool.
+ * All routes require admin authentication.
+ */
 const router = Router();
 
-// All admin routes require admin authentication
+/**
+ * Apply admin authentication to all routes in this router.
+ */
 router.use(requireAdmin);
 
-// Get system statistics
+/**
+ * GET /stats - Get system-wide statistics
+ * Returns URL counts, click counts, and key pool status.
+ */
 router.get(
   '/stats',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -26,7 +36,10 @@ router.get(
   })
 );
 
-// Get global analytics
+/**
+ * GET /analytics - Get global analytics data
+ * Returns click trends, hourly distribution, and top URLs.
+ */
 router.get(
   '/analytics',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -35,7 +48,10 @@ router.get(
   })
 );
 
-// Get all URLs with filtering
+/**
+ * GET /urls - List all URLs with optional filtering
+ * Supports is_active, is_custom, and search filters.
+ */
 router.get(
   '/urls',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -54,7 +70,10 @@ router.get(
   })
 );
 
-// Deactivate a URL
+/**
+ * POST /urls/:shortCode/deactivate - Deactivate a URL
+ * Prevents the URL from redirecting.
+ */
 router.post(
   '/urls/:shortCode/deactivate',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -71,7 +90,10 @@ router.post(
   })
 );
 
-// Reactivate a URL
+/**
+ * POST /urls/:shortCode/reactivate - Reactivate a URL
+ * Restores a previously deactivated URL.
+ */
 router.post(
   '/urls/:shortCode/reactivate',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -88,7 +110,9 @@ router.post(
   })
 );
 
-// Get all users
+/**
+ * GET /users - List all users with pagination
+ */
 router.get(
   '/users',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -100,7 +124,10 @@ router.get(
   })
 );
 
-// Update user role
+/**
+ * PATCH /users/:userId/role - Update a user's role
+ * Role must be 'user' or 'admin'.
+ */
 router.patch(
   '/users/:userId/role',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -123,7 +150,10 @@ router.patch(
   })
 );
 
-// Deactivate user
+/**
+ * POST /users/:userId/deactivate - Deactivate a user account
+ * Prevents the user from logging in.
+ */
 router.post(
   '/users/:userId/deactivate',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -140,7 +170,10 @@ router.post(
   })
 );
 
-// Get key pool statistics
+/**
+ * GET /key-pool - Get key pool statistics
+ * Returns counts of total, available, allocated, and used keys.
+ */
 router.get(
   '/key-pool',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -149,7 +182,10 @@ router.get(
   })
 );
 
-// Repopulate key pool
+/**
+ * POST /key-pool/repopulate - Add new keys to the pool
+ * Accepts optional count parameter (default: 1000).
+ */
 router.post(
   '/key-pool/repopulate',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -159,7 +195,10 @@ router.post(
   })
 );
 
-// Cleanup expired URLs
+/**
+ * POST /cleanup-expired - Deactivate all expired URLs
+ * Batch operation for maintenance.
+ */
 router.post(
   '/cleanup-expired',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {

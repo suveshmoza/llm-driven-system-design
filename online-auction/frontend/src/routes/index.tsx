@@ -4,10 +4,27 @@ import { api } from '../services/api';
 import { AuctionCard } from '../components/AuctionCard';
 import type { Auction } from '../types';
 
+/**
+ * Route definition for the home page (/).
+ * Renders the main auction browsing interface.
+ */
 export const Route = createFileRoute('/')({
   component: HomePage,
 });
 
+/**
+ * Home page component - main auction browsing interface.
+ *
+ * Features:
+ * - Search functionality for finding auctions
+ * - Status filter (active, ended, all)
+ * - Sort options (ending soon, newest, price)
+ * - Paginated grid of auction cards
+ *
+ * Fetches auctions from API with applied filters and updates on filter change.
+ *
+ * @returns JSX element for the home page
+ */
 function HomePage() {
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [isLoading, setIsLoading] = useState(true);

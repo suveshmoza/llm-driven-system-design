@@ -3,11 +3,21 @@ import pool from '../utils/db.js';
 import { authenticate } from '../middleware/auth.js';
 import type { Comment } from '../types/index.js';
 
+/**
+ * Comments router handling document annotations and discussions.
+ * Supports threaded comments with replies, text anchoring, and resolution.
+ * Comments can be attached to specific text ranges in the document.
+ */
 const router = Router();
 
 /**
  * GET /api/documents/:id/comments
- * List all comments for a document
+ * Lists all comments for a document organized as threads.
+ * Returns top-level comments with their replies nested.
+ * Requires at least view permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @returns {ApiResponse<{comments: Comment[]}>} Threaded comments with author info
  */
 router.get('/:id/comments', authenticate, async (req: Request, res: Response) => {
   try {
@@ -104,7 +114,18 @@ router.get('/:id/comments', authenticate, async (req: Request, res: Response) =>
 
 /**
  * POST /api/documents/:id/comments
- * Add a comment to a document
+ * Creates a new comment on the document.
+ * Can be a top-level comment or a reply to an existing comment.
+ * Optionally anchored to a specific text range.
+ * Requires at least comment permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.body.content - Comment text content
+ * @param req.body.anchor_start - Optional start position of anchored text
+ * @param req.body.anchor_end - Optional end position of anchored text
+ * @param req.body.anchor_version - Optional document version when anchor was created
+ * @param req.body.parent_id - Optional parent comment ID for replies
+ * @returns {ApiResponse<{comment: Comment}>} Created comment with author info
  */
 router.post('/:id/comments', authenticate, async (req: Request, res: Response) => {
   try {
@@ -167,7 +188,15 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response) =
 
 /**
  * PATCH /api/documents/:id/comments/:commentId
- * Update a comment
+ * Updates an existing comment's content or resolved status.
+ * Only the comment author can edit content.
+ * Author or document owner can resolve/unresolve comments.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.commentId - Comment UUID
+ * @param req.body.content - Optional new comment text
+ * @param req.body.resolved - Optional boolean to mark as resolved/unresolved
+ * @returns {ApiResponse<{comment: Comment}>} Updated comment
  */
 router.patch('/:id/comments/:commentId', authenticate, async (req: Request, res: Response) => {
   try {
@@ -242,7 +271,12 @@ router.patch('/:id/comments/:commentId', authenticate, async (req: Request, res:
 
 /**
  * DELETE /api/documents/:id/comments/:commentId
- * Delete a comment
+ * Deletes a comment and all its replies.
+ * Only the comment author or document owner can delete.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.commentId - Comment UUID to delete
+ * @returns {ApiResponse<void>} Success message
  */
 router.delete('/:id/comments/:commentId', authenticate, async (req: Request, res: Response) => {
   try {
@@ -287,4 +321,5 @@ router.delete('/:id/comments/:commentId', authenticate, async (req: Request, res
   }
 });
 
+/** Exports the comments router for mounting in the main application */
 export default router;

@@ -1,4 +1,11 @@
-// Format duration from seconds to HH:MM:SS or MM:SS
+/**
+ * Format a duration in seconds to a human-readable time string.
+ * Returns HH:MM:SS format for durations >= 1 hour, MM:SS otherwise.
+ * Used for displaying video lengths and playback position.
+ *
+ * @param seconds - Duration in seconds (can be null)
+ * @returns Formatted time string (e.g., "1:23:45" or "3:45")
+ */
 export const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '0:00';
 
@@ -12,7 +19,14 @@ export const formatDuration = (seconds: number | null): string => {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 };
 
-// Format view count (1.2M, 500K, etc.)
+/**
+ * Format a view count with abbreviated suffixes.
+ * Uses K (thousands), M (millions), B (billions) for compact display.
+ * Matches YouTube's view count formatting style.
+ *
+ * @param count - Number of views
+ * @returns Formatted string (e.g., "1.2M views", "500K views")
+ */
 export const formatViewCount = (count: number): string => {
   if (count >= 1000000000) {
     return `${(count / 1000000000).toFixed(1)}B views`;
@@ -26,7 +40,14 @@ export const formatViewCount = (count: number): string => {
   return `${count} views`;
 };
 
-// Format subscriber count
+/**
+ * Format a subscriber count with abbreviated suffixes.
+ * Similar to view count but uses more decimal places for precision
+ * at higher subscriber counts (e.g., 1.23M vs 1.2M).
+ *
+ * @param count - Number of subscribers
+ * @returns Formatted string (e.g., "1.23M subscribers")
+ */
 export const formatSubscriberCount = (count: number): string => {
   if (count >= 1000000000) {
     return `${(count / 1000000000).toFixed(2)}B subscribers`;
@@ -40,7 +61,14 @@ export const formatSubscriberCount = (count: number): string => {
   return `${count} subscribers`;
 };
 
-// Calculate time ago string
+/**
+ * Calculate a human-readable "time ago" string from a date.
+ * Returns relative time like "3 days ago" or "2 months ago".
+ * Used for video publish dates and comment timestamps.
+ *
+ * @param dateString - ISO date string (can be null)
+ * @returns Relative time string (e.g., "5 hours ago", "Just now")
+ */
 export const timeAgo = (dateString: string | null): string => {
   if (!dateString) return '';
 
@@ -64,7 +92,14 @@ export const timeAgo = (dateString: string | null): string => {
   return 'Just now';
 };
 
-// Format file size
+/**
+ * Format a file size in bytes to a human-readable string.
+ * Uses KB, MB, GB suffixes with two decimal places.
+ * Used in upload UI to show file sizes.
+ *
+ * @param bytes - File size in bytes
+ * @returns Formatted string (e.g., "1.50 MB", "256 KB")
+ */
 export const formatFileSize = (bytes: number): string => {
   if (bytes >= 1073741824) {
     return `${(bytes / 1073741824).toFixed(2)} GB`;
@@ -78,7 +113,14 @@ export const formatFileSize = (bytes: number): string => {
   return `${bytes} bytes`;
 };
 
-// Generate placeholder thumbnail URL
+/**
+ * Generate a placeholder thumbnail SVG as a data URI.
+ * Creates a simple gray rectangle with truncated title text.
+ * Used when a video has no uploaded thumbnail.
+ *
+ * @param title - Video title to display on the placeholder
+ * @returns Data URI string for the SVG image
+ */
 export const getPlaceholderThumbnail = (title: string): string => {
   // Return a simple data URI for placeholder
   return `data:image/svg+xml,${encodeURIComponent(`
@@ -91,13 +133,29 @@ export const getPlaceholderThumbnail = (title: string): string => {
   `)}`;
 };
 
-// Truncate text with ellipsis
+/**
+ * Truncate text to a maximum length with ellipsis.
+ * Adds "..." when text exceeds the specified length.
+ *
+ * @param text - Text to truncate
+ * @param maxLength - Maximum allowed length including ellipsis
+ * @returns Original text or truncated text with "..."
+ */
 export const truncate = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 3) + '...';
 };
 
-// Generate avatar URL from username
+/**
+ * Generate an avatar image URL from a username.
+ * Returns the provided avatarUrl if available, otherwise generates
+ * an SVG avatar with the first letter of the username and a
+ * deterministic background color based on the username.
+ *
+ * @param avatarUrl - Existing avatar URL (can be null)
+ * @param username - Username for fallback avatar generation
+ * @returns Avatar URL (either the provided one or a generated SVG data URI)
+ */
 export const getAvatarUrl = (avatarUrl: string | null, username: string): string => {
   if (avatarUrl) return avatarUrl;
   // Generate a simple avatar with first letter

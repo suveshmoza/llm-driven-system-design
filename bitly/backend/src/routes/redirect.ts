@@ -3,9 +3,18 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { getUrlByShortCode, incrementClickCount } from '../services/urlService.js';
 import { recordClick } from '../services/analyticsService.js';
 
+/**
+ * Redirect router.
+ * Handles the core URL shortening functionality - redirecting short URLs to destinations.
+ * Mounted at the root path to catch /:shortCode requests.
+ */
 const router = Router();
 
-// Handle redirect
+/**
+ * GET /:shortCode - Redirect to the original long URL
+ * Uses 302 (temporary) redirect to ensure analytics are captured.
+ * Records click events asynchronously to avoid blocking the redirect.
+ */
 router.get(
   '/:shortCode',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {

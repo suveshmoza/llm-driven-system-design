@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Dashboard and panel API routes.
+ *
+ * Exposes REST endpoints for:
+ * - Dashboard CRUD operations (list, get, create, update, delete)
+ * - Panel management within dashboards
+ * - Panel data fetching for rendering visualizations
+ */
+
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import {
@@ -18,12 +27,17 @@ import type { PanelQuery } from '../types/index.js';
 
 const router = Router();
 
-// Dashboard schemas
+/**
+ * Zod schema for dashboard grid layout configuration.
+ */
 const DashboardLayoutSchema = z.object({
   columns: z.number().min(1).max(24).default(12),
   rows: z.number().min(1).max(24).default(8),
 });
 
+/**
+ * Zod schema for dashboard creation requests.
+ */
 const CreateDashboardSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
@@ -31,6 +45,9 @@ const CreateDashboardSchema = z.object({
   is_public: z.boolean().optional(),
 });
 
+/**
+ * Zod schema for dashboard update requests.
+ */
 const UpdateDashboardSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).optional(),
@@ -38,7 +55,9 @@ const UpdateDashboardSchema = z.object({
   is_public: z.boolean().optional(),
 });
 
-// Panel schemas
+/**
+ * Zod schema for panel metric query configuration.
+ */
 const PanelQuerySchema = z.object({
   metric_name: z.string().min(1),
   tags: z.record(z.string()).optional(),
@@ -47,6 +66,9 @@ const PanelQuerySchema = z.object({
   group_by: z.array(z.string()).optional(),
 });
 
+/**
+ * Zod schema for panel grid position.
+ */
 const PanelPositionSchema = z.object({
   x: z.number().min(0),
   y: z.number().min(0),
@@ -54,11 +76,17 @@ const PanelPositionSchema = z.object({
   height: z.number().min(1),
 });
 
+/**
+ * Zod schema for threshold configuration in panel options.
+ */
 const ThresholdSchema = z.object({
   value: z.number(),
   color: z.string(),
 });
 
+/**
+ * Zod schema for panel display options (colors, units, thresholds).
+ */
 const PanelOptionsSchema = z.object({
   color: z.string().optional(),
   unit: z.string().optional(),
@@ -67,6 +95,9 @@ const PanelOptionsSchema = z.object({
   legend: z.boolean().optional(),
 });
 
+/**
+ * Zod schema for panel creation requests.
+ */
 const CreatePanelSchema = z.object({
   title: z.string().min(1).max(255),
   panel_type: z.enum(['line_chart', 'area_chart', 'bar_chart', 'gauge', 'stat', 'table']),
@@ -75,6 +106,9 @@ const CreatePanelSchema = z.object({
   options: PanelOptionsSchema.optional(),
 });
 
+/**
+ * Zod schema for panel update requests.
+ */
 const UpdatePanelSchema = z.object({
   title: z.string().min(1).max(255).optional(),
   panel_type: z.enum(['line_chart', 'area_chart', 'bar_chart', 'gauge', 'stat', 'table']).optional(),
@@ -83,7 +117,13 @@ const UpdatePanelSchema = z.object({
   options: PanelOptionsSchema.optional(),
 });
 
-// Dashboard routes
+/**
+ * GET /
+ * Lists all accessible dashboards for the current user.
+ * Includes user's own dashboards plus public dashboards.
+ *
+ * @returns {dashboards: Dashboard[]} - Array of dashboards
+ */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.session?.userId;
@@ -95,6 +135,13 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /:id
+ * Retrieves a single dashboard with all its panels.
+ *
+ * @param id - Dashboard UUID
+ * @returns Dashboard with panels array
+ */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const dashboard = await getDashboardWithPanels(req.params.id);
@@ -108,6 +155,13 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /
+ * Creates a new dashboard.
+ *
+ * @body {name, description?, layout?, is_public?}
+ * @returns The newly created dashboard
+ */
 router.post('/', async (req: Request, res: Response) => {
   try {
     const validation = CreateDashboardSchema.safeParse(req.body);
@@ -135,6 +189,14 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * PUT /:id
+ * Updates an existing dashboard's properties.
+ *
+ * @param id - Dashboard UUID
+ * @body Partial dashboard properties to update
+ * @returns The updated dashboard
+ */
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const validation = UpdateDashboardSchema.safeParse(req.body);
@@ -157,6 +219,13 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * DELETE /:id
+ * Deletes a dashboard and all its panels.
+ *
+ * @param id - Dashboard UUID
+ * @returns 204 No Content on success
+ */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const deleted = await deleteDashboard(req.params.id);
@@ -170,7 +239,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Panel routes
+/**
+ * GET /:dashboardId/panels
+ * Lists all panels in a dashboard.
+ *
+ * @param dashboardId - Parent dashboard UUID
+ * @returns {panels: Panel[]} - Array of panels
+ */
 router.get('/:dashboardId/panels', async (req: Request, res: Response) => {
   try {
     const panels = await getPanelsByDashboard(req.params.dashboardId);
@@ -181,6 +256,14 @@ router.get('/:dashboardId/panels', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /:dashboardId/panels/:panelId
+ * Retrieves a single panel.
+ *
+ * @param dashboardId - Parent dashboard UUID
+ * @param panelId - Panel UUID
+ * @returns The panel if found
+ */
 router.get('/:dashboardId/panels/:panelId', async (req: Request, res: Response) => {
   try {
     const panel = await getPanel(req.params.panelId);
@@ -194,6 +277,14 @@ router.get('/:dashboardId/panels/:panelId', async (req: Request, res: Response) 
   }
 });
 
+/**
+ * POST /:dashboardId/panels
+ * Creates a new panel on a dashboard.
+ *
+ * @param dashboardId - Parent dashboard UUID
+ * @body {title, panel_type, query, position, options?}
+ * @returns The newly created panel
+ */
 router.post('/:dashboardId/panels', async (req: Request, res: Response) => {
   try {
     const validation = CreatePanelSchema.safeParse(req.body);
@@ -221,6 +312,15 @@ router.post('/:dashboardId/panels', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * PUT /:dashboardId/panels/:panelId
+ * Updates an existing panel's properties.
+ *
+ * @param dashboardId - Parent dashboard UUID
+ * @param panelId - Panel UUID
+ * @body Partial panel properties to update
+ * @returns The updated panel
+ */
 router.put('/:dashboardId/panels/:panelId', async (req: Request, res: Response) => {
   try {
     const validation = UpdatePanelSchema.safeParse(req.body);
@@ -252,6 +352,14 @@ router.put('/:dashboardId/panels/:panelId', async (req: Request, res: Response) 
   }
 });
 
+/**
+ * DELETE /:dashboardId/panels/:panelId
+ * Deletes a panel from a dashboard.
+ *
+ * @param dashboardId - Parent dashboard UUID
+ * @param panelId - Panel UUID
+ * @returns 204 No Content on success
+ */
 router.delete('/:dashboardId/panels/:panelId', async (req: Request, res: Response) => {
   try {
     const deleted = await deletePanel(req.params.panelId);
@@ -265,7 +373,16 @@ router.delete('/:dashboardId/panels/:panelId', async (req: Request, res: Respons
   }
 });
 
-// Fetch panel data
+/**
+ * POST /:dashboardId/panels/:panelId/data
+ * Fetches metric data for a panel based on its query configuration.
+ * Used by the frontend to render panel visualizations.
+ *
+ * @param dashboardId - Parent dashboard UUID
+ * @param panelId - Panel UUID
+ * @body {start_time?, end_time?} - Optional time range (defaults to last hour)
+ * @returns {results: QueryResult[]} - Time-series data for the panel
+ */
 router.post('/:dashboardId/panels/:panelId/data', async (req: Request, res: Response) => {
   try {
     const panel = await getPanel(req.params.panelId);

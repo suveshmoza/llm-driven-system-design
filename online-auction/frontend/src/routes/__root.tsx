@@ -1,6 +1,16 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { Header } from '../components/Header';
 
+/**
+ * Root route definition for the application.
+ *
+ * Provides the base layout structure that wraps all pages:
+ * - Sticky header with navigation
+ * - Main content area (Outlet for child routes)
+ * - Footer with branding
+ *
+ * This is the entry point for TanStack Router's route tree.
+ */
 export const Route = createRootRoute({
   component: () => (
     <div className="min-h-screen flex flex-col">

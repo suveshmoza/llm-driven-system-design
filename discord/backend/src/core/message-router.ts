@@ -1,9 +1,32 @@
+/**
+ * Message Router Module
+ *
+ * Routes messages between users within rooms and across server instances.
+ * Handles local delivery (to sessions on this instance) and pub/sub
+ * publishing for multi-instance deployments.
+ *
+ * Key responsibilities:
+ * - Send messages to all sessions in a room
+ * - Broadcast messages across instances via pub/sub
+ * - Handle incoming pub/sub messages from other instances
+ * - Format messages for display (text for TCP, JSON for HTTP)
+ */
+
 import type { ChatMessage, PubSubMessage } from '../types/index.js';
 import { connectionManager } from './connection-manager.js';
 import { logger } from '../utils/logger.js';
 
+/**
+ * Routes messages to room members and across server instances.
+ *
+ * The router decouples message sending from the chat handler, allowing
+ * different delivery mechanisms (local sockets, SSE, pub/sub) to be
+ * used transparently.
+ */
 export class MessageRouter {
+  /** Unique identifier for this server instance */
   private instanceId: string;
+  /** Callback to publish messages to Redis for cross-instance delivery */
   private pubsubHandler: ((msg: PubSubMessage) => void) | null = null;
 
   constructor() {
@@ -11,14 +34,22 @@ export class MessageRouter {
   }
 
   /**
-   * Set the pub/sub handler for cross-instance messaging
+   * Set the pub/sub handler for cross-instance messaging.
+   * Called during startup to wire up Redis pub/sub.
+   *
+   * @param handler - Callback that publishes messages to Redis
    */
   setPubSubHandler(handler: (msg: PubSubMessage) => void): void {
     this.pubsubHandler = handler;
   }
 
   /**
-   * Send a message to all members of a room (local instance only)
+   * Send a message to all members of a room on this instance only.
+   * Does not publish to pub/sub - use broadcastToRoom for that.
+   *
+   * @param roomName - Target room name
+   * @param message - Message to send
+   * @param excludeSessionId - Optional session to skip (usually the sender)
    */
   sendToRoom(
     roomName: string,
@@ -52,7 +83,12 @@ export class MessageRouter {
   }
 
   /**
-   * Send a message to all instances via pub/sub
+   * Broadcast a message to all instances via pub/sub.
+   * First sends to local sessions, then publishes for other instances.
+   *
+   * @param roomName - Target room name
+   * @param message - Message to broadcast
+   * @param excludeSessionId - Optional session to skip locally
    */
   broadcastToRoom(
     roomName: string,
@@ -76,7 +112,10 @@ export class MessageRouter {
   }
 
   /**
-   * Handle incoming pub/sub message from another instance
+   * Handle an incoming pub/sub message from another instance.
+   * Ignores messages from our own instance to prevent loops.
+   *
+   * @param msg - The pub/sub message received from Redis
    */
   handlePubSubMessage(msg: PubSubMessage): void {
     // Ignore messages from our own instance
@@ -91,7 +130,11 @@ export class MessageRouter {
   }
 
   /**
-   * Send a system message to a room
+   * Send a system message to a room.
+   * Used for join/leave notifications and announcements.
+   *
+   * @param roomName - Target room name
+   * @param content - System message text
    */
   sendSystemMessage(roomName: string, content: string): void {
     const message: ChatMessage = {
@@ -117,7 +160,11 @@ export class MessageRouter {
   }
 
   /**
-   * Send a message to a specific session
+   * Send a message directly to a specific session.
+   * Used for command responses and errors.
+   *
+   * @param sessionId - Target session ID
+   * @param message - Message string to send
    */
   sendToSession(sessionId: string, message: string): void {
     const session = connectionManager.getSession(sessionId);
@@ -134,7 +181,12 @@ export class MessageRouter {
   }
 
   /**
-   * Send a direct message to a user
+   * Send a direct message to all sessions of a user.
+   * DMs go to all user sessions (browser, netcat, etc).
+   *
+   * @param fromNickname - Sender's nickname for display
+   * @param toUserId - Recipient's user ID
+   * @param content - Message content
    */
   sendDirectMessage(fromNickname: string, toUserId: number, content: string): void {
     const sessions = connectionManager.getSessionsByUserId(toUserId);
@@ -153,7 +205,10 @@ export class MessageRouter {
   }
 
   /**
-   * Format a chat message for display
+   * Format a chat message for text display (TCP clients).
+   *
+   * @param message - The chat message to format
+   * @returns Formatted string like "[room] user: content"
    */
   private formatMessage(message: ChatMessage): string {
     const time = message.timestamp.toLocaleTimeString('en-US', {
@@ -164,7 +219,10 @@ export class MessageRouter {
   }
 
   /**
-   * Format a message as JSON (for HTTP/SSE clients)
+   * Format a message as JSON for HTTP/SSE clients.
+   *
+   * @param message - The chat message to format
+   * @returns JSON string representation
    */
   formatMessageJson(message: ChatMessage): string {
     return JSON.stringify({
@@ -177,5 +235,6 @@ export class MessageRouter {
   }
 }
 
+/** Singleton instance of the message router */
 export const messageRouter = new MessageRouter();
 export default messageRouter;

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Authentication routes for user registration, login, and profile management.
+ * Handles session-based authentication using express-session.
+ * All passwords are hashed with bcrypt before storage.
+ */
+
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { query } from '../db/index.js';
@@ -6,7 +12,11 @@ import type { User } from '../types/index.js';
 
 const router = Router();
 
-// Register
+/**
+ * POST /auth/register - Create a new user account.
+ * Validates input, checks for duplicate email, hashes password,
+ * and creates the user session.
+ */
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, username, display_name } = req.body;
@@ -53,7 +63,10 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Login
+/**
+ * POST /auth/login - Authenticate user and create session.
+ * Validates credentials and creates a session cookie.
+ */
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -101,7 +114,10 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Logout
+/**
+ * POST /auth/logout - End the user session.
+ * Destroys the session and clears the session cookie.
+ */
 router.post('/logout', (req: Request, res: Response): void => {
   req.session.destroy((err) => {
     if (err) {
@@ -112,7 +128,10 @@ router.post('/logout', (req: Request, res: Response): void => {
   });
 });
 
-// Get current user
+/**
+ * GET /auth/me - Get the currently authenticated user.
+ * Returns user profile data without sensitive fields.
+ */
 router.get('/me', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await query<User>(
@@ -132,7 +151,10 @@ router.get('/me', requireAuth, async (req: Request, res: Response): Promise<void
   }
 });
 
-// Update profile
+/**
+ * PUT /auth/me - Update the authenticated user's profile.
+ * Allows updating display_name and avatar_url.
+ */
 router.put('/me', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { display_name, avatar_url } = req.body;

@@ -1,7 +1,22 @@
+/**
+ * API Service Module
+ *
+ * Provides typed HTTP client functions for communicating with the backend.
+ * All requests include credentials for session-based authentication.
+ */
+
 import { User, Conversation, Message } from '../types';
 
+/** Base URL for all API requests */
 const API_BASE = '/api';
 
+/**
+ * Generic request wrapper that handles JSON serialization and error handling.
+ * @param endpoint - API endpoint path (will be prefixed with /api)
+ * @param options - Fetch options (method, body, headers)
+ * @returns Parsed JSON response
+ * @throws Error with server error message if request fails
+ */
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -23,7 +38,10 @@ async function request<T>(
   return response.json();
 }
 
-// Auth API
+/**
+ * Authentication API endpoints.
+ * Handles login, registration, logout, and user discovery.
+ */
 export const authApi = {
   login: (username: string, password: string) =>
     request<{ user: User }>('/auth/login', {
@@ -53,7 +71,10 @@ export const authApi = {
     ),
 };
 
-// Conversations API
+/**
+ * Conversation management API endpoints.
+ * Handles listing, creating, and managing conversations and groups.
+ */
 export const conversationsApi = {
   list: () => request<{ conversations: Conversation[] }>('/conversations'),
 
@@ -84,7 +105,11 @@ export const conversationsApi = {
     ),
 };
 
-// Messages API
+/**
+ * Message API endpoints.
+ * Handles fetching message history and marking messages as read.
+ * Note: Message sending happens via WebSocket for real-time delivery.
+ */
 export const messagesApi = {
   list: (conversationId: string, limit?: number, beforeId?: string) => {
     const params = new URLSearchParams();

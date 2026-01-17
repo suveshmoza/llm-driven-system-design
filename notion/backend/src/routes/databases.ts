@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Database feature routes for structured data management.
+ * Databases are special pages with a properties schema and multiple views
+ * (table, board, list). This module handles rows, views, and schema updates.
+ */
+
 import { Router, Request, Response } from 'express';
 import pool from '../models/db.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -6,12 +12,13 @@ import type { DatabaseView, DatabaseRow, Page, PropertySchema } from '../types/i
 
 const router = Router();
 
-// All database routes require authentication
+// Apply authentication to all database routes
 router.use(authMiddleware);
 
 /**
  * GET /api/databases/:id
- * Get a database with its views and rows
+ * Gets a database with its views and rows.
+ * Applies view filters and sorts (currently in-memory).
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -123,7 +130,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 /**
  * POST /api/databases/:id/rows
- * Create a new database row
+ * Creates a new row in the database with default property values.
+ * Position is calculated using fractional indexing.
  */
 router.post('/:id/rows', async (req: Request, res: Response) => {
   try {
@@ -228,7 +236,8 @@ router.post('/:id/rows', async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/databases/:id/rows/:rowId
- * Update a database row
+ * Updates property values for a database row.
+ * Merges provided properties with existing values.
  */
 router.patch('/:id/rows/:rowId', async (req: Request, res: Response) => {
   try {
@@ -303,7 +312,7 @@ router.patch('/:id/rows/:rowId', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/databases/:id/rows/:rowId
- * Delete (archive) a database row
+ * Archives a row by default, or permanently deletes with ?permanent=true.
  */
 router.delete('/:id/rows/:rowId', async (req: Request, res: Response) => {
   try {
@@ -356,7 +365,8 @@ router.delete('/:id/rows/:rowId', async (req: Request, res: Response) => {
 
 /**
  * POST /api/databases/:id/views
- * Create a new database view
+ * Creates a new view for the database (table, board, list, etc.).
+ * Each view has its own filter, sort, and display settings.
  */
 router.post('/:id/views', async (req: Request, res: Response) => {
   try {
@@ -421,7 +431,7 @@ router.post('/:id/views', async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/databases/:id/views/:viewId
- * Update a database view
+ * Updates view settings (name, type, filters, sorts, etc.).
  */
 router.patch('/:id/views/:viewId', async (req: Request, res: Response) => {
   try {
@@ -511,7 +521,7 @@ router.patch('/:id/views/:viewId', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/databases/:id/views/:viewId
- * Delete a database view
+ * Deletes a database view. Cannot delete the last remaining view.
  */
 router.delete('/:id/views/:viewId', async (req: Request, res: Response) => {
   try {
@@ -557,7 +567,8 @@ router.delete('/:id/views/:viewId', async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/databases/:id/schema
- * Update database properties schema
+ * Updates the database properties schema (column definitions).
+ * Used when adding, removing, or modifying database columns.
  */
 router.patch('/:id/schema', async (req: Request, res: Response) => {
   try {

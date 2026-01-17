@@ -7,8 +7,13 @@ import { authenticate } from '../middleware/auth.js';
 import { Account, Profile } from '../types/index.js';
 import { SERVER_CONFIG } from '../config.js';
 
+/**
+ * Authentication router.
+ * Handles user login, registration, logout, and session management.
+ */
 const router = Router();
 
+/** Database row type for account queries */
 interface AccountRow {
   id: string;
   email: string;
@@ -19,6 +24,7 @@ interface AccountRow {
   updated_at: Date;
 }
 
+/** Database row type for profile queries */
 interface ProfileRow {
   id: string;
   account_id: string;
@@ -33,7 +39,8 @@ interface ProfileRow {
 
 /**
  * POST /api/auth/login
- * Login with email and password
+ * Authenticates user with email/password and creates a session.
+ * Sets httpOnly cookie with session token.
  */
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -99,7 +106,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
 /**
  * POST /api/auth/register
- * Register a new account
+ * Creates a new account with default profile and establishes session.
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
@@ -179,7 +186,7 @@ router.post('/register', async (req: Request, res: Response) => {
 
 /**
  * POST /api/auth/logout
- * Logout current session
+ * Invalidates session and clears session cookie.
  */
 router.post('/logout', async (req: Request, res: Response) => {
   const token = req.cookies?.session_token;
@@ -194,7 +201,8 @@ router.post('/logout', async (req: Request, res: Response) => {
 
 /**
  * GET /api/auth/me
- * Get current session info
+ * Returns current session info including account and selected profile.
+ * Used by frontend to restore auth state on page load.
  */
 router.get('/me', authenticate, async (req: Request, res: Response) => {
   try {

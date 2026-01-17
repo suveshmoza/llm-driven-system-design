@@ -1,6 +1,52 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export function useCountdown(endTime: string) {
+/**
+ * Return type for the useCountdown hook.
+ */
+interface CountdownResult {
+  /** Number of full days remaining */
+  days: number;
+  /** Hours remaining (0-23) */
+  hours: number;
+  /** Minutes remaining (0-59) */
+  minutes: number;
+  /** Seconds remaining (0-59) */
+  seconds: number;
+  /** Total seconds until expiration */
+  totalSeconds: number;
+  /** True if the countdown has reached zero */
+  isExpired: boolean;
+  /** Human-readable formatted string (e.g., "2d 5h", "45m 30s") */
+  formatted: string;
+}
+
+/**
+ * React hook for countdown timer functionality.
+ *
+ * This hook is essential for auction UX, providing real-time countdown
+ * to auction end times. It updates every second and provides both
+ * individual time components and a formatted display string.
+ *
+ * Used by CountdownTimer component and AuctionCard to show time remaining.
+ *
+ * @param endTime - ISO date string for when the countdown should reach zero
+ * @returns CountdownResult with time components and formatted display
+ *
+ * @example
+ * ```tsx
+ * const { hours, minutes, seconds, isExpired, formatted } = useCountdown(auction.end_time);
+ *
+ * if (isExpired) {
+ *   return <span>Auction ended</span>;
+ * }
+ * return <span>{formatted}</span>;
+ * ```
+ */
+export function useCountdown(endTime: string): CountdownResult {
+  /**
+   * Calculates the remaining time until the end time.
+   * Returns all time components and a formatted string.
+   */
   const calculateTimeLeft = useCallback(() => {
     const now = new Date().getTime();
     const end = new Date(endTime).getTime();

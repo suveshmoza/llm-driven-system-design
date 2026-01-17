@@ -1,3 +1,30 @@
+/**
+ * @fileoverview Crawler Worker Service for fetching and processing web pages.
+ *
+ * This service contains the core crawling logic for a distributed web crawler worker.
+ * Each worker runs independently, fetching URLs from the frontier, downloading pages,
+ * extracting content and links, and storing results.
+ *
+ * Key responsibilities:
+ * - Main crawl loop with error recovery
+ * - HTTP request handling with timeouts and size limits
+ * - HTML parsing and link extraction using Cheerio
+ * - Content hashing for duplicate detection
+ * - Worker registration and heartbeat for health monitoring
+ * - Statistics tracking via Redis counters
+ *
+ * A typical crawl cycle:
+ * 1. Get next URL from frontier (respects priority and rate limits)
+ * 2. Check robots.txt permissions
+ * 3. Fetch page content via HTTP
+ * 4. Parse HTML and extract metadata (title, description)
+ * 5. Extract and normalize links for the frontier
+ * 6. Store results in PostgreSQL
+ * 7. Mark URL as completed and update stats
+ *
+ * @module services/crawler
+ */
+
 import axios, { AxiosResponse } from 'axios';
 import * as cheerio from 'cheerio';
 import { pool } from '../models/database.js';
@@ -14,36 +41,87 @@ import {
 } from '../utils/url.js';
 import { config } from '../config.js';
 
+/**
+ * Result of crawling a single URL.
+ * Contains all extracted data and metadata about the crawl operation.
+ */
 export interface CrawlResult {
+  /** The original URL that was crawled */
   url: string;
+  /** SHA-256 hash of the normalized URL */
   urlHash: string;
+  /** HTTP status code (0 if request failed) */
   statusCode: number;
+  /** Content-Type header value */
   contentType: string;
+  /** Size of the content in bytes */
   contentLength: number;
+  /** SHA-256 hash of the content for duplicate detection */
   contentHash: string;
+  /** Extracted page title */
   title: string;
+  /** Extracted meta description */
   description: string;
+  /** Array of normalized URLs extracted from the page */
   linksFound: string[];
+  /** Time taken to crawl in milliseconds */
   crawlDurationMs: number;
+  /** Error message if crawl failed */
   error?: string;
 }
 
 /**
- * Crawler Worker Service
- * Fetches pages, extracts content and links, respects politeness rules
+ * Crawler Worker Service - the workhorse of the distributed web crawler.
+ *
+ * Each CrawlerService instance represents a single worker process that:
+ * - Runs continuously, fetching and processing URLs
+ * - Registers itself with Redis for monitoring
+ * - Sends periodic heartbeats to indicate health
+ * - Respects politeness rules (robots.txt, rate limiting)
+ *
+ * Workers are stateless and horizontally scalable - you can run as many
+ * as needed to increase crawl throughput.
+ *
+ * @example
+ * ```typescript
+ * import { CrawlerService } from './services/crawler';
+ *
+ * const crawler = new CrawlerService('worker-1');
+ * await crawler.start();
+ *
+ * // On shutdown
+ * await crawler.stop();
+ * ```
  */
 export class CrawlerService {
+  /** Unique identifier for this worker instance */
   private workerId: string;
+  /** Whether the crawl loop is running */
   private isRunning: boolean = false;
+  /** Total number of pages crawled by this worker */
   private crawlCount: number = 0;
+  /** Unix timestamp when worker started */
   private startTime: number = 0;
 
+  /**
+   * Creates a new CrawlerService instance.
+   *
+   * @param workerId - Unique identifier for this worker (e.g., 'worker-1')
+   */
   constructor(workerId: string) {
     this.workerId = workerId;
   }
 
   /**
-   * Start the crawler worker
+   * Starts the crawler worker.
+   *
+   * This method:
+   * 1. Registers the worker in Redis
+   * 2. Starts the heartbeat interval
+   * 3. Enters the main crawl loop
+   *
+   * The crawl loop runs until stop() is called, continuously fetching
+   * and processing URLs from the frontier.
    */
   async start(): Promise<void> {
     if (this.isRunning) return;
@@ -70,7 +148,11 @@ export class CrawlerService {
   }
 
   /**
-   * Stop the crawler worker
+   * Stops the crawler worker gracefully.
+   *
+   * This sets the running flag to false, allowing the current crawl
+   * operation to complete before the loop exits. Also unregisters
+   * the worker from Redis.
    */
   async stop(): Promise<void> {
     console.log(`Crawler worker ${this.workerId} stopping...`);
@@ -79,7 +161,10 @@ export class CrawlerService {
   }
 
   /**
-   * Register this worker as active
+   * Registers this worker as active in Redis.
+   *
+   * Adds the worker ID to the active workers set and sets the initial
+   * heartbeat timestamp. This allows the dashboard to track active workers.
    */
   private async registerWorker(): Promise<void> {
     await redis.sadd(REDIS_KEYS.ACTIVE_WORKERS, this.workerId);
@@ -90,7 +175,10 @@ export class CrawlerService {
   }
 
   /**
-   * Unregister this worker
+   * Unregisters this worker from Redis.
+   *
+   * Removes the worker from the active set and deletes the heartbeat key.
+   * Called during graceful shutdown.
    */
   private async unregisterWorker(): Promise<void> {
     await redis.srem(REDIS_KEYS.ACTIVE_WORKERS, this.workerId);
@@ -98,7 +186,10 @@ export class CrawlerService {
   }
 
   /**
-   * Send periodic heartbeat
+   * Starts the periodic heartbeat interval.
+   *
+   * Updates the heartbeat timestamp every 5 seconds to indicate the worker
+   * is alive. The dashboard uses heartbeats to detect stale workers.
    */
   private startHeartbeat(): void {
     setInterval(async () => {
@@ -112,7 +203,15 @@ export class CrawlerService {
   }
 
   /**
-   * Crawl the next available URL
+   * Main crawl cycle - fetches and processes the next available URL.
+   *
+   * This method is called in a loop and handles:
+   * 1. Getting the next URL from the frontier
+   * 2. Crawling the URL
+   * 3. Storing results and adding discovered links
+   * 4. Updating status and statistics
+   *
+   * If no URLs are available, sleeps briefly before retrying.
    */
   async crawlNext(): Promise<void> {
     // Get next URL from frontier
@@ -156,7 +255,17 @@ export class CrawlerService {
   }
 
   /**
-   * Crawl a single URL
+   * Crawls a single URL and extracts content.
+   *
+   * This method handles the complete crawl lifecycle:
+   * 1. Check robots.txt permissions
+   * 2. Make HTTP request with proper headers and timeouts
+   * 3. Validate response (HTML content only)
+   * 4. Parse HTML and extract metadata
+   * 5. Extract and normalize all links
+   *
+   * @param frontierUrl - The URL entry from the frontier to crawl
+   * @returns CrawlResult with all extracted data and metadata
    */
   async crawlUrl(frontierUrl: FrontierUrl): Promise<CrawlResult> {
     const { url, urlHash, domain } = frontierUrl;
@@ -282,7 +391,13 @@ export class CrawlerService {
   }
 
   /**
-   * Store crawl result in database
+   * Stores crawl results in the PostgreSQL database.
+   *
+   * Inserts or updates the crawled_pages table with all extracted metadata.
+   * Uses ON CONFLICT to handle re-crawls of the same URL.
+   * Also increments the domain's page count.
+   *
+   * @param result - The CrawlResult to store
    */
   async storeCrawlResult(result: CrawlResult): Promise<void> {
     const domain = extractDomain(result.url);
@@ -326,7 +441,11 @@ export class CrawlerService {
   }
 
   /**
-   * Get worker statistics
+   * Gets current statistics for this worker.
+   *
+   * Returns performance metrics useful for monitoring and debugging.
+   *
+   * @returns Worker statistics including crawl count, uptime, and throughput
    */
   getStats(): {
     workerId: string;
@@ -348,6 +467,11 @@ export class CrawlerService {
     };
   }
 
+  /**
+   * Utility function for async sleep.
+   *
+   * @param ms - Milliseconds to sleep
+   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

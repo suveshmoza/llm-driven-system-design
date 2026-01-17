@@ -1,3 +1,10 @@
+/**
+ * WebSocket server for real-time delivery tracking and driver notifications.
+ * Handles order status subscriptions, driver location updates, and delivery offers.
+ * Uses Redis Pub/Sub for cross-instance message distribution.
+ *
+ * @module websocket/handler
+ */
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,6 +19,9 @@ import {
 import { haversineDistance, calculateETA } from '../utils/geo.js';
 import type Redis from 'ioredis';
 
+/**
+ * Represents a connected WebSocket client with its subscriptions and state.
+ */
 interface WSClient {
   id: string;
   ws: WebSocket;
@@ -22,8 +32,16 @@ interface WSClient {
   subscriber?: Redis;
 }
 
+/** Map of all active WebSocket connections by client ID. */
 const clients = new Map<string, WSClient>();
 
+/**
+ * Initializes the WebSocket server and attaches it to the HTTP server.
+ * Handles connection authentication, message routing, and cleanup.
+ *
+ * @param server - HTTP server instance to attach WebSocket to
+ * @returns Configured WebSocketServer instance
+ */
 export function setupWebSocket(server: Server): WebSocketServer {
   const wss = new WebSocketServer({
     server,
@@ -104,6 +122,12 @@ export function setupWebSocket(server: Server): WebSocketServer {
   return wss;
 }
 
+/**
+ * Routes incoming WebSocket messages to appropriate handlers.
+ *
+ * @param client - The connected WebSocket client
+ * @param message - Parsed message with type and payload
+ */
 async function handleMessage(client: WSClient, message: { type: string; payload?: unknown }): Promise<void> {
   const { type, payload } = message;
 
@@ -132,6 +156,13 @@ async function handleMessage(client: WSClient, message: { type: string; payload?
   }
 }
 
+/**
+ * Subscribes a client to real-time updates for a specific order.
+ * Sets up Redis Pub/Sub for status changes and driver location updates.
+ *
+ * @param client - The WebSocket client to subscribe
+ * @param payload - Contains the order_id to subscribe to
+ */
 async function handleSubscribeOrder(
   client: WSClient,
   payload: { order_id: string }
@@ -230,6 +261,12 @@ async function handleSubscribeOrder(
   );
 }
 
+/**
+ * Unsubscribes a client from order tracking updates.
+ * Cleans up Redis subscriptions and tracking state.
+ *
+ * @param client - The WebSocket client to unsubscribe
+ */
 async function handleUnsubscribeOrder(client: WSClient): Promise<void> {
   if (client.subscriber) {
     await client.subscriber.quit();
@@ -246,6 +283,12 @@ async function handleUnsubscribeOrder(client: WSClient): Promise<void> {
   client.ws.send(JSON.stringify({ type: 'order_unsubscribed' }));
 }
 
+/**
+ * Subscribes a driver to receive real-time delivery offer notifications.
+ * Sets up Redis Pub/Sub for the driver's offer channel.
+ *
+ * @param client - The driver's WebSocket client
+ */
 async function handleSubscribeDriverOffers(client: WSClient): Promise<void> {
   if (client.userRole !== 'driver') {
     client.ws.send(
@@ -294,6 +337,13 @@ async function handleSubscribeDriverOffers(client: WSClient): Promise<void> {
   client.ws.send(JSON.stringify({ type: 'offers_subscribed' }));
 }
 
+/**
+ * Processes a driver's location update sent via WebSocket.
+ * Updates Redis geo-index and database for tracking.
+ *
+ * @param client - The driver's WebSocket client
+ * @param payload - Location data with lat, lng, and optional speed/heading
+ */
 async function handleDriverLocationUpdate(
   client: WSClient,
   payload: { lat: number; lng: number; speed?: number; heading?: number }
@@ -311,6 +361,12 @@ async function handleDriverLocationUpdate(
   client.ws.send(JSON.stringify({ type: 'location_updated' }));
 }
 
+/**
+ * Cleans up resources when a WebSocket client disconnects.
+ * Closes Redis subscriptions and removes from tracking sets.
+ *
+ * @param client - The disconnecting WebSocket client
+ */
 async function cleanupClient(client: WSClient): Promise<void> {
   if (client.subscriber) {
     await client.subscriber.quit();
@@ -321,7 +377,13 @@ async function cleanupClient(client: WSClient): Promise<void> {
   }
 }
 
-// Utility function to broadcast to specific users
+/**
+ * Sends a message to all WebSocket connections for a specific user.
+ * Used for cross-device notifications and account-level updates.
+ *
+ * @param userId - The target user's UUID
+ * @param message - Message object to send (will be JSON stringified)
+ */
 export function broadcastToUser(userId: string, message: unknown): void {
   clients.forEach((client) => {
     if (client.userId === userId && client.ws.readyState === WebSocket.OPEN) {
@@ -330,7 +392,13 @@ export function broadcastToUser(userId: string, message: unknown): void {
   });
 }
 
-// Utility function to broadcast to all subscribers of an order
+/**
+ * Sends a message to all clients subscribed to a specific order.
+ * Used for status updates that need to reach both customer and driver.
+ *
+ * @param orderId - The order's UUID
+ * @param message - Message object to send (will be JSON stringified)
+ */
 export function broadcastToOrderSubscribers(orderId: string, message: unknown): void {
   clients.forEach((client) => {
     if (client.orderId === orderId && client.ws.readyState === WebSocket.OPEN) {

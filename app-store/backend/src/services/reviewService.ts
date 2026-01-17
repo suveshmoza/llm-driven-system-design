@@ -1,9 +1,20 @@
+/**
+ * @fileoverview Review service for app ratings and review management.
+ * Handles review creation, integrity scoring, helpfulness voting, and developer responses.
+ */
+
 import { query, transaction } from '../config/database.js';
 import { cacheGet, cacheSet, cacheDelete } from '../config/redis.js';
 import type { Review, PaginatedResponse, ReviewSubmission } from '../types/index.js';
 
-const CACHE_TTL = 300; // 5 minutes
+/** Cache time-to-live in seconds (5 minutes) */
+const CACHE_TTL = 300;
 
+/**
+ * Maps a database row to a Review object.
+ * @param row - Raw database row with snake_case columns
+ * @returns Typed Review object with camelCase properties
+ */
 function mapReviewRow(row: Record<string, unknown>): Review {
   return {
     id: row.id as string,
@@ -30,7 +41,17 @@ function mapReviewRow(row: Record<string, unknown>): Review {
   };
 }
 
+/**
+ * Service class for managing app reviews and ratings.
+ * Implements review integrity scoring to detect fake reviews.
+ */
 export class ReviewService {
+  /**
+   * Retrieves paginated reviews for an app.
+   * @param appId - App UUID
+   * @param options - Pagination and sorting options
+   * @returns Paginated list of reviews with user info
+   */
   async getReviewsForApp(
     appId: string,
     options: { page?: number; limit?: number; sortBy?: string } = {}
@@ -84,6 +105,11 @@ export class ReviewService {
     return response;
   }
 
+  /**
+   * Gets rating statistics for an app including average and distribution.
+   * @param appId - App UUID
+   * @returns Average rating, total count, and star distribution
+   */
   async getRatingSummary(appId: string): Promise<{
     averageRating: number;
     totalRatings: number;
@@ -123,6 +149,16 @@ export class ReviewService {
     return summary;
   }
 
+  /**
+   * Creates a new review for an app.
+   * Calculates integrity score and may hold review for moderation if score is low.
+   * @param userId - User UUID creating the review
+   * @param appId - App UUID being reviewed
+   * @param data - Review content (rating, title, body)
+   * @param appVersion - Optional app version being reviewed
+   * @returns Created review object
+   * @throws Error if user already reviewed this app
+   */
   async createReview(userId: string, appId: string, data: ReviewSubmission, appVersion?: string): Promise<Review> {
     // Check if user already reviewed this app
     const existing = await query(`
@@ -168,6 +204,14 @@ export class ReviewService {
     return mapReviewRow(result as Record<string, unknown>);
   }
 
+  /**
+   * Updates an existing review.
+   * Recalculates app rating if the star rating changed.
+   * @param reviewId - Review UUID to update
+   * @param userId - User UUID (must own the review)
+   * @param data - Fields to update
+   * @returns Updated review or null if not found/not owned
+   */
   async updateReview(reviewId: string, userId: string, data: Partial<ReviewSubmission>): Promise<Review | null> {
     // Get existing review
     const existing = await query(`
@@ -218,6 +262,12 @@ export class ReviewService {
     return mapReviewRow(updated.rows[0] as Record<string, unknown>);
   }
 
+  /**
+   * Deletes a user's review and updates app rating accordingly.
+   * @param reviewId - Review UUID to delete
+   * @param userId - User UUID (must own the review)
+   * @returns True if deleted, false if not found/not owned
+   */
   async deleteReview(reviewId: string, userId: string): Promise<boolean> {
     const existing = await query(`
       SELECT * FROM reviews WHERE id = $1 AND user_id = $2
@@ -255,6 +305,13 @@ export class ReviewService {
     return true;
   }
 
+  /**
+   * Records a helpful/not helpful vote on a review.
+   * Supports vote toggling (remove vote) and changing votes.
+   * @param reviewId - Review UUID
+   * @param userId - User UUID casting the vote
+   * @param helpful - True for helpful, false for not helpful
+   */
   async voteReview(reviewId: string, userId: string, helpful: boolean): Promise<void> {
     // Check if user already voted
     const existing = await query(`
@@ -295,6 +352,15 @@ export class ReviewService {
     }
   }
 
+  /**
+   * Adds a developer response to a review.
+   * Verifies the developer owns the app being reviewed.
+   * @param reviewId - Review UUID to respond to
+   * @param developerId - Developer's user UUID
+   * @param response - Response text
+   * @returns Updated review or null if not found
+   * @throws Error if developer doesn't own the app
+   */
   async addDeveloperResponse(reviewId: string, developerId: string, response: string): Promise<Review | null> {
     // Verify developer owns the app
     const review = await query(`
@@ -334,7 +400,14 @@ export class ReviewService {
     return mapReviewRow(updated.rows[0] as Record<string, unknown>);
   }
 
-  // Review integrity scoring
+  /**
+   * Calculates an integrity score for a review to detect fake or low-quality reviews.
+   * Uses multiple signals: review velocity, content quality, account age, verified purchase, and coordination.
+   * @param userId - User creating the review
+   * @param appId - App being reviewed
+   * @param data - Review content
+   * @returns Integrity score between 0 and 1 (higher is more trustworthy)
+   */
   private async calculateIntegrityScore(userId: string, appId: string, data: ReviewSubmission): Promise<number> {
     const signals: { name: string; score: number; weight: number }[] = [];
 
@@ -395,6 +468,13 @@ export class ReviewService {
     return signals.reduce((sum, s) => sum + s.score * s.weight, 0);
   }
 
+  /**
+   * Analyzes review content for quality indicators.
+   * Checks for generic phrases, content length, and specific details.
+   * @param title - Review title
+   * @param body - Review body text
+   * @returns Content quality score between 0 and 1
+   */
   private analyzeContent(title: string, body: string): number {
     const text = `${title} ${body}`.toLowerCase();
 
@@ -411,6 +491,10 @@ export class ReviewService {
     return (hasGeneric ? 0.5 : 1.0) * 0.3 + lengthScore * 0.3 + (hasSpecifics ? 1.0 : 0.5) * 0.4;
   }
 
+  /**
+   * Clears all cached data related to an app's reviews.
+   * @param appId - App UUID
+   */
   private async clearReviewCaches(appId: string): Promise<void> {
     await cacheDelete(`ratings:${appId}`);
     await cacheDelete(`app:${appId}`);

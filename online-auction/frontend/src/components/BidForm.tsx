@@ -3,12 +3,33 @@ import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
 import type { Auction, AutoBid } from '../types';
 
+/**
+ * Props for the BidForm component.
+ */
 interface BidFormProps {
+  /** The auction to place bids on */
   auction: Auction;
+  /** User's existing auto-bid configuration, if any */
   userAutoBid: AutoBid | null;
+  /** Callback invoked after successful bid to refresh auction data */
   onBidPlaced: () => void;
 }
 
+/**
+ * Bidding form component for auction detail pages.
+ *
+ * Handles both manual bids and auto-bid configuration.
+ * Calculates minimum bid based on current price and increment.
+ * Provides real-time feedback on bid success/failure.
+ *
+ * Conditional rendering based on state:
+ * - Not authenticated: Shows sign-in prompt
+ * - Auction ended: Shows ended message
+ * - Active auction: Shows bid form with auto-bid toggle
+ *
+ * @param props - Component props with auction data and callbacks
+ * @returns JSX element for the bid form
+ */
 export function BidForm({ auction, userAutoBid, onBidPlaced }: BidFormProps) {
   const { isAuthenticated } = useAuthStore();
   const [bidAmount, setBidAmount] = useState('');

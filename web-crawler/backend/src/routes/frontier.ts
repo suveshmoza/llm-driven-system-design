@@ -1,3 +1,17 @@
+/**
+ * @fileoverview Express routes for URL frontier management.
+ *
+ * These endpoints provide API access to the URL frontier - the queue of URLs
+ * to be crawled. The API supports:
+ * - Viewing frontier statistics and URL list
+ * - Adding new URLs to the crawl queue
+ * - Adding seed URLs for starting new crawl sessions
+ * - Recovery operations for stale URLs
+ * - Administrative clearing of the frontier
+ *
+ * @module routes/frontier
+ */
+
 import { Router, Request, Response } from 'express';
 import { frontierService } from '../services/frontier.js';
 import { pool } from '../models/database.js';
@@ -6,7 +20,11 @@ const router = Router();
 
 /**
  * GET /api/frontier/stats
- * Get frontier statistics
+ *
+ * Returns aggregated statistics about the URL frontier.
+ * Used by the dashboard to display queue status.
+ *
+ * @returns Frontier stats including counts by status and total domains
  */
 router.get('/stats', async (_req: Request, res: Response) => {
   try {
@@ -20,7 +38,13 @@ router.get('/stats', async (_req: Request, res: Response) => {
 
 /**
  * GET /api/frontier/urls
- * Get recent URLs from frontier
+ *
+ * Returns a list of URLs from the frontier with optional filtering.
+ * Used by the dashboard to display the URL queue.
+ *
+ * @query limit - Maximum URLs to return (default: 50)
+ * @query status - Filter by status (pending, in_progress, completed, failed)
+ * @returns Array of frontier URL objects
  */
 router.get('/urls', async (req: Request, res: Response) => {
   try {
@@ -37,7 +61,13 @@ router.get('/urls', async (req: Request, res: Response) => {
 
 /**
  * POST /api/frontier/add
- * Add URLs to the frontier
+ *
+ * Adds URLs to the frontier for crawling.
+ * Duplicates and non-crawlable URLs are automatically filtered.
+ *
+ * @body urls - Array of URL strings to add
+ * @body priority - Optional priority level (1-3, default: calculated)
+ * @returns Object with count of added URLs and total submitted
  */
 router.post('/add', async (req: Request, res: Response) => {
   try {
@@ -58,7 +88,16 @@ router.post('/add', async (req: Request, res: Response) => {
 
 /**
  * POST /api/frontier/seed
- * Add seed URLs (for initial crawl)
+ *
+ * Adds high-priority seed URLs to start a new crawl.
+ * Seed URLs are stored in a separate table for reference and
+ * added to the frontier with maximum priority (3).
+ *
+ * Use this endpoint to initiate crawling of new domains.
+ *
+ * @body urls - Array of seed URL strings
+ * @body priority - Priority level (default: 3 - high)
+ * @returns Object with count of added URLs and total submitted
  */
 router.post('/seed', async (req: Request, res: Response) => {
   try {
@@ -89,7 +128,15 @@ router.post('/seed', async (req: Request, res: Response) => {
 
 /**
  * POST /api/frontier/recover
- * Recover stale in-progress URLs
+ *
+ * Recovers stale in-progress URLs that may be stuck due to worker crashes.
+ * Resets URLs that have been in_progress longer than the specified time.
+ *
+ * This is a maintenance operation that should be run periodically or
+ * after restarting workers.
+ *
+ * @query minutes - Age threshold in minutes (default: 10)
+ * @returns Object with count of recovered URLs
  */
 router.post('/recover', async (req: Request, res: Response) => {
   try {
@@ -104,7 +151,16 @@ router.post('/recover', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/frontier/clear
- * Clear the frontier (admin only)
+ *
+ * Clears the entire URL frontier. This is a destructive admin operation
+ * that cannot be undone - use with caution.
+ *
+ * Does NOT clear:
+ * - Crawled pages (historical data)
+ * - Visited URL set in Redis (for deduplication)
+ * - Statistics counters
+ *
+ * @returns Success message
  */
 router.delete('/clear', async (_req: Request, res: Response) => {
   try {

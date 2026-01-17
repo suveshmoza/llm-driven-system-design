@@ -1,8 +1,34 @@
+/**
+ * Reaction Service Module
+ *
+ * Handles emoji reactions on streams and comments. Reactions are high-volume
+ * (potentially thousands per second during popular streams), so counts are
+ * aggregated in Redis for real-time display and persisted to PostgreSQL
+ * for durability.
+ *
+ * @module services/reactionService
+ */
+
 import { query } from '../db/index.js';
 import { Reaction, ReactionType, ReactionCount } from '../types/index.js';
 import { redis, checkRateLimit } from '../utils/redis.js';
 
+/**
+ * Service class for reaction management operations.
+ * Handles high-volume reaction tracking with Redis aggregation.
+ */
 export class ReactionService {
+  /**
+   * Adds a reaction to a stream or comment.
+   * Uses upsert semantics to prevent duplicate reactions.
+   * Rate limited to 100 reactions per minute per user per stream.
+   *
+   * @param streamId - Stream receiving the reaction
+   * @param userId - User adding the reaction
+   * @param reactionType - Type of reaction (like, love, haha, wow, sad, angry)
+   * @param commentId - Optional comment ID for comment-specific reactions
+   * @throws Error if rate limit exceeded
+   */
   async addReaction(
     streamId: string,
     userId: string,
@@ -34,6 +60,14 @@ export class ReactionService {
     await redis.hincrby(key, reactionType, 1);
   }
 
+  /**
+   * Removes a user's reaction from a comment.
+   * Decrements the Redis counter to keep real-time counts accurate.
+   *
+   * @param userId - User removing their reaction
+   * @param reactionType - Type of reaction to remove
+   * @param commentId - Comment to remove reaction from
+   */
   async removeReaction(
     userId: string,
     reactionType: ReactionType,
@@ -52,6 +86,14 @@ export class ReactionService {
     }
   }
 
+  /**
+   * Gets aggregated reaction counts for a stream.
+   * Returns counts for all reaction types on stream-level reactions.
+   * Tries Redis cache first, falls back to database aggregation.
+   *
+   * @param streamId - Stream to get reaction counts for
+   * @returns Object mapping reaction types to their counts
+   */
   async getReactionCounts(streamId: string): Promise<ReactionCount> {
     // Try cache first
     const cached = await redis.hgetall(`reactions:stream:${streamId}`);
@@ -80,6 +122,13 @@ export class ReactionService {
     return counts;
   }
 
+  /**
+   * Gets aggregated reaction counts for a specific comment.
+   * Used to display reaction totals on individual comments.
+   *
+   * @param commentId - Comment to get reaction counts for
+   * @returns Object mapping reaction types to their counts
+   */
   async getCommentReactionCounts(commentId: string): Promise<ReactionCount> {
     const cached = await redis.hgetall(`reactions:comment:${commentId}`);
     if (Object.keys(cached).length > 0) {
@@ -107,4 +156,5 @@ export class ReactionService {
   }
 }
 
+/** Singleton reaction service instance */
 export const reactionService = new ReactionService();

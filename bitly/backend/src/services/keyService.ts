@@ -2,10 +2,18 @@ import { query, withTransaction } from '../utils/database.js';
 import { URL_CONFIG, SERVER_ID } from '../config.js';
 import { KeyPoolEntry } from '../models/types.js';
 
-// Local key cache for this server instance
+/**
+ * Local key cache for this server instance.
+ * Stores pre-allocated short codes to avoid database queries on every URL creation.
+ */
 let localKeyCache: string[] = [];
 
-// Generate a random short code (for custom code validation backup)
+/**
+ * Generates a random alphanumeric short code.
+ * Used as a fallback when the key pool is exhausted.
+ * @param length - Length of the code to generate (default: 7)
+ * @returns Random alphanumeric string
+ */
 function generateRandomCode(length: number = 7): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
@@ -15,7 +23,12 @@ function generateRandomCode(length: number = 7): string {
   return result;
 }
 
-// Fetch a batch of keys from the database and allocate to this server
+/**
+ * Fetches a batch of unused keys from the database and allocates them to this server.
+ * Uses row-level locking (FOR UPDATE SKIP LOCKED) to prevent race conditions
+ * when multiple servers fetch keys simultaneously.
+ * @returns Promise resolving to array of allocated short codes
+ */
 async function fetchKeyBatch(): Promise<string[]> {
   return withTransaction(async (client) => {
     // Select unused keys and mark them as allocated
@@ -36,7 +49,10 @@ async function fetchKeyBatch(): Promise<string[]> {
   });
 }
 
-// Ensure we have enough keys in local cache
+/**
+ * Ensures the local key cache has sufficient keys.
+ * Triggers a batch fetch from the database when cache runs low.
+ */
 async function ensureKeysAvailable(): Promise<void> {
   if (localKeyCache.length < URL_CONFIG.keyPoolMinThreshold) {
     const newKeys = await fetchKeyBatch();
@@ -45,7 +61,12 @@ async function ensureKeysAvailable(): Promise<void> {
   }
 }
 
-// Get a key from the local cache
+/**
+ * Retrieves the next available short code for URL creation.
+ * Draws from the local cache, fetching more from database if needed.
+ * Falls back to random generation if the pool is exhausted.
+ * @returns Promise resolving to a unique short code
+ */
 export async function getNextKey(): Promise<string> {
   await ensureKeysAvailable();
 
@@ -59,7 +80,11 @@ export async function getNextKey(): Promise<string> {
   return key;
 }
 
-// Mark a key as used in the database
+/**
+ * Marks a short code as used in the database after URL creation.
+ * Prevents the key from being reallocated to another server.
+ * @param shortCode - The short code that was used
+ */
 export async function markKeyAsUsed(shortCode: string): Promise<void> {
   await query(
     `UPDATE key_pool SET is_used = true WHERE short_code = $1`,
@@ -67,7 +92,12 @@ export async function markKeyAsUsed(shortCode: string): Promise<void> {
   );
 }
 
-// Check if a custom code is available
+/**
+ * Checks if a custom short code is available for use.
+ * Validates against reserved words and existing URLs/keys.
+ * @param code - The custom code to check
+ * @returns Promise resolving to true if available, false otherwise
+ */
 export async function isCodeAvailable(code: string): Promise<boolean> {
   // Check reserved words
   if (URL_CONFIG.reservedWords.includes(code.toLowerCase())) {
@@ -97,7 +127,11 @@ export async function isCodeAvailable(code: string): Promise<boolean> {
   return true;
 }
 
-// Get key pool statistics
+/**
+ * Retrieves statistics about the key pool.
+ * Used by the admin dashboard to monitor key availability.
+ * @returns Promise resolving to key pool statistics
+ */
 export async function getKeyPoolStats(): Promise<{
   total: number;
   used: number;
@@ -126,7 +160,12 @@ export async function getKeyPoolStats(): Promise<{
   };
 }
 
-// Repopulate key pool if running low
+/**
+ * Adds new pre-generated keys to the pool.
+ * Called by admins when available keys run low.
+ * @param count - Number of new keys to generate (default: 1000)
+ * @returns Promise resolving to the number of keys added
+ */
 export async function repopulateKeyPool(count: number = 1000): Promise<number> {
   const result = await query<{ populate_key_pool: number }>(
     `SELECT populate_key_pool($1)`,
@@ -135,13 +174,20 @@ export async function repopulateKeyPool(count: number = 1000): Promise<number> {
   return result[0].populate_key_pool;
 }
 
-// Initialize key service - fetch initial batch
+/**
+ * Initializes the key service on server startup.
+ * Fetches an initial batch of keys into the local cache.
+ */
 export async function initKeyService(): Promise<void> {
   await ensureKeysAvailable();
   console.log(`Key service initialized with ${localKeyCache.length} keys`);
 }
 
-// Get local cache count
+/**
+ * Returns the number of keys in the local cache.
+ * Useful for monitoring and debugging.
+ * @returns Number of available keys in local cache
+ */
 export function getLocalCacheCount(): number {
   return localKeyCache.length;
 }

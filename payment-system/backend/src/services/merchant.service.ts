@@ -4,11 +4,21 @@ import { query, queryOne, withTransaction } from '../db/connection.js';
 import type { Merchant, Account, DashboardStats } from '../types/index.js';
 import type { PoolClient } from 'pg';
 
+/**
+ * Service for managing merchant accounts and retrieving business analytics.
+ * Handles merchant creation, authentication, API key management, and dashboard statistics.
+ */
 export class MerchantService {
+  /** Number of bcrypt hashing rounds for API key storage */
   private saltRounds = parseInt(process.env.API_KEY_SALT_ROUNDS || '10', 10);
 
   /**
-   * Create a new merchant
+   * Creates a new merchant account with an associated ledger account.
+   * Generates a unique API key and webhook secret for the merchant.
+   * @param name - Business name of the merchant
+   * @param email - Contact email for the merchant account
+   * @param defaultCurrency - Default currency for transactions (default: USD)
+   * @returns Object containing the created merchant and the plaintext API key (only returned once)
    */
   async createMerchant(
     name: string,
@@ -48,7 +58,11 @@ export class MerchantService {
   }
 
   /**
-   * Authenticate merchant by API key
+   * Authenticates a merchant by verifying their API key.
+   * Compares the provided key against all active merchant hashes.
+   * Note: Production implementation should use a more efficient lookup mechanism.
+   * @param apiKey - Plaintext API key to verify
+   * @returns Authenticated merchant if valid, null otherwise
    */
   async authenticateByApiKey(apiKey: string): Promise<Merchant | null> {
     // Get all merchants (in production, would use a more efficient lookup)
@@ -67,21 +81,29 @@ export class MerchantService {
   }
 
   /**
-   * Get merchant by ID
+   * Retrieves a merchant by their unique identifier.
+   * @param id - UUID of the merchant
+   * @returns Merchant if found, null otherwise
    */
   async getMerchant(id: string): Promise<Merchant | null> {
     return queryOne<Merchant>('SELECT * FROM merchants WHERE id = $1', [id]);
   }
 
   /**
-   * Get merchant by email
+   * Retrieves a merchant by their email address.
+   * Used for checking existing registrations during signup.
+   * @param email - Email address to look up
+   * @returns Merchant if found, null otherwise
    */
   async getMerchantByEmail(email: string): Promise<Merchant | null> {
     return queryOne<Merchant>('SELECT * FROM merchants WHERE email = $1', [email]);
   }
 
   /**
-   * Update merchant webhook URL
+   * Updates the webhook URL for receiving payment event notifications.
+   * @param merchantId - UUID of the merchant
+   * @param webhookUrl - HTTPS URL to receive webhook POSTs
+   * @returns Updated merchant record
    */
   async updateWebhookUrl(merchantId: string, webhookUrl: string): Promise<Merchant> {
     await query(
@@ -93,7 +115,10 @@ export class MerchantService {
   }
 
   /**
-   * Rotate API key
+   * Generates a new API key, invalidating the previous one.
+   * Should be used when the current key is compromised or for periodic rotation.
+   * @param merchantId - UUID of the merchant
+   * @returns Object containing updated merchant and new plaintext API key
    */
   async rotateApiKey(merchantId: string): Promise<{ merchant: Merchant; apiKey: string }> {
     const apiKey = `pk_${uuidv4().replace(/-/g, '')}`;
@@ -109,7 +134,11 @@ export class MerchantService {
   }
 
   /**
-   * Get merchant balance
+   * Retrieves the current balance from the merchant's ledger account.
+   * Balance represents funds available for payout.
+   * @param merchantId - UUID of the merchant
+   * @returns Current balance in cents
+   * @throws Error if merchant not found
    */
   async getMerchantBalance(merchantId: string): Promise<number> {
     const merchant = await this.getMerchant(merchantId);
@@ -126,7 +155,12 @@ export class MerchantService {
   }
 
   /**
-   * Get dashboard statistics for a merchant
+   * Calculates aggregated statistics for the merchant dashboard.
+   * Includes total volume, transaction counts, fees, and success/refund rates.
+   * @param merchantId - UUID of the merchant
+   * @param startDate - Beginning of the reporting period
+   * @param endDate - End of the reporting period
+   * @returns Dashboard statistics for the specified period
    */
   async getDashboardStats(
     merchantId: string,
@@ -169,7 +203,13 @@ export class MerchantService {
   }
 
   /**
-   * Get transaction volume over time (for charts)
+   * Retrieves time-series data of transaction volume for chart visualization.
+   * Groups transactions by the specified time granularity.
+   * @param merchantId - UUID of the merchant
+   * @param startDate - Beginning of the reporting period
+   * @param endDate - End of the reporting period
+   * @param granularity - Time bucket size: 'hour', 'day', or 'week'
+   * @returns Array of data points with period, volume, and transaction count
    */
   async getVolumeOverTime(
     merchantId: string,
@@ -193,7 +233,11 @@ export class MerchantService {
   }
 
   /**
-   * List all merchants (admin function)
+   * Retrieves a paginated list of all merchants (admin function).
+   * Used for platform administration and oversight.
+   * @param limit - Maximum number of merchants to return
+   * @param offset - Number of merchants to skip for pagination
+   * @returns Object containing merchants array and total count
    */
   async listMerchants(
     limit = 50,

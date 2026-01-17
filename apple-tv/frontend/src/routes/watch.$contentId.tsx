@@ -4,6 +4,20 @@ import { VideoPlayer } from '../components';
 import { usePlayerStore } from '../stores/playerStore';
 import { useAuthStore } from '../stores/authStore';
 
+/**
+ * Watch page component for video playback.
+ * Wraps the VideoPlayer component with authentication checks and content loading.
+ *
+ * Requirements:
+ * - User must be logged in (redirects to /login)
+ * - Profile must be selected (redirects to /profiles)
+ *
+ * Features:
+ * - Loads content and playback info from API
+ * - Shows loading state during initialization
+ * - Displays error state with navigation option
+ * - Cleans up player state on unmount
+ */
 function WatchPage() {
   const { contentId } = Route.useParams();
   const navigate = useNavigate();
@@ -67,6 +81,10 @@ function WatchPage() {
   return <VideoPlayer />;
 }
 
+/**
+ * Route configuration for watch page (/watch/:contentId).
+ * Full-screen video player route for content playback.
+ */
 export const Route = createFileRoute('/watch/$contentId')({
   component: WatchPage,
 });

@@ -1,12 +1,33 @@
 import type { Message } from '@/types';
 
+/**
+ * Props for the MessageBubble component.
+ */
 interface MessageBubbleProps {
+  /** The message to display */
   message: Message;
+  /** Whether this message was sent by the current user */
   isOwn: boolean;
+  /** Whether to show the sender's avatar (for grouping consecutive messages) */
   showAvatar: boolean;
 }
 
+/**
+ * Renders a single message bubble in the chat view.
+ * Handles iMessage-style styling (blue for sent, gray for received),
+ * sender avatars, reply previews, edit indicators, delivery status,
+ * and emoji reactions.
+ *
+ * @param props - Component props
+ * @returns React component for a message bubble
+ */
 export function MessageBubble({ message, isOwn, showAvatar }: MessageBubbleProps) {
+  /**
+   * Formats a date string to a time-only display (e.g., "2:30 PM").
+   *
+   * @param dateString - ISO date string to format
+   * @returns Formatted time string
+   */
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString([], {
       hour: '2-digit',
@@ -14,6 +35,12 @@ export function MessageBubble({ message, isOwn, showAvatar }: MessageBubbleProps
     });
   };
 
+  /**
+   * Extracts initials from a name for avatar placeholder.
+   *
+   * @param name - Full name to extract initials from
+   * @returns Up to 2 uppercase initials
+   */
   const getInitials = (name: string) => {
     return name
       .split(' ')

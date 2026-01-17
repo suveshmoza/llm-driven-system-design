@@ -1,21 +1,60 @@
+/**
+ * Comment Service Module
+ *
+ * Handles all comment operations for live streams including creation, retrieval,
+ * deletion, and moderation actions. Implements rate limiting and content filtering
+ * to prevent spam and abuse during high-traffic broadcasts.
+ *
+ * @module services/commentService
+ */
+
 import { query } from '../db/index.js';
 import { Comment, CommentWithUser } from '../types/index.js';
 import { snowflake } from '../utils/snowflake.js';
 import { redis, checkRateLimit } from '../utils/redis.js';
 import { streamService } from './streamService.js';
 
-// Simple profanity filter (in production, use a proper library or ML model)
+/** Simple word filter for basic content moderation (production should use ML-based filtering) */
 const BANNED_WORDS = ['spam', 'scam', 'fake'];
 
+/**
+ * Service class for comment management operations.
+ * Handles real-time comment posting with rate limiting and caching.
+ */
 export class CommentService {
+  /** Maximum comments per user globally per minute */
   private rateLimitGlobal: number;
+
+  /** Maximum comments per user per stream per 30 seconds */
   private rateLimitPerStream: number;
 
+  /**
+   * Creates a new CommentService instance with rate limit configuration.
+   * Reads limits from environment variables or uses defaults.
+   */
   constructor() {
     this.rateLimitGlobal = parseInt(process.env.RATE_LIMIT_COMMENTS_PER_MINUTE || '30', 10);
     this.rateLimitPerStream = parseInt(process.env.RATE_LIMIT_COMMENTS_PER_STREAM || '5', 10);
   }
 
+  /**
+   * Creates a new comment on a stream.
+   *
+   * Performs the following steps:
+   * 1. Checks global and per-stream rate limits
+   * 2. Filters for banned words
+   * 3. Generates a Snowflake ID for time-ordering
+   * 4. Persists to database
+   * 5. Updates stream comment count
+   * 6. Caches for real-time delivery
+   *
+   * @param streamId - Target stream ID
+   * @param userId - Author's user ID
+   * @param content - Comment text content
+   * @param parentId - Optional parent comment ID for replies
+   * @returns Created comment with user information
+   * @throws Error if rate limited or content contains banned words
+   */
   async createComment(
     streamId: string,
     userId: string,
@@ -94,6 +133,14 @@ export class CommentService {
     return commentWithUser;
   }
 
+  /**
+   * Retrieves recent comments for a stream.
+   * Tries Redis cache first for low latency, falls back to database.
+   *
+   * @param streamId - Stream to fetch comments for
+   * @param limit - Maximum number of comments to return (default: 50)
+   * @returns Array of comments with user information, newest first
+   */
   async getRecentComments(streamId: string, limit = 50): Promise<CommentWithUser[]> {
     // Try cache first
     const cached = await redis.lrange(`recent:stream:${streamId}`, 0, limit - 1);
@@ -123,6 +170,14 @@ export class CommentService {
     return rows;
   }
 
+  /**
+   * Soft-deletes a comment by marking it as hidden.
+   * Only the comment author or moderators/admins can delete comments.
+   *
+   * @param commentId - ID of comment to delete
+   * @param userId - User attempting the deletion
+   * @returns true if deletion was successful, false if unauthorized or not found
+   */
   async deleteComment(commentId: string, userId: string): Promise<boolean> {
     // Check if user owns the comment or is a moderator
     const result = await query(
@@ -137,6 +192,14 @@ export class CommentService {
     return result.length > 0;
   }
 
+  /**
+   * Pins a comment to the top of the stream chat.
+   * Only moderators and admins can pin comments.
+   *
+   * @param commentId - ID of comment to pin
+   * @param userId - User attempting to pin (must be moderator/admin)
+   * @returns true if pinning was successful, false if unauthorized
+   */
   async pinComment(commentId: string, userId: string): Promise<boolean> {
     // Only moderators and admins can pin
     const result = await query(
@@ -151,6 +214,14 @@ export class CommentService {
     return result.length > 0;
   }
 
+  /**
+   * Highlights a comment to make it more visible.
+   * Only the stream creator can highlight comments in their stream.
+   *
+   * @param commentId - ID of comment to highlight
+   * @param userId - User attempting to highlight (must be stream creator)
+   * @returns true if highlighting was successful, false if unauthorized
+   */
   async highlightComment(commentId: string, userId: string): Promise<boolean> {
     // Stream creators can highlight comments
     const result = await query(
@@ -165,6 +236,13 @@ export class CommentService {
     return result.length > 0;
   }
 
+  /**
+   * Caches a comment in Redis for fast real-time retrieval.
+   * Maintains a sliding window of the last 1000 comments per stream.
+   *
+   * @param streamId - Stream to cache the comment for
+   * @param comment - Comment with user data to cache
+   */
   private async cacheComment(streamId: string, comment: CommentWithUser): Promise<void> {
     const key = `recent:stream:${streamId}`;
     await redis.lpush(key, JSON.stringify(comment));
@@ -173,4 +251,5 @@ export class CommentService {
   }
 }
 
+/** Singleton comment service instance */
 export const commentService = new CommentService();

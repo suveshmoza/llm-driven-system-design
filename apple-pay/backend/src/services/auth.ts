@@ -4,8 +4,23 @@ import { query } from '../db/index.js';
 import redis from '../db/redis.js';
 import { User, Device } from '../types/index.js';
 
+/**
+ * Service responsible for user authentication and device management.
+ * Handles user registration, login/logout flows, session management,
+ * and device lifecycle including registration and lost device handling.
+ * Sessions are stored in Redis with 1-hour TTL for fast validation.
+ */
 export class AuthService {
-  // Login user
+  /**
+   * Authenticates a user with email and password.
+   * Creates a new session in Redis with 1-hour TTL.
+   * Optionally associates the session with a specific device.
+   *
+   * @param email - The user's email address
+   * @param password - The user's password
+   * @param deviceId - Optional device ID to associate with the session
+   * @returns Object with success status, session ID, and user details or error
+   */
   async login(
     email: string,
     password: string,
@@ -64,7 +79,16 @@ export class AuthService {
     };
   }
 
-  // Register new user
+  /**
+   * Registers a new user account.
+   * Hashes the password using bcrypt before storage.
+   * Email addresses are normalized to lowercase.
+   *
+   * @param email - The user's email address
+   * @param password - The user's password (min 6 characters)
+   * @param name - The user's display name
+   * @returns Object with success status and user details or error
+   */
   async register(
     email: string,
     password: string,
@@ -101,12 +125,22 @@ export class AuthService {
     };
   }
 
-  // Logout
+  /**
+   * Logs out a user by deleting their session from Redis.
+   *
+   * @param sessionId - The session ID to invalidate
+   */
   async logout(sessionId: string): Promise<void> {
     await redis.del(`session:${sessionId}`);
   }
 
-  // Get current user
+  /**
+   * Retrieves the current user from a session ID.
+   * Validates the session exists in Redis and fetches user details.
+   *
+   * @param sessionId - The session ID to look up
+   * @returns The user if session is valid, null otherwise
+   */
   async getCurrentUser(sessionId: string): Promise<User | null> {
     const sessionData = await redis.get(`session:${sessionId}`);
     if (!sessionData) {
@@ -122,7 +156,16 @@ export class AuthService {
     return result.rows[0] || null;
   }
 
-  // Register a device
+  /**
+   * Registers a new Apple device for a user.
+   * Generates a simulated Secure Element ID for the device.
+   * Each device can have its own provisioned cards.
+   *
+   * @param userId - The user's unique identifier
+   * @param deviceName - Human-readable device name (e.g., "My iPhone 15")
+   * @param deviceType - The type of device (iphone, apple_watch, or ipad)
+   * @returns The newly created device record
+   */
   async registerDevice(
     userId: string,
     deviceName: string,
@@ -145,7 +188,13 @@ export class AuthService {
     return result.rows[0];
   }
 
-  // Get user's devices
+  /**
+   * Retrieves all devices registered to a user.
+   * Sorted by creation date (newest first).
+   *
+   * @param userId - The user's unique identifier
+   * @returns Array of device records
+   */
   async getDevices(userId: string): Promise<Device[]> {
     const result = await query(
       `SELECT * FROM devices WHERE user_id = $1 ORDER BY created_at DESC`,
@@ -154,7 +203,15 @@ export class AuthService {
     return result.rows;
   }
 
-  // Remove device (and all its cards)
+  /**
+   * Removes a device and all its provisioned cards.
+   * Marks all cards on the device as deleted and sets the device
+   * status to inactive. This is a permanent action.
+   *
+   * @param userId - The user's unique identifier
+   * @param deviceId - The device's unique identifier
+   * @returns Object indicating success or failure with error message
+   */
   async removeDevice(userId: string, deviceId: string): Promise<{ success: boolean; error?: string }> {
     const device = await query(
       `SELECT * FROM devices WHERE id = $1 AND user_id = $2`,
@@ -181,7 +238,16 @@ export class AuthService {
     return { success: true };
   }
 
-  // Report device as lost
+  /**
+   * Reports a device as lost and suspends all its cards.
+   * This is a security feature to prevent unauthorized use
+   * if a device is stolen or misplaced. Cards can be reactivated
+   * when the device is recovered.
+   *
+   * @param userId - The user's unique identifier
+   * @param deviceId - The device's unique identifier
+   * @returns Object with success status and count of suspended cards
+   */
   async reportDeviceLost(userId: string, deviceId: string): Promise<{ success: boolean; suspendedCards: number; error?: string }> {
     const device = await query(
       `SELECT * FROM devices WHERE id = $1 AND user_id = $2`,
@@ -211,4 +277,5 @@ export class AuthService {
   }
 }
 
+/** Singleton instance of the AuthService */
 export const authService = new AuthService();

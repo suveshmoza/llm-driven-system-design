@@ -1,3 +1,8 @@
+/**
+ * Ticketmaster Backend API Server
+ * Main entry point for the Express application.
+ * Sets up middleware, routes, and background jobs for the ticket sales platform.
+ */
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -12,7 +17,9 @@ import { seatService } from './services/seat.service.js';
 import { eventService } from './services/event.service.js';
 import { waitingRoomService } from './services/waiting-room.service.js';
 
+/** Express application instance */
 const app = express();
+/** Server port from environment or default to 3001 */
 const PORT = parseInt(process.env.PORT || '3001');
 
 // Middleware
@@ -23,7 +30,9 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Health check
+/**
+ * Health check endpoint for monitoring and load balancer probes.
+ */
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -36,13 +45,20 @@ app.use('/api/v1/seats', seatsRoutes);
 app.use('/api/v1/queue', queueRoutes);
 app.use('/api/v1/checkout', checkoutRoutes);
 
-// Error handling middleware
+/**
+ * Global error handling middleware.
+ * Catches unhandled errors and returns a generic error response.
+ */
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-// Background jobs
+/**
+ * Starts background jobs for automatic maintenance tasks.
+ * - Cleans up expired seat holds every minute
+ * - Checks for events ready to go on-sale every 30 seconds
+ */
 const startBackgroundJobs = () => {
   // Cleanup expired seat holds every minute
   setInterval(async () => {

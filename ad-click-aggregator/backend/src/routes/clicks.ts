@@ -1,10 +1,19 @@
+/**
+ * @fileoverview Click ingestion API routes.
+ * Handles single and batch click event submissions from ad delivery systems.
+ * Validates input, extracts client metadata, and delegates to ingestion service.
+ */
+
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { processClickEvent, processBatchClickEvents } from '../services/click-ingestion.js';
 
 const router = Router();
 
-// Validation schema for click events
+/**
+ * Zod validation schema for individual click events.
+ * Enforces required fields and validates optional metadata formats.
+ */
 const clickEventSchema = z.object({
   click_id: z.string().optional(),
   ad_id: z.string().min(1, 'ad_id is required'),
@@ -20,13 +29,20 @@ const clickEventSchema = z.object({
   ip_hash: z.string().optional(),
 });
 
+/**
+ * Zod validation schema for batch click submissions.
+ * Limits batch size to 1000 for memory and performance reasons.
+ */
 const batchClickEventSchema = z.object({
   clicks: z.array(clickEventSchema).min(1).max(1000),
 });
 
 /**
  * POST /api/v1/clicks
- * Record a single click event
+ * Records a single click event in the aggregation system.
+ * Performs validation, fraud detection, and returns processing status.
+ *
+ * @returns 202 for new clicks, 200 for duplicates
  */
 router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -60,7 +76,11 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
 /**
  * POST /api/v1/clicks/batch
- * Record multiple click events in a single request
+ * Records multiple click events in a single request.
+ * Processes each click independently, returning individual results.
+ * Useful for high-throughput ingestion from ad servers.
+ *
+ * @returns 202 with per-click processing results and summary counts
  */
 router.post('/batch', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -99,8 +119,12 @@ router.post('/batch', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
- * Simple hash function for IP addresses (for demo purposes)
- * In production, use a proper cryptographic hash
+ * Creates a simple hash of an IP address for privacy-preserving tracking.
+ * Uses a fast non-cryptographic hash suitable for deduplication.
+ * In production, use a cryptographic hash with salt.
+ *
+ * @param ip - Raw IP address string
+ * @returns 8-character hexadecimal hash
  */
 function hashIp(ip: string): string {
   let hash = 0;

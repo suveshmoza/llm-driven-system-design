@@ -4,12 +4,21 @@ import { getAllProducts, getProductsToScrape } from '../services/productService.
 import { getScraperConfigs, updateScraperConfig, createScraperConfig } from '../services/scraperService.js';
 import { query } from '../db/pool.js';
 
+/**
+ * Admin routes for system management and monitoring.
+ * All routes require authentication and admin role.
+ * Provides dashboard statistics, product management, and scraper configuration.
+ * @module routes/admin
+ */
 const router = Router();
 
-// All admin routes require authentication and admin role
+/** All admin routes require authentication and admin role */
 router.use(authMiddleware, adminMiddleware);
 
-// Dashboard stats
+/**
+ * GET /stats - Returns dashboard statistics for the admin panel.
+ * Includes user count, product count, alerts generated, and scrape activity.
+ */
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const [
@@ -54,7 +63,11 @@ router.get('/stats', async (req: Request, res: Response) => {
   }
 });
 
-// Get all products (admin view)
+/**
+ * GET /products - Retrieves all products with pagination.
+ * Includes watcher counts. Supports filtering by status.
+ * Query params: page, limit (default: 50), status
+ */
 router.get('/products', async (req: Request, res: Response) => {
   try {
     const { page = '1', limit = '50', status } = req.query;
@@ -69,7 +82,11 @@ router.get('/products', async (req: Request, res: Response) => {
   }
 });
 
-// Get products pending scrape
+/**
+ * GET /scrape-queue - Returns products pending scrape.
+ * Useful for monitoring scrape backlog.
+ * Query params: limit (default: 50)
+ */
 router.get('/scrape-queue', async (req: Request, res: Response) => {
   try {
     const { limit = '50' } = req.query;
@@ -80,7 +97,10 @@ router.get('/scrape-queue', async (req: Request, res: Response) => {
   }
 });
 
-// Get scraper configurations
+/**
+ * GET /scraper-configs - Retrieves all active scraper configurations.
+ * Shows domain-specific CSS selectors and settings.
+ */
 router.get('/scraper-configs', async (req: Request, res: Response) => {
   try {
     const configs = await getScraperConfigs();
@@ -90,7 +110,10 @@ router.get('/scraper-configs', async (req: Request, res: Response) => {
   }
 });
 
-// Update scraper configuration
+/**
+ * PATCH /scraper-configs/:domain - Updates a scraper configuration.
+ * Used to fix broken selectors or adjust rate limits.
+ */
 router.patch('/scraper-configs/:domain', async (req: Request, res: Response) => {
   try {
     const { domain } = req.params;
@@ -107,7 +130,10 @@ router.patch('/scraper-configs/:domain', async (req: Request, res: Response) => 
   }
 });
 
-// Create new scraper configuration
+/**
+ * POST /scraper-configs - Creates a new scraper configuration.
+ * Used when adding support for a new e-commerce domain.
+ */
 router.post('/scraper-configs', async (req: Request, res: Response) => {
   try {
     const config = await createScraperConfig(req.body);
@@ -121,7 +147,11 @@ router.post('/scraper-configs', async (req: Request, res: Response) => {
   }
 });
 
-// Get recent price changes
+/**
+ * GET /price-changes - Returns recent price changes for monitoring.
+ * Shows products that had price updates with old vs new price.
+ * Query params: hours (default: 24), limit (default: 50)
+ */
 router.get('/price-changes', async (req: Request, res: Response) => {
   try {
     const { hours = '24', limit = '50' } = req.query;

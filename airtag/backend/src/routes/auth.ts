@@ -1,11 +1,16 @@
 import { Router } from 'express';
 import { userService } from '../services/userService.js';
 
+/**
+ * Authentication routes for user registration, login, and session management.
+ * All routes are prefixed with /api/auth.
+ */
 const router = Router();
 
 /**
  * POST /api/auth/register
- * Register a new user
+ * Register a new user account.
+ * Creates a session upon successful registration.
  */
 router.post('/register', async (req, res) => {
   try {
@@ -41,7 +46,8 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * Login with email and password
+ * Authenticate a user with email and password.
+ * Creates a session upon successful authentication.
  */
 router.post('/login', async (req, res) => {
   try {
@@ -79,7 +85,7 @@ router.post('/login', async (req, res) => {
 
 /**
  * POST /api/auth/logout
- * Logout current user
+ * End the current user session and clear the session cookie.
  */
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
@@ -94,7 +100,8 @@ router.post('/logout', (req, res) => {
 
 /**
  * GET /api/auth/me
- * Get current user info
+ * Get the currently authenticated user's information.
+ * Used by the frontend to check authentication status on page load.
  */
 router.get('/me', async (req, res) => {
   try {

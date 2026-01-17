@@ -1,10 +1,24 @@
+/**
+ * Authentication routes for user registration, login, and session management.
+ *
+ * Provides endpoints for:
+ * - User registration with username/password
+ * - Login with session cookie creation
+ * - Logout with session invalidation
+ * - Current user retrieval
+ * - Anonymous guest access
+ */
 import { Router, Request, Response } from 'express';
 import { authService } from '../services/auth.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
-// Register new user
+/**
+ * POST /register - Register a new user account.
+ * Validates username (3-50 chars) and password (min 6 chars).
+ * Automatically logs in the user after successful registration.
+ */
 router.post('/register', async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
@@ -45,7 +59,10 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// Login
+/**
+ * POST /login - Authenticate and create a session.
+ * Sets an httpOnly session cookie valid for 24 hours.
+ */
 router.post('/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
@@ -71,7 +88,10 @@ router.post('/login', async (req: Request, res: Response) => {
   res.json({ user: result.user });
 });
 
-// Logout
+/**
+ * POST /logout - End the current session.
+ * Requires authentication. Clears the session cookie.
+ */
 router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
   if (req.sessionId) {
     await authService.logout(req.sessionId);
@@ -80,12 +100,19 @@ router.post('/logout', authMiddleware, async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-// Get current user
+/**
+ * GET /me - Get the current authenticated user's information.
+ * Requires authentication.
+ */
 router.get('/me', authMiddleware, async (req: Request, res: Response) => {
   res.json({ user: req.user });
 });
 
-// Create anonymous user (for quick access)
+/**
+ * POST /anonymous - Create an anonymous guest session.
+ * Allows users to participate without registration.
+ * Creates a user with a random username (anon_xxxxxxxx).
+ */
 router.post('/anonymous', async (req: Request, res: Response) => {
   const result = await authService.createAnonymousUser();
 

@@ -4,7 +4,13 @@ import { getFirstDegreeConnections } from './connectionService.js';
 import { getUserSkills, getUserExperiences } from './userService.js';
 import type { Job, JobApplication, Company, Skill, User } from '../types/index.js';
 
-// Company functions
+/**
+ * Creates a new company in the system.
+ * Companies are central to job postings and user work history.
+ *
+ * @param data - Company details including name, slug, and optional metadata
+ * @returns The newly created company
+ */
 export async function createCompany(data: {
   name: string;
   slug: string;
@@ -33,14 +39,35 @@ export async function createCompany(data: {
   return company!;
 }
 
+/**
+ * Retrieves a company by its unique ID.
+ *
+ * @param id - The company's unique identifier
+ * @returns The company object or null if not found
+ */
 export async function getCompanyById(id: number): Promise<Company | null> {
   return queryOne<Company>(`SELECT * FROM companies WHERE id = $1`, [id]);
 }
 
+/**
+ * Retrieves a company by its URL slug.
+ * Slugs are used for SEO-friendly company page URLs.
+ *
+ * @param slug - The company's unique URL slug
+ * @returns The company object or null if not found
+ */
 export async function getCompanyBySlug(slug: string): Promise<Company | null> {
   return queryOne<Company>(`SELECT * FROM companies WHERE slug = $1`, [slug]);
 }
 
+/**
+ * Retrieves all companies with pagination.
+ * Ordered alphabetically by name.
+ *
+ * @param offset - Number of companies to skip (default: 0)
+ * @param limit - Maximum companies to return (default: 50)
+ * @returns Array of company objects
+ */
 export async function getAllCompanies(offset = 0, limit = 50): Promise<Company[]> {
   return query<Company>(
     `SELECT * FROM companies ORDER BY name OFFSET $1 LIMIT $2`,
@@ -48,7 +75,13 @@ export async function getAllCompanies(offset = 0, limit = 50): Promise<Company[]
   );
 }
 
-// Job functions
+/**
+ * Creates a new job posting.
+ * Links required skills and indexes in Elasticsearch for search.
+ *
+ * @param data - Job details including company, title, description, requirements, and salary
+ * @returns The newly created job
+ */
 export async function createJob(data: {
   company_id: number;
   posted_by_user_id?: number;
@@ -112,6 +145,12 @@ export async function createJob(data: {
   return job!;
 }
 
+/**
+ * Retrieves a job by ID with company details and required skills.
+ *
+ * @param id - The job's unique identifier
+ * @returns The job with company and skills, or null if not found
+ */
 export async function getJobById(id: number): Promise<Job | null> {
   const job = await queryOne<Job>(
     `SELECT j.*,
@@ -137,6 +176,12 @@ export async function getJobById(id: number): Promise<Job | null> {
   return job;
 }
 
+/**
+ * Retrieves required skills for a job.
+ *
+ * @param jobId - The job's unique identifier
+ * @returns Array of skill objects required for the job
+ */
 export async function getJobSkills(jobId: number): Promise<Skill[]> {
   return query<Skill>(
     `SELECT s.* FROM skills s
@@ -146,6 +191,16 @@ export async function getJobSkills(jobId: number): Promise<Skill[]> {
   );
 }
 
+/**
+ * Retrieves jobs with optional filters.
+ * Supports filtering by company, location, remote status, employment type, and experience level.
+ * Only returns active jobs by default.
+ *
+ * @param filters - Optional filter criteria
+ * @param offset - Number of jobs to skip (default: 0)
+ * @param limit - Maximum jobs to return (default: 20)
+ * @returns Array of jobs with company information
+ */
 export async function getJobs(
   filters?: {
     company_id?: number;
@@ -207,7 +262,17 @@ export async function getJobs(
   );
 }
 
-// Search jobs with Elasticsearch
+/**
+ * Searches for jobs using Elasticsearch with optional filters.
+ * Falls back to SQL ILIKE search if Elasticsearch is unavailable.
+ * Preserves relevance ranking from search results.
+ *
+ * @param searchQuery - The search query string
+ * @param filters - Optional filters for location, remote, type, and level
+ * @param offset - Number of results to skip (default: 0)
+ * @param limit - Maximum results to return (default: 20)
+ * @returns Array of matching jobs ordered by relevance
+ */
 export async function searchJobs(
   searchQuery: string,
   filters?: {
@@ -265,7 +330,18 @@ export async function searchJobs(
   }
 }
 
-// Job matching score
+/**
+ * Calculates a match score between a job and a user.
+ * Scoring factors:
+ * - Skills match (40% weight) - percentage of required skills the user has
+ * - Experience level match (25% weight) - based on years of experience
+ * - Location match (15% weight) - remote jobs get full points
+ * - Network connection at company (10% weight) - having a 1st-degree connection
+ *
+ * @param jobId - The job to evaluate
+ * @param userId - The user to match
+ * @returns Match score from 0-100
+ */
 export async function calculateJobMatchScore(jobId: number, userId: number): Promise<number> {
   const [job, userSkills, userExperiences] = await Promise.all([
     getJobById(jobId),
@@ -322,7 +398,16 @@ export async function calculateJobMatchScore(jobId: number, userId: number): Pro
   return Math.round(score);
 }
 
-// Apply for a job
+/**
+ * Submits a job application for a user.
+ * Calculates match score at application time for ranking.
+ * Uses upsert to allow re-applying with updated materials.
+ *
+ * @param jobId - The job to apply for
+ * @param userId - The applicant's user ID
+ * @param data - Application materials (resume URL and cover letter)
+ * @returns The created or updated job application
+ */
 export async function applyForJob(
   jobId: number,
   userId: number,

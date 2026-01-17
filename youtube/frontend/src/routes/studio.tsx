@@ -5,10 +5,20 @@ import { Video, PaginatedResponse } from '../types';
 import { api } from '../services/api';
 import { formatViewCount, formatDuration, timeAgo, getPlaceholderThumbnail } from '../utils/format';
 
+/**
+ * Studio page route configuration.
+ * Protected page for content creators to manage their videos.
+ */
 export const Route = createFileRoute('/studio')({
   component: StudioPage,
 });
 
+/**
+ * YouTube Studio page component for content management.
+ * Displays a table of the user's uploaded videos with metadata
+ * including visibility, processing status, views, likes, and comments.
+ * Allows video deletion. Redirects to home if not authenticated.
+ */
 function StudioPage() {
   const { user } = useAuthStore();
   const [videos, setVideos] = useState<Video[]>([]);

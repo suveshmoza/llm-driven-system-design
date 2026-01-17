@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Workspace management routes.
+ * Workspaces are the top-level organizational units that contain pages and members.
+ * All routes require authentication.
+ */
+
 import { Router, Request, Response } from 'express';
 import pool from '../models/db.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -5,12 +11,13 @@ import type { Workspace } from '../types/index.js';
 
 const router = Router();
 
-// All workspace routes require authentication
+// Apply authentication to all workspace routes
 router.use(authMiddleware);
 
 /**
  * GET /api/workspaces
- * Get all workspaces for current user
+ * Lists all workspaces the authenticated user is a member of.
+ * Returns workspaces ordered by creation date.
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -31,7 +38,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 /**
  * POST /api/workspaces
- * Create a new workspace
+ * Creates a new workspace with the current user as owner/admin.
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -68,7 +75,8 @@ router.post('/', async (req: Request, res: Response) => {
 
 /**
  * GET /api/workspaces/:id
- * Get a specific workspace
+ * Gets a specific workspace if the user is a member.
+ * Returns the workspace details and the user's role.
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -105,7 +113,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 /**
  * PATCH /api/workspaces/:id
- * Update a workspace
+ * Updates workspace properties (name, icon, settings).
+ * Requires admin role in the workspace.
  */
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
@@ -163,7 +172,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/workspaces/:id
- * Delete a workspace
+ * Permanently deletes a workspace and all its contents.
+ * Only the workspace owner can delete it.
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -196,7 +206,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 /**
  * GET /api/workspaces/:id/members
- * Get workspace members
+ * Lists all members of a workspace with their roles.
+ * Requires membership in the workspace.
  */
 router.get('/:id/members', async (req: Request, res: Response) => {
   try {

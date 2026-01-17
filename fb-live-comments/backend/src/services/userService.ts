@@ -1,17 +1,52 @@
+/**
+ * User Service Module
+ *
+ * Manages user accounts, reputation, and moderation actions (bans).
+ * Users are participants in live streams who can post comments and reactions.
+ * Reputation scores influence trust levels and rate limits.
+ *
+ * @module services/userService
+ */
+
 import { query } from '../db/index.js';
 import { User } from '../types/index.js';
 
+/**
+ * Service class for user management operations.
+ * Handles user CRUD, reputation tracking, and ban management.
+ */
 export class UserService {
+  /**
+   * Retrieves a user by their unique ID.
+   *
+   * @param userId - User's unique identifier
+   * @returns User object or null if not found
+   */
   async getUser(userId: string): Promise<User | null> {
     const rows = await query<User>('SELECT * FROM users WHERE id = $1', [userId]);
     return rows[0] || null;
   }
 
+  /**
+   * Retrieves a user by their username.
+   *
+   * @param username - User's unique username
+   * @returns User object or null if not found
+   */
   async getUserByUsername(username: string): Promise<User | null> {
     const rows = await query<User>('SELECT * FROM users WHERE username = $1', [username]);
     return rows[0] || null;
   }
 
+  /**
+   * Creates a new user account.
+   * New users start with default reputation and user role.
+   *
+   * @param username - Unique username for the account
+   * @param displayName - Public display name shown in comments
+   * @param avatarUrl - Optional URL to user's avatar image
+   * @returns Newly created user object
+   */
   async createUser(
     username: string,
     displayName: string,
@@ -26,6 +61,14 @@ export class UserService {
     return rows[0];
   }
 
+  /**
+   * Updates a user's reputation score.
+   * Score is clamped between 0 and 1 to prevent abuse.
+   * Higher scores may unlock higher rate limits.
+   *
+   * @param userId - User to update
+   * @param delta - Amount to add (positive) or subtract (negative)
+   */
   async updateReputation(userId: string, delta: number): Promise<void> {
     await query(
       `UPDATE users SET
@@ -36,6 +79,14 @@ export class UserService {
     );
   }
 
+  /**
+   * Checks if a user is banned globally or from a specific stream.
+   * Considers ban expiration times.
+   *
+   * @param userId - User to check
+   * @param streamId - Optional stream to check for stream-specific bans
+   * @returns true if user is currently banned
+   */
   async isBanned(userId: string, streamId?: string): Promise<boolean> {
     const rows = await query<{ id: string }>(
       `SELECT id FROM user_bans
@@ -48,6 +99,16 @@ export class UserService {
     return rows.length > 0;
   }
 
+  /**
+   * Bans a user globally or from a specific stream.
+   * Bans can be permanent or temporary (with expiration).
+   *
+   * @param userId - User to ban
+   * @param bannedBy - ID of the moderator/admin issuing the ban
+   * @param reason - Optional reason for the ban
+   * @param streamId - Optional stream ID for stream-specific bans
+   * @param expiresAt - Optional expiration date for temporary bans
+   */
   async banUser(
     userId: string,
     bannedBy: string,
@@ -62,6 +123,13 @@ export class UserService {
     );
   }
 
+  /**
+   * Removes a ban from a user.
+   * Can unban globally or from a specific stream.
+   *
+   * @param userId - User to unban
+   * @param streamId - Optional stream ID to unban from specific stream only
+   */
   async unbanUser(userId: string, streamId?: string): Promise<void> {
     if (streamId) {
       await query(
@@ -73,9 +141,16 @@ export class UserService {
     }
   }
 
+  /**
+   * Retrieves all users in the system.
+   * Used for user selection UI in the demo.
+   *
+   * @returns Array of all users, ordered by creation date (newest first)
+   */
   async getAllUsers(): Promise<User[]> {
     return query<User>('SELECT * FROM users ORDER BY created_at DESC');
   }
 }
 
+/** Singleton user service instance */
 export const userService = new UserService();

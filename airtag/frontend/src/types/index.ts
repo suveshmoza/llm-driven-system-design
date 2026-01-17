@@ -1,3 +1,11 @@
+/**
+ * Frontend type definitions for the Find My application.
+ * These types mirror the backend types but use string dates for JSON serialization.
+ */
+
+/**
+ * Authenticated user information displayed in the UI.
+ */
 export interface User {
   id: string;
   email: string;
@@ -5,6 +13,10 @@ export interface User {
   role: 'user' | 'admin';
 }
 
+/**
+ * Device registered in the Find My network.
+ * Displayed in the device list and map view.
+ */
 export interface Device {
   id: string;
   user_id: string;
@@ -16,6 +28,9 @@ export interface Device {
   updated_at: string;
 }
 
+/**
+ * Decrypted location data for display on the map.
+ */
 export interface Location {
   id: number;
   device_id: string;
@@ -27,6 +42,9 @@ export interface Location {
   created_at: string;
 }
 
+/**
+ * Lost mode settings for a device.
+ */
 export interface LostMode {
   device_id: string;
   enabled: boolean;
@@ -37,6 +55,9 @@ export interface LostMode {
   enabled_at?: string;
 }
 
+/**
+ * User notification for device events and security alerts.
+ */
 export interface Notification {
   id: string;
   user_id: string;
@@ -49,6 +70,9 @@ export interface Notification {
   created_at: string;
 }
 
+/**
+ * Summary of an unknown tracker detected by the anti-stalking system.
+ */
 export interface UnknownTracker {
   identifier_hash: string;
   first_seen: string;
@@ -56,6 +80,9 @@ export interface UnknownTracker {
   sighting_count: number;
 }
 
+/**
+ * Individual sighting record for an unknown tracker.
+ */
 export interface TrackerSighting {
   id: number;
   identifier_hash: string;
@@ -64,6 +91,9 @@ export interface TrackerSighting {
   seen_at: string;
 }
 
+/**
+ * Comprehensive statistics for the admin dashboard.
+ */
 export interface AdminStats {
   users: {
     total: number;

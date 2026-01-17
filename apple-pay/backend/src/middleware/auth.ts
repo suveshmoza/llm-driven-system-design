@@ -2,12 +2,30 @@ import { Request, Response, NextFunction } from 'express';
 import redis from '../db/redis.js';
 import { query } from '../db/index.js';
 
+/**
+ * Extended Express Request interface with authenticated user context.
+ * Populated by authMiddleware after successful session validation.
+ */
 export interface AuthenticatedRequest extends Request {
+  /** The authenticated user's unique identifier */
   userId?: string;
+  /** The device ID if the user logged in from a specific device */
   deviceId?: string;
+  /** The user's role for authorization checks */
   userRole?: 'user' | 'admin';
 }
 
+/**
+ * Session authentication middleware.
+ * Validates the X-Session-Id header against Redis session store.
+ * Extends the session TTL on each successful request to implement
+ * sliding window session expiration.
+ *
+ * @param req - Express request with X-Session-Id header
+ * @param res - Express response
+ * @param next - Next middleware function
+ * @returns 401 if no session or invalid session, calls next() on success
+ */
 export async function authMiddleware(
   req: AuthenticatedRequest,
   res: Response,
@@ -40,6 +58,16 @@ export async function authMiddleware(
   }
 }
 
+/**
+ * Admin role authorization middleware.
+ * Must be used after authMiddleware to ensure user is authenticated.
+ * Restricts endpoint access to users with admin role only.
+ *
+ * @param req - Authenticated request with userRole populated
+ * @param res - Express response
+ * @param next - Next middleware function
+ * @returns 403 if user is not an admin, calls next() on success
+ */
 export async function adminMiddleware(
   req: AuthenticatedRequest,
   res: Response,
@@ -51,6 +79,17 @@ export async function adminMiddleware(
   next();
 }
 
+/**
+ * Biometric verification middleware for payment authorization.
+ * Requires a valid, verified biometric session from the X-Biometric-Session header.
+ * Sessions must be verified and not expired to pass this check.
+ * This ensures payment operations are authorized by device biometrics.
+ *
+ * @param req - Authenticated request with X-Biometric-Session header
+ * @param res - Express response
+ * @param next - Next middleware function
+ * @returns 401 if biometric session is missing, invalid, or expired
+ */
 export async function biometricMiddleware(
   req: AuthenticatedRequest,
   res: Response,

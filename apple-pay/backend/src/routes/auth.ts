@@ -3,26 +3,36 @@ import { authService } from '../services/auth.js';
 import { AuthenticatedRequest, authMiddleware } from '../middleware/auth.js';
 import { z } from 'zod';
 
+/**
+ * Express router for authentication and device management endpoints.
+ * Handles user registration, login/logout, and device lifecycle.
+ */
 const router = Router();
 
+/** Zod schema for login request validation */
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   deviceId: z.string().uuid().optional(),
 });
 
+/** Zod schema for registration request validation */
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   name: z.string().min(1),
 });
 
+/** Zod schema for device registration request validation */
 const deviceSchema = z.object({
   deviceName: z.string().min(1),
   deviceType: z.enum(['iphone', 'apple_watch', 'ipad']),
 });
 
-// Login
+/**
+ * POST /api/auth/login
+ * Authenticates a user and creates a session.
+ */
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const data = loginSchema.parse(req.body);
@@ -45,7 +55,10 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// Register
+/**
+ * POST /api/auth/register
+ * Creates a new user account.
+ */
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const data = registerSchema.parse(req.body);
@@ -65,7 +78,10 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// Logout
+/**
+ * POST /api/auth/logout
+ * Invalidates the current user session.
+ */
 router.post('/logout', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sessionId = req.headers['x-session-id'] as string;
@@ -77,7 +93,10 @@ router.post('/logout', authMiddleware, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// Get current user
+/**
+ * GET /api/auth/me
+ * Retrieves the current authenticated user's profile.
+ */
 router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sessionId = req.headers['x-session-id'] as string;
@@ -94,7 +113,10 @@ router.get('/me', authMiddleware, async (req: AuthenticatedRequest, res: Respons
   }
 });
 
-// Register device
+/**
+ * POST /api/auth/devices
+ * Registers a new device for the authenticated user.
+ */
 router.post('/devices', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = deviceSchema.parse(req.body);
@@ -113,7 +135,10 @@ router.post('/devices', authMiddleware, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// Get user's devices
+/**
+ * GET /api/auth/devices
+ * Lists all devices registered to the authenticated user.
+ */
 router.get('/devices', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const devices = await authService.getDevices(req.userId!);

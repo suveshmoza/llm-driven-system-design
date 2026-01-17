@@ -1,3 +1,10 @@
+/**
+ * Authentication routes for the delivery platform.
+ * Handles user registration, login, logout, profile management, and password changes.
+ * All authenticated routes use session-based tokens stored in Redis.
+ *
+ * @module routes/auth
+ */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import {

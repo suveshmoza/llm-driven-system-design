@@ -2,11 +2,21 @@ import { Router, Request, Response } from 'express';
 import pool from '../utils/db.js';
 import { authenticate } from '../middleware/auth.js';
 
+/**
+ * Versions router handling document version history.
+ * Enables users to view, create named checkpoints, and restore previous document states.
+ * Critical for the collaborative editing experience - allows users to recover from mistakes.
+ */
 const router = Router();
 
 /**
  * GET /api/documents/:id/versions
- * List all versions of a document
+ * Lists all saved versions for a document (up to 100 most recent).
+ * Includes both automatic snapshots and user-created named versions.
+ * Requires at least view permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @returns {ApiResponse<{versions: DocumentVersion[]}>} List of version records
  */
 router.get('/:id/versions', authenticate, async (req: Request, res: Response) => {
   try {
@@ -56,7 +66,13 @@ router.get('/:id/versions', authenticate, async (req: Request, res: Response) =>
 
 /**
  * GET /api/documents/:id/versions/:versionNumber
- * Get a specific version of a document
+ * Retrieves a specific version with its full content.
+ * Allows users to preview historical document states.
+ * Requires at least view permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.versionNumber - Version number to retrieve
+ * @returns {ApiResponse<{version: DocumentVersion}>} Version with content
  */
 router.get('/:id/versions/:versionNumber', authenticate, async (req: Request, res: Response) => {
   try {
@@ -109,7 +125,13 @@ router.get('/:id/versions/:versionNumber', authenticate, async (req: Request, re
 
 /**
  * POST /api/documents/:id/versions
- * Create a named version
+ * Creates a named version (checkpoint) at the current document state.
+ * Named versions are preserved permanently and displayed prominently in history.
+ * Requires edit permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.body.name - Optional name for the version
+ * @returns {ApiResponse<{version: DocumentVersion}>} Created version record
  */
 router.post('/:id/versions', authenticate, async (req: Request, res: Response) => {
   try {
@@ -159,7 +181,13 @@ router.post('/:id/versions', authenticate, async (req: Request, res: Response) =
 
 /**
  * POST /api/documents/:id/versions/:versionNumber/restore
- * Restore a document to a specific version
+ * Restores document content to a previous version.
+ * Creates a new version with the restored content (does not overwrite history).
+ * Requires edit permission on the document.
+ *
+ * @param req.params.id - Document UUID
+ * @param req.params.versionNumber - Version number to restore from
+ * @returns {ApiResponse<{new_version: number}>} New version number after restore
  */
 router.post('/:id/versions/:versionNumber/restore', authenticate, async (req: Request, res: Response) => {
   try {
@@ -226,4 +254,5 @@ router.post('/:id/versions/:versionNumber/restore', authenticate, async (req: Re
   }
 });
 
+/** Exports the versions router for mounting in the main application */
 export default router;

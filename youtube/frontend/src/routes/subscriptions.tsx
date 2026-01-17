@@ -5,10 +5,20 @@ import { Video, PaginatedResponse } from '../types';
 import { api } from '../services/api';
 import VideoCard from '../components/VideoCard';
 
+/**
+ * Subscriptions page route configuration.
+ * Protected page requiring authentication.
+ */
 export const Route = createFileRoute('/subscriptions')({
   component: SubscriptionsPage,
 });
 
+/**
+ * Subscriptions feed page component.
+ * Displays recent videos from channels the user has subscribed to.
+ * Redirects to home page if user is not authenticated.
+ * Shows an empty state when user has no subscriptions.
+ */
 function SubscriptionsPage() {
   const { user } = useAuthStore();
   const [videos, setVideos] = useState<Video[]>([]);

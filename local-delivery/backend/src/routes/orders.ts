@@ -1,3 +1,10 @@
+/**
+ * Customer order routes for the delivery platform.
+ * Handles order creation, viewing, cancellation, and rating submissions.
+ * All routes require customer authentication.
+ *
+ * @module routes/orders
+ */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authenticate, requireCustomer } from '../middleware/auth.js';
