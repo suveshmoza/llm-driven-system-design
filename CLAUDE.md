@@ -40,6 +40,9 @@ npm run dev:admin        # Run admin service
 npm run dev:server1      # Run on port 3001 (for distributed testing)
 npm run dev:server2      # Run on port 3002
 npm run dev:server3      # Run on port 3003
+npm run dev:worker       # Run background worker (if applicable)
+npm run dev:worker1      # Run multiple workers for parallel processing
+npm run dev:worker2
 
 # Database
 npm run db:migrate       # Run migrations
@@ -71,6 +74,9 @@ node scripts/sloc.mjs scale-ai --json
 
 # Output summary for README embedding
 node scripts/sloc.mjs scale-ai --summary
+
+# Update all project READMEs with SLOC stats
+node scripts/update-readme-sloc.mjs
 ```
 
 ## Technology Stack Defaults
@@ -106,6 +112,7 @@ backend/src/
 │   ├── db.ts            # PostgreSQL connection pool
 │   ├── cache.ts         # Redis/Valkey client and helpers
 │   ├── storage.ts       # MinIO object storage client
+│   ├── queue.ts         # RabbitMQ client
 │   └── auth.ts          # Authentication middleware
 └── db/
     ├── migrations/      # SQL migration files (001_*.sql, 002_*.sql, ...)
@@ -133,6 +140,7 @@ import { app } from './app.js'
 Most projects are design-only. These have working code (check their package.json for available scripts):
 - `scale-ai/` - Full-stack data labeling platform (frontend + backend with tests)
 - `web-crawler/` - Distributed crawler with frontend dashboard
+- `ai-code-assistant/` - CLI coding assistant with Anthropic API (standalone TypeScript app)
 - `news-aggregator/`, `airtag/`, `uber/`, `price-tracking/`, `google-docs/`, `twitter/`, `youtube-top-k/`, `spotlight/` - Partial implementations
 
 ## Creating New Projects
@@ -210,3 +218,17 @@ RABBITMQ_URL=amqp://user:pass@localhost:5672
 ```
 
 This ensures projects are accessible to developers who prefer not to use Docker.
+
+## ESM Import Convention
+
+Backend projects use ES modules (`"type": "module"` in package.json). Always use `.js` extension in imports, even for TypeScript files:
+
+```typescript
+// Correct - use .js extension
+import { pool } from '../shared/db.js'
+import { cacheGet } from '../shared/cache.js'
+
+// Wrong - TypeScript extension won't work at runtime
+import { pool } from '../shared/db.ts'  // ❌
+import { pool } from '../shared/db'     // ❌
+```
