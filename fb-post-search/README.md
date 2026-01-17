@@ -6,11 +6,11 @@ A privacy-aware search engine for social media posts with personalized ranking a
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,388 |
+| Total SLOC | 5,396 |
 | Source Files | 54 |
 | .ts | 2,827 |
 | .tsx | 1,387 |
-| .md | 935 |
+| .md | 943 |
 | .json | 135 |
 | .yml | 52 |
 

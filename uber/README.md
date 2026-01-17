@@ -6,11 +6,11 @@ A full-stack ride-hailing platform implementation featuring real-time driver mat
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,451 |
+| Total SLOC | 5,459 |
 | Source Files | 44 |
 | .js | 1,832 |
 | .tsx | 1,369 |
-| .md | 972 |
+| .md | 980 |
 | .ts | 968 |
 | .sql | 118 |
 

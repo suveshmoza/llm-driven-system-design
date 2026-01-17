@@ -6,11 +6,11 @@ A transaction processing and payment platform with double-entry bookkeeping, ide
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,389 |
+| Total SLOC | 5,397 |
 | Source Files | 44 |
 | .ts | 2,788 |
 | .tsx | 1,552 |
-| .md | 702 |
+| .md | 710 |
 | .json | 133 |
 | .sql | 131 |
 

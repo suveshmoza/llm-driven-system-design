@@ -6,11 +6,11 @@ A full-stack event ticketing platform inspired by Ticketmaster, featuring seat s
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,160 |
+| Total SLOC | 5,168 |
 | Source Files | 50 |
 | .ts | 2,302 |
 | .tsx | 1,439 |
-| .md | 885 |
+| .md | 893 |
 | .sql | 299 |
 | .json | 131 |
 

@@ -6,11 +6,11 @@ A real-time analytics system for aggregating ad clicks with fraud detection, des
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 3,977 |
+| Total SLOC | 3,985 |
 | Source Files | 41 |
 | .ts | 1,695 |
 | .tsx | 1,093 |
-| .md | 845 |
+| .md | 853 |
 | .sql | 122 |
 | .json | 120 |
 

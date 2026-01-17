@@ -6,10 +6,10 @@ A distributed web crawling system for indexing the internet with a focus on poli
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 4,930 |
+| Total SLOC | 4,938 |
 | Source Files | 48 |
 | .ts | 2,178 |
-| .md | 1,187 |
+| .md | 1,195 |
 | .tsx | 1,175 |
 | .yml | 180 |
 | .json | 145 |

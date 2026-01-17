@@ -6,11 +6,11 @@ A simplified Jira-like platform demonstrating issue tracking, workflow automatio
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 8,017 |
+| Total SLOC | 8,025 |
 | Source Files | 55 |
 | .ts | 4,396 |
 | .tsx | 2,367 |
-| .md | 961 |
+| .md | 969 |
 | .json | 145 |
 | .yml | 51 |
 

@@ -6,11 +6,11 @@ A fitness tracking and social platform for athletes, inspired by Strava. This im
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 6,717 |
+| Total SLOC | 6,725 |
 | Source Files | 53 |
 | .js | 2,498 |
 | .tsx | 2,277 |
-| .md | 1,147 |
+| .md | 1,155 |
 | .ts | 617 |
 | .json | 111 |
 

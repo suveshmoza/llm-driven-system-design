@@ -6,11 +6,11 @@ A full-stack meeting scheduling platform that allows users to share their availa
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 7,200 |
+| Total SLOC | 7,208 |
 | Source Files | 52 |
 | .ts | 3,029 |
 | .tsx | 2,387 |
-| .md | 1,421 |
+| .md | 1,429 |
 | .json | 133 |
 | .sql | 124 |
 

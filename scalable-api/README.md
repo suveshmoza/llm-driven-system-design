@@ -6,10 +6,10 @@ A scalable API system capable of serving millions of concurrent users with low l
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,304 |
+| Total SLOC | 5,312 |
 | Source Files | 43 |
 | .js | 2,104 |
-| .md | 1,543 |
+| .md | 1,551 |
 | .tsx | 826 |
 | .ts | 270 |
 | .yml | 217 |

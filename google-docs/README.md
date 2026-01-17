@@ -6,11 +6,11 @@ A real-time collaborative document editing platform built with React, Node.js, W
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 6,066 |
+| Total SLOC | 6,074 |
 | Source Files | 47 |
 | .ts | 3,094 |
 | .tsx | 1,549 |
-| .md | 935 |
+| .md | 943 |
 | .css | 163 |
 | .json | 130 |
 

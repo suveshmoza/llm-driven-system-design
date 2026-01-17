@@ -6,12 +6,12 @@ A crowdsourced data collection platform where users contribute labeled drawing d
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 8,219 |
+| Total SLOC | 8,227 |
 | Source Files | 55 |
 | .ts | 2,194 |
 | .css | 2,187 |
 | .tsx | 1,599 |
-| .md | 1,051 |
+| .md | 1,059 |
 | .py | 856 |
 
 ## Project Overview

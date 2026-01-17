@@ -6,11 +6,11 @@ A simplified Slack-like platform demonstrating workspace isolation, message thre
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,340 |
+| Total SLOC | 5,348 |
 | Source Files | 51 |
 | .ts | 2,792 |
 | .tsx | 1,336 |
-| .md | 913 |
+| .md | 921 |
 | .json | 140 |
 | .css | 59 |
 

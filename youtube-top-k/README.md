@@ -6,10 +6,10 @@ A real-time analytics system that tracks video views and computes trending video
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 2,845 |
+| Total SLOC | 2,853 |
 | Source Files | 34 |
 | .js | 1,160 |
-| .md | 951 |
+| .md | 959 |
 | .tsx | 377 |
 | .ts | 200 |
 | .json | 86 |

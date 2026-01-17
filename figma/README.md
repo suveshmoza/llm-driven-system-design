@@ -6,11 +6,11 @@ A real-time collaborative design tool with vector graphics editing, inspired by 
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 4,299 |
+| Total SLOC | 4,307 |
 | Source Files | 38 |
 | .ts | 1,565 |
 | .tsx | 1,337 |
-| .md | 988 |
+| .md | 996 |
 | .json | 128 |
 | .sql | 125 |
 

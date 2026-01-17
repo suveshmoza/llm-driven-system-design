@@ -6,10 +6,10 @@ A real-time commenting system for live video streams, demonstrating high-through
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 3,440 |
+| Total SLOC | 3,448 |
 | Source Files | 44 |
 | .ts | 1,658 |
-| .md | 893 |
+| .md | 901 |
 | .tsx | 566 |
 | .json | 116 |
 | .sql | 83 |
