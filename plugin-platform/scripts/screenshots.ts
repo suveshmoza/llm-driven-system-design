@@ -1,29 +1,52 @@
 import { chromium } from 'playwright';
 import { mkdir } from 'fs/promises';
 import { join } from 'path';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 
 const SCREENSHOTS_DIR = join(process.cwd(), 'docs', 'screenshots');
 const BASE_URL = 'http://localhost:5173';
 const REMOTE_DEBUGGING_PORT = 9222;
 
+async function waitForPort(port: number, maxWait = 10000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < maxWait) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (response.ok) return true;
+    } catch {
+      // Port not ready yet
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
 async function launchChromeWithOpen(): Promise<void> {
+  // Kill any existing Chrome with debugging port
+  try {
+    execSync('pkill -f "remote-debugging-port"', { stdio: 'ignore' });
+  } catch {
+    // No process to kill
+  }
+
   return new Promise((resolve, reject) => {
+    const userDataDir = `/tmp/chrome-playwright-${Date.now()}`;
     const args = [
-      '-a', 'Google Chrome',
+      '-na', 'Google Chrome',
       '--args',
       `--remote-debugging-port=${REMOTE_DEBUGGING_PORT}`,
       '--no-first-run',
       '--no-default-browser-check',
-      `--user-data-dir=/tmp/chrome-playwright-${Date.now()}`,
+      `--user-data-dir=${userDataDir}`,
     ];
 
+    console.log('Starting Chrome with:', args.join(' '));
     const proc = spawn('open', args, { detached: true, stdio: 'ignore' });
     proc.on('error', reject);
     proc.unref();
 
-    // Give Chrome time to start
-    setTimeout(resolve, 3000);
+    // Wait a bit then resolve
+    setTimeout(resolve, 2000);
   });
 }
 
@@ -33,6 +56,12 @@ async function takeScreenshots() {
 
   console.log('Launching Chrome via open command...');
   await launchChromeWithOpen();
+
+  console.log('Waiting for Chrome debugging port...');
+  const ready = await waitForPort(REMOTE_DEBUGGING_PORT);
+  if (!ready) {
+    throw new Error('Chrome debugging port not available');
+  }
 
   console.log('Connecting to browser...');
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${REMOTE_DEBUGGING_PORT}`);
