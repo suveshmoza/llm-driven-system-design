@@ -143,7 +143,8 @@ A photo and video sharing social platform supporting photo uploads, personalized
 |-----------|----------------|------------|
 | API Server | REST endpoints, auth, request validation | Node.js + Express |
 | Image Worker | Resize images, generate thumbnails | Node.js + Sharp |
-| PostgreSQL | Users, posts, follows, messages, stories | PostgreSQL 16 |
+| PostgreSQL | Users, posts, follows, stories | PostgreSQL 16 |
+| Cassandra | Direct messages, read receipts, typing indicators | Cassandra 4.1 |
 | Valkey | Session store, feed cache, rate limiting | Valkey 7.2 |
 | MinIO | Image storage (original + processed) | MinIO (S3-compatible) |
 | RabbitMQ | Async job queue for image processing | RabbitMQ 3.12 |
@@ -274,6 +275,96 @@ CREATE TABLE messages (
 );
 CREATE INDEX idx_messages_conv ON messages(conversation_id, created_at DESC);
 ```
+
+### Cassandra Schema (Direct Messages)
+
+While PostgreSQL handles the core relational data (users, posts, follows), Cassandra is used for the high-write, time-ordered Direct Messages feature. This hybrid approach leverages each database's strengths.
+
+**Why Cassandra for DMs?**
+- **High-write throughput**: Messages are write-heavy (100:1 write:read ratio)
+- **Time-ordered retrieval**: TimeUUID clustering keys provide natural ordering
+- **Partition isolation**: Each conversation is a partition, enabling horizontal scaling
+- **TTL support**: Automatic message expiration for ephemeral content
+
+**Keyspace**: `instagram_dm`
+
+```cql
+-- Messages by conversation (main message storage)
+CREATE TABLE messages_by_conversation (
+    conversation_id UUID,
+    message_id TIMEUUID,          -- TimeUUID for natural time ordering
+    sender_id UUID,
+    content TEXT,
+    content_type TEXT,             -- 'text', 'image', 'video', 'heart', 'story_reply'
+    media_url TEXT,
+    reply_to_message_id TIMEUUID,
+    created_at TIMESTAMP,
+    PRIMARY KEY (conversation_id, message_id)
+) WITH CLUSTERING ORDER BY (message_id DESC)
+  AND default_time_to_live = 31536000;  -- 1 year TTL
+
+-- Conversations by user (inbox view)
+CREATE TABLE conversations_by_user (
+    user_id UUID,
+    last_message_at TIMESTAMP,
+    conversation_id UUID,
+    other_user_id UUID,
+    other_username TEXT,           -- Denormalized for fast display
+    other_profile_picture TEXT,
+    last_message_preview TEXT,
+    unread_count INT,
+    is_muted BOOLEAN,
+    PRIMARY KEY (user_id, last_message_at, conversation_id)
+) WITH CLUSTERING ORDER BY (last_message_at DESC);
+
+-- Typing indicators (ephemeral, 5-second TTL)
+CREATE TABLE typing_indicators (
+    conversation_id UUID,
+    user_id UUID,
+    started_at TIMESTAMP,
+    PRIMARY KEY (conversation_id, user_id)
+) WITH default_time_to_live = 5;
+
+-- Message reactions
+CREATE TABLE message_reactions (
+    conversation_id UUID,
+    message_id TIMEUUID,
+    user_id UUID,
+    reaction TEXT,
+    created_at TIMESTAMP,
+    PRIMARY KEY ((conversation_id, message_id), user_id)
+);
+```
+
+**Data Flow for DMs**:
+```
+1. User opens DM inbox
+   → Query: conversations_by_user WHERE user_id = ?
+   → Returns conversations sorted by last_message_at DESC
+
+2. User opens a conversation
+   → Query: messages_by_conversation WHERE conversation_id = ?
+   → Returns messages sorted by message_id DESC (newest first)
+
+3. User sends a message
+   → INSERT into messages_by_conversation
+   → UPDATE conversations_by_user for all participants
+   → Cassandra MV handles auto-aggregation
+
+4. User reads messages
+   → INSERT/UPDATE message_read_receipts
+   → Reset unread_count in conversations_by_user
+```
+
+**Why denormalize user info in conversations_by_user?**
+- Avoids cross-partition joins (not supported in Cassandra)
+- Single query to render inbox UI
+- Trade-off: Must update on profile picture/username changes
+
+**Connection to PostgreSQL**:
+- User profiles (username, profile_picture) still live in PostgreSQL
+- On conversation creation, we copy user info to Cassandra
+- On profile update, background job syncs to active conversations
 
 ### Storage Strategy
 
@@ -434,8 +525,9 @@ async function cleanupExpiredStories() {
 
 | Layer | Technology | Rationale |
 |-------|------------|-----------|
-| **Application** | Node.js + Express + TypeScript | Fast development, good ecosystem, async I/O for file uploads |
+| **Application** | Node.js + Express | Fast development, good ecosystem, async I/O for file uploads |
 | **Primary Database** | PostgreSQL 16 | ACID transactions for follows/likes, JSON support, excellent indexing |
+| **Message Database** | Cassandra 4.1 | High-write throughput for DMs, TimeUUID ordering, partition isolation |
 | **Cache** | Valkey 7.2 | Redis-compatible, sessions, rate limiting, feed cache |
 | **Object Storage** | MinIO | S3-compatible, local development, unlimited storage |
 | **Message Queue** | RabbitMQ 3.12 | Simple queue semantics, dead letter handling, management UI |
@@ -814,10 +906,10 @@ mc mirror backup/media/ minio/instagram-media
 ### Database Scaling Strategy
 
 ```
-Phase 1 (local): Single PostgreSQL instance
+Phase 1 (local): Single PostgreSQL instance + Cassandra for DMs ✅
 Phase 2: Add read replica for feed queries
 Phase 3: Shard follows table by follower_id (range or hash)
-Phase 4: Move messages to Cassandra (high write volume)
+Phase 4: Cassandra cluster for messages (already using Cassandra)
 ```
 
 ## Trade-offs and Alternatives
@@ -828,7 +920,8 @@ Phase 4: Move messages to Cassandra (high write volume)
 | Feed model | Pull with cache | Push (fanout on write) | Simpler, sufficient for 10K DAU |
 | Message queue | RabbitMQ | Kafka | Simpler ops, sufficient throughput |
 | Image storage | MinIO | Local filesystem | S3-compatible, easier migration |
-| Database | PostgreSQL | MongoDB | Strong consistency for social graph |
+| Relational data | PostgreSQL | MongoDB | Strong consistency for social graph |
+| Direct messages | Cassandra | PostgreSQL | High-write throughput, TimeUUID ordering, partition isolation |
 
 ## Future Optimizations
 

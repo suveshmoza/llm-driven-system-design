@@ -85,7 +85,7 @@ Use these unless there's a compelling reason to deviate (document justification 
 
 - **Frontend:** TypeScript + Vite + React 19 + Tanstack Router + Zustand + Tailwind CSS
 - **Backend:** Node.js + Express
-- **Databases:** PostgreSQL (relational), CouchDB (document), Valkey/Redis (cache), Cassandra (wide-column)
+- **Databases:** PostgreSQL (relational), CouchDB (document), Valkey/Redis (cache), Cassandra (wide-column, time-series)
 - **Message Queues:** RabbitMQ, Kafka
 - **Search:** Elasticsearch/OpenSearch
 - **Object Storage:** MinIO (S3-compatible)
@@ -197,13 +197,19 @@ vi.mock('../shared/storage.js', () => ({
 import { app } from './app.js'
 ```
 
+## Technology Reference
+
+See [TECHNOLOGIES.md](./TECHNOLOGIES.md) for a comprehensive guide to all technologies used across projects, including alternatives and trade-offs.
+
 ## Projects with Implementations
 
-Most projects are design-only. These have working code (check their package.json for available scripts):
-- `scale-ai/` - Full-stack data labeling platform (frontend + backend with tests)
-- `web-crawler/` - Distributed crawler with frontend dashboard
-- `ai-code-assistant/` - CLI coding assistant with Anthropic API (standalone TypeScript app)
-- `news-aggregator/`, `airtag/`, `uber/`, `price-tracking/`, `google-docs/`, `twitter/`, `youtube-top-k/`, `spotlight/` - Partial implementations
+Most projects now have both frontend and backend implementations. Check each project's `package.json` for available scripts. Notable examples:
+- `scale-ai/` - Full-stack data labeling platform (TypeScript backend with tests)
+- `instagram/` - Photo sharing platform (JavaScript backend with Cassandra)
+- `discord/` - Real-time chat (WebSocket-based)
+- `ai-code-assistant/` - CLI coding assistant with Anthropic API (standalone TypeScript)
+
+Some backends use TypeScript (`scale-ai`, `web-crawler`), while others use plain JavaScript (`instagram`, `uber`). Both patterns are acceptable.
 
 ## Creating New Projects
 

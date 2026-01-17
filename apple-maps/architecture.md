@@ -445,70 +445,641 @@ class NavigationService {
 
 ## Database Schema
 
+This section provides comprehensive documentation of the PostgreSQL database schema with PostGIS extensions for geospatial functionality.
+
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              APPLE MAPS DATABASE SCHEMA                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+                                    ROAD NETWORK GRAPH
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │                                                                         │
+    │   ┌──────────────────┐          ┌──────────────────────┐                │
+    │   │   road_nodes     │          │   road_segments      │                │
+    │   ├──────────────────┤          ├──────────────────────┤                │
+    │   │ PK id            │◄─────────┤ FK start_node_id     │                │
+    │   │    location      │◄─────────┤ FK end_node_id       │                │
+    │   │    lat           │          │ PK id                │                │
+    │   │    lng           │          │    geometry          │                │
+    │   │    is_intersection│         │    street_name       │                │
+    │   └──────────────────┘          │    road_class        │                │
+    │                                 │    length_meters     │                │
+    │                                 │    free_flow_speed_kph│               │
+    │                                 │    is_toll           │                │
+    │                                 │    is_one_way        │                │
+    │                                 │    turn_restrictions │                │
+    │                                 └──────────────────────┘                │
+    │                                          │                              │
+    └──────────────────────────────────────────┼──────────────────────────────┘
+                                               │
+               ┌───────────────────────────────┼───────────────────────────────┐
+               │                               │                               │
+               ▼                               ▼                               │
+    ┌──────────────────────┐        ┌──────────────────────┐                   │
+    │   traffic_flow       │        │   incidents          │                   │
+    ├──────────────────────┤        ├──────────────────────┤                   │
+    │ PK id                │        │ PK id (UUID)         │                   │
+    │ FK segment_id        │        │ FK segment_id        │                   │
+    │    timestamp         │        │    type              │                   │
+    │    speed_kph         │        │    severity          │                   │
+    │    congestion_level  │        │    location          │                   │
+    │    sample_count      │        │    lat               │                   │
+    └──────────────────────┘        │    lng               │                   │
+                                    │    description       │                   │
+                                    │    reported_at       │                   │
+                                    │    resolved_at       │                   │
+                                    │    is_active         │                   │
+                                    └──────────────────────┘                   │
+                                                                               │
+                                                                               │
+    ┌──────────────────────┐        ┌──────────────────────┐                   │
+    │   pois               │        │ navigation_sessions  │                   │
+    ├──────────────────────┤        ├──────────────────────┤                   │
+    │ PK id (UUID)         │        │ PK id (UUID)         │                   │
+    │    name              │        │    user_id           │                   │
+    │    category          │        │    origin_lat        │                   │
+    │    location          │        │    origin_lng        │                   │
+    │    lat               │        │    destination_lat   │                   │
+    │    lng               │        │    destination_lng   │                   │
+    │    address           │        │    route_data (JSONB)│                   │
+    │    phone             │        │    started_at        │                   │
+    │    hours (JSONB)     │        │    completed_at      │                   │
+    │    rating            │        │    status            │                   │
+    │    review_count      │        └──────────────────────┘                   │
+    └──────────────────────┘                                                   │
+                                                                               │
+    ─────────────────────────────────────────────────────────────────────────────
+    LEGEND:
+    PK = Primary Key    FK = Foreign Key    ──────► = References (FK relationship)
+    ─────────────────────────────────────────────────────────────────────────────
+```
+
+### Table Definitions
+
+#### 1. road_nodes (Graph Vertices)
+
+Represents intersection points and road endpoints in the navigation graph.
+
 ```sql
--- Road Segments (graph edges)
-CREATE TABLE road_segments (
-  id BIGINT PRIMARY KEY,
-  start_node_id BIGINT NOT NULL,
-  end_node_id BIGINT NOT NULL,
-  geometry GEOGRAPHY(LineString) NOT NULL,
-  street_name VARCHAR(200),
-  road_class VARCHAR(50), -- highway, arterial, local, etc.
-  length_meters DECIMAL,
-  free_flow_speed_kph INTEGER,
-  is_toll BOOLEAN DEFAULT FALSE,
-  is_one_way BOOLEAN DEFAULT FALSE,
-  turn_restrictions JSONB
-);
-
-CREATE INDEX idx_segments_nodes ON road_segments(start_node_id, end_node_id);
-CREATE INDEX idx_segments_geo ON road_segments USING GIST(geometry);
-
--- Road Nodes (graph vertices)
 CREATE TABLE road_nodes (
-  id BIGINT PRIMARY KEY,
-  location GEOGRAPHY(Point) NOT NULL,
+  id BIGSERIAL PRIMARY KEY,
+  location GEOGRAPHY(Point, 4326) NOT NULL,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
   is_intersection BOOLEAN DEFAULT FALSE
 );
+```
 
--- Traffic Flow (time-series)
-CREATE TABLE traffic_flow (
-  segment_id BIGINT REFERENCES road_segments(id),
-  timestamp TIMESTAMP,
-  speed_kph DECIMAL,
-  sample_count INTEGER,
-  PRIMARY KEY (segment_id, timestamp)
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Auto-incrementing unique identifier for each node |
+| `location` | GEOGRAPHY(Point, 4326) | NOT NULL | PostGIS geography point using WGS84 coordinate system (SRID 4326) for accurate distance calculations |
+| `lat` | DOUBLE PRECISION | NOT NULL | Latitude in decimal degrees (-90 to 90); duplicated from location for quick access without PostGIS function calls |
+| `lng` | DOUBLE PRECISION | NOT NULL | Longitude in decimal degrees (-180 to 180); duplicated from location for quick access |
+| `is_intersection` | BOOLEAN | DEFAULT FALSE | True if this node represents an intersection of 2+ roads; used for maneuver generation |
+
+**Indexes:**
+| Index Name | Columns/Type | Purpose |
+|------------|--------------|---------|
+| `idx_nodes_location` | GIST(location) | Enables fast spatial queries like "find nearest node to GPS point" |
+| `idx_nodes_lat_lng` | B-tree(lat, lng) | Supports bounding box queries without PostGIS overhead |
+
+---
+
+#### 2. road_segments (Graph Edges)
+
+Represents road segments connecting nodes with routing metadata.
+
+```sql
+CREATE TABLE road_segments (
+  id BIGSERIAL PRIMARY KEY,
+  start_node_id BIGINT NOT NULL REFERENCES road_nodes(id),
+  end_node_id BIGINT NOT NULL REFERENCES road_nodes(id),
+  geometry GEOGRAPHY(LineString, 4326) NOT NULL,
+  street_name VARCHAR(200),
+  road_class VARCHAR(50),
+  length_meters DOUBLE PRECISION,
+  free_flow_speed_kph INTEGER DEFAULT 50,
+  is_toll BOOLEAN DEFAULT FALSE,
+  is_one_way BOOLEAN DEFAULT FALSE,
+  turn_restrictions JSONB DEFAULT '[]'
 );
+```
 
--- Incidents
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Auto-incrementing unique identifier for each segment |
+| `start_node_id` | BIGINT | NOT NULL, FK road_nodes(id) | Starting node of this directed edge |
+| `end_node_id` | BIGINT | NOT NULL, FK road_nodes(id) | Ending node of this directed edge |
+| `geometry` | GEOGRAPHY(LineString, 4326) | NOT NULL | Full polyline geometry for map rendering; may have intermediate points even if start/end are direct |
+| `street_name` | VARCHAR(200) | NULL | Human-readable street name for navigation instructions (e.g., "Main Street") |
+| `road_class` | VARCHAR(50) | NULL | Road type classification: 'highway', 'arterial', 'collector', 'local', 'residential' |
+| `length_meters` | DOUBLE PRECISION | NULL | Pre-calculated segment length for routing; derived from geometry |
+| `free_flow_speed_kph` | INTEGER | DEFAULT 50 | Speed limit or typical speed without traffic (km/h); used for ETA when no live traffic |
+| `is_toll` | BOOLEAN | DEFAULT FALSE | True if segment requires toll payment; supports "avoid tolls" routing option |
+| `is_one_way` | BOOLEAN | DEFAULT FALSE | True for one-way streets; affects graph traversal direction |
+| `turn_restrictions` | JSONB | DEFAULT '[]' | Array of restricted turns from this segment (e.g., no left turn onto specific streets) |
+
+**Indexes:**
+| Index Name | Columns/Type | Purpose |
+|------------|--------------|---------|
+| `idx_segments_nodes` | B-tree(start_node_id, end_node_id) | Composite index for fast edge lookups by both endpoints |
+| `idx_segments_geo` | GIST(geometry) | Spatial index for map-matching GPS points to road segments |
+| `idx_segments_start` | B-tree(start_node_id) | Single-column index for graph traversal (get all outgoing edges) |
+| `idx_segments_end` | B-tree(end_node_id) | Single-column index for reverse graph traversal (bidirectional A*) |
+
+---
+
+#### 3. traffic_flow (Time-Series Traffic Data)
+
+Stores real-time and historical traffic conditions per road segment.
+
+```sql
+CREATE TABLE traffic_flow (
+  id BIGSERIAL PRIMARY KEY,
+  segment_id BIGINT REFERENCES road_segments(id),
+  timestamp TIMESTAMP DEFAULT NOW(),
+  speed_kph DOUBLE PRECISION,
+  congestion_level VARCHAR(20),
+  sample_count INTEGER DEFAULT 1
+);
+```
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Auto-incrementing unique identifier |
+| `segment_id` | BIGINT | FK road_segments(id) | Road segment this traffic data applies to |
+| `timestamp` | TIMESTAMP | DEFAULT NOW() | When this traffic observation was recorded; truncated to minute for aggregation |
+| `speed_kph` | DOUBLE PRECISION | NULL | Observed average speed on segment (km/h); derived from GPS probe aggregation |
+| `congestion_level` | VARCHAR(20) | NULL | Categorical congestion: 'free' (>80%), 'light' (50-80%), 'moderate' (25-50%), 'heavy' (<25% of free flow) |
+| `sample_count` | INTEGER | DEFAULT 1 | Number of GPS probes aggregated into this reading; higher = more confidence |
+
+**Indexes:**
+| Index Name | Columns/Type | Purpose |
+|------------|--------------|---------|
+| `idx_traffic_segment` | B-tree(segment_id) | Fast lookup of traffic for a specific road segment |
+| `idx_traffic_timestamp` | B-tree(timestamp) | Enables time-range queries for historical traffic patterns |
+
+---
+
+#### 4. incidents (Traffic Incidents)
+
+Tracks accidents, construction, closures, and other road events.
+
+```sql
 CREATE TABLE incidents (
-  id UUID PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   segment_id BIGINT REFERENCES road_segments(id),
   type VARCHAR(50),
   severity VARCHAR(20),
-  location GEOGRAPHY(Point),
+  location GEOGRAPHY(Point, 4326),
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
   description TEXT,
-  reported_at TIMESTAMP,
+  reported_at TIMESTAMP DEFAULT NOW(),
   resolved_at TIMESTAMP,
   is_active BOOLEAN DEFAULT TRUE
 );
+```
 
--- Points of Interest
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | UUID for globally unique incident identification across distributed systems |
+| `segment_id` | BIGINT | FK road_segments(id) | Road segment affected; NULL if incident is point-based only |
+| `type` | VARCHAR(50) | NULL | Incident category: 'accident', 'construction', 'closure', 'hazard', 'weather' |
+| `severity` | VARCHAR(20) | NULL | Impact level: 'low' (minor delay), 'moderate' (significant delay), 'high' (road blocked) |
+| `location` | GEOGRAPHY(Point, 4326) | NULL | Precise incident location for map display and proximity queries |
+| `lat` | DOUBLE PRECISION | NULL | Latitude; duplicated from location for quick access |
+| `lng` | DOUBLE PRECISION | NULL | Longitude; duplicated from location for quick access |
+| `description` | TEXT | NULL | Human-readable incident details from reports or official sources |
+| `reported_at` | TIMESTAMP | DEFAULT NOW() | When incident was first reported; used for staleness detection |
+| `resolved_at` | TIMESTAMP | NULL | When incident was cleared; NULL while active |
+| `is_active` | BOOLEAN | DEFAULT TRUE | False after resolution; allows query of only active incidents |
+
+**Indexes:**
+| Index Name | Columns/Type | Purpose |
+|------------|--------------|---------|
+| `idx_incidents_location` | GIST(location) | Spatial queries: "incidents within X meters of route" |
+| `idx_incidents_active` | B-tree(is_active) WHERE is_active = TRUE | Partial index for fast active-only queries; excludes resolved incidents |
+
+---
+
+#### 5. pois (Points of Interest)
+
+Stores searchable locations like businesses, landmarks, and addresses.
+
+```sql
 CREATE TABLE pois (
-  id UUID PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(200) NOT NULL,
   category VARCHAR(100),
-  location GEOGRAPHY(Point) NOT NULL,
-  address JSONB,
+  location GEOGRAPHY(Point, 4326) NOT NULL,
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  address TEXT,
   phone VARCHAR(50),
   hours JSONB,
-  rating DECIMAL,
-  review_count INTEGER
+  rating DOUBLE PRECISION,
+  review_count INTEGER DEFAULT 0
 );
-
-CREATE INDEX idx_pois_location ON pois USING GIST(location);
-CREATE INDEX idx_pois_category ON pois(category);
 ```
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | UUID for stable external references and API responses |
+| `name` | VARCHAR(200) | NOT NULL | Business or location name; indexed for full-text search |
+| `category` | VARCHAR(100) | NULL | POI type: 'restaurant', 'gas_station', 'hospital', 'parking', 'hotel', etc. |
+| `location` | GEOGRAPHY(Point, 4326) | NOT NULL | Geographic coordinates for map display and routing destination |
+| `lat` | DOUBLE PRECISION | NOT NULL | Latitude; duplicated for non-spatial queries |
+| `lng` | DOUBLE PRECISION | NOT NULL | Longitude; duplicated for non-spatial queries |
+| `address` | TEXT | NULL | Formatted street address for display |
+| `phone` | VARCHAR(50) | NULL | Contact phone number |
+| `hours` | JSONB | NULL | Operating hours in structured format: {"monday": {"open": "09:00", "close": "17:00"}, ...} |
+| `rating` | DOUBLE PRECISION | NULL | Average user rating (typically 0-5 scale) |
+| `review_count` | INTEGER | DEFAULT 0 | Number of reviews; used for relevance ranking |
+
+**Indexes:**
+| Index Name | Columns/Type | Purpose |
+|------------|--------------|---------|
+| `idx_pois_location` | GIST(location) | "Find POIs near me" queries with ST_DWithin |
+| `idx_pois_category` | B-tree(category) | Filter by category: "gas stations near me" |
+| `idx_pois_name` | GIN(to_tsvector('english', name)) | Full-text search on POI names |
+
+---
+
+#### 6. navigation_sessions (Active Navigation Tracking)
+
+Tracks user navigation sessions for real-time updates and analytics.
+
+```sql
+CREATE TABLE navigation_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id VARCHAR(100),
+  origin_lat DOUBLE PRECISION,
+  origin_lng DOUBLE PRECISION,
+  destination_lat DOUBLE PRECISION,
+  destination_lng DOUBLE PRECISION,
+  route_data JSONB,
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  status VARCHAR(20) DEFAULT 'active'
+);
+```
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Session identifier sent to client for updates |
+| `user_id` | VARCHAR(100) | NULL | Anonymous or authenticated user identifier; NULL for guest users |
+| `origin_lat` | DOUBLE PRECISION | NULL | Starting point latitude |
+| `origin_lng` | DOUBLE PRECISION | NULL | Starting point longitude |
+| `destination_lat` | DOUBLE PRECISION | NULL | Destination latitude |
+| `destination_lng` | DOUBLE PRECISION | NULL | Destination longitude |
+| `route_data` | JSONB | NULL | Full route including polyline, maneuvers, ETA; updated on reroute |
+| `started_at` | TIMESTAMP | DEFAULT NOW() | Session creation time |
+| `completed_at` | TIMESTAMP | NULL | When user arrived or cancelled; NULL while active |
+| `status` | VARCHAR(20) | DEFAULT 'active' | Session state: 'active', 'completed', 'cancelled' |
+
+**Indexes:**
+| Index Name | Columns/Type | Purpose |
+|------------|--------------|---------|
+| `idx_nav_sessions_user` | B-tree(user_id) | Lookup user's active/recent sessions |
+| `idx_nav_sessions_status` | B-tree(status) | Filter for active sessions only |
+
+---
+
+### Foreign Key Relationships
+
+| Child Table | Column | Parent Table | Column | ON DELETE | ON UPDATE | Rationale |
+|-------------|--------|--------------|--------|-----------|-----------|-----------|
+| `road_segments` | `start_node_id` | `road_nodes` | `id` | NO ACTION | NO ACTION | Segments cannot exist without valid nodes; deletion requires explicit cleanup to maintain graph integrity |
+| `road_segments` | `end_node_id` | `road_nodes` | `id` | NO ACTION | NO ACTION | Same as above; prevents orphaned edges |
+| `traffic_flow` | `segment_id` | `road_segments` | `id` | NO ACTION | NO ACTION | Historical traffic data should be preserved; segment deletion is rare administrative action |
+| `incidents` | `segment_id` | `road_segments` | `id` | SET NULL | NO ACTION | Incidents can exist as point locations even if road data is updated; preserves incident history |
+
+**Why NO ACTION instead of CASCADE:**
+
+1. **Graph Integrity**: The road network is a graph where nodes and segments are deeply interconnected. Cascading deletes could accidentally remove large portions of the road network from a single delete operation.
+
+2. **Data Pipeline Safety**: Map data is typically bulk-imported/updated. Using NO ACTION forces explicit transaction management and prevents accidental data loss during ETL processes.
+
+3. **Audit Trail**: Traffic and incident data represents historical records. Even if road geometry changes, keeping historical data helps with analytics and debugging.
+
+4. **Incidents SET NULL**: An incident's location (lat/lng) is the primary reference. If a road segment is restructured, the incident remains valid at its geographic point.
+
+---
+
+### Why Tables Are Structured This Way
+
+#### 1. Dual Coordinate Storage (lat/lng + GEOGRAPHY)
+
+Both `road_nodes` and `pois` store coordinates twice: as separate `lat`/`lng` columns AND as a PostGIS `GEOGRAPHY` column.
+
+**Rationale:**
+- **GEOGRAPHY columns** are required for accurate distance calculations (ST_Distance) and spatial indexing (GIST)
+- **Separate lat/lng columns** allow:
+  - Fast bounding box queries without PostGIS: `WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?`
+  - Direct JSON serialization without PostGIS function calls
+  - Simpler client-side processing
+- **Trade-off**: Minor storage overhead (~16 bytes per row) is acceptable given read frequency
+
+#### 2. BIGSERIAL for Graph IDs, UUID for User-Facing Entities
+
+- **road_nodes, road_segments, traffic_flow**: Use `BIGSERIAL` because:
+  - Graph algorithms need dense, sequential IDs for array indexing
+  - Routing graph is loaded into memory with node IDs as array indices
+  - Sequential IDs enable efficient gap-free iteration
+
+- **pois, incidents, navigation_sessions**: Use `UUID` because:
+  - Exposed in API responses (no sequential ID enumeration attack)
+  - Supports distributed ID generation without coordination
+  - Stable references across database migrations or sharding
+
+#### 3. JSONB for Flexible Structured Data
+
+Three columns use JSONB: `turn_restrictions`, `hours`, `route_data`
+
+**turn_restrictions (road_segments):**
+```json
+[
+  {"via": 12345, "to": 67890, "restriction": "no_left_turn"},
+  {"to": 11111, "restriction": "no_u_turn"}
+]
+```
+- Complex relationship data that varies per segment
+- Array of restrictions; would require junction table otherwise
+- Rarely queried directly; loaded with segment data
+
+**hours (pois):**
+```json
+{
+  "monday": {"open": "09:00", "close": "17:00"},
+  "tuesday": {"open": "09:00", "close": "17:00"},
+  "special": [{"date": "2024-12-25", "closed": true}]
+}
+```
+- Highly variable structure (24/7, seasonal, special hours)
+- Display-only data; not used for filtering
+
+**route_data (navigation_sessions):**
+```json
+{
+  "polyline": "encoded_polyline_string",
+  "distance_meters": 15000,
+  "duration_seconds": 1200,
+  "maneuvers": [...],
+  "traffic_delay_seconds": 300
+}
+```
+- Opaque blob for client consumption
+- Version-independent serialization
+- No need to query internal fields
+
+#### 4. Denormalized congestion_level in traffic_flow
+
+`congestion_level` ('free', 'light', 'moderate', 'heavy') can be derived from `speed_kph` and segment's `free_flow_speed_kph`.
+
+**Why store it:**
+- Avoids JOIN with road_segments on every traffic query
+- Pre-computed during probe aggregation (write-time calculation)
+- Enables simple queries: `WHERE congestion_level = 'heavy'`
+- Trade-off: ~20 bytes per row, saves JOIN on high-frequency reads
+
+#### 5. Partial Index for Active Incidents
+
+```sql
+CREATE INDEX idx_incidents_active ON incidents(is_active) WHERE is_active = TRUE;
+```
+
+**Rationale:**
+- 99% of queries filter for `is_active = TRUE`
+- Historical incidents (resolved) are rarely queried
+- Partial index is ~10-50x smaller than full index
+- Resolving an incident (setting `is_active = FALSE`) automatically removes it from index
+
+---
+
+### Data Flow for Key Operations
+
+#### 1. Route Calculation
+
+**Query: Find path from origin to destination**
+
+```sql
+-- Step 1: Find nearest node to origin point
+SELECT id, lat, lng,
+       ST_Distance(location, ST_MakePoint($lng, $lat)::geography) as dist
+FROM road_nodes
+ORDER BY location <-> ST_MakePoint($lng, $lat)::geography
+LIMIT 1;
+
+-- Step 2: Find nearest node to destination
+SELECT id, lat, lng,
+       ST_Distance(location, ST_MakePoint($dest_lng, $dest_lat)::geography) as dist
+FROM road_nodes
+ORDER BY location <-> ST_MakePoint($dest_lng, $dest_lat)::geography
+LIMIT 1;
+
+-- Step 3: Load graph edges (typically cached in memory)
+SELECT
+    rs.id,
+    rs.start_node_id,
+    rs.end_node_id,
+    rs.length_meters,
+    rs.free_flow_speed_kph,
+    rs.is_toll,
+    rs.is_one_way,
+    rs.street_name,
+    COALESCE(tf.speed_kph, rs.free_flow_speed_kph) as current_speed_kph
+FROM road_segments rs
+LEFT JOIN LATERAL (
+    SELECT speed_kph
+    FROM traffic_flow
+    WHERE segment_id = rs.id
+    ORDER BY timestamp DESC
+    LIMIT 1
+) tf ON true
+WHERE rs.start_node_id = ANY($node_ids) OR rs.end_node_id = ANY($node_ids);
+
+-- Step 4: Check for incidents on potential route segments
+SELECT segment_id, type, severity, description
+FROM incidents
+WHERE segment_id = ANY($route_segment_ids)
+  AND is_active = TRUE;
+```
+
+**Index usage:**
+- Step 1-2: Uses `idx_nodes_location` GIST index for KNN query (`<->` operator)
+- Step 3: Uses `idx_segments_start` and `idx_segments_end` for edge lookup
+- Step 3: Uses `idx_traffic_segment` for latest traffic data
+- Step 4: Uses partial index `idx_incidents_active`
+
+---
+
+#### 2. GPS Probe Ingestion (Traffic Update)
+
+**Operation: Process incoming GPS probe and update traffic**
+
+```sql
+-- Step 1: Map-match GPS point to road segment
+SELECT
+    id as segment_id,
+    street_name,
+    free_flow_speed_kph,
+    ST_Distance(geometry, ST_MakePoint($lng, $lat)::geography) as distance_meters
+FROM road_segments
+WHERE ST_DWithin(geometry, ST_MakePoint($lng, $lat)::geography, 50)  -- 50m threshold
+ORDER BY geometry <-> ST_MakePoint($lng, $lat)::geography
+LIMIT 1;
+
+-- Step 2: Upsert traffic flow (idempotent)
+INSERT INTO traffic_flow (segment_id, timestamp, speed_kph, congestion_level, sample_count)
+VALUES (
+    $segment_id,
+    date_trunc('minute', $timestamp),
+    $speed_kph,
+    CASE
+        WHEN $speed_kph > $free_flow * 0.8 THEN 'free'
+        WHEN $speed_kph > $free_flow * 0.5 THEN 'light'
+        WHEN $speed_kph > $free_flow * 0.25 THEN 'moderate'
+        ELSE 'heavy'
+    END,
+    1
+)
+ON CONFLICT (segment_id, timestamp) DO UPDATE SET
+    speed_kph = (traffic_flow.speed_kph * traffic_flow.sample_count + EXCLUDED.speed_kph)
+                / (traffic_flow.sample_count + 1),
+    sample_count = traffic_flow.sample_count + 1,
+    congestion_level = CASE
+        WHEN (traffic_flow.speed_kph * traffic_flow.sample_count + EXCLUDED.speed_kph)
+             / (traffic_flow.sample_count + 1) > $free_flow * 0.8 THEN 'free'
+        WHEN (traffic_flow.speed_kph * traffic_flow.sample_count + EXCLUDED.speed_kph)
+             / (traffic_flow.sample_count + 1) > $free_flow * 0.5 THEN 'light'
+        WHEN (traffic_flow.speed_kph * traffic_flow.sample_count + EXCLUDED.speed_kph)
+             / (traffic_flow.sample_count + 1) > $free_flow * 0.25 THEN 'moderate'
+        ELSE 'heavy'
+    END;
+```
+
+**Note:** The current schema uses `id` as PRIMARY KEY, not `(segment_id, timestamp)`. For true idempotent upsert, consider adding a unique constraint:
+
+```sql
+ALTER TABLE traffic_flow ADD CONSTRAINT uk_traffic_segment_time
+    UNIQUE (segment_id, date_trunc('minute', timestamp));
+```
+
+---
+
+#### 3. POI Search
+
+**Query: Search for restaurants near current location**
+
+```sql
+-- Full-text search with location ranking
+SELECT
+    id,
+    name,
+    category,
+    address,
+    lat,
+    lng,
+    rating,
+    review_count,
+    ST_Distance(location, ST_MakePoint($lng, $lat)::geography) as distance_meters
+FROM pois
+WHERE
+    -- Text search
+    to_tsvector('english', name) @@ plainto_tsquery('english', $search_query)
+    -- Category filter (optional)
+    AND ($category IS NULL OR category = $category)
+    -- Location filter: within 5km
+    AND ST_DWithin(location, ST_MakePoint($lng, $lat)::geography, 5000)
+ORDER BY
+    -- Rank by combination of distance, rating, and review count
+    (ST_Distance(location, ST_MakePoint($lng, $lat)::geography) / 1000.0)  -- km penalty
+    - (COALESCE(rating, 0) * 0.5)  -- rating bonus
+    - (LOG(GREATEST(review_count, 1)) * 0.2)  -- popularity bonus
+LIMIT 20;
+```
+
+**Index usage:**
+- `idx_pois_name` GIN index for full-text search
+- `idx_pois_category` for category filter
+- `idx_pois_location` GIST for distance filter and ordering
+
+---
+
+#### 4. Active Incident Query
+
+**Query: Get incidents affecting a route**
+
+```sql
+-- Find active incidents within buffer of route polyline
+SELECT
+    i.id,
+    i.type,
+    i.severity,
+    i.description,
+    i.lat,
+    i.lng,
+    rs.street_name as affected_street,
+    ST_Distance(i.location, $route_geometry::geography) as distance_to_route_meters
+FROM incidents i
+LEFT JOIN road_segments rs ON i.segment_id = rs.id
+WHERE
+    i.is_active = TRUE
+    AND ST_DWithin(i.location, $route_geometry::geography, 500)  -- 500m buffer
+ORDER BY
+    CASE i.severity
+        WHEN 'high' THEN 1
+        WHEN 'moderate' THEN 2
+        WHEN 'low' THEN 3
+    END,
+    ST_Distance(i.location, $route_geometry::geography);
+```
+
+**Index usage:**
+- `idx_incidents_active` partial index (filtered for is_active = TRUE)
+- `idx_incidents_location` GIST for spatial distance query
+
+---
+
+### Schema Design Considerations
+
+#### Scalability Patterns
+
+1. **Time-Based Partitioning for traffic_flow**:
+   For production scale, partition by timestamp:
+   ```sql
+   CREATE TABLE traffic_flow (
+       ...
+   ) PARTITION BY RANGE (timestamp);
+
+   CREATE TABLE traffic_flow_2024_01 PARTITION OF traffic_flow
+       FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+   ```
+
+2. **Geographic Sharding for road_nodes/road_segments**:
+   Consider H3 or S2 cell-based partitioning for global scale:
+   ```sql
+   ALTER TABLE road_nodes ADD COLUMN h3_cell VARCHAR(20);
+   CREATE INDEX idx_nodes_h3 ON road_nodes(h3_cell);
+   ```
+
+3. **Read Replicas for POI Search**:
+   POI data is read-heavy; route to read replicas for search queries.
+
+#### Data Retention
+
+| Table | Retention | Strategy |
+|-------|-----------|----------|
+| road_nodes, road_segments | Permanent | Core graph data |
+| traffic_flow | 7 days live + 1 year aggregated | Roll up to hourly after 7 days |
+| incidents | 90 days active + archive | Move resolved to cold storage |
+| navigation_sessions | 30 days | Delete or anonymize after 30 days |
+| pois | Permanent | Soft delete for removed POIs |
 
 ---
 

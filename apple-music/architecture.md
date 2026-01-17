@@ -383,95 +383,756 @@ class RecommendationService {
 
 ## Database Schema
 
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    APPLE MUSIC DATABASE SCHEMA                                       │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+                                         CATALOG DOMAIN
+    ┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
+    │     artists      │          │      albums      │          │      tracks      │
+    ├──────────────────┤          ├──────────────────┤          ├──────────────────┤
+    │ PK id            │◄─────────┤ FK artist_id     │◄─────────┤ FK artist_id     │
+    │    name          │    1:N   │ PK id            │    1:N   │ FK album_id      │
+    │    bio           │          │    title         │          │ PK id            │
+    │    image_url     │          │    release_date  │          │    isrc (UNIQUE) │
+    │    genres[]      │          │    album_type    │          │    title         │
+    │    verified      │          │    genres[]      │          │    duration_ms   │
+    │    created_at    │          │    artwork_url   │          │    track_number  │
+    └──────────────────┘          │    total_tracks  │          │    disc_number   │
+                                  │    duration_ms   │          │    explicit      │
+                                  │    explicit      │          │    audio_features│
+                                  │    created_at    │          │    fingerprint   │
+                                  └──────────────────┘          │    play_count    │
+                                                                │    created_at    │
+                                                                └────────┬─────────┘
+                                                                         │
+                          ┌──────────────────────────────────────────────┼───────────────────┐
+                          │                                              │                   │
+                          ▼                                              ▼                   ▼
+              ┌──────────────────┐                           ┌──────────────────┐  ┌──────────────────┐
+              │   audio_files    │                           │   track_genres   │  │ radio_station_   │
+              ├──────────────────┤                           ├──────────────────┤  │     tracks       │
+              │ PK id            │                           │ PK,FK track_id   │  ├──────────────────┤
+              │ FK track_id      │◄──── 1:N (one track,      │ PK genre         │  │ PK id            │
+              │    quality       │      multiple qualities)  │    weight        │  │ FK station_id    │
+              │    format        │                           └──────────────────┘  │ FK track_id      │
+              │    bitrate       │                                                 │    position      │
+              │    sample_rate   │                                                 └──────────────────┘
+              │    bit_depth     │                                                          ▲
+              │    file_size     │                                                          │
+              │    minio_key     │                                              ┌───────────┴────────┐
+              │    created_at    │                                              │   radio_stations   │
+              └──────────────────┘                                              ├────────────────────┤
+                                                                                │ PK id              │
+                                         USER DOMAIN                            │    name            │
+    ┌──────────────────┐                                                        │    description     │
+    │      users       │                                                        │    artwork_url     │
+    ├──────────────────┤                                                        │    type            │
+    │ PK id            │◄───────────────────────────────────────────────────┐   │ FK seed_artist_id  │
+    │    email(UNIQUE) │                                                    │   │    seed_genre      │
+    │    username(UNQ) │                                                    │   │    is_active       │
+    │    password_hash │                                                    │   │    created_at      │
+    │    display_name  │                                                    │   └────────────────────┘
+    │    avatar_url    │                                                    │
+    │    subscription  │                                                    │
+    │    role          │◄───────────────────────────────────────────────────┼────────────────────────┐
+    │    preferred_    │                                                    │                        │
+    │      quality     │                                                    │                        │
+    │    created_at    │                                                    │                        │
+    │    updated_at    │                                                    │                        │
+    └────────┬─────────┘                                                    │                        │
+             │                                                              │                        │
+    ┌────────┴────────────────┬──────────────────────┬─────────────────────┼────────────────────┐   │
+    │                         │                      │                     │                    │   │
+    ▼                         ▼                      ▼                     ▼                    ▼   │
+┌──────────────┐    ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌─────────┴────────┐
+│library_items │    │ library_changes  │   │ listening_history│   │ uploaded_tracks  │   │    sessions      │
+├──────────────┤    ├──────────────────┤   ├──────────────────┤   ├──────────────────┤   ├──────────────────┤
+│PK,FK user_id │    │ PK id (BIGSERIAL)│   │ PK id (BIGSERIAL)│   │ PK id            │   │ PK id            │
+│PK item_type  │    │ FK user_id       │   │ FK user_id       │   │ FK user_id       │   │ FK user_id       │
+│PK item_id    │    │    change_type   │   │ FK track_id      │   │    orig_filename │   │    token (UNQ)   │
+│   added_at   │    │    item_type     │   │    played_at     │   │    minio_key     │   │    device_info   │
+└──────────────┘    │    item_id       │   │    duration_ms   │   │ FK matched_track │   │    expires_at    │
+                    │    data (JSONB)  │   │    context_type  │   │    match_conf    │   │    created_at    │
+                    │    sync_token    │   │    context_id    │   │    title         │   └──────────────────┘
+                    │    created_at    │   │    completed     │   │    artist_name   │
+                    └──────────────────┘   └──────────────────┘   │    album_name    │
+                                                                  │    duration_ms   │
+                                                                  │    uploaded_at   │
+                                                                  └──────────────────┘
+                                       PLAYLIST DOMAIN
+
+    ┌──────────────────┐                      ┌──────────────────┐          ┌──────────────────┐
+    │    playlists     │                      │  playlist_tracks │          │ user_genre_      │
+    ├──────────────────┤                      ├──────────────────┤          │   preferences    │
+    │ PK id            │◄─────────────────────┤ FK playlist_id   │          ├──────────────────┤
+    │ FK user_id       │         1:N          │ FK track_id      │──────►   │ PK,FK user_id    │
+    │    name          │                      │ FK added_by      │──────►   │ PK genre         │
+    │    description   │                      │ PK id            │   users  │    score         │
+    │    type          │                      │    position      │          │    updated_at    │
+    │    rules(JSONB)  │                      │    added_at      │          └──────────────────┘
+    │    is_public     │                      └──────────────────┘
+    │    artwork_url   │
+    │    total_tracks  │
+    │    duration_ms   │
+    │    created_at    │
+    │    updated_at    │
+    └──────────────────┘
+
+                                       RELATIONSHIP LEGEND
+    ─────────────────────────────────────────────────────────────────────────────────────────────────
+    PK = Primary Key    FK = Foreign Key    1:N = One-to-Many    ──► = References (FK direction)
+    UNQ/UNIQUE = Unique constraint         [] = PostgreSQL Array   JSONB = JSON Binary column
+```
+
+---
+
+### Complete Table Definitions
+
+#### Users Table
+
+Stores user accounts with authentication, subscription, and preference data.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique user identifier |
+| `email` | VARCHAR(255) | UNIQUE, NOT NULL | User email for login |
+| `username` | VARCHAR(100) | UNIQUE, NOT NULL | Public username |
+| `password_hash` | VARCHAR(255) | NOT NULL | bcrypt hashed password |
+| `display_name` | VARCHAR(200) | | User's display name |
+| `avatar_url` | VARCHAR(500) | | Profile image URL |
+| `subscription_tier` | VARCHAR(50) | DEFAULT 'free' | 'free', 'individual', 'family', 'student' |
+| `role` | VARCHAR(20) | DEFAULT 'user' | 'user', 'admin' for RBAC |
+| `preferred_quality` | VARCHAR(50) | DEFAULT '256_aac' | '256_aac', 'lossless', 'hi_res_lossless' |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Account creation time |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last profile update |
+
+---
+
+#### Artists Table
+
+Stores artist/band information with metadata for catalog browsing and search.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique artist identifier |
+| `name` | VARCHAR(500) | NOT NULL | Artist/band name |
+| `bio` | TEXT | | Artist biography |
+| `image_url` | VARCHAR(500) | | Profile/promo image URL |
+| `genres` | TEXT[] | | PostgreSQL array of genre tags |
+| `verified` | BOOLEAN | DEFAULT FALSE | Blue checkmark status |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation time |
+
+---
+
+#### Albums Table
+
+Stores album metadata with rollup statistics maintained by triggers.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique album identifier |
+| `title` | VARCHAR(500) | NOT NULL | Album title |
+| `artist_id` | UUID | REFERENCES artists(id) ON DELETE CASCADE | Primary artist |
+| `release_date` | DATE | | Official release date |
+| `album_type` | VARCHAR(50) | DEFAULT 'album' | 'album', 'single', 'ep', 'compilation' |
+| `genres` | TEXT[] | | Genre tags array |
+| `artwork_url` | VARCHAR(500) | | Album cover image URL |
+| `total_tracks` | INTEGER | DEFAULT 0 | Track count (trigger-maintained) |
+| `duration_ms` | INTEGER | DEFAULT 0 | Total duration (trigger-maintained) |
+| `explicit` | BOOLEAN | DEFAULT FALSE | Contains explicit content |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation time |
+
+---
+
+#### Tracks Table
+
+Core music catalog with audio fingerprints and analytics.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique track identifier |
+| `isrc` | VARCHAR(20) | UNIQUE | International Standard Recording Code |
+| `title` | VARCHAR(500) | NOT NULL | Track title |
+| `artist_id` | UUID | REFERENCES artists(id) ON DELETE CASCADE | Primary artist |
+| `album_id` | UUID | REFERENCES albums(id) ON DELETE CASCADE | Parent album |
+| `duration_ms` | INTEGER | | Track length in milliseconds |
+| `track_number` | INTEGER | | Position on album |
+| `disc_number` | INTEGER | DEFAULT 1 | Disc number for multi-disc albums |
+| `explicit` | BOOLEAN | DEFAULT FALSE | Explicit content flag |
+| `audio_features` | JSONB | | Tempo, energy, danceability, etc. |
+| `fingerprint_hash` | VARCHAR(64) | | Chromaprint hash for matching |
+| `play_count` | BIGINT | DEFAULT 0 | Global play counter |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation time |
+
+---
+
+#### Audio Files Table
+
+Multiple quality versions per track for adaptive streaming.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique file identifier |
+| `track_id` | UUID | REFERENCES tracks(id) ON DELETE CASCADE | Parent track |
+| `quality` | VARCHAR(50) | NOT NULL | '256_aac', 'lossless', 'hi_res_lossless' |
+| `format` | VARCHAR(20) | NOT NULL | 'aac', 'alac', 'flac', 'mp3' |
+| `bitrate` | INTEGER | | Bits per second |
+| `sample_rate` | INTEGER | | Hz (44100, 48000, 96000, 192000) |
+| `bit_depth` | INTEGER | | Bits per sample (16, 24) |
+| `file_size` | BIGINT | | File size in bytes |
+| `minio_key` | VARCHAR(500) | | S3/MinIO object key |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Upload time |
+
+---
+
+#### Library Items Table
+
+User's saved content (tracks, albums, artists, playlists).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `user_id` | UUID | PK, REFERENCES users(id) ON DELETE CASCADE | Owner |
+| `item_type` | VARCHAR(20) | PK, NOT NULL | 'track', 'album', 'artist', 'playlist' |
+| `item_id` | UUID | PK, NOT NULL | Referenced entity ID |
+| `added_at` | TIMESTAMP | DEFAULT NOW() | When added to library |
+
+**Composite Primary Key:** `(user_id, item_type, item_id)` - prevents duplicate library entries.
+
+---
+
+#### Library Changes Table
+
+Change log for cross-device sync using sync tokens.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Auto-incrementing change ID |
+| `user_id` | UUID | REFERENCES users(id) ON DELETE CASCADE | User who made change |
+| `change_type` | VARCHAR(20) | NOT NULL | 'add', 'remove', 'update' |
+| `item_type` | VARCHAR(20) | NOT NULL | 'track', 'album', 'artist', 'playlist' |
+| `item_id` | UUID | NOT NULL | Affected entity ID |
+| `data` | JSONB | | Additional change metadata |
+| `sync_token` | BIGINT | DEFAULT nextval('sync_token_seq') | Monotonic sync sequence |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Change timestamp |
+
+**Index:** `idx_library_changes_sync(user_id, sync_token)` - optimizes delta sync queries.
+
+---
+
+#### Uploaded Tracks Table
+
+User-uploaded music pending or matched to catalog.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Upload identifier |
+| `user_id` | UUID | REFERENCES users(id) ON DELETE CASCADE | Uploader |
+| `original_filename` | VARCHAR(500) | | Original file name |
+| `minio_key` | VARCHAR(500) | | S3/MinIO storage key |
+| `matched_track_id` | UUID | REFERENCES tracks(id) | Matched catalog track |
+| `match_confidence` | DECIMAL | | 0.0-1.0 fingerprint match score |
+| `title` | VARCHAR(500) | | Extracted/user-provided title |
+| `artist_name` | VARCHAR(500) | | Extracted/user-provided artist |
+| `album_name` | VARCHAR(500) | | Extracted/user-provided album |
+| `duration_ms` | INTEGER | | Track duration |
+| `uploaded_at` | TIMESTAMP | DEFAULT NOW() | Upload timestamp |
+
+---
+
+#### Listening History Table
+
+Play events for recommendations and analytics.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Event identifier |
+| `user_id` | UUID | REFERENCES users(id) ON DELETE CASCADE | Listener |
+| `track_id` | UUID | REFERENCES tracks(id) ON DELETE CASCADE | Played track |
+| `played_at` | TIMESTAMP | DEFAULT NOW() | Play start time |
+| `duration_played_ms` | INTEGER | | Actual listen duration |
+| `context_type` | VARCHAR(50) | | 'album', 'playlist', 'radio', 'library' |
+| `context_id` | UUID | | ID of context (album, playlist, etc.) |
+| `completed` | BOOLEAN | DEFAULT FALSE | True if played > 30 seconds |
+
+**Indexes:**
+- `idx_history_user(user_id, played_at DESC)` - user's recent plays
+- `idx_history_track(track_id)` - track popularity queries
+
+---
+
+#### Playlists Table
+
+User-created and smart playlists.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Playlist identifier |
+| `user_id` | UUID | REFERENCES users(id) ON DELETE CASCADE | Creator/owner |
+| `name` | VARCHAR(200) | NOT NULL | Playlist name |
+| `description` | TEXT | | Playlist description |
+| `type` | VARCHAR(20) | DEFAULT 'regular' | 'regular', 'smart', 'radio' |
+| `rules` | JSONB | | Smart playlist filter rules |
+| `is_public` | BOOLEAN | DEFAULT FALSE | Publicly discoverable |
+| `artwork_url` | VARCHAR(500) | | Custom artwork URL |
+| `total_tracks` | INTEGER | DEFAULT 0 | Track count (trigger-maintained) |
+| `duration_ms` | INTEGER | DEFAULT 0 | Total duration (trigger-maintained) |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Creation time |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last modification |
+
+---
+
+#### Playlist Tracks Table
+
+Junction table for playlist contents with ordering.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Entry identifier |
+| `playlist_id` | UUID | REFERENCES playlists(id) ON DELETE CASCADE | Parent playlist |
+| `track_id` | UUID | REFERENCES tracks(id) ON DELETE CASCADE | Track in playlist |
+| `position` | INTEGER | NOT NULL | Order within playlist |
+| `added_at` | TIMESTAMP | DEFAULT NOW() | When track was added |
+| `added_by` | UUID | REFERENCES users(id) | User who added (for collaborative) |
+
+**Constraints:**
+- `UNIQUE(playlist_id, position)` - enforces unique ordering
+- **Index:** `idx_playlist_tracks(playlist_id, position)` - ordered retrieval
+
+---
+
+#### Radio Stations Table
+
+Curated and algorithmic radio stations.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Station identifier |
+| `name` | VARCHAR(200) | NOT NULL | Station name |
+| `description` | TEXT | | Station description |
+| `artwork_url` | VARCHAR(500) | | Station artwork |
+| `type` | VARCHAR(50) | DEFAULT 'curated' | 'curated', 'personal', 'artist', 'genre' |
+| `seed_artist_id` | UUID | REFERENCES artists(id) | Artist seed for artist radio |
+| `seed_genre` | VARCHAR(100) | | Genre seed for genre radio |
+| `is_active` | BOOLEAN | DEFAULT TRUE | Active/visible status |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Creation time |
+
+---
+
+#### Radio Station Tracks Table
+
+Pre-populated tracks for curated stations.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Entry identifier |
+| `station_id` | UUID | REFERENCES radio_stations(id) ON DELETE CASCADE | Parent station |
+| `track_id` | UUID | REFERENCES tracks(id) ON DELETE CASCADE | Track in rotation |
+| `position` | INTEGER | | Play order (nullable for shuffle) |
+
+**Constraint:** `UNIQUE(station_id, track_id)` - no duplicate tracks per station.
+
+---
+
+#### Sessions Table
+
+User authentication sessions stored in PostgreSQL (backed by Redis cache).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Session identifier |
+| `user_id` | UUID | REFERENCES users(id) ON DELETE CASCADE | Session owner |
+| `token` | VARCHAR(255) | UNIQUE, NOT NULL | Session token (hashed) |
+| `device_info` | JSONB | | Device/browser metadata |
+| `expires_at` | TIMESTAMP | NOT NULL | Expiration time |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Session creation time |
+
+**Indexes:**
+- `idx_sessions_token(token)` - fast token lookup
+- `idx_sessions_user(user_id)` - list user's sessions
+
+---
+
+#### Track Genres Table
+
+Many-to-many relationship between tracks and genres with weights.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `track_id` | UUID | PK, REFERENCES tracks(id) ON DELETE CASCADE | Track |
+| `genre` | VARCHAR(100) | PK, NOT NULL | Genre tag |
+| `weight` | DECIMAL | DEFAULT 1.0 | Genre relevance (0.0-1.0) |
+
+---
+
+#### User Genre Preferences Table
+
+Computed user taste profile for recommendations.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `user_id` | UUID | PK, REFERENCES users(id) ON DELETE CASCADE | User |
+| `genre` | VARCHAR(100) | PK, NOT NULL | Genre tag |
+| `score` | DECIMAL | DEFAULT 0 | Affinity score (computed) |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last recalculation |
+
+---
+
+### Foreign Key Relationships
+
+| Table | Column | References | ON DELETE | Rationale |
+|-------|--------|------------|-----------|-----------|
+| `albums` | `artist_id` | `artists(id)` | CASCADE | If artist is deleted, their albums should be removed |
+| `tracks` | `artist_id` | `artists(id)` | CASCADE | Tracks belong to artists; orphan tracks have no value |
+| `tracks` | `album_id` | `albums(id)` | CASCADE | Tracks belong to albums; album deletion removes tracks |
+| `audio_files` | `track_id` | `tracks(id)` | CASCADE | Audio files are useless without parent track |
+| `library_items` | `user_id` | `users(id)` | CASCADE | User deletion removes their library |
+| `library_changes` | `user_id` | `users(id)` | CASCADE | Sync history irrelevant for deleted users |
+| `uploaded_tracks` | `user_id` | `users(id)` | CASCADE | Uploads belong to users |
+| `uploaded_tracks` | `matched_track_id` | `tracks(id)` | (none) | Matched track may be deleted; upload persists |
+| `listening_history` | `user_id` | `users(id)` | CASCADE | History tied to user identity |
+| `listening_history` | `track_id` | `tracks(id)` | CASCADE | History for deleted tracks is meaningless |
+| `playlists` | `user_id` | `users(id)` | CASCADE | Playlists belong to creators |
+| `playlist_tracks` | `playlist_id` | `playlists(id)` | CASCADE | Entries meaningless without playlist |
+| `playlist_tracks` | `track_id` | `tracks(id)` | CASCADE | Removed tracks should be cleaned from playlists |
+| `playlist_tracks` | `added_by` | `users(id)` | (none) | Attribution preserved even if user deleted |
+| `radio_stations` | `seed_artist_id` | `artists(id)` | (none) | Station persists if seed artist removed |
+| `radio_station_tracks` | `station_id` | `radio_stations(id)` | CASCADE | Tracks belong to station |
+| `radio_station_tracks` | `track_id` | `tracks(id)` | CASCADE | Remove unavailable tracks from rotation |
+| `sessions` | `user_id` | `users(id)` | CASCADE | Sessions invalidated on user deletion |
+| `track_genres` | `track_id` | `tracks(id)` | CASCADE | Genre tags tied to track existence |
+| `user_genre_preferences` | `user_id` | `users(id)` | CASCADE | Preferences tied to user |
+
+**Why CASCADE is the default:**
+
+Most relationships use `ON DELETE CASCADE` because:
+1. **Data integrity**: Orphan records have no value (playlist tracks without a playlist)
+2. **Storage efficiency**: Automatic cleanup prevents accumulation of useless data
+3. **User expectations**: Deleting an artist should remove their music from the catalog
+
+**Exceptions (no cascade):**
+- `uploaded_tracks.matched_track_id`: User's upload should persist even if the matched catalog track is removed
+- `playlist_tracks.added_by`: Attribution is historical; the user who added a track is recorded even if they leave
+- `radio_stations.seed_artist_id`: Curated stations may outlive the artist they were seeded from
+
+---
+
+### Index Strategy
+
+| Index | Table | Columns | Purpose |
+|-------|-------|---------|---------|
+| `idx_library_changes_sync` | `library_changes` | `(user_id, sync_token)` | Fast delta sync: get changes since last sync token |
+| `idx_history_user` | `listening_history` | `(user_id, played_at DESC)` | Recent plays for user (For You, Recently Played) |
+| `idx_history_track` | `listening_history` | `(track_id)` | Track popularity queries, trending calculations |
+| `idx_playlist_tracks` | `playlist_tracks` | `(playlist_id, position)` | Ordered playlist retrieval |
+| `idx_sessions_token` | `sessions` | `(token)` | Session validation on every authenticated request |
+| `idx_sessions_user` | `sessions` | `(user_id)` | List/revoke user's sessions |
+
+**Query patterns optimized:**
+
+1. **Library sync** (`idx_library_changes_sync`):
+   ```sql
+   SELECT * FROM library_changes
+   WHERE user_id = $1 AND sync_token > $2
+   ORDER BY sync_token ASC;
+   ```
+
+2. **Recent plays** (`idx_history_user`):
+   ```sql
+   SELECT track_id, played_at FROM listening_history
+   WHERE user_id = $1
+   ORDER BY played_at DESC
+   LIMIT 50;
+   ```
+
+3. **Playlist contents** (`idx_playlist_tracks`):
+   ```sql
+   SELECT t.* FROM playlist_tracks pt
+   JOIN tracks t ON pt.track_id = t.id
+   WHERE pt.playlist_id = $1
+   ORDER BY pt.position;
+   ```
+
+---
+
+### Why Tables Are Structured This Way
+
+#### 1. Separation of Catalog and User Data
+
+**Design:** `artists`, `albums`, `tracks` are distinct from `library_items`, `listening_history`
+
+**Rationale:**
+- **Read/write patterns differ**: Catalog is read-heavy, rarely updated; user data is write-heavy
+- **Scaling independence**: Catalog can be read-replicated; user data may need sharding
+- **Caching strategies**: Catalog entities are highly cacheable (static); user data is personalized
+
+#### 2. Audio Files as Separate Table
+
+**Design:** One track has multiple `audio_files` rows (different qualities)
+
+**Rationale:**
+- **Adaptive streaming**: Select quality based on subscription, network, preference
+- **Storage optimization**: Store only qualities that are requested (lazy transcoding)
+- **Future-proofing**: Add new formats (Dolby Atmos) without schema changes
+
+#### 3. Library Items as Generic Entity
+
+**Design:** `library_items(user_id, item_type, item_id)` instead of separate tables
+
+**Rationale:**
+- **Unified library API**: One endpoint for add/remove regardless of item type
+- **Simple sync**: `library_changes` logs all types uniformly
+- **Flexible UI**: Library page queries one table, groups by `item_type`
+
+**Trade-off:** No foreign key enforcement on `item_id` (polymorphic reference). Application layer validates item existence.
+
+#### 4. Sync Token Sequence
+
+**Design:** Global `sync_token_seq` sequence for `library_changes`
+
+**Rationale:**
+- **Monotonic ordering**: Clients request "changes since token X"
+- **No gaps**: PostgreSQL sequences guarantee uniqueness, order
+- **Cross-device consistency**: All devices see same change order
+
+#### 5. Denormalized Totals in Playlists/Albums
+
+**Design:** `total_tracks` and `duration_ms` stored in `playlists` and `albums`
+
+**Rationale:**
+- **Read performance**: Display playlist/album info without JOIN + aggregation
+- **Trigger-maintained**: Automatic updates on track insert/update/delete
+- **Trade-off**: Slight write overhead, but reads vastly outnumber writes
+
+#### 6. JSONB for Flexible Metadata
+
+**Used in:** `tracks.audio_features`, `playlists.rules`, `sessions.device_info`
+
+**Rationale:**
+- **Schema flexibility**: Add new audio features without migrations
+- **Smart playlists**: Complex rule trees stored as JSON (AND/OR conditions)
+- **Device info**: Varies by client (iOS vs. web vs. CarPlay)
+
+#### 7. Soft Delete Not Used
+
+**Design:** Hard deletes with CASCADE throughout
+
+**Rationale:**
+- **GDPR compliance**: User deletion is complete removal
+- **Storage efficiency**: Music catalog is reference data, not user-generated
+- **Simplicity**: No `deleted_at` checks in every query
+
+**Exception:** For production, `uploaded_tracks` might warrant soft delete for legal holds.
+
+---
+
+### Data Flow for Key Operations
+
+#### 1. Add Track to Library
+
 ```sql
--- Tracks
-CREATE TABLE tracks (
-  id UUID PRIMARY KEY,
-  isrc VARCHAR(20) UNIQUE,
-  title VARCHAR(500) NOT NULL,
-  artist_id UUID REFERENCES artists(id),
-  album_id UUID REFERENCES albums(id),
-  duration_ms INTEGER,
-  track_number INTEGER,
-  disc_number INTEGER DEFAULT 1,
-  explicit BOOLEAN DEFAULT FALSE,
-  audio_features JSONB,
-  fingerprint_hash VARCHAR(64),
-  created_at TIMESTAMP DEFAULT NOW()
+-- Transaction: Add to library + log change for sync
+BEGIN;
+
+INSERT INTO library_items (user_id, item_type, item_id, added_at)
+VALUES ($1, 'track', $2, NOW())
+ON CONFLICT DO NOTHING;  -- Idempotent
+
+INSERT INTO library_changes (user_id, change_type, item_type, item_id, sync_token)
+VALUES ($1, 'add', 'track', $2, nextval('sync_token_seq'));
+
+COMMIT;
+```
+
+#### 2. Sync Library (Delta)
+
+```sql
+-- Get all changes since client's last sync token
+SELECT
+  change_type,
+  item_type,
+  item_id,
+  data,
+  sync_token,
+  created_at
+FROM library_changes
+WHERE user_id = $1
+  AND sync_token > $2  -- Client's last known token
+ORDER BY sync_token ASC;
+```
+
+#### 3. Record Play Event
+
+```sql
+-- Insert with dedupe check (same track within 30s = single play)
+INSERT INTO listening_history (user_id, track_id, played_at, duration_played_ms, context_type, context_id, completed)
+SELECT $1, $2, $3, $4, $5, $6, $7
+WHERE NOT EXISTS (
+  SELECT 1 FROM listening_history
+  WHERE user_id = $1
+    AND track_id = $2
+    AND played_at > $3 - INTERVAL '30 seconds'
+    AND played_at < $3 + INTERVAL '30 seconds'
 );
 
--- Audio Files (multiple qualities per track)
-CREATE TABLE audio_files (
-  id UUID PRIMARY KEY,
-  track_id UUID REFERENCES tracks(id),
-  quality VARCHAR(50), -- '256_aac', 'lossless', 'hi_res_lossless'
-  format VARCHAR(20), -- 'aac', 'alac', 'flac'
-  bitrate INTEGER,
-  sample_rate INTEGER,
-  bit_depth INTEGER,
-  file_size BIGINT,
-  s3_key VARCHAR(500),
-  created_at TIMESTAMP DEFAULT NOW()
-);
+-- Update track play count
+UPDATE tracks SET play_count = play_count + 1 WHERE id = $2;
+```
 
--- User Library
-CREATE TABLE library_items (
-  user_id UUID REFERENCES users(id),
-  item_type VARCHAR(20), -- 'track', 'album', 'artist', 'playlist'
-  item_id UUID,
-  added_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, item_type, item_id)
-);
+#### 4. Get Playlist with Tracks
 
--- Library Sync Changes
-CREATE TABLE library_changes (
-  id BIGSERIAL PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  change_type VARCHAR(20), -- 'add', 'remove', 'update'
-  item_type VARCHAR(20),
-  item_id UUID,
-  data JSONB,
-  sync_token BIGINT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+```sql
+-- Fetch playlist metadata + ordered tracks in single query
+SELECT
+  p.id,
+  p.name,
+  p.description,
+  p.total_tracks,
+  p.duration_ms,
+  json_agg(
+    json_build_object(
+      'track_id', t.id,
+      'title', t.title,
+      'artist_name', a.name,
+      'album_title', al.title,
+      'duration_ms', t.duration_ms,
+      'position', pt.position
+    ) ORDER BY pt.position
+  ) AS tracks
+FROM playlists p
+LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
+LEFT JOIN tracks t ON pt.track_id = t.id
+LEFT JOIN artists a ON t.artist_id = a.id
+LEFT JOIN albums al ON t.album_id = al.id
+WHERE p.id = $1
+GROUP BY p.id;
+```
 
-CREATE INDEX idx_library_changes_sync ON library_changes(user_id, sync_token);
+#### 5. Get Stream URL (Quality Selection)
 
--- Uploaded/Matched Tracks
-CREATE TABLE uploaded_tracks (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  original_filename VARCHAR(500),
-  s3_key VARCHAR(500),
-  matched_track_id UUID REFERENCES tracks(id),
-  match_confidence DECIMAL,
-  uploaded_at TIMESTAMP DEFAULT NOW()
-);
+```sql
+-- Get best matching audio file for user's subscription and preference
+SELECT
+  af.id,
+  af.quality,
+  af.format,
+  af.bitrate,
+  af.minio_key
+FROM audio_files af
+JOIN tracks t ON af.track_id = t.id
+JOIN users u ON u.id = $1
+WHERE t.id = $2
+  AND af.quality <= (
+    CASE u.subscription_tier
+      WHEN 'free' THEN '256_aac'
+      WHEN 'individual' THEN u.preferred_quality
+      WHEN 'family' THEN u.preferred_quality
+      WHEN 'student' THEN u.preferred_quality
+    END
+  )
+ORDER BY
+  CASE af.quality
+    WHEN 'hi_res_lossless' THEN 3
+    WHEN 'lossless' THEN 2
+    WHEN '256_aac' THEN 1
+  END DESC
+LIMIT 1;
+```
 
--- Listening History
-CREATE TABLE listening_history (
-  id BIGSERIAL PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  track_id UUID REFERENCES tracks(id),
-  played_at TIMESTAMP DEFAULT NOW(),
-  duration_played_ms INTEGER,
-  context_type VARCHAR(50), -- 'album', 'playlist', 'radio'
-  context_id UUID
-);
+#### 6. Personalized Recommendations (Heavy Rotation)
 
-CREATE INDEX idx_history_user ON listening_history(user_id, played_at DESC);
+```sql
+-- Albums most played in last 2 weeks
+SELECT
+  al.id,
+  al.title,
+  al.artwork_url,
+  a.name AS artist_name,
+  COUNT(*) AS play_count
+FROM listening_history lh
+JOIN tracks t ON lh.track_id = t.id
+JOIN albums al ON t.album_id = al.id
+JOIN artists a ON al.artist_id = a.id
+WHERE lh.user_id = $1
+  AND lh.played_at > NOW() - INTERVAL '14 days'
+  AND lh.completed = true  -- Only count completed plays
+GROUP BY al.id, al.title, al.artwork_url, a.name
+ORDER BY play_count DESC
+LIMIT 10;
+```
 
--- Playlists
-CREATE TABLE playlists (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  name VARCHAR(200) NOT NULL,
-  description TEXT,
-  type VARCHAR(20) DEFAULT 'regular', -- 'regular', 'smart'
-  rules JSONB, -- For smart playlists
-  is_public BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+#### 7. Update User Genre Preferences (Batch Job)
+
+```sql
+-- Recalculate genre scores from listening history (last 30 days)
+INSERT INTO user_genre_preferences (user_id, genre, score, updated_at)
+SELECT
+  lh.user_id,
+  tg.genre,
+  SUM(tg.weight * CASE WHEN lh.completed THEN 1.0 ELSE 0.3 END) AS score,
+  NOW()
+FROM listening_history lh
+JOIN track_genres tg ON lh.track_id = tg.track_id
+WHERE lh.user_id = $1
+  AND lh.played_at > NOW() - INTERVAL '30 days'
+GROUP BY lh.user_id, tg.genre
+ON CONFLICT (user_id, genre)
+DO UPDATE SET
+  score = EXCLUDED.score,
+  updated_at = NOW();
+```
+
+---
+
+### Database Triggers
+
+Two triggers maintain denormalized counters:
+
+#### Album Totals Trigger
+
+```sql
+CREATE OR REPLACE FUNCTION update_album_totals()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE albums SET
+    total_tracks = (SELECT COUNT(*) FROM tracks WHERE album_id = COALESCE(NEW.album_id, OLD.album_id)),
+    duration_ms = (SELECT COALESCE(SUM(duration_ms), 0) FROM tracks WHERE album_id = COALESCE(NEW.album_id, OLD.album_id))
+  WHERE id = COALESCE(NEW.album_id, OLD.album_id);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_album_totals
+AFTER INSERT OR UPDATE OR DELETE ON tracks
+FOR EACH ROW EXECUTE FUNCTION update_album_totals();
+```
+
+#### Playlist Totals Trigger
+
+```sql
+CREATE OR REPLACE FUNCTION update_playlist_totals()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE playlists SET
+    total_tracks = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = COALESCE(NEW.playlist_id, OLD.playlist_id)),
+    duration_ms = (
+      SELECT COALESCE(SUM(t.duration_ms), 0)
+      FROM playlist_tracks pt
+      JOIN tracks t ON pt.track_id = t.id
+      WHERE pt.playlist_id = COALESCE(NEW.playlist_id, OLD.playlist_id)
+    ),
+    updated_at = NOW()
+  WHERE id = COALESCE(NEW.playlist_id, OLD.playlist_id);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_playlist_totals
+AFTER INSERT OR UPDATE OR DELETE ON playlist_tracks
+FOR EACH ROW EXECUTE FUNCTION update_playlist_totals();
 ```
 
 ---

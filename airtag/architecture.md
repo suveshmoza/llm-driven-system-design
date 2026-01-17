@@ -408,39 +408,617 @@ class PrecisionFinder {
 
 ## Database Schema
 
+This section documents the complete PostgreSQL database schema for the Find My Network clone, including all tables, relationships, indexes, and design rationale.
+
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    ENTITY RELATIONSHIPS                                   │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+                                    ┌─────────────────┐
+                                    │     session     │
+                                    │─────────────────│
+                                    │ sid (PK)        │
+                                    │ sess            │
+                                    │ expire          │
+                                    └─────────────────┘
+                                           │
+                                           │ (no FK, uses user_id
+                                           │  stored in sess JSON)
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                           │
+│  ┌─────────────────┐         1:N          ┌─────────────────────┐                        │
+│  │      users      │◄─────────────────────│  registered_devices │                        │
+│  │─────────────────│                      │─────────────────────│                        │
+│  │ id (PK)         │                      │ id (PK)             │                        │
+│  │ email (UNIQUE)  │                      │ user_id (FK)────────┼──┐                     │
+│  │ password_hash   │                      │ device_type         │  │                     │
+│  │ name            │                      │ name                │  │                     │
+│  │ role            │                      │ emoji               │  │ CASCADE             │
+│  │ created_at      │                      │ master_secret       │  │ DELETE              │
+│  │ updated_at      │                      │ current_period      │  │                     │
+│  └─────────────────┘                      │ is_active           │  │                     │
+│         │                                 │ created_at          │  │                     │
+│         │                                 │ updated_at          │◄─┘                     │
+│         │ 1:N                             └─────────────────────┘                        │
+│         │ CASCADE                                   │                                     │
+│         │ DELETE                                    │                                     │
+│         ▼                                           │ 1:1                                 │
+│  ┌─────────────────┐                               │ CASCADE DELETE                       │
+│  │  notifications  │                               ▼                                      │
+│  │─────────────────│                      ┌─────────────────────┐                        │
+│  │ id (PK)         │                      │     lost_mode       │                        │
+│  │ user_id (FK)────┼──► CASCADE           │─────────────────────│                        │
+│  │ device_id (FK)──┼──► SET NULL          │ device_id (PK, FK)──┼──► registered_devices  │
+│  │ type            │                      │ enabled             │                        │
+│  │ title           │                      │ contact_phone       │                        │
+│  │ message         │                      │ contact_email       │                        │
+│  │ is_read         │                      │ message             │                        │
+│  │ data            │                      │ notify_when_found   │                        │
+│  │ created_at      │                      │ enabled_at          │                        │
+│  └─────────────────┘                      │ created_at          │                        │
+│         │                                 │ updated_at          │                        │
+│         │ 1:N                             └─────────────────────┘                        │
+│         │ CASCADE                                   │                                     │
+│         │ DELETE                                    │                                     │
+│         ▼                                           │ 1:N                                 │
+│  ┌─────────────────┐                               │ CASCADE DELETE                       │
+│  │tracker_sightings│                               ▼                                      │
+│  │─────────────────│                      ┌─────────────────────┐                        │
+│  │ id (PK)         │                      │ decrypted_locations │                        │
+│  │ user_id (FK)────┼──► CASCADE           │─────────────────────│                        │
+│  │ identifier_hash │                      │ id (PK)             │                        │
+│  │ latitude        │                      │ device_id (FK)──────┼──► registered_devices  │
+│  │ longitude       │                      │ latitude            │                        │
+│  │ seen_at         │                      │ longitude           │                        │
+│  └─────────────────┘                      │ accuracy            │                        │
+│                                           │ address             │                        │
+│                                           │ timestamp           │                        │
+│                                           │ created_at          │                        │
+│                                           └─────────────────────┘                        │
+│                                                                                           │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                              STANDALONE TABLE (NO FKs)                                    │
+│                                                                                           │
+│  ┌─────────────────────┐                                                                 │
+│  │  location_reports   │  ◄── Crowd-sourced encrypted reports from Find My network       │
+│  │─────────────────────│                                                                 │
+│  │ id (PK)             │      No FK to registered_devices because:                       │
+│  │ identifier_hash     │      1. Reports come from anonymous network devices             │
+│  │ encrypted_payload   │      2. Identifier rotates every 15 minutes                     │
+│  │ reporter_region     │      3. Server cannot correlate hash to device (privacy)        │
+│  │ created_at          │                                                                 │
+│  └─────────────────────┘                                                                 │
+│                                                                                           │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Complete Table Definitions
+
+#### 1. users
+
+The central user account table that all other user-owned data references.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique user identifier |
+| `email` | `VARCHAR(255)` | `UNIQUE NOT NULL` | Login email, used for authentication |
+| `password_hash` | `VARCHAR(255)` | `NOT NULL` | Bcrypt-hashed password |
+| `name` | `VARCHAR(100)` | `NOT NULL` | Display name shown in UI |
+| `role` | `VARCHAR(20)` | `DEFAULT 'user' CHECK (role IN ('user', 'admin'))` | Access control role |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Account creation timestamp |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Last profile update |
+
 ```sql
--- Encrypted Location Reports (Apple servers)
-CREATE TABLE location_reports (
-  id BIGSERIAL PRIMARY KEY,
-  identifier_hash VARCHAR(64) NOT NULL,
-  encrypted_payload BYTEA NOT NULL,
-  reporter_region VARCHAR(10), -- Coarse region for routing
-  created_at TIMESTAMP DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+---
+
+#### 2. registered_devices
+
+Devices (AirTags, iPhones, MacBooks, etc.) registered to a user's account.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique device identifier |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Owner of the device |
+| `device_type` | `VARCHAR(50)` | `NOT NULL CHECK (...)` | Type: airtag, iphone, macbook, ipad, airpods |
+| `name` | `VARCHAR(100)` | `NOT NULL` | User-assigned name (e.g., "Keys", "Backpack") |
+| `emoji` | `VARCHAR(10)` | `DEFAULT '📍'` | Icon shown on map markers |
+| `master_secret` | `VARCHAR(64)` | `NOT NULL` | Shared secret for key derivation (encrypted in production) |
+| `current_period` | `INTEGER` | `DEFAULT 0` | Current key rotation period counter |
+| `is_active` | `BOOLEAN` | `DEFAULT TRUE` | Whether device is actively tracked |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Device registration timestamp |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Last settings update |
+
+```sql
+CREATE TABLE IF NOT EXISTS registered_devices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_type VARCHAR(50) NOT NULL CHECK (device_type IN ('airtag', 'iphone', 'macbook', 'ipad', 'airpods')),
+    name VARCHAR(100) NOT NULL,
+    emoji VARCHAR(10) DEFAULT '📍',
+    master_secret VARCHAR(64) NOT NULL,
+    current_period INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_devices_user ON registered_devices(user_id);
+CREATE INDEX idx_devices_active ON registered_devices(is_active);
+```
+
+**Index Strategy:**
+- `idx_devices_user`: Optimizes "list all devices for user" query (O(log n) lookup)
+- `idx_devices_active`: Optimizes filtering active devices for location polling
+
+---
+
+#### 3. location_reports
+
+Encrypted location blobs from the crowd-sourced Find My network. This is the core privacy-preserving table.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | Auto-incrementing report ID (high volume) |
+| `identifier_hash` | `VARCHAR(64)` | `NOT NULL` | SHA-256 hash of device's rotating BLE identifier |
+| `encrypted_payload` | `JSONB` | `NOT NULL` | ECIES-encrypted location (ephemeralPubKey, iv, ciphertext, authTag) |
+| `reporter_region` | `VARCHAR(10)` | nullable | Coarse region (e.g., "US-CA") for routing/sharding |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | When report was received |
+
+```sql
+CREATE TABLE IF NOT EXISTS location_reports (
+    id BIGSERIAL PRIMARY KEY,
+    identifier_hash VARCHAR(64) NOT NULL,
+    encrypted_payload JSONB NOT NULL,
+    reporter_region VARCHAR(10),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX idx_reports_identifier ON location_reports(identifier_hash);
 CREATE INDEX idx_reports_time ON location_reports(created_at);
+CREATE INDEX idx_reports_identifier_time ON location_reports(identifier_hash, created_at DESC);
+```
 
--- User's Registered Devices (per iCloud account)
-CREATE TABLE registered_devices (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  device_type VARCHAR(50), -- 'airtag', 'iphone', 'macbook'
-  name VARCHAR(100),
-  master_secret_encrypted BYTEA, -- Encrypted with user key
-  created_at TIMESTAMP DEFAULT NOW()
-);
+**Index Strategy:**
+- `idx_reports_identifier`: Fast lookup by identifier hash (primary query path)
+- `idx_reports_time`: Supports time-based cleanup (DELETE WHERE created_at < 7 days ago)
+- `idx_reports_identifier_time`: Compound index for "latest reports for identifier" query
 
--- Lost Mode Settings
-CREATE TABLE lost_mode (
-  device_id UUID PRIMARY KEY REFERENCES registered_devices(id),
-  enabled BOOLEAN DEFAULT FALSE,
-  contact_phone VARCHAR(50),
-  contact_email VARCHAR(200),
-  message TEXT,
-  enabled_at TIMESTAMP
+**Why No FK to registered_devices:**
+This table has NO foreign key to `registered_devices` by design:
+1. **Privacy**: Server cannot correlate identifier_hash to a specific device
+2. **Anonymity**: Reports come from random network devices, not the owner
+3. **Key Rotation**: Identifier changes every 15 minutes; no stable device reference exists
+4. **Decryption**: Only the owner (with master_secret) can derive which reports belong to their device
+
+---
+
+#### 4. lost_mode
+
+Settings for lost mode, linked 1:1 with a registered device.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `device_id` | `UUID` | `PRIMARY KEY REFERENCES registered_devices(id) ON DELETE CASCADE` | The device in lost mode |
+| `enabled` | `BOOLEAN` | `DEFAULT FALSE` | Whether lost mode is active |
+| `contact_phone` | `VARCHAR(50)` | nullable | Phone number to display when found |
+| `contact_email` | `VARCHAR(200)` | nullable | Email to display when found |
+| `message` | `TEXT` | nullable | Custom message (e.g., "If found, call...") |
+| `notify_when_found` | `BOOLEAN` | `DEFAULT TRUE` | Send push notification when device is located |
+| `enabled_at` | `TIMESTAMP WITH TIME ZONE` | nullable | When lost mode was enabled |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Record creation timestamp |
+| `updated_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | Last settings update |
+
+```sql
+CREATE TABLE IF NOT EXISTS lost_mode (
+    device_id UUID PRIMARY KEY REFERENCES registered_devices(id) ON DELETE CASCADE,
+    enabled BOOLEAN DEFAULT FALSE,
+    contact_phone VARCHAR(50),
+    contact_email VARCHAR(200),
+    message TEXT,
+    notify_when_found BOOLEAN DEFAULT TRUE,
+    enabled_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```
+
+**Design Decision - 1:1 Relationship:**
+- `device_id` is both the PRIMARY KEY and FK, enforcing exactly one lost_mode record per device
+- Separate table (vs. columns on registered_devices) allows NULL-able lost mode settings without nullable columns on the device table
+- Cleaner separation of concerns: device metadata vs. lost mode state
+
+---
+
+#### 5. notifications
+
+User notifications for device events (found, unknown tracker, low battery, system).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `UUID` | `PRIMARY KEY DEFAULT gen_random_uuid()` | Unique notification ID |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Notification recipient |
+| `device_id` | `UUID` | `REFERENCES registered_devices(id) ON DELETE SET NULL` | Related device (may be null) |
+| `type` | `VARCHAR(50)` | `NOT NULL CHECK (...)` | Type: device_found, unknown_tracker, low_battery, system |
+| `title` | `VARCHAR(200)` | `NOT NULL` | Notification title |
+| `message` | `TEXT` | nullable | Notification body |
+| `is_read` | `BOOLEAN` | `DEFAULT FALSE` | Whether user has seen it |
+| `data` | `JSONB` | nullable | Extra payload (e.g., location, sighting count) |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | When notification was created |
+
+```sql
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_id UUID REFERENCES registered_devices(id) ON DELETE SET NULL,
+    type VARCHAR(50) NOT NULL CHECK (type IN ('device_found', 'unknown_tracker', 'low_battery', 'system')),
+    title VARCHAR(200) NOT NULL,
+    message TEXT,
+    is_read BOOLEAN DEFAULT FALSE,
+    data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_notifications_user ON notifications(user_id);
+CREATE INDEX idx_notifications_unread ON notifications(user_id, is_read) WHERE is_read = FALSE;
+```
+
+**Index Strategy:**
+- `idx_notifications_user`: Fast lookup of all notifications for a user
+- `idx_notifications_unread`: Partial index for unread notifications only (smaller, faster)
+
+**Why SET NULL on device_id:**
+- Notifications should persist even if the device is deleted
+- Historical record: "Your AirTag was found at X" remains useful
+- User can still see past notifications in their history
+
+---
+
+#### 6. tracker_sightings
+
+Anti-stalking data: unknown trackers seen traveling with the user.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | Auto-incrementing sighting ID |
+| `user_id` | `UUID` | `NOT NULL REFERENCES users(id) ON DELETE CASCADE` | User who detected the tracker |
+| `identifier_hash` | `VARCHAR(64)` | `NOT NULL` | Hash of the unknown tracker's BLE identifier |
+| `latitude` | `DECIMAL(10, 8)` | `NOT NULL` | Sighting latitude (±90°, 8 decimal places = ~1mm precision) |
+| `longitude` | `DECIMAL(11, 8)` | `NOT NULL` | Sighting longitude (±180°, 8 decimal places) |
+| `seen_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | When the tracker was detected |
+
+```sql
+CREATE TABLE IF NOT EXISTS tracker_sightings (
+    id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    identifier_hash VARCHAR(64) NOT NULL,
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_sightings_user_identifier ON tracker_sightings(user_id, identifier_hash);
+CREATE INDEX idx_sightings_time ON tracker_sightings(seen_at);
+```
+
+**Index Strategy:**
+- `idx_sightings_user_identifier`: Optimizes "all sightings of tracker X by user Y" for pattern detection
+- `idx_sightings_time`: Supports time-windowed queries (e.g., last 3 hours)
+
+---
+
+#### 7. decrypted_locations
+
+Cache of decrypted locations for the owner's map view.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | Auto-incrementing location ID |
+| `device_id` | `UUID` | `NOT NULL REFERENCES registered_devices(id) ON DELETE CASCADE` | The tracked device |
+| `latitude` | `DECIMAL(10, 8)` | `NOT NULL` | Decrypted latitude |
+| `longitude` | `DECIMAL(11, 8)` | `NOT NULL` | Decrypted longitude |
+| `accuracy` | `DECIMAL(10, 2)` | nullable | Location accuracy in meters |
+| `address` | `TEXT` | nullable | Reverse-geocoded address |
+| `timestamp` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL` | Original report timestamp |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `DEFAULT NOW()` | When decrypted/cached |
+
+```sql
+CREATE TABLE IF NOT EXISTS decrypted_locations (
+    id BIGSERIAL PRIMARY KEY,
+    device_id UUID NOT NULL REFERENCES registered_devices(id) ON DELETE CASCADE,
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    accuracy DECIMAL(10, 2),
+    address TEXT,
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_decrypted_device ON decrypted_locations(device_id);
+CREATE INDEX idx_decrypted_time ON decrypted_locations(device_id, timestamp DESC);
+```
+
+**Index Strategy:**
+- `idx_decrypted_device`: Fast lookup of all locations for a device
+- `idx_decrypted_time`: Compound index for "latest N locations for device" (ORDER BY timestamp DESC)
+
+**Why This Table Exists:**
+- **Performance**: Decryption is CPU-intensive; caching results avoids re-decryption
+- **Denormalization**: Stores reverse-geocoded address to avoid repeated geocoding API calls
+- **History**: Maintains location history even after location_reports are cleaned up (7-day TTL)
+
+---
+
+#### 8. session
+
+Express session storage for authentication (connect-pg-simple).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `sid` | `VARCHAR` | `PRIMARY KEY COLLATE "default"` | Session ID |
+| `sess` | `JSON` | `NOT NULL` | Serialized session data (contains user_id) |
+| `expire` | `TIMESTAMP(6)` | `NOT NULL` | Session expiration time |
+
+```sql
+CREATE TABLE IF NOT EXISTS session (
+    sid VARCHAR NOT NULL COLLATE "default",
+    sess JSON NOT NULL,
+    expire TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (sid)
+);
+
+CREATE INDEX idx_session_expire ON session(expire);
+```
+
+**Index Strategy:**
+- `idx_session_expire`: Supports periodic cleanup of expired sessions
+
+---
+
+### Foreign Key Relationships
+
+| Parent Table | Child Table | FK Column | On Delete | Rationale |
+|--------------|-------------|-----------|-----------|-----------|
+| `users` | `registered_devices` | `user_id` | **CASCADE** | Device belongs to user; delete user = delete all their devices |
+| `users` | `notifications` | `user_id` | **CASCADE** | Notifications are user-specific; delete user = delete notifications |
+| `users` | `tracker_sightings` | `user_id` | **CASCADE** | Sightings are user-specific anti-stalking data |
+| `registered_devices` | `lost_mode` | `device_id` | **CASCADE** | Lost mode settings are device-specific; delete device = delete settings |
+| `registered_devices` | `notifications` | `device_id` | **SET NULL** | Preserve notification history even if device is removed |
+| `registered_devices` | `decrypted_locations` | `device_id` | **CASCADE** | Cached locations are useless without the device |
+
+**CASCADE vs SET NULL Decision Tree:**
+
+```
+Is the child record meaningful without the parent?
+    │
+    ├── NO → Use CASCADE (delete child when parent deleted)
+    │   Examples:
+    │   - registered_devices without user: meaningless
+    │   - lost_mode without device: meaningless
+    │   - decrypted_locations without device: meaningless
+    │
+    └── YES → Use SET NULL (preserve child, null the FK)
+        Examples:
+        - notifications without device: still useful as history
+          "Your AirTag 'Keys' was found" → device deleted →
+          notification still shows what happened
+```
+
+---
+
+### Why Tables Are Structured This Way
+
+#### 1. Separation of Encrypted and Decrypted Data
+
+```
+┌─────────────────────┐         ┌─────────────────────┐
+│  location_reports   │         │ decrypted_locations │
+│  (encrypted blobs)  │   ──►   │   (plain lat/lon)   │
+│  No FK to devices   │ decrypt │  FK to device       │
+└─────────────────────┘         └─────────────────────┘
+```
+
+**Rationale:**
+- `location_reports` stores what the server receives from the network (encrypted, anonymous)
+- `decrypted_locations` stores what the owner sees (decrypted by client or server with owner's key)
+- This separation enforces privacy: server cannot JOIN reports to devices without the master_secret
+
+#### 2. Anti-Stalking as Separate Table
+
+`tracker_sightings` is separate from `location_reports` because:
+- It's per-user (which user detected the tracker), not per-device
+- It stores plaintext coordinates (user's location when detecting)
+- It's used for pattern detection, not location retrieval
+- Different retention policy (shorter for privacy)
+
+#### 3. Lost Mode as 1:1 Table
+
+Could have been columns on `registered_devices`, but:
+- Avoids nullable columns for contact info on the device table
+- Clearer domain separation (device identity vs. lost state)
+- Easier to add lost mode features without altering device schema
+- Allows future extension (e.g., lost mode history)
+
+#### 4. BIGSERIAL for High-Volume Tables
+
+Tables using `BIGSERIAL` instead of `UUID`:
+- `location_reports`: Billions of reports, auto-increment is faster
+- `tracker_sightings`: High volume per user
+- `decrypted_locations`: Many locations per device
+
+**Trade-off:**
+- UUID: Globally unique, no central coordination, larger (16 bytes)
+- BIGSERIAL: Compact (8 bytes), faster inserts, requires single-writer
+
+#### 5. JSONB for Flexible Payloads
+
+`encrypted_payload` and `data` columns use JSONB:
+- Encrypted payload structure may evolve (new encryption schemes)
+- Notification data varies by type (device_found has location, unknown_tracker has sighting count)
+- PostgreSQL JSONB is indexable if needed later
+
+---
+
+### Data Flow for Key Operations
+
+#### Operation 1: Submit Location Report (Crowd-Sourced Device)
+
+When an iPhone detects an AirTag and reports its location:
+
+```sql
+-- 1. Insert encrypted report (no FK, no device lookup)
+INSERT INTO location_reports (identifier_hash, encrypted_payload, reporter_region, created_at)
+VALUES (
+    'a1b2c3d4e5f6...',  -- SHA-256 of BLE identifier
+    '{"ephemeralPubKey": "...", "iv": "...", "ciphertext": "...", "authTag": "..."}',
+    'US-CA',
+    NOW()
+);
+
+-- Note: Server cannot determine which device this belongs to
+-- Only the owner (with master_secret) can derive the identifier_hash for their device
+```
+
+#### Operation 2: Retrieve Locations (Device Owner)
+
+When owner opens the Find My app:
+
+```sql
+-- 1. Get device and master_secret
+SELECT id, master_secret, current_period FROM registered_devices
+WHERE user_id = $1 AND id = $2;
+
+-- 2. Client derives all possible identifier_hashes for time range
+-- (15-minute periods from start to end)
+-- identifier_hash = SHA256(SHA256(publicKey derived from master_secret + period))
+
+-- 3. Query for matching reports
+SELECT id, identifier_hash, encrypted_payload, created_at
+FROM location_reports
+WHERE identifier_hash = ANY($1)  -- Array of possible hashes
+  AND created_at BETWEEN $2 AND $3
+ORDER BY created_at DESC;
+
+-- 4. Client decrypts each payload with derived private key
+-- 5. Cache decrypted results
+INSERT INTO decrypted_locations (device_id, latitude, longitude, accuracy, timestamp)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT DO NOTHING;
+```
+
+#### Operation 3: Enable Lost Mode
+
+```sql
+-- 1. Upsert lost mode settings
+INSERT INTO lost_mode (device_id, enabled, contact_phone, message, notify_when_found, enabled_at)
+VALUES ($1, TRUE, $2, $3, TRUE, NOW())
+ON CONFLICT (device_id) DO UPDATE SET
+    enabled = TRUE,
+    contact_phone = EXCLUDED.contact_phone,
+    message = EXCLUDED.message,
+    enabled_at = NOW(),
+    updated_at = NOW();
+
+-- 2. Create notification for confirmation
+INSERT INTO notifications (user_id, device_id, type, title, message, data)
+VALUES (
+    $1, $2, 'system',
+    'Lost Mode Enabled',
+    'You will be notified when your device is found.',
+    '{"enabled_at": "2024-01-15T10:30:00Z"}'
+);
+```
+
+#### Operation 4: Detect Unknown Tracker (Anti-Stalking)
+
+```sql
+-- 1. Record sighting
+INSERT INTO tracker_sightings (user_id, identifier_hash, latitude, longitude, seen_at)
+VALUES ($1, $2, $3, $4, NOW());
+
+-- 2. Check for stalking pattern (3+ sightings in 3 hours)
+SELECT COUNT(*),
+       MIN(seen_at) as first_seen,
+       MAX(seen_at) as last_seen,
+       array_agg(ARRAY[latitude::text, longitude::text]) as locations
+FROM tracker_sightings
+WHERE user_id = $1
+  AND identifier_hash = $2
+  AND seen_at > NOW() - INTERVAL '3 hours';
+
+-- 3. If pattern detected, create alert
+INSERT INTO notifications (user_id, type, title, message, data)
+VALUES (
+    $1,
+    'unknown_tracker',
+    'Unknown AirTag Detected',
+    'An AirTag has been traveling with you for over an hour.',
+    '{"identifier_hash": "...", "sighting_count": 5, "first_seen": "...", "last_seen": "..."}'
+);
+```
+
+#### Operation 5: Delete User Account (GDPR Compliance)
+
+```sql
+-- Single DELETE cascades to all user data
+DELETE FROM users WHERE id = $1;
+
+-- CASCADE automatically deletes:
+-- - registered_devices (and their lost_mode, decrypted_locations)
+-- - notifications
+-- - tracker_sightings
+-- - sessions (via application logic, not FK)
+
+-- location_reports are NOT deleted (they have no FK to user)
+-- This is by design: reports are anonymous and cannot be attributed to a user
+```
+
+---
+
+### Index Summary
+
+| Table | Index | Columns | Type | Purpose |
+|-------|-------|---------|------|---------|
+| `registered_devices` | `idx_devices_user` | `user_id` | B-tree | List devices by user |
+| `registered_devices` | `idx_devices_active` | `is_active` | B-tree | Filter active devices |
+| `location_reports` | `idx_reports_identifier` | `identifier_hash` | B-tree | Primary lookup path |
+| `location_reports` | `idx_reports_time` | `created_at` | B-tree | Time-based cleanup |
+| `location_reports` | `idx_reports_identifier_time` | `(identifier_hash, created_at DESC)` | Compound | Latest reports by identifier |
+| `notifications` | `idx_notifications_user` | `user_id` | B-tree | User's notifications |
+| `notifications` | `idx_notifications_unread` | `(user_id, is_read)` | Partial (WHERE is_read = FALSE) | Unread count badge |
+| `tracker_sightings` | `idx_sightings_user_identifier` | `(user_id, identifier_hash)` | Compound | Pattern detection |
+| `tracker_sightings` | `idx_sightings_time` | `seen_at` | B-tree | Time-windowed queries |
+| `decrypted_locations` | `idx_decrypted_device` | `device_id` | B-tree | Device's locations |
+| `decrypted_locations` | `idx_decrypted_time` | `(device_id, timestamp DESC)` | Compound | Latest locations |
+| `session` | `idx_session_expire` | `expire` | B-tree | Session cleanup |
+
+---
+
+### Normalization Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| `lost_mode` as separate table | Normalized (1:1) | Avoids nullable columns on device; cleaner domain separation |
+| `address` in `decrypted_locations` | Denormalized | Avoids repeated geocoding API calls; address is derived, not source data |
+| `encrypted_payload` as JSONB | Semi-structured | Payload format may evolve; JSONB allows schema flexibility |
+| `emoji` in `registered_devices` | Denormalized | Simple string, no need for separate emoji table |
+| `location_reports` standalone | Intentionally unlinked | Privacy requirement: server cannot correlate reports to devices |
 
 ---
 

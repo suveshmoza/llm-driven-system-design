@@ -11,6 +11,7 @@ import { register, metricsMiddleware, httpRequestDuration } from './services/met
 import { attachUserContext } from './middleware/auth.js';
 import { generalRateLimiter } from './services/rateLimiter.js';
 import pool from './services/db.js';
+import { initCassandra, closeCassandra, isCassandraConnected } from './services/cassandra.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -19,6 +20,7 @@ import commentRoutes from './routes/comments.js';
 import userRoutes from './routes/users.js';
 import feedRoutes from './routes/feed.js';
 import storyRoutes from './routes/stories.js';
+import messageRoutes from './routes/messages.js';
 
 const app = express();
 
@@ -172,6 +174,12 @@ app.get('/api/health/detailed', async (req, res) => {
     };
   }
 
+  // Check Cassandra (for Direct Messages)
+  health.components.cassandra = {
+    status: isCassandraConnected() ? 'ok' : 'unavailable',
+    note: 'Direct messaging service',
+  };
+
   // Memory usage
   const memUsage = process.memoryUsage();
   health.memory = {
@@ -214,6 +222,7 @@ app.use('/api/v1', commentRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/feed', feedRoutes);
 app.use('/api/v1/stories', storyRoutes);
+app.use('/api/v1/messages', messageRoutes);
 
 // ============================================
 // Error Handling
@@ -256,6 +265,11 @@ const startServer = async () => {
     // Ensure MinIO bucket exists
     await ensureBucket();
 
+    // Initialize Cassandra for DMs (non-blocking - DMs are optional)
+    initCassandra().catch((err) => {
+      logger.warn({ error: err.message }, 'Cassandra initialization failed - DMs will be unavailable');
+    });
+
     // Start the server
     app.listen(config.port, () => {
       logger.info({
@@ -288,6 +302,14 @@ const gracefulShutdown = async (signal) => {
     logger.info('Redis connection closed');
   } catch (err) {
     logError(err, { context: 'shutdown', component: 'redis' });
+  }
+
+  // Close Cassandra connection
+  try {
+    await closeCassandra();
+    logger.info('Cassandra connection closed');
+  } catch (err) {
+    logError(err, { context: 'shutdown', component: 'cassandra' });
   }
 
   process.exit(0);

@@ -477,68 +477,507 @@ class QoSManager {
 
 ## Database Schema
 
-```sql
--- Device Tokens
-CREATE TABLE device_tokens (
-  device_id UUID PRIMARY KEY,
-  token_hash VARCHAR(64) UNIQUE NOT NULL,
-  app_bundle_id VARCHAR(200) NOT NULL,
-  device_info JSONB,
-  is_valid BOOLEAN DEFAULT TRUE,
-  invalidated_at TIMESTAMP,
-  invalidation_reason VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW(),
-  last_seen TIMESTAMP DEFAULT NOW()
-);
+### Entity-Relationship Diagram
 
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              APNs DATABASE SCHEMA                                    │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────┐         ┌──────────────────────────┐
+│      admin_users         │         │        sessions          │
+├──────────────────────────┤         ├──────────────────────────┤
+│ id (PK)              UUID│◄────────│ admin_id (FK)        UUID│
+│ username         VARCHAR │   1:N   │ id (PK)              UUID│
+│ password_hash    VARCHAR │         │ token              VARCHAR│
+│ role             VARCHAR │         │ expires_at       TIMESTAMP│
+│ created_at      TIMESTAMP│         │ created_at       TIMESTAMP│
+│ last_login      TIMESTAMP│         └──────────────────────────┘
+└──────────────────────────┘
+
+┌──────────────────────────┐         ┌──────────────────────────┐
+│      device_tokens       │◄────────│   topic_subscriptions    │
+├──────────────────────────┤   1:N   ├──────────────────────────┤
+│ device_id (PK)       UUID│         │ device_id (PK,FK)    UUID│
+│ token_hash       VARCHAR │         │ topic (PK)         VARCHAR│
+│ app_bundle_id    VARCHAR │         │ subscribed_at    TIMESTAMP│
+│ device_info        JSONB │         └──────────────────────────┘
+│ is_valid          BOOLEAN│
+│ invalidated_at  TIMESTAMP│         ┌──────────────────────────┐
+│ invalidation_reason      │◄────────│  pending_notifications   │
+│   VARCHAR                │   1:N   ├──────────────────────────┤
+│ created_at      TIMESTAMP│         │ id (PK)              UUID│
+│ last_seen       TIMESTAMP│         │ device_id (FK)       UUID│
+└────────────┬─────────────┘         │ payload             JSONB│
+             │                       │ priority           INTEGER│
+             │                       │ expiration       TIMESTAMP│
+             │                       │ collapse_id       VARCHAR│
+             │ 1:N                   │ created_at       TIMESTAMP│
+             │                       │ UNIQUE(device_id,         │
+             │                       │        collapse_id)       │
+             ▼                       └──────────────────────────┘
+┌──────────────────────────┐
+│       notifications      │         ┌──────────────────────────┐
+├──────────────────────────┤         │       delivery_log       │
+│ id (PK)              UUID│         ├──────────────────────────┤
+│ device_id (FK)       UUID│────────►│ notification_id (PK) UUID│
+│ topic              VARCHAR│   1:1   │ device_id (FK)       UUID│
+│ payload             JSONB │         │ status             VARCHAR│
+│ priority           INTEGER│         │ delivered_at     TIMESTAMP│
+│ expiration       TIMESTAMP│         │ created_at       TIMESTAMP│
+│ collapse_id        VARCHAR│         └──────────────────────────┘
+│ status             VARCHAR│
+│ created_at       TIMESTAMP│         ┌──────────────────────────┐
+│ updated_at       TIMESTAMP│         │      feedback_queue      │
+└──────────────────────────┘         ├──────────────────────────┤
+                                     │ id (PK)          BIGSERIAL│
+                                     │ token_hash         VARCHAR│
+                                     │ app_bundle_id      VARCHAR│
+                                     │ reason             VARCHAR│
+                                     │ timestamp        TIMESTAMP│
+                                     │ created_at       TIMESTAMP│
+                                     └──────────────────────────┘
+
+Legend:
+  PK = Primary Key
+  FK = Foreign Key
+  1:N = One-to-Many relationship
+  1:1 = One-to-One relationship
+  ◄─── = Foreign key reference direction
+```
+
+---
+
+### Complete Table Definitions
+
+#### 1. device_tokens
+
+The central table storing all registered iOS device push tokens. Tokens are hashed for security.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `device_id` | UUID | PRIMARY KEY | Server-generated unique identifier for the device |
+| `token_hash` | VARCHAR(64) | UNIQUE NOT NULL | SHA-256 hash of the raw device token (security measure) |
+| `app_bundle_id` | VARCHAR(200) | NOT NULL | iOS app bundle identifier (e.g., `com.example.app`) |
+| `device_info` | JSONB | NULL | Optional metadata: OS version, device model, locale |
+| `is_valid` | BOOLEAN | DEFAULT TRUE | Whether token can receive notifications |
+| `invalidated_at` | TIMESTAMP | NULL | When the token was marked invalid |
+| `invalidation_reason` | VARCHAR(50) | NULL | Reason: `Uninstalled`, `TokenExpired`, `UserOptOut` |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | When token was first registered |
+| `last_seen` | TIMESTAMP | DEFAULT NOW() | Last time device re-registered or received a push |
+
+**Indexes:**
+```sql
 CREATE INDEX idx_tokens_app ON device_tokens(app_bundle_id);
 CREATE INDEX idx_tokens_valid ON device_tokens(is_valid) WHERE is_valid = true;
+```
 
--- Topic Subscriptions
-CREATE TABLE topic_subscriptions (
-  device_id UUID REFERENCES device_tokens(device_id),
-  topic VARCHAR(200) NOT NULL,
-  subscribed_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (device_id, topic)
-);
+---
 
+#### 2. topic_subscriptions
+
+Maps devices to topics for group notifications (e.g., "news", "sports", "weather").
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `device_id` | UUID | PK, FK → device_tokens | Device subscribing to the topic |
+| `topic` | VARCHAR(200) | PK | Topic name (e.g., `/topics/breaking-news`) |
+| `subscribed_at` | TIMESTAMP | DEFAULT NOW() | When subscription was created |
+
+**Indexes:**
+```sql
 CREATE INDEX idx_subscriptions_topic ON topic_subscriptions(topic);
+```
 
--- Pending Notifications (for offline devices)
-CREATE TABLE pending_notifications (
-  id UUID PRIMARY KEY,
-  device_id UUID REFERENCES device_tokens(device_id),
-  payload JSONB NOT NULL,
-  priority INTEGER DEFAULT 10,
-  expiration TIMESTAMP,
-  collapse_id VARCHAR(100),
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE (device_id, collapse_id)
-);
+---
 
+#### 3. pending_notifications
+
+Store-and-forward queue for notifications when devices are offline.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Notification UUID |
+| `device_id` | UUID | FK → device_tokens | Target device |
+| `payload` | JSONB | NOT NULL | APNs notification payload (alert, badge, sound, data) |
+| `priority` | INTEGER | DEFAULT 10 | 10=immediate, 5=power-nap, 1=low priority |
+| `expiration` | TIMESTAMP | NULL | When notification becomes undeliverable |
+| `collapse_id` | VARCHAR(100) | NULL | ID for replacing older notifications of same type |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | When queued |
+
+**Unique Constraint:** `UNIQUE (device_id, collapse_id)` - ensures only one notification per collapse_id per device.
+
+**Indexes:**
+```sql
 CREATE INDEX idx_pending_device ON pending_notifications(device_id);
 CREATE INDEX idx_pending_expiration ON pending_notifications(expiration);
+```
 
--- Delivery Log
-CREATE TABLE delivery_log (
-  notification_id UUID PRIMARY KEY,
-  device_id UUID,
-  status VARCHAR(20) NOT NULL,
-  delivered_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+---
 
--- Feedback Queue
-CREATE TABLE feedback_queue (
-  id BIGSERIAL PRIMARY KEY,
-  token_hash VARCHAR(64) NOT NULL,
-  app_bundle_id VARCHAR(200) NOT NULL,
-  reason VARCHAR(50),
-  timestamp TIMESTAMP NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+#### 4. notifications
 
+History of all sent notifications for tracking and analytics.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Notification UUID (can be provider-supplied via `apns-id`) |
+| `device_id` | UUID | FK → device_tokens | Target device |
+| `topic` | VARCHAR(200) | NULL | Topic if sent to topic subscribers |
+| `payload` | JSONB | NOT NULL | Complete notification payload |
+| `priority` | INTEGER | DEFAULT 10 | Delivery priority level |
+| `expiration` | TIMESTAMP | NULL | Expiration timestamp |
+| `collapse_id` | VARCHAR(100) | NULL | Collapse identifier |
+| `status` | VARCHAR(20) | DEFAULT 'pending' | `pending`, `queued`, `delivered`, `failed`, `expired` |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | When notification was received |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last status change |
+
+**Indexes:**
+```sql
+CREATE INDEX idx_notifications_device ON notifications(device_id);
+CREATE INDEX idx_notifications_topic ON notifications(topic);
+CREATE INDEX idx_notifications_status ON notifications(status);
+CREATE INDEX idx_notifications_created ON notifications(created_at);
+```
+
+---
+
+#### 5. delivery_log
+
+Audit trail of successful deliveries for compliance and debugging.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `notification_id` | UUID | PRIMARY KEY | Links to notifications.id |
+| `device_id` | UUID | FK → device_tokens | Target device (preserved even if device deleted) |
+| `status` | VARCHAR(20) | NOT NULL | `delivered`, `failed`, `expired` |
+| `delivered_at` | TIMESTAMP | NULL | Actual delivery timestamp |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Log entry creation time |
+
+**Indexes:**
+```sql
+CREATE INDEX idx_delivery_device ON delivery_log(device_id);
+CREATE INDEX idx_delivery_status ON delivery_log(status);
+CREATE INDEX idx_delivery_created ON delivery_log(created_at);
+```
+
+---
+
+#### 6. feedback_queue
+
+Feedback Service queue for invalid tokens. App providers poll this to learn about tokens they should stop using.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | BIGSERIAL | PRIMARY KEY | Auto-incrementing ID |
+| `token_hash` | VARCHAR(64) | NOT NULL | Hash of the invalidated token |
+| `app_bundle_id` | VARCHAR(200) | NOT NULL | App that owned the token |
+| `reason` | VARCHAR(50) | NULL | Invalidation reason |
+| `timestamp` | TIMESTAMP | NOT NULL | When token was invalidated |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | When feedback entry was created |
+
+**Indexes:**
+```sql
 CREATE INDEX idx_feedback_app ON feedback_queue(app_bundle_id, timestamp);
+```
+
+---
+
+#### 7. admin_users
+
+Administrative users for the APNs management dashboard.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Admin user UUID |
+| `username` | VARCHAR(100) | UNIQUE NOT NULL | Login username |
+| `password_hash` | VARCHAR(255) | NOT NULL | bcrypt hashed password |
+| `role` | VARCHAR(20) | DEFAULT 'admin' | Role: `admin`, `viewer` |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Account creation time |
+| `last_login` | TIMESTAMP | NULL | Most recent login timestamp |
+
+---
+
+#### 8. sessions
+
+Session tokens for admin dashboard authentication.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Session UUID |
+| `admin_id` | UUID | FK → admin_users | Owning admin user |
+| `token` | VARCHAR(255) | UNIQUE NOT NULL | Session token (stored in cookie) |
+| `expires_at` | TIMESTAMP | NOT NULL | Session expiration time |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Session creation time |
+
+**Indexes:**
+```sql
+CREATE INDEX idx_sessions_token ON sessions(token);
+CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+```
+
+---
+
+### Foreign Key Relationships
+
+| Table | Column | References | ON DELETE | Rationale |
+|-------|--------|------------|-----------|-----------|
+| `topic_subscriptions` | `device_id` | `device_tokens(device_id)` | **CASCADE** | When a device is deleted, its topic subscriptions are meaningless and should be cleaned up automatically |
+| `pending_notifications` | `device_id` | `device_tokens(device_id)` | **CASCADE** | Pending notifications for deleted devices cannot be delivered; remove them to prevent queue buildup |
+| `notifications` | `device_id` | `device_tokens(device_id)` | **SET NULL** | Preserve notification history for analytics even after device is deleted; device_id becomes NULL |
+| `delivery_log` | `device_id` | `device_tokens(device_id)` | **SET NULL** | Preserve delivery audit trail for compliance; retaining the log even if the device is gone |
+| `sessions` | `admin_id` | `admin_users(id)` | **CASCADE** | When admin user is deleted, their sessions should be invalidated immediately |
+
+**Design Decision: CASCADE vs SET NULL**
+
+The choice between CASCADE and SET NULL depends on whether the child data has value independent of the parent:
+
+- **CASCADE** is used for operational data that has no meaning without the parent:
+  - `topic_subscriptions`: A subscription without a device is useless
+  - `pending_notifications`: Cannot deliver to a non-existent device
+  - `sessions`: Invalid sessions should be removed for security
+
+- **SET NULL** is used for historical/audit data:
+  - `notifications`: Preserves analytics data (how many sent, status distribution)
+  - `delivery_log`: Preserves delivery audit trail for debugging and compliance
+
+---
+
+### Why Tables Are Structured This Way
+
+#### 1. Token Hashing (`device_tokens.token_hash`)
+
+**Problem:** Raw device tokens are sensitive. If leaked, attackers could send spam notifications.
+
+**Solution:** Store SHA-256 hash of the token. The 64-character hex output is deterministic, allowing lookups while protecting the actual token.
+
+**Trade-off:** Cannot recover the original token from the database. This is intentional - tokens should only flow from device to provider to APNs.
+
+---
+
+#### 2. Separate `pending_notifications` vs `notifications`
+
+**Problem:** Need fast access to pending notifications for delivery, but also need complete history for analytics.
+
+**Solution:** Two tables with different purposes:
+- `pending_notifications`: Hot queue, frequently written/deleted, indexed for device lookup
+- `notifications`: Append-mostly history, indexed for reporting queries
+
+**Trade-off:** Some data duplication, but optimizes for different access patterns (OLTP vs analytics).
+
+---
+
+#### 3. Collapse ID Unique Constraint
+
+**Problem:** Multiple notifications with same collapse_id should replace each other, not stack up.
+
+**Solution:** `UNIQUE (device_id, collapse_id)` on `pending_notifications` allows `ON CONFLICT DO UPDATE` to atomically replace.
+
+```sql
+INSERT INTO pending_notifications (...)
+ON CONFLICT (device_id, collapse_id)
+DO UPDATE SET payload = $3, priority = $4, created_at = NOW()
+```
+
+**Trade-off:** NULL collapse_ids don't participate in uniqueness (PostgreSQL behavior), so notifications without collapse_id can accumulate.
+
+---
+
+#### 4. Partial Index for Valid Tokens
+
+**Problem:** Most token lookups are for valid tokens. Invalid tokens are rarely queried except for feedback.
+
+**Solution:** Partial index `WHERE is_valid = true` creates a smaller, faster index for the common case.
+
+```sql
+CREATE INDEX idx_tokens_valid ON device_tokens(is_valid) WHERE is_valid = true;
+```
+
+**Trade-off:** Queries for invalid tokens use a sequential scan or the app_bundle_id index. Acceptable since those are infrequent.
+
+---
+
+#### 5. Feedback Queue as Separate Table
+
+**Problem:** Providers poll for feedback about their invalid tokens. They shouldn't see other apps' data.
+
+**Solution:** Denormalized `feedback_queue` with `app_bundle_id` allows efficient filtered queries:
+
+```sql
+SELECT * FROM feedback_queue
+WHERE app_bundle_id = $1 AND timestamp > $2
+ORDER BY timestamp ASC
+LIMIT 1000
+```
+
+**Trade-off:** Duplicates `app_bundle_id` from `device_tokens`, but avoids a JOIN on every provider poll.
+
+---
+
+#### 6. No Foreign Key on `feedback_queue.token_hash`
+
+**Problem:** Feedback entries reference tokens that may have been purged from `device_tokens`.
+
+**Solution:** Store `token_hash` as a value, not a foreign key. Feedback is useful even after the device record is deleted.
+
+**Trade-off:** No referential integrity guarantee. Old feedback entries may reference tokens that no longer exist anywhere.
+
+---
+
+### Index Strategy
+
+| Index | Query Pattern Optimized | Cardinality |
+|-------|-------------------------|-------------|
+| `idx_tokens_app` | List all devices for an app (`WHERE app_bundle_id = ?`) | Medium (apps have many devices) |
+| `idx_tokens_valid` | Token lookups excluding invalid (`WHERE token_hash = ? AND is_valid = true`) | High (most tokens valid) |
+| `idx_subscriptions_topic` | Broadcast to topic (`WHERE topic = ?`) | Medium (topics have many subscribers) |
+| `idx_pending_device` | Delivery on reconnect (`WHERE device_id = ?`) | Low (few pending per device) |
+| `idx_pending_expiration` | Cleanup job (`WHERE expiration < NOW()`) | Varies |
+| `idx_notifications_device` | Device notification history | Medium |
+| `idx_notifications_topic` | Topic notification history | Medium |
+| `idx_notifications_status` | Dashboard status counts | Low (few status values) |
+| `idx_notifications_created` | Recent notifications (`ORDER BY created_at DESC`) | High |
+| `idx_delivery_device` | Delivery audit trail | Medium |
+| `idx_delivery_status` | Delivery success rate | Low |
+| `idx_delivery_created` | Time-based delivery reports | High |
+| `idx_feedback_app` | Provider feedback poll (`WHERE app_bundle_id = ? AND timestamp > ?`) | Medium |
+| `idx_sessions_token` | Session validation (`WHERE token = ?`) | High |
+| `idx_sessions_expires` | Session cleanup (`WHERE expires_at < NOW()`) | Varies |
+
+---
+
+### Data Flow for Key Operations
+
+#### 1. Register Device Token
+
+```sql
+-- Check if token exists
+SELECT * FROM device_tokens WHERE token_hash = $1;
+
+-- If exists: update last_seen
+UPDATE device_tokens
+SET last_seen = NOW(), device_info = COALESCE($2, device_info), is_valid = true
+WHERE token_hash = $1;
+
+-- If new: insert
+INSERT INTO device_tokens (device_id, token_hash, app_bundle_id, device_info, created_at, last_seen)
+VALUES ($1, $2, $3, $4, NOW(), NOW());
+```
+
+#### 2. Send Notification to Device
+
+```sql
+-- 1. Look up device
+SELECT * FROM device_tokens WHERE token_hash = $1 AND is_valid = true;
+
+-- 2. Create notification record
+INSERT INTO notifications (id, device_id, payload, priority, expiration, collapse_id, status)
+VALUES ($1, $2, $3, $4, $5, $6, 'pending');
+
+-- 3. If device offline, store for later
+INSERT INTO pending_notifications (id, device_id, payload, priority, expiration, collapse_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
+ON CONFLICT (device_id, collapse_id)
+DO UPDATE SET payload = $3, priority = $4, created_at = NOW();
+
+-- 4. Update status
+UPDATE notifications SET status = 'queued', updated_at = NOW() WHERE id = $1;
+```
+
+#### 3. Deliver Pending on Device Reconnect
+
+```sql
+-- Get all pending for device, priority-ordered
+SELECT * FROM pending_notifications
+WHERE device_id = $1
+AND (expiration IS NULL OR expiration > NOW())
+ORDER BY priority DESC, created_at ASC;
+
+-- After delivery, clean up
+DELETE FROM pending_notifications WHERE device_id = $1;
+```
+
+#### 4. Mark Notification Delivered
+
+```sql
+-- Update notification status
+UPDATE notifications SET status = 'delivered', updated_at = NOW() WHERE id = $1;
+
+-- Create delivery log entry
+INSERT INTO delivery_log (notification_id, device_id, status, delivered_at, created_at)
+SELECT id, device_id, 'delivered', NOW(), NOW()
+FROM notifications WHERE id = $1;
+
+-- Remove from pending if exists
+DELETE FROM pending_notifications WHERE id = $1;
+```
+
+#### 5. Invalidate Token
+
+```sql
+-- Mark invalid
+UPDATE device_tokens
+SET is_valid = false, invalidated_at = NOW(), invalidation_reason = $2
+WHERE token_hash = $1;
+
+-- Add to feedback queue for providers
+INSERT INTO feedback_queue (token_hash, app_bundle_id, reason, timestamp)
+SELECT token_hash, app_bundle_id, $2, NOW()
+FROM device_tokens WHERE token_hash = $1;
+```
+
+#### 6. Broadcast to Topic
+
+```sql
+-- Get all valid devices subscribed to topic
+SELECT dt.* FROM device_tokens dt
+JOIN topic_subscriptions ts ON dt.device_id = ts.device_id
+WHERE ts.topic = $1 AND dt.is_valid = true;
+
+-- Then send to each device (loop in application code)
+```
+
+#### 7. Cleanup Expired Notifications
+
+```sql
+-- Mark as expired
+UPDATE notifications SET status = 'expired', updated_at = NOW()
+WHERE status IN ('pending', 'queued')
+AND expiration IS NOT NULL
+AND expiration < NOW();
+
+-- Remove from pending queue
+DELETE FROM pending_notifications WHERE expiration < NOW();
+```
+
+#### 8. Admin Dashboard Statistics
+
+```sql
+-- Device statistics
+SELECT
+  COUNT(*) as total,
+  COUNT(*) FILTER (WHERE is_valid = true) as valid,
+  COUNT(*) FILTER (WHERE is_valid = false) as invalid
+FROM device_tokens;
+
+-- Notification statistics
+SELECT
+  COUNT(*) as total,
+  COUNT(*) FILTER (WHERE status = 'pending') as pending,
+  COUNT(*) FILTER (WHERE status = 'queued') as queued,
+  COUNT(*) FILTER (WHERE status = 'delivered') as delivered,
+  COUNT(*) FILTER (WHERE status = 'failed') as failed,
+  COUNT(*) FILTER (WHERE status = 'expired') as expired
+FROM notifications;
+
+-- Topic subscriber counts
+SELECT topic, COUNT(*) as subscriber_count
+FROM topic_subscriptions ts
+JOIN device_tokens dt ON ts.device_id = dt.device_id
+WHERE dt.is_valid = true
+GROUP BY topic
+ORDER BY subscriber_count DESC
+LIMIT 50;
 ```
 
 ---

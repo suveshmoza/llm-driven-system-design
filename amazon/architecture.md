@@ -224,58 +224,697 @@ async function updateProductRecommendations() {
 
 ## Database Schema
 
+### Entity-Relationship Diagram
+
+```
+                                    ┌─────────────────────────────────────────────────────────────────┐
+                                    │                         USERS                                    │
+                                    │─────────────────────────────────────────────────────────────────│
+                                    │ PK  id              SERIAL                                      │
+                                    │     email           VARCHAR(255) UNIQUE NOT NULL                │
+                                    │     password_hash   VARCHAR(255) NOT NULL                       │
+                                    │     name            VARCHAR(255) NOT NULL                       │
+                                    │     role            VARCHAR(20) [user, admin, seller]           │
+                                    │     created_at      TIMESTAMP                                   │
+                                    │     updated_at      TIMESTAMP                                   │
+                                    └─────────────────────────────────────────────────────────────────┘
+                                          │                    │                      │
+                                          │ 1:1                │ 1:N                  │ 1:N
+                                          ▼                    ▼                      ▼
+┌───────────────────────────────┐   ┌─────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│          SELLERS              │   │    SESSIONS     │   │   CART_ITEMS     │   │    REVIEWS       │
+│───────────────────────────────│   │─────────────────│   │──────────────────│   │──────────────────│
+│ PK  id          SERIAL        │   │ PK id VARCHAR   │   │ PK id SERIAL     │   │ PK id SERIAL     │
+│ FK  user_id     → users(id)   │   │ FK user_id      │   │ FK user_id       │   │ FK user_id       │
+│     business_name VARCHAR     │   │    data JSONB   │   │ FK product_id    │   │ FK product_id    │
+│     description   TEXT        │   │    expires_at   │   │    quantity      │   │ FK order_id      │
+│     rating        DECIMAL     │   │    created_at   │   │    reserved_until│   │    rating 1-5    │
+│     created_at    TIMESTAMP   │   └─────────────────┘   │    added_at      │   │    title, content│
+└───────────────────────────────┘                         │ UNIQUE(user,prod)│   │    helpful_count │
+          │                                               └──────────────────┘   │    verified_purch│
+          │ 1:N                                                    │             └──────────────────┘
+          ▼                                                        │                      │
+┌─────────────────────────────────────────────────────────────────┐│                      │
+│                          PRODUCTS                                ││                      │
+│─────────────────────────────────────────────────────────────────││                      │
+│ PK  id               SERIAL                                     ││                      │
+│ FK  seller_id        → sellers(id) ON DELETE CASCADE            │◄─────────────────────┘
+│ FK  category_id      → categories(id) ON DELETE SET NULL        │
+│     title            VARCHAR(500) NOT NULL                       │
+│     slug             VARCHAR(500) UNIQUE NOT NULL                │
+│     description      TEXT                                        │
+│     price            DECIMAL(10,2) NOT NULL                      │
+│     compare_at_price DECIMAL(10,2)                               │
+│     images           TEXT[] DEFAULT '{}'                         │
+│     attributes       JSONB DEFAULT '{}'                          │
+│     rating           DECIMAL(2,1) DEFAULT 0                      │
+│     review_count     INTEGER DEFAULT 0                           │
+│     is_active        BOOLEAN DEFAULT true                        │
+│     created_at, updated_at TIMESTAMP                             │
+└─────────────────────────────────────────────────────────────────┘
+          │                         │                              │
+          │ 1:N                     │ N:M                          │ 1:N
+          ▼                         ▼                              ▼
+┌──────────────────────┐   ┌────────────────────┐   ┌─────────────────────────────────┐
+│ PRODUCT_RECOMMENDATIONS│   │    INVENTORY      │   │         ORDER_ITEMS             │
+│──────────────────────│   │────────────────────│   │─────────────────────────────────│
+│ PK product_id        │   │ PK product_id      │   │ PK  id              SERIAL      │
+│ PK recommended_id    │   │ PK warehouse_id    │   │ FK  order_id        → orders    │
+│ PK recommendation_type│   │    quantity        │   │ FK  product_id      → products  │
+│    score DECIMAL     │   │    reserved        │   │     product_title   VARCHAR(500)│
+│    updated_at        │   │    low_stock_thresh│   │     quantity        INTEGER      │
+└──────────────────────┘   └────────────────────┘   │     price           DECIMAL     │
+                                    │               │     created_at      TIMESTAMP   │
+                                    │               └─────────────────────────────────┘
+                                    ▼                              │
+                           ┌────────────────────┐                  │
+                           │    WAREHOUSES      │                  │
+                           │────────────────────│                  ▼
+                           │ PK  id     SERIAL  │   ┌─────────────────────────────────────────────────┐
+                           │     name   VARCHAR │   │                    ORDERS                        │
+                           │     address JSONB  │   │─────────────────────────────────────────────────│
+                           │     is_active BOOL │   │ PK  id             SERIAL                       │
+                           │     created_at     │   │ FK  user_id        → users(id) ON DELETE SET NULL│
+                           └────────────────────┘   │     status         VARCHAR(30) [pending, confirmed,│
+                                                    │                    processing, shipped, delivered,│
+┌─────────────────────────────────────┐             │                    cancelled, refunded]           │
+│           CATEGORIES                │             │     subtotal, tax, shipping_cost, total DECIMAL  │
+│─────────────────────────────────────│             │     shipping_address JSONB NOT NULL              │
+│ PK  id           SERIAL             │             │     billing_address  JSONB                       │
+│ FK  parent_id    → categories(id)   │◄───────┐    │     payment_method   VARCHAR(50)                 │
+│     name         VARCHAR(100)       │────────┘    │     payment_status   [pending, completed, failed,│
+│     slug         VARCHAR(100) UNIQUE│ self-ref    │                      refunded]                   │
+│     description  TEXT               │             │     notes            TEXT                        │
+│     image_url    VARCHAR(500)       │             │     idempotency_key  VARCHAR(255)                │
+│     created_at   TIMESTAMP          │             │     archive_status   [active, pending_archive,   │
+└─────────────────────────────────────┘             │                      archived, anonymized]       │
+                                                    │     archived_at      TIMESTAMP                   │
+                                                    │     created_at, updated_at TIMESTAMP             │
+                                                    └─────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                             OBSERVABILITY & RESILIENCE TABLES                                        │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                      │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐  ┌──────────────────────────────────┐   │
+│  │    IDEMPOTENCY_KEYS      │  │       AUDIT_LOGS         │  │        ORDERS_ARCHIVE            │   │
+│  │──────────────────────────│  │──────────────────────────│  │──────────────────────────────────│   │
+│  │ PK key      VARCHAR(255) │  │ PK id          SERIAL    │  │ PK id           SERIAL           │   │
+│  │    status   [processing, │  │    created_at  TIMESTAMP │  │    order_id     INTEGER          │   │
+│  │             completed,   │  │    action      VARCHAR   │  │    user_id      INTEGER          │   │
+│  │             failed]      │  │    actor_id    INTEGER   │  │    archive_data JSONB            │   │
+│  │    request_data JSONB    │  │    actor_type  [user,    │  │    created_at   TIMESTAMP        │   │
+│  │    response     JSONB    │  │                admin,    │  │    archived_at  TIMESTAMP        │   │
+│  │    created_at   TIMESTAMP│  │                system,   │  └──────────────────────────────────┘   │
+│  │    completed_at TIMESTAMP│  │                service]  │                                         │
+│  └──────────────────────────┘  │    resource_type VARCHAR │  ┌──────────────────────────────────┐   │
+│                                │    resource_id   VARCHAR │  │         SEARCH_LOGS              │   │
+│                                │    old_value     JSONB   │  │──────────────────────────────────│   │
+│                                │    new_value     JSONB   │  │ PK id           SERIAL           │   │
+│                                │    ip_address    INET    │  │    user_id      INTEGER          │   │
+│                                │    user_agent    TEXT    │  │    query        TEXT             │   │
+│                                │    correlation_id UUID   │  │    filters      JSONB            │   │
+│                                │    severity      [info,  │  │    results_count INTEGER         │   │
+│                                │                  warning,│  │    latency_ms   INTEGER          │   │
+│                                │                  critical│  │    engine       VARCHAR(20)      │   │
+│                                └──────────────────────────┘  │    created_at   TIMESTAMP        │   │
+│                                                              └──────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Complete Table Definitions
+
+#### Core User & Authentication Tables
+
+**users** - Central user accounts for customers, sellers, and administrators
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Auto-incrementing user identifier |
+| email | VARCHAR(255) | UNIQUE, NOT NULL | Login credential and contact email |
+| password_hash | VARCHAR(255) | NOT NULL | Bcrypt-hashed password (cost factor 10) |
+| name | VARCHAR(255) | NOT NULL | Display name for UI and communications |
+| role | VARCHAR(20) | CHECK (user/admin/seller), DEFAULT 'user' | Authorization role determining permissions |
+| created_at | TIMESTAMP | DEFAULT NOW() | Account creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last profile update timestamp |
+
+**sessions** - Server-side session storage for authentication state
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | VARCHAR(255) | PRIMARY KEY | Session token (UUID or secure random string) |
+| user_id | INTEGER | FK → users(id) ON DELETE CASCADE | Owning user; session deleted when user deleted |
+| data | JSONB | DEFAULT '{}' | Arbitrary session data (cart state, preferences) |
+| expires_at | TIMESTAMP | NOT NULL | Session expiration for automatic cleanup |
+| created_at | TIMESTAMP | DEFAULT NOW() | Session creation timestamp |
+
+**sellers** - Extended profile for users with seller role
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Seller profile identifier |
+| user_id | INTEGER | FK → users(id) ON DELETE CASCADE | Link to user account; deleted with user |
+| business_name | VARCHAR(255) | NOT NULL | Displayed storefront name |
+| description | TEXT | | Seller bio and business description |
+| rating | DECIMAL(2,1) | DEFAULT 0 | Aggregate seller rating (0.0-5.0) |
+| created_at | TIMESTAMP | DEFAULT NOW() | Seller registration timestamp |
+
+#### Product Catalog Tables
+
+**categories** - Hierarchical product taxonomy (self-referential)
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Category identifier |
+| name | VARCHAR(100) | NOT NULL | Display name (e.g., "Smartphones") |
+| slug | VARCHAR(100) | UNIQUE, NOT NULL | URL-friendly identifier (e.g., "smartphones") |
+| parent_id | INTEGER | FK → categories(id) ON DELETE SET NULL | Parent category for hierarchy; NULL = root |
+| description | TEXT | | Category description for SEO and browsing |
+| image_url | VARCHAR(500) | | Category banner/thumbnail image |
+| created_at | TIMESTAMP | DEFAULT NOW() | Category creation timestamp |
+
+**products** - Main product catalog
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Product identifier |
+| seller_id | INTEGER | FK → sellers(id) ON DELETE CASCADE | Owning seller; products deleted with seller |
+| title | VARCHAR(500) | NOT NULL | Product title for display and search |
+| slug | VARCHAR(500) | UNIQUE, NOT NULL | URL-friendly identifier for product pages |
+| description | TEXT | | Full product description (HTML allowed) |
+| category_id | INTEGER | FK → categories(id) ON DELETE SET NULL | Primary category; preserved if category deleted |
+| price | DECIMAL(10,2) | NOT NULL | Current selling price |
+| compare_at_price | DECIMAL(10,2) | | Original/MSRP price for showing discounts |
+| images | TEXT[] | DEFAULT '{}' | Array of image URLs (first = primary) |
+| attributes | JSONB | DEFAULT '{}' | Flexible attributes (color, size, specs) |
+| rating | DECIMAL(2,1) | DEFAULT 0 | Aggregate product rating (0.0-5.0) |
+| review_count | INTEGER | DEFAULT 0 | Denormalized review count for display |
+| is_active | BOOLEAN | DEFAULT true | Soft-delete flag; false = hidden from catalog |
+| created_at | TIMESTAMP | DEFAULT NOW() | Product creation timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last product update timestamp |
+
+**warehouses** - Physical inventory locations
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Warehouse identifier |
+| name | VARCHAR(100) | NOT NULL | Warehouse name for admin UI |
+| address | JSONB | NOT NULL | Structured address (street, city, state, zip, country) |
+| is_active | BOOLEAN | DEFAULT true | Whether warehouse accepts new inventory |
+| created_at | TIMESTAMP | DEFAULT NOW() | Warehouse registration timestamp |
+
+**inventory** - Stock levels per product per warehouse (composite key)
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| product_id | INTEGER | PK, FK → products(id) ON DELETE CASCADE | Product being tracked |
+| warehouse_id | INTEGER | PK, FK → warehouses(id) ON DELETE CASCADE | Location of inventory |
+| quantity | INTEGER | DEFAULT 0 | Total units in stock |
+| reserved | INTEGER | DEFAULT 0 | Units reserved in carts (pending checkout) |
+| low_stock_threshold | INTEGER | DEFAULT 10 | Alert threshold for reorder notifications |
+
+#### Shopping & Checkout Tables
+
+**cart_items** - Active shopping cart contents with inventory reservations
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Cart item identifier |
+| user_id | INTEGER | FK → users(id) ON DELETE CASCADE | Cart owner; cleared when user deleted |
+| product_id | INTEGER | FK → products(id) ON DELETE CASCADE | Product in cart; removed if product deleted |
+| quantity | INTEGER | CHECK (quantity > 0), DEFAULT 1 | Number of units requested |
+| reserved_until | TIMESTAMP | | Inventory reservation expiry (30 min from add) |
+| added_at | TIMESTAMP | DEFAULT NOW() | When item was added to cart |
+| | | UNIQUE(user_id, product_id) | Prevents duplicate entries; update quantity instead |
+
+**orders** - Customer order header with status and payment tracking
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Order identifier |
+| user_id | INTEGER | FK → users(id) ON DELETE SET NULL | Customer; preserved for order history if deleted |
+| status | VARCHAR(30) | CHECK (...), DEFAULT 'pending' | Order state machine (pending→confirmed→processing→shipped→delivered) |
+| subtotal | DECIMAL(10,2) | NOT NULL | Sum of item prices before tax/shipping |
+| tax | DECIMAL(10,2) | DEFAULT 0 | Calculated tax amount |
+| shipping_cost | DECIMAL(10,2) | DEFAULT 0 | Shipping charges |
+| total | DECIMAL(10,2) | NOT NULL | Final charge amount (subtotal + tax + shipping) |
+| shipping_address | JSONB | NOT NULL | Delivery address (name, street, city, state, zip, country) |
+| billing_address | JSONB | | Payment address (if different from shipping) |
+| payment_method | VARCHAR(50) | | Payment type (card, paypal, etc.) |
+| payment_status | VARCHAR(30) | CHECK (...), DEFAULT 'pending' | Payment state (pending, completed, failed, refunded) |
+| notes | TEXT | | Customer order notes |
+| idempotency_key | VARCHAR(255) | | Unique key preventing duplicate order creation |
+| archive_status | VARCHAR(20) | CHECK (...), DEFAULT 'active' | Data lifecycle state for archival |
+| archived_at | TIMESTAMP | | When order was moved to archive |
+| created_at | TIMESTAMP | DEFAULT NOW() | Order placement timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last status change timestamp |
+
+**order_items** - Line items within an order (denormalized product info)
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Line item identifier |
+| order_id | INTEGER | FK → orders(id) ON DELETE CASCADE | Parent order; items deleted with order |
+| product_id | INTEGER | FK → products(id) ON DELETE SET NULL | Original product; preserved for history |
+| product_title | VARCHAR(500) | NOT NULL | Snapshot of product title at purchase time |
+| quantity | INTEGER | CHECK (quantity > 0), NOT NULL | Units purchased |
+| price | DECIMAL(10,2) | NOT NULL | Unit price at purchase time |
+| created_at | TIMESTAMP | DEFAULT NOW() | Line item creation timestamp |
+
+**reviews** - Product reviews with verified purchase tracking
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Review identifier |
+| product_id | INTEGER | FK → products(id) ON DELETE CASCADE | Reviewed product; reviews deleted with product |
+| user_id | INTEGER | FK → users(id) ON DELETE SET NULL | Reviewer; preserved for review history |
+| order_id | INTEGER | FK → orders(id) ON DELETE SET NULL | Originating order for verified purchase badge |
+| rating | INTEGER | CHECK (1-5), NOT NULL | Star rating |
+| title | VARCHAR(255) | | Review headline |
+| content | TEXT | | Full review text |
+| helpful_count | INTEGER | DEFAULT 0 | "Was this helpful?" vote count |
+| verified_purchase | BOOLEAN | DEFAULT false | True if reviewer purchased via order_id |
+| created_at | TIMESTAMP | DEFAULT NOW() | Review submission timestamp |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last edit timestamp |
+
+#### Recommendations Table
+
+**product_recommendations** - Precomputed product relationships (composite key)
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| product_id | INTEGER | PK, FK → products(id) ON DELETE CASCADE | Source product |
+| recommended_product_id | INTEGER | PK, FK → products(id) ON DELETE CASCADE | Suggested product |
+| recommendation_type | VARCHAR(30) | PK, DEFAULT 'also_bought' | Algorithm type (also_bought, similar, etc.) |
+| score | DECIMAL(5,4) | DEFAULT 0 | Relevance score (0.0000-1.0000) |
+| updated_at | TIMESTAMP | DEFAULT NOW() | Last computation timestamp |
+
+#### Observability & Resilience Tables
+
+**idempotency_keys** - Prevents duplicate order/payment operations
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| key | VARCHAR(255) | PRIMARY KEY | Client-provided unique operation key |
+| status | VARCHAR(20) | CHECK (...), DEFAULT 'processing' | Operation state (processing, completed, failed) |
+| request_data | JSONB | | Original request payload for debugging |
+| response | JSONB | | Cached response for duplicate requests |
+| created_at | TIMESTAMP | DEFAULT NOW() | Key creation timestamp |
+| completed_at | TIMESTAMP | | Operation completion timestamp |
+
+**audit_logs** - Immutable event log for compliance and debugging
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Log entry identifier |
+| created_at | TIMESTAMP | DEFAULT NOW() | Event timestamp |
+| action | VARCHAR(100) | NOT NULL | Event type (order.created, payment.failed, etc.) |
+| actor_id | INTEGER | | User/service performing action |
+| actor_type | VARCHAR(20) | CHECK (...) | Actor category (user, admin, system, service) |
+| resource_type | VARCHAR(50) | | Affected entity type (order, product, inventory) |
+| resource_id | VARCHAR(100) | | Affected entity ID |
+| old_value | JSONB | | State before change |
+| new_value | JSONB | | State after change |
+| ip_address | INET | | Request origin IP |
+| user_agent | TEXT | | Client user agent string |
+| correlation_id | UUID | | Request trace ID for distributed tracing |
+| severity | VARCHAR(20) | CHECK (...), DEFAULT 'info' | Log level (info, warning, critical) |
+
+**orders_archive** - Cold storage for old orders
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Archive entry identifier |
+| order_id | INTEGER | NOT NULL | Original order ID |
+| user_id | INTEGER | | Original customer ID |
+| archive_data | JSONB | NOT NULL | Full order snapshot including items |
+| created_at | TIMESTAMP | NOT NULL | Original order creation date |
+| archived_at | TIMESTAMP | DEFAULT NOW() | When archived |
+
+**search_logs** - Search analytics and debugging
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Log entry identifier |
+| user_id | INTEGER | | Searcher (NULL if anonymous) |
+| query | TEXT | | Search query string |
+| filters | JSONB | | Applied facet filters |
+| results_count | INTEGER | | Number of results returned |
+| latency_ms | INTEGER | | Query execution time |
+| engine | VARCHAR(20) | | Search backend (elasticsearch, postgres_fts) |
+| created_at | TIMESTAMP | DEFAULT NOW() | Search timestamp |
+
+### Foreign Key Relationships
+
+| Parent Table | Child Table | FK Column | On Delete | Rationale |
+|--------------|-------------|-----------|-----------|-----------|
+| users | sellers | user_id | CASCADE | Seller profile is extension of user; no orphan profiles |
+| users | sessions | user_id | CASCADE | Sessions meaningless without user; clean up on delete |
+| users | cart_items | user_id | CASCADE | Cart belongs to user; clear on account deletion |
+| users | orders | user_id | SET NULL | Preserve order history for accounting; anonymize user |
+| users | reviews | user_id | SET NULL | Keep reviews for product ratings; show as "deleted user" |
+| sellers | products | seller_id | CASCADE | Products belong to seller; remove if seller leaves platform |
+| categories | categories | parent_id | SET NULL | Preserve child categories as root when parent deleted |
+| categories | products | category_id | SET NULL | Keep products; they can be recategorized later |
+| products | inventory | product_id | CASCADE | Inventory meaningless without product |
+| products | cart_items | product_id | CASCADE | Remove from carts if product discontinued |
+| products | order_items | product_id | SET NULL | Preserve order history; product_title is snapshot |
+| products | reviews | product_id | CASCADE | Reviews are for specific product; remove together |
+| products | product_recommendations | product_id | CASCADE | Recommendations are derived; recompute after delete |
+| products | product_recommendations | recommended_product_id | CASCADE | Remove invalid recommendations |
+| warehouses | inventory | warehouse_id | CASCADE | Inventory tied to location; redistribute before closing |
+| orders | order_items | order_id | CASCADE | Items are part of order; delete together |
+| orders | reviews | order_id | SET NULL | Keep review; just lose "verified purchase" link |
+
+### Why Tables Are Structured This Way
+
+#### 1. Separate `sellers` from `users`
+
+**Decision**: Use a separate `sellers` table instead of embedding seller fields in `users`.
+
+**Rationale**:
+- **Role separation**: Most users are buyers, not sellers. Embedding seller fields wastes space and complicates queries.
+- **Extensibility**: Seller-specific features (storefront settings, payout info, seller metrics) can grow independently.
+- **Query optimization**: Product queries JOIN to sellers, not the larger users table.
+
+#### 2. Hierarchical Categories with Self-Reference
+
+**Decision**: `parent_id` references same table with `ON DELETE SET NULL`.
+
+**Rationale**:
+- **Unlimited depth**: Supports Electronics → Smartphones → Cases without schema changes.
+- **Graceful deletion**: Deleting "Smartphones" promotes "Cases" to root level rather than orphaning.
+- **Simple queries**: Recursive CTEs efficiently traverse hierarchy for breadcrumbs and navigation.
+
+#### 3. Composite Key for Inventory
+
+**Decision**: `(product_id, warehouse_id)` as PRIMARY KEY instead of separate `id`.
+
+**Rationale**:
+- **Natural uniqueness**: Each product exists once per warehouse by definition.
+- **Efficient lookups**: Both lookup patterns (by product, by warehouse) use composite index.
+- **No orphan rows**: CASCADE deletes ensure inventory always valid.
+
+#### 4. Reserved Inventory Pattern
+
+**Decision**: Track `quantity` and `reserved` separately rather than just available count.
+
+**Rationale**:
+- **Audit trail**: Can see both total stock and what's "locked" in carts.
+- **Reservation cleanup**: Background job can release expired reservations without affecting real inventory.
+- **Concurrency safety**: `reserved` can be incremented atomically during cart operations.
+
+#### 5. Denormalized `product_title` in order_items
+
+**Decision**: Store product title snapshot at purchase time.
+
+**Rationale**:
+- **Historical accuracy**: Order history shows what customer actually bought, not current product name.
+- **Product deletion**: Orders remain meaningful even if product is discontinued (FK SET NULL).
+- **Performance**: Order display doesn't require product table JOIN.
+
+#### 6. JSONB for Addresses
+
+**Decision**: Store addresses as JSONB instead of normalized address table.
+
+**Rationale**:
+- **One-time use**: Order addresses are historical snapshots, not reusable entities.
+- **Flexibility**: International addresses have varying formats; JSONB adapts without schema changes.
+- **Query simplicity**: No JOINs needed; address travels with order.
+
+#### 7. Separate Orders and order_items
+
+**Decision**: Classic order header/line item pattern rather than denormalized single table.
+
+**Rationale**:
+- **Normalization**: Order-level data (shipping, totals) stored once, not per item.
+- **Item cardinality**: Orders can have 1-N items; array columns would be awkward.
+- **Aggregation**: Easy to compute order totals, item counts, etc.
+
+#### 8. Reviews Linked to Orders
+
+**Decision**: Optional `order_id` FK enables "Verified Purchase" badge.
+
+**Rationale**:
+- **Trust signal**: Verified reviews carry more weight; reduces fake review spam.
+- **Preservation**: `SET NULL` keeps review if order deleted (rare edge case).
+- **Business logic**: Can enforce "only review if you bought" policy.
+
+#### 9. Idempotency Keys for Order Safety
+
+**Decision**: Dedicated table for idempotency rather than just order.idempotency_key.
+
+**Rationale**:
+- **Processing state**: Track in-flight requests to handle concurrent duplicates.
+- **Response caching**: Return same response for duplicate requests.
+- **Multi-resource**: Can protect any operation, not just orders.
+
+#### 10. Immutable Audit Logs
+
+**Decision**: INSERT-only table with no UPDATE/DELETE operations.
+
+**Rationale**:
+- **Compliance**: Financial regulations require tamper-evident logs.
+- **Debugging**: Full history of who did what, when.
+- **Correlation**: UUID links events across distributed services.
+
+### Index Strategy
+
 ```sql
--- Products
-CREATE TABLE products (
-  id SERIAL PRIMARY KEY,
-  seller_id INTEGER REFERENCES sellers(id),
-  title VARCHAR(500) NOT NULL,
-  description TEXT,
-  category_id INTEGER REFERENCES categories(id),
-  price DECIMAL(10, 2) NOT NULL,
-  images TEXT[],
-  attributes JSONB,
-  rating DECIMAL(2, 1),
-  review_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+-- Product discovery (catalog browsing and filtering)
+CREATE INDEX idx_products_category ON products(category_id);
+CREATE INDEX idx_products_seller ON products(seller_id);
+CREATE INDEX idx_products_price ON products(price);
+CREATE INDEX idx_products_rating ON products(rating);
+CREATE INDEX idx_products_active ON products(is_active);
 
--- Inventory (per warehouse)
-CREATE TABLE inventory (
-  product_id INTEGER REFERENCES products(id),
-  warehouse_id INTEGER REFERENCES warehouses(id),
-  quantity INTEGER DEFAULT 0,
-  reserved INTEGER DEFAULT 0,
-  PRIMARY KEY (product_id, warehouse_id)
-);
+-- Full-text search (PostgreSQL fallback when Elasticsearch unavailable)
+CREATE INDEX idx_products_search ON products
+  USING gin(to_tsvector('english', title || ' ' || COALESCE(description, '')));
 
--- Shopping Cart
-CREATE TABLE cart_items (
-  user_id INTEGER REFERENCES users(id),
-  product_id INTEGER REFERENCES products(id),
-  quantity INTEGER DEFAULT 1,
-  reserved_until TIMESTAMP,
-  added_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, product_id)
-);
+-- Cart operations (user cart lookup, reservation expiry cleanup)
+CREATE INDEX idx_cart_user ON cart_items(user_id);
+CREATE INDEX idx_cart_reserved ON cart_items(reserved_until);
 
--- Orders
-CREATE TABLE orders (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  status VARCHAR(20) DEFAULT 'pending',
-  total DECIMAL(10, 2),
-  shipping_address JSONB,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+-- Order management (user order history, status filtering, archival)
+CREATE INDEX idx_orders_user ON orders(user_id);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created ON orders(created_at);
+CREATE INDEX idx_orders_idempotency ON orders(idempotency_key);
+CREATE INDEX idx_orders_archive_status ON orders(archive_status);
 
-CREATE TABLE order_items (
-  order_id INTEGER REFERENCES orders(id),
-  product_id INTEGER REFERENCES products(id),
-  quantity INTEGER,
-  price DECIMAL(10, 2),
-  PRIMARY KEY (order_id, product_id)
-);
+-- Review display (product reviews, user review history)
+CREATE INDEX idx_reviews_product ON reviews(product_id);
+CREATE INDEX idx_reviews_user ON reviews(user_id);
+
+-- Category navigation (tree traversal, URL routing)
+CREATE INDEX idx_categories_parent ON categories(parent_id);
+CREATE INDEX idx_categories_slug ON categories(slug);
+
+-- Idempotency cleanup (expire old keys)
+CREATE INDEX idx_idempotency_created ON idempotency_keys(created_at);
+CREATE INDEX idx_idempotency_status ON idempotency_keys(status);
+
+-- Audit log queries (time-based, actor investigation, resource history)
+CREATE INDEX idx_audit_created ON audit_logs(created_at);
+CREATE INDEX idx_audit_actor ON audit_logs(actor_id, actor_type);
+CREATE INDEX idx_audit_resource ON audit_logs(resource_type, resource_id);
+CREATE INDEX idx_audit_action ON audit_logs(action);
+CREATE INDEX idx_audit_correlation ON audit_logs(correlation_id);
+
+-- Archive lookups
+CREATE INDEX idx_orders_archive_order ON orders_archive(order_id);
+CREATE INDEX idx_orders_archive_user ON orders_archive(user_id);
+CREATE INDEX idx_orders_archive_created ON orders_archive(created_at);
+
+-- Search analytics
+CREATE INDEX idx_search_logs_created ON search_logs(created_at);
+CREATE INDEX idx_search_logs_user ON search_logs(user_id);
+```
+
+**Index Design Rationale**:
+
+| Index | Query Pattern | Why This Index |
+|-------|---------------|----------------|
+| idx_products_category | `WHERE category_id = ?` | Category page listing |
+| idx_products_price | `ORDER BY price` / `WHERE price BETWEEN` | Price filtering and sorting |
+| idx_products_search | `to_tsvector(...) @@ plainto_tsquery(?)` | Fallback when Elasticsearch down |
+| idx_cart_reserved | `WHERE reserved_until < NOW()` | Background job finds expired reservations |
+| idx_orders_created | `WHERE created_at < ?` | Archival job finds old orders |
+| idx_audit_correlation | `WHERE correlation_id = ?` | Trace single request across logs |
+
+### Data Flow for Key Operations
+
+#### 1. Add to Cart with Inventory Reservation
+
+```sql
+-- Step 1: Check available inventory (within transaction)
+SELECT quantity - reserved AS available
+FROM inventory
+WHERE product_id = $1
+FOR UPDATE;  -- Lock row to prevent race conditions
+
+-- Step 2: Reserve inventory if sufficient
+UPDATE inventory
+SET reserved = reserved + $2
+WHERE product_id = $1
+  AND quantity - reserved >= $2;
+
+-- Step 3: Create or update cart item
+INSERT INTO cart_items (user_id, product_id, quantity, reserved_until)
+VALUES ($3, $1, $2, NOW() + INTERVAL '30 minutes')
+ON CONFLICT (user_id, product_id)
+DO UPDATE SET
+  quantity = cart_items.quantity + EXCLUDED.quantity,
+  reserved_until = NOW() + INTERVAL '30 minutes';
+```
+
+#### 2. Checkout: Convert Cart to Order
+
+```sql
+-- Step 1: Check idempotency (prevent duplicate orders)
+INSERT INTO idempotency_keys (key, status)
+VALUES ($1, 'processing')
+ON CONFLICT (key) DO NOTHING
+RETURNING key;
+-- If no row returned, check existing key status and return cached response
+
+-- Step 2: Create order (within transaction)
+INSERT INTO orders (user_id, subtotal, tax, shipping_cost, total,
+                    shipping_address, payment_method, idempotency_key)
+VALUES ($2, $3, $4, $5, $6, $7, $8, $1)
+RETURNING id;
+
+-- Step 3: Copy cart items to order items
+INSERT INTO order_items (order_id, product_id, product_title, quantity, price)
+SELECT $order_id, ci.product_id, p.title, ci.quantity, p.price
+FROM cart_items ci
+JOIN products p ON ci.product_id = p.id
+WHERE ci.user_id = $2;
+
+-- Step 4: Convert reserved to decremented (inventory commit)
+UPDATE inventory i
+SET quantity = quantity - ci.quantity,
+    reserved = reserved - ci.quantity
+FROM cart_items ci
+WHERE i.product_id = ci.product_id
+  AND ci.user_id = $2;
+
+-- Step 5: Clear cart
+DELETE FROM cart_items WHERE user_id = $2;
+
+-- Step 6: Update idempotency key with result
+UPDATE idempotency_keys
+SET status = 'completed', response = $response, completed_at = NOW()
+WHERE key = $1;
+```
+
+#### 3. Release Expired Cart Reservations (Background Job)
+
+```sql
+-- Step 1: Find and lock expired items
+WITH expired AS (
+  SELECT product_id, SUM(quantity) as total_quantity
+  FROM cart_items
+  WHERE reserved_until < NOW()
+  GROUP BY product_id
+  FOR UPDATE SKIP LOCKED
+)
+-- Step 2: Release reserved inventory
+UPDATE inventory i
+SET reserved = reserved - e.total_quantity
+FROM expired e
+WHERE i.product_id = e.product_id;
+
+-- Step 3: Delete expired cart items
+DELETE FROM cart_items
+WHERE reserved_until < NOW();
+```
+
+#### 4. Product Search with Facets (Elasticsearch)
+
+```javascript
+// Elasticsearch query
+{
+  "query": {
+    "bool": {
+      "must": [{ "match": { "title": "wireless headphones" }}],
+      "filter": [
+        { "term": { "category": "electronics" }},
+        { "range": { "price": { "gte": 50, "lte": 200 }}},
+        { "term": { "in_stock": true }}
+      ]
+    }
+  },
+  "aggs": {
+    "categories": { "terms": { "field": "category" }},
+    "brands": { "terms": { "field": "brand" }},
+    "price_ranges": {
+      "range": {
+        "field": "price",
+        "ranges": [
+          { "to": 25 }, { "from": 25, "to": 50 },
+          { "from": 50, "to": 100 }, { "from": 100 }
+        ]
+      }
+    }
+  }
+}
+```
+
+```sql
+-- PostgreSQL fallback (when circuit breaker trips)
+SELECT p.*, c.name as category_name
+FROM products p
+LEFT JOIN categories c ON p.category_id = c.id
+WHERE p.is_active = true
+  AND to_tsvector('english', p.title || ' ' || COALESCE(p.description, ''))
+      @@ plainto_tsquery('english', $query)
+  AND ($category_id IS NULL OR p.category_id = $category_id)
+  AND p.price BETWEEN $min_price AND $max_price
+ORDER BY ts_rank(to_tsvector('english', p.title), plainto_tsquery('english', $query)) DESC
+LIMIT 20;
+```
+
+#### 5. Compute "Also Bought" Recommendations (Nightly Batch)
+
+```sql
+-- For each product, find co-purchased products
+INSERT INTO product_recommendations (product_id, recommended_product_id, score, recommendation_type)
+SELECT
+  oi1.product_id,
+  oi2.product_id,
+  COUNT(*)::DECIMAL / (
+    SELECT COUNT(DISTINCT order_id) FROM order_items WHERE product_id = oi1.product_id
+  ) as score,
+  'also_bought'
+FROM order_items oi1
+JOIN order_items oi2 ON oi1.order_id = oi2.order_id
+WHERE oi1.product_id != oi2.product_id
+  AND oi1.product_id = $target_product_id
+GROUP BY oi1.product_id, oi2.product_id
+ORDER BY COUNT(*) DESC
+LIMIT 20
+ON CONFLICT (product_id, recommended_product_id, recommendation_type)
+DO UPDATE SET score = EXCLUDED.score, updated_at = NOW();
+```
+
+#### 6. Archive Old Orders (Weekly Batch)
+
+```sql
+-- Step 1: Select orders for archival
+WITH orders_to_archive AS (
+  SELECT o.id, o.user_id, o.created_at,
+         jsonb_build_object(
+           'order', row_to_json(o),
+           'items', (SELECT jsonb_agg(row_to_json(oi))
+                     FROM order_items oi WHERE oi.order_id = o.id)
+         ) as archive_data
+  FROM orders o
+  WHERE o.created_at < NOW() - INTERVAL '2 years'
+    AND o.status IN ('delivered', 'cancelled', 'refunded')
+    AND o.archive_status = 'active'
+  LIMIT 1000
+  FOR UPDATE SKIP LOCKED
+)
+-- Step 2: Insert into archive table
+INSERT INTO orders_archive (order_id, user_id, archive_data, created_at)
+SELECT id, user_id, archive_data, created_at
+FROM orders_to_archive;
+
+-- Step 3: Anonymize original order (keep for reference, remove PII)
+UPDATE orders
+SET archive_status = 'archived',
+    archived_at = NOW(),
+    shipping_address = '{"anonymized": true}'::jsonb,
+    billing_address = NULL,
+    notes = NULL
+WHERE id IN (SELECT id FROM orders_to_archive);
 ```
 
 ---

@@ -821,6 +821,78 @@ const result = await client.query({
 
 ---
 
+### Wide-Column Store
+
+#### Cassandra (v4.1)
+**What it is:** A distributed, wide-column NoSQL database designed for high availability and linear scalability.
+
+**Why we use it:**
+- Masterless architecture (no single point of failure)
+- Linear horizontal scaling
+- Optimized for high-write workloads
+- TimeUUID support for natural time-ordering
+- Partition-based data distribution
+- Tunable consistency levels
+
+**Where it's used:** Instagram (Direct Messages)
+
+**Client library: cassandra-driver**
+
+**Example:**
+```javascript
+import cassandra from 'cassandra-driver';
+
+const client = new cassandra.Client({
+  contactPoints: ['localhost'],
+  localDataCenter: 'datacenter1',
+  keyspace: 'instagram_dm',
+});
+
+// Insert message with TimeUUID for ordering
+const messageId = cassandra.types.TimeUuid.now();
+await client.execute(
+  `INSERT INTO messages_by_conversation
+   (conversation_id, message_id, sender_id, content, created_at)
+   VALUES (?, ?, ?, ?, ?)`,
+  [conversationId, messageId, senderId, content, new Date()],
+  { prepare: true }
+);
+
+// Query messages (automatically ordered by TimeUUID DESC)
+const result = await client.execute(
+  'SELECT * FROM messages_by_conversation WHERE conversation_id = ? LIMIT 50',
+  [conversationId],
+  { prepare: true }
+);
+```
+
+**Key features used:**
+| Feature | Purpose |
+|---------|---------|
+| TimeUUID | Natural time-ordering for messages |
+| Partition key | Conversation-based data distribution |
+| Clustering key | Message ordering within partition |
+| TTL | Automatic message expiration |
+| Prepared statements | Query optimization |
+
+**Data modeling patterns:**
+| Pattern | Example |
+|---------|---------|
+| Query-first design | Design tables for specific access patterns |
+| Denormalization | Store user info in conversation table |
+| TimeUUID ordering | Messages ordered by creation time |
+| Partition sizing | Keep partitions < 100MB |
+
+**Alternatives:**
+| Alternative | Trade-offs |
+|-------------|------------|
+| **ScyllaDB** | C++ rewrite, faster, API-compatible |
+| **DynamoDB** | Managed, simpler, vendor lock-in |
+| **HBase** | Hadoop ecosystem, more complex |
+| **PostgreSQL** | ACID, but lower write throughput at scale |
+
+---
+
 ### Search Engine
 
 #### Elasticsearch (v8)
