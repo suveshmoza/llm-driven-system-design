@@ -8,10 +8,22 @@ interface DrawingCardProps {
   shape: string
   createdAt: string
   isFlagged: boolean
+  isDeleted: boolean
   onFlag: (id: string, flagged: boolean) => void
+  onDelete: (id: string) => void
+  onRestore: (id: string) => void
 }
 
-export function DrawingCard({ id, shape, createdAt, isFlagged, onFlag }: DrawingCardProps) {
+export function DrawingCard({
+  id,
+  shape,
+  createdAt,
+  isFlagged,
+  isDeleted,
+  onFlag,
+  onDelete,
+  onRestore,
+}: DrawingCardProps) {
   const [strokeData, setStrokeData] = useState<StrokeData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -45,8 +57,15 @@ export function DrawingCard({ id, shape, createdAt, isFlagged, onFlag }: Drawing
     }
   }, [id])
 
+  const cardClass = [
+    'drawing-card',
+    isFlagged ? 'flagged' : '',
+    isDeleted ? 'deleted' : '',
+  ].filter(Boolean).join(' ')
+
   return (
-    <div className={`drawing-card ${isFlagged ? 'flagged' : ''}`}>
+    <div className={cardClass}>
+      {isDeleted && <span className="deleted-badge">Deleted</span>}
       <div className="drawing-preview">
         {loading && (
           <div className="loading-thumbnail">
@@ -68,12 +87,31 @@ export function DrawingCard({ id, shape, createdAt, isFlagged, onFlag }: Drawing
           {new Date(createdAt).toLocaleDateString()}
         </span>
       </div>
-      <button
-        className={`flag-btn ${isFlagged ? 'unflag' : ''}`}
-        onClick={() => onFlag(id, !isFlagged)}
-      >
-        {isFlagged ? 'Unflag' : 'Flag'}
-      </button>
+      <div className="drawing-actions">
+        {!isDeleted ? (
+          <>
+            <button
+              className={`flag-btn ${isFlagged ? 'unflag' : ''}`}
+              onClick={() => onFlag(id, !isFlagged)}
+            >
+              {isFlagged ? 'Unflag' : 'Flag'}
+            </button>
+            <button
+              className="delete-btn"
+              onClick={() => onDelete(id)}
+            >
+              Delete
+            </button>
+          </>
+        ) : (
+          <button
+            className="restore-btn"
+            onClick={() => onRestore(id)}
+          >
+            Restore
+          </button>
+        )}
+      </div>
     </div>
   )
 }

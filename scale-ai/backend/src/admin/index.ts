@@ -6,6 +6,7 @@ import { publishTrainingJob } from '../shared/queue.js'
 import { getDrawing } from '../shared/storage.js'
 import { cacheGet, cacheSet, cacheDelete, CacheKeys } from '../shared/cache.js'
 import { validateLogin, createSession, getSession, deleteSession } from '../shared/auth.js'
+import { scoreDrawing, type StrokeData } from '../shared/quality.js'
 import { v4 as uuidv4 } from 'uuid'
 
 const app = express()
@@ -66,7 +67,7 @@ app.get('/health', (_req, res) => {
 // Login endpoint
 app.post('/api/admin/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body
+    const { email, password, rememberMe } = req.body
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' })
@@ -77,13 +78,13 @@ app.post('/api/admin/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' })
     }
 
-    const sessionId = await createSession(user.id, user.email, user.name)
+    const { sessionId, ttl } = await createSession(user.id, user.email, user.name, rememberMe)
 
     res.cookie('adminSession', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: ttl * 1000, // Convert seconds to milliseconds
     })
 
     res.json({
@@ -195,9 +196,17 @@ app.get('/api/admin/drawings', requireAdmin, async (req, res) => {
     const offset = (page - 1) * limit
     const shape = req.query.shape as string
     const flagged = req.query.flagged === 'true'
+    const includeDeleted = req.query.includeDeleted === 'true'
+    const startDate = req.query.startDate as string
+    const endDate = req.query.endDate as string
 
     let whereClause = 'WHERE 1=1'
     const params: (string | boolean | number)[] = []
+
+    // Exclude soft-deleted drawings by default
+    if (!includeDeleted) {
+      whereClause += ' AND d.deleted_at IS NULL'
+    }
 
     if (shape) {
       params.push(shape)
@@ -206,6 +215,17 @@ app.get('/api/admin/drawings', requireAdmin, async (req, res) => {
 
     if (flagged) {
       whereClause += ' AND d.is_flagged = TRUE'
+    }
+
+    // Date range filter
+    if (startDate) {
+      params.push(startDate)
+      whereClause += ` AND d.created_at >= $${params.length}::date`
+    }
+
+    if (endDate) {
+      params.push(endDate)
+      whereClause += ` AND d.created_at < ($${params.length}::date + interval '1 day')`
     }
 
     // Get total count
@@ -222,7 +242,7 @@ app.get('/api/admin/drawings', requireAdmin, async (req, res) => {
     params.push(limit, offset)
     const query = `
       SELECT d.id, d.stroke_data_path, d.metadata, d.quality_score,
-             d.is_flagged, d.created_at, s.name as shape
+             d.is_flagged, d.deleted_at, d.created_at, s.name as shape
       FROM drawings d
       JOIN shapes s ON d.shape_id = s.id
       ${whereClause}
@@ -268,6 +288,46 @@ app.post('/api/admin/drawings/:id/flag', requireAdmin, async (req, res) => {
   }
 })
 
+// Soft delete a drawing
+app.delete('/api/admin/drawings/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    await pool.query(
+      'UPDATE drawings SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    )
+
+    // Invalidate stats cache
+    await cacheDelete(CacheKeys.adminStats())
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting drawing:', error)
+    res.status(500).json({ error: 'Failed to delete drawing' })
+  }
+})
+
+// Restore a soft-deleted drawing
+app.post('/api/admin/drawings/:id/restore', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    await pool.query(
+      'UPDATE drawings SET deleted_at = NULL WHERE id = $1',
+      [id]
+    )
+
+    // Invalidate stats cache
+    await cacheDelete(CacheKeys.adminStats())
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error restoring drawing:', error)
+    res.status(500).json({ error: 'Failed to restore drawing' })
+  }
+})
+
 // Get stroke data for a drawing
 app.get('/api/admin/drawings/:id/strokes', requireAdmin, async (req, res) => {
   try {
@@ -292,6 +352,185 @@ app.get('/api/admin/drawings/:id/strokes', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching stroke data:', error)
     res.status(500).json({ error: 'Failed to fetch stroke data' })
+  }
+})
+
+// Analyze quality of a single drawing
+app.get('/api/admin/drawings/:id/quality', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Get the stroke data path from the database
+    const result = await pool.query(
+      'SELECT stroke_data_path FROM drawings WHERE id = $1',
+      [id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Drawing not found' })
+    }
+
+    const strokeDataPath = result.rows[0].stroke_data_path
+
+    // Fetch from MinIO
+    const strokeData = await getDrawing(strokeDataPath) as StrokeData
+
+    // Score the drawing
+    const quality = scoreDrawing(strokeData)
+
+    res.json({
+      drawingId: id,
+      quality,
+    })
+  } catch (error) {
+    console.error('Error analyzing drawing quality:', error)
+    res.status(500).json({ error: 'Failed to analyze drawing quality' })
+  }
+})
+
+// Batch analyze quality and update scores
+app.post('/api/admin/quality/analyze-batch', requireAdmin, async (req, res) => {
+  try {
+    const { minScore, limit = 100, updateScores = false } = req.body
+
+    // Fetch drawings that need quality analysis (null quality_score)
+    let query = `
+      SELECT d.id, d.stroke_data_path, s.name as shape
+      FROM drawings d
+      JOIN shapes s ON d.shape_id = s.id
+      WHERE d.quality_score IS NULL AND d.deleted_at IS NULL
+      LIMIT $1
+    `
+    const result = await pool.query(query, [limit])
+
+    const analyzed: {
+      id: string
+      shape: string
+      score: number
+      passed: boolean
+      recommendation: string
+    }[] = []
+
+    const failed: { id: string; error: string }[] = []
+
+    for (const drawing of result.rows) {
+      try {
+        // Fetch stroke data
+        const strokeData = await getDrawing(drawing.stroke_data_path) as StrokeData
+
+        // Score the drawing
+        const quality = scoreDrawing(strokeData)
+
+        analyzed.push({
+          id: drawing.id,
+          shape: drawing.shape,
+          score: quality.score,
+          passed: quality.passed,
+          recommendation: quality.recommendation,
+        })
+
+        // Update quality score in database if requested
+        if (updateScores) {
+          await pool.query(
+            'UPDATE drawings SET quality_score = $1 WHERE id = $2',
+            [quality.score, drawing.id]
+          )
+        }
+      } catch (error) {
+        failed.push({
+          id: drawing.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
+
+    // Compute summary statistics
+    const passedCount = analyzed.filter((d) => d.passed).length
+    const avgScore = analyzed.length > 0
+      ? analyzed.reduce((sum, d) => sum + d.score, 0) / analyzed.length
+      : 0
+
+    // If minScore is provided, auto-flag low quality drawings
+    let flaggedCount = 0
+    if (minScore !== undefined && updateScores) {
+      const lowQuality = analyzed.filter((d) => d.score < minScore)
+      for (const drawing of lowQuality) {
+        await pool.query(
+          'UPDATE drawings SET is_flagged = TRUE WHERE id = $1',
+          [drawing.id]
+        )
+        flaggedCount++
+      }
+      if (flaggedCount > 0) {
+        await cacheDelete(CacheKeys.adminStats())
+      }
+    }
+
+    res.json({
+      analyzed: analyzed.length,
+      failed: failed.length,
+      passed: passedCount,
+      avgScore: Math.round(avgScore * 10) / 10,
+      flagged: flaggedCount,
+      results: analyzed,
+      errors: failed,
+      message: updateScores
+        ? `Analyzed ${analyzed.length} drawings, updated scores${flaggedCount > 0 ? `, flagged ${flaggedCount} low quality` : ''}`
+        : `Analyzed ${analyzed.length} drawings (dry run, scores not saved)`,
+    })
+  } catch (error) {
+    console.error('Error in batch quality analysis:', error)
+    res.status(500).json({ error: 'Failed to analyze drawings' })
+  }
+})
+
+// Get quality statistics
+app.get('/api/admin/quality/stats', requireAdmin, async (_req, res) => {
+  try {
+    // Overall quality score distribution
+    const distribution = await pool.query(`
+      SELECT
+        CASE
+          WHEN quality_score >= 70 THEN 'high'
+          WHEN quality_score >= 50 THEN 'medium'
+          WHEN quality_score IS NOT NULL THEN 'low'
+          ELSE 'unscored'
+        END as quality_tier,
+        COUNT(*) as count
+      FROM drawings
+      WHERE deleted_at IS NULL
+      GROUP BY quality_tier
+    `)
+
+    // Average score per shape
+    const perShape = await pool.query(`
+      SELECT s.name as shape, AVG(d.quality_score) as avg_score, COUNT(d.id) as count
+      FROM drawings d
+      JOIN shapes s ON d.shape_id = s.id
+      WHERE d.quality_score IS NOT NULL AND d.deleted_at IS NULL
+      GROUP BY s.name
+      ORDER BY s.name
+    `)
+
+    // Unscored count
+    const unscored = await pool.query(`
+      SELECT COUNT(*) as count
+      FROM drawings
+      WHERE quality_score IS NULL AND deleted_at IS NULL
+    `)
+
+    res.json({
+      distribution: distribution.rows,
+      perShape: perShape.rows.map((r) => ({
+        shape: r.shape,
+        avgScore: r.avg_score ? Math.round(parseFloat(r.avg_score) * 10) / 10 : null,
+        count: parseInt(r.count),
+      })),
+      unscoredCount: parseInt(unscored.rows[0].count),
+    })
+  } catch (error) {
+    console.error('Error fetching quality stats:', error)
+    res.status(500).json({ error: 'Failed to fetch quality statistics' })
   }
 })
 

@@ -3,7 +3,8 @@ import crypto from 'crypto'
 import { pool } from './db.js'
 import { redis } from './cache.js'
 
-const SESSION_TTL = 24 * 60 * 60 // 24 hours in seconds
+const SESSION_TTL_DEFAULT = 24 * 60 * 60 // 24 hours in seconds
+const SESSION_TTL_REMEMBER = 30 * 24 * 60 * 60 // 30 days in seconds
 
 interface Session {
   userId: string
@@ -25,8 +26,14 @@ function generateSessionId(): string {
 }
 
 // Create a session for a user
-export async function createSession(userId: string, email: string, name: string | null): Promise<string> {
+export async function createSession(
+  userId: string,
+  email: string,
+  name: string | null,
+  rememberMe = false
+): Promise<{ sessionId: string; ttl: number }> {
   const sessionId = generateSessionId()
+  const ttl = rememberMe ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT
   const session: Session = {
     userId,
     email,
@@ -34,8 +41,8 @@ export async function createSession(userId: string, email: string, name: string 
     createdAt: Date.now(),
   }
 
-  await redis.setex(`session:${sessionId}`, SESSION_TTL, JSON.stringify(session))
-  return sessionId
+  await redis.setex(`session:${sessionId}`, ttl, JSON.stringify(session))
+  return { sessionId, ttl }
 }
 
 // Get session by ID

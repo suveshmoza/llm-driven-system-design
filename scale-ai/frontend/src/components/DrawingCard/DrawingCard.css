@@ -90,3 +90,63 @@
   border-color: #22c55e;
   color: #166534;
 }
+
+.drawing-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.delete-btn {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: white;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.restore-btn {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #22c55e;
+  background: #dcfce7;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #166534;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.restore-btn:hover {
+  background: #22c55e;
+  color: white;
+}
+
+.drawing-card.deleted {
+  opacity: 0.6;
+  border: 2px dashed #94a3b8;
+  position: relative;
+}
+
+.deleted-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #94a3b8;
+  color: white;
+  font-size: 0.625rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}

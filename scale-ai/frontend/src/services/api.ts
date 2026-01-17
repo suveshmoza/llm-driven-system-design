@@ -118,6 +118,7 @@ export interface Drawing {
   metadata: Record<string, unknown>
   quality_score: number | null
   is_flagged: boolean
+  deleted_at: string | null
   created_at: string
   shape: string
 }
@@ -154,10 +155,10 @@ async function adminFetch(path: string, options: RequestInit = {}): Promise<Resp
 }
 
 // Authentication endpoints
-export async function adminLogin(email: string, password: string): Promise<{ user: AdminUser }> {
+export async function adminLogin(email: string, password: string, rememberMe = false): Promise<{ user: AdminUser }> {
   const response = await adminFetch('/api/admin/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, rememberMe }),
   })
   if (!response.ok) {
     const data = await response.json()
@@ -186,7 +187,13 @@ export async function getAdminStats(): Promise<AdminStats> {
 export async function getDrawings(
   page = 1,
   limit = 20,
-  filters: { shape?: string; flagged?: boolean } = {}
+  filters: {
+    shape?: string
+    flagged?: boolean
+    includeDeleted?: boolean
+    startDate?: string
+    endDate?: string
+  } = {}
 ): Promise<{
   drawings: Drawing[]
   pagination: { page: number; limit: number; total: number; pages: number }
@@ -197,6 +204,9 @@ export async function getDrawings(
   })
   if (filters.shape) params.set('shape', filters.shape)
   if (filters.flagged) params.set('flagged', 'true')
+  if (filters.includeDeleted) params.set('includeDeleted', 'true')
+  if (filters.startDate) params.set('startDate', filters.startDate)
+  if (filters.endDate) params.set('endDate', filters.endDate)
 
   const response = await adminFetch(`/api/admin/drawings?${params}`)
   if (!response.ok) throw new Error('Failed to fetch drawings')
@@ -209,6 +219,20 @@ export async function flagDrawing(id: string, flagged = true): Promise<void> {
     body: JSON.stringify({ flagged }),
   })
   if (!response.ok) throw new Error('Failed to flag drawing')
+}
+
+export async function deleteDrawing(id: string): Promise<void> {
+  const response = await adminFetch(`/api/admin/drawings/${id}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw new Error('Failed to delete drawing')
+}
+
+export async function restoreDrawing(id: string): Promise<void> {
+  const response = await adminFetch(`/api/admin/drawings/${id}/restore`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw new Error('Failed to restore drawing')
 }
 
 export interface StrokeData {
@@ -264,6 +288,79 @@ export async function activateModel(id: string): Promise<void> {
     method: 'POST',
   })
   if (!response.ok) throw new Error('Failed to activate model')
+}
+
+// ============================================
+// Quality Analysis API
+// ============================================
+
+export interface QualityCheck {
+  name: string
+  score: number
+  message: string
+}
+
+export interface QualityResult {
+  score: number
+  passed: boolean
+  checks: QualityCheck[]
+  recommendation: string
+  metrics: {
+    strokeCount: number
+    totalPoints: number
+    durationMs: number
+    bboxWidth: number
+    bboxHeight: number
+    totalInk: number
+  }
+}
+
+export interface QualityStats {
+  distribution: Array<{ quality_tier: string; count: string }>
+  perShape: Array<{ shape: string; avgScore: number | null; count: number }>
+  unscoredCount: number
+}
+
+export interface BatchAnalysisResult {
+  analyzed: number
+  failed: number
+  passed: number
+  avgScore: number
+  flagged: number
+  results: Array<{
+    id: string
+    shape: string
+    score: number
+    passed: boolean
+    recommendation: string
+  }>
+  errors: Array<{ id: string; error: string }>
+  message: string
+}
+
+export async function getDrawingQuality(id: string): Promise<{ drawingId: string; quality: QualityResult }> {
+  const response = await adminFetch(`/api/admin/drawings/${id}/quality`)
+  if (!response.ok) throw new Error('Failed to get drawing quality')
+  return response.json()
+}
+
+export async function getQualityStats(): Promise<QualityStats> {
+  const response = await adminFetch('/api/admin/quality/stats')
+  if (!response.ok) throw new Error('Failed to fetch quality stats')
+  return response.json()
+}
+
+export async function analyzeBatchQuality(options: {
+  limit?: number
+  minScore?: number
+  updateScores?: boolean
+}): Promise<BatchAnalysisResult> {
+  const response = await adminFetch('/api/admin/quality/analyze-batch', {
+    method: 'POST',
+    body: JSON.stringify(options),
+  })
+  if (!response.ok) throw new Error('Failed to analyze batch')
+  return response.json()
 }
 
 // ============================================
