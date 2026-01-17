@@ -331,6 +331,8 @@ developerRouter.delete('/plugins/:pluginId', async (req: Request, res: Response)
       res.json({ message: 'Plugin unpublished (has existing installs)', pluginId });
     } else {
       // No installs, safe to hard delete
+      // Delete files from MinIO first
+      await deletePluginFiles(pluginId);
       await query('DELETE FROM plugins WHERE id = $1', [pluginId]);
       res.json({ message: 'Plugin deleted', pluginId });
     }

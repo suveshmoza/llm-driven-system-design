@@ -4,16 +4,17 @@
  * Uses Playwright to capture screenshots of key screens.
  *
  * Usage:
- *   node scripts/screenshots.mjs <project>     # Screenshot specific project
- *   node scripts/screenshots.mjs --all         # Screenshot all configured projects
- *   node scripts/screenshots.mjs --dry-run     # Show what would be captured
- *   node scripts/screenshots.mjs --list        # List available configs
+ *   node scripts/screenshots.mjs <project>                  # Screenshot specific project
+ *   node scripts/screenshots.mjs --all                      # Screenshot all configured projects
+ *   node scripts/screenshots.mjs --dry-run                  # Show what would be captured
+ *   node scripts/screenshots.mjs --list                     # List available configs
+ *   node scripts/screenshots.mjs --browser=chromium <proj>  # Use specific browser
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { firefox } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,6 +26,8 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes('--dry-run');
 const isAll = args.includes('--all');
 const isList = args.includes('--list');
+const browserArg = args.find(arg => arg.startsWith('--browser='));
+const browserType = browserArg ? browserArg.split('=')[1] : 'webkit';
 const projectArgs = args.filter(arg => !arg.startsWith('--'));
 
 // Colors for console output
@@ -329,11 +332,13 @@ async function main() {
     }
   } else {
     log('Usage:', 'cyan');
-    log('  node scripts/screenshots.mjs <project>     # Screenshot specific project');
-    log('  node scripts/screenshots.mjs --all         # Screenshot all projects');
-    log('  node scripts/screenshots.mjs --list        # List available configs');
-    log('  node scripts/screenshots.mjs --dry-run     # Show what would be captured');
-    log('\nAvailable projects: ' + configs.map(c => c.name).join(', '), 'dim');
+    log('  node scripts/screenshots.mjs <project>             # Screenshot specific project');
+    log('  node scripts/screenshots.mjs --all                 # Screenshot all projects');
+    log('  node scripts/screenshots.mjs --list                # List available configs');
+    log('  node scripts/screenshots.mjs --dry-run             # Show what would be captured');
+    log('  node scripts/screenshots.mjs --browser=chromium    # Use specific browser');
+    log('\nBrowsers: webkit (default), chromium, firefox', 'dim');
+    log('Available projects: ' + configs.map(c => c.name).join(', '), 'dim');
     return;
   }
 
@@ -341,11 +346,27 @@ async function main() {
     log('DRY RUN MODE - No screenshots will be saved\n', 'yellow');
   }
 
+  // Select browser engine
+  const browsers = { chromium, firefox, webkit };
+  const selectedBrowser = browsers[browserType];
+  if (!selectedBrowser) {
+    logError(`Unknown browser: ${browserType}. Use: chromium, firefox, or webkit`);
+    process.exit(1);
+  }
+
   // Launch browser
-  log('Launching browser...', 'dim');
-  const browser = await firefox.launch({
-    headless: false, // Use headed mode for macOS compatibility
-  });
+  log(`Launching ${browserType} browser...`, 'dim');
+  let browser;
+  try {
+    browser = await selectedBrowser.launch({
+      headless: true,
+    });
+  } catch (error) {
+    logError(`Failed to launch browser: ${error.message}`);
+    logWarning('Try a different browser: --browser=chromium, --browser=firefox, or --browser=webkit');
+    logWarning('You may need to install the browser: npx playwright install');
+    process.exit(1);
+  }
 
   const results = [];
 
