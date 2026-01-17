@@ -21,49 +21,57 @@ A crowdsourced data collection platform where users contribute labeled drawing d
 ### 1. Start Infrastructure
 
 ```bash
+cd scale-ai
 docker-compose up -d
 ```
 
 This starts:
-- PostgreSQL (port 5432)
-- MinIO / S3-compatible storage (port 9000, console 9001)
-- RabbitMQ (port 5672, management 15672)
+- PostgreSQL (port 5432) - metadata storage
+- MinIO (ports 9000, 9001) - object storage (auto-creates `drawings` and `models` buckets)
+- RabbitMQ (ports 5672, 15672) - message queue for training jobs
 
-### 2. Initialize Database
+### 2. Setup Backend
 
 ```bash
 cd backend
-npm run db:migrate
-npm run db:seed  # Creates shape definitions
+npm install
+npm run db:migrate   # Creates tables and seeds shape data
 ```
 
 ### 3. Start Backend Services
 
 ```bash
-# Terminal 1 - Collection Service
-npm run dev:collection  # Port 3001
+# Option A: Run all services with one command
+npm run dev
 
-# Terminal 2 - Admin Service
-npm run dev:admin       # Port 3002
-
-# Terminal 3 - Inference Service
-npm run dev:inference   # Port 3003
+# Option B: Run services individually
+npm run dev:collection   # Port 3001
+npm run dev:admin        # Port 3002
+npm run dev:inference    # Port 3003
 ```
 
-### 4. Start Training Worker
+### 4. Start Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev   # Port 5173
+```
+
+### 5. Access the Application
+
+- **Drawing Game:** http://localhost:5173
+- **Admin Dashboard:** http://localhost:5173/#admin
+- **Model Tester:** http://localhost:5173/#implement
+
+### 6. (Optional) Start Training Worker
+
+Only needed when you want to train models:
 
 ```bash
 cd training
 pip install -r requirements.txt
 python worker.py
-```
-
-### 5. Start Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev  # Port 5173
 ```
 
 ## Project Structure
@@ -73,35 +81,35 @@ scale-ai/
 ├── frontend/                    # React + TypeScript + Vite
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Canvas/         # Drawing canvas component
-│   │   │   ├── ShapePrompt/    # Shape to draw indicator
-│   │   │   └── AdminCharts/    # Dashboard visualizations
+│   │   │   └── PostItCanvas/   # Skeuomorphic drawing canvas
 │   │   ├── routes/
-│   │   │   ├── draw/           # Drawing game portal
 │   │   │   ├── admin/          # Admin dashboard
-│   │   │   └── implement/      # Implementor portal
-│   │   ├── stores/             # Zustand stores
-│   │   └── services/           # API clients
+│   │   │   └── implement/      # Model tester portal
+│   │   ├── services/
+│   │   │   └── api.ts          # API client
+│   │   ├── App.tsx             # Main app with routing
+│   │   └── App.css             # Global styles
 │   └── package.json
 │
 ├── backend/
 │   ├── src/
-│   │   ├── collection/         # Drawing collection service
-│   │   ├── admin/              # Admin service
-│   │   ├── inference/          # Model inference service
-│   │   ├── shared/             # Shared utilities
-│   │   └── db/                 # Database migrations
+│   │   ├── collection/         # Drawing collection service (port 3001)
+│   │   ├── admin/              # Admin service (port 3002)
+│   │   ├── inference/          # Model inference service (port 3003)
+│   │   ├── shared/             # Shared DB, storage, queue clients
+│   │   └── db/
+│   │       └── migrations/     # SQL migration files
 │   └── package.json
 │
 ├── training/                    # Python ML training
-│   ├── worker.py               # Training job worker
-│   ├── model.py                # Model architecture
+│   ├── worker.py               # RabbitMQ training job consumer
+│   ├── model.py                # DoodleNet CNN architecture
 │   ├── preprocess.py           # Stroke to image conversion
 │   └── requirements.txt
 │
-├── docker-compose.yml
-├── architecture.md
-├── claude.md
+├── docker-compose.yml          # PostgreSQL, MinIO, RabbitMQ
+├── architecture.md             # System design documentation
+├── claude.md                   # LLM collaboration notes
 └── README.md
 ```
 
@@ -131,7 +139,6 @@ POST /api/admin/models/:id/activate
 
 ```
 POST /api/inference/classify      # Classify a drawing
-POST /api/inference/generate      # Generate a shape
 GET  /api/inference/model/info    # Current model info
 ```
 
@@ -157,17 +164,23 @@ Drawings are stored as stroke data (JSON):
 }
 ```
 
-## Testing
+## Testing the Application
+
+### Manual Testing Flow
+
+1. **Draw some shapes** - Go to http://localhost:5173 and draw 10+ shapes
+2. **Check Admin Dashboard** - Go to http://localhost:5173/#admin to see statistics
+3. **Start Training** - Click "Start Training" in the Training tab (requires training worker running)
+4. **Test Model** - Go to http://localhost:5173/#implement to test classification
+
+### Run Linting
 
 ```bash
-# Backend tests
-cd backend && npm test
+# Backend
+cd backend && npm run lint
 
-# Frontend tests
-cd frontend && npm test
-
-# Training tests
-cd training && pytest
+# Frontend
+cd frontend && npm run lint && npm run type-check
 ```
 
 ## Development Notes

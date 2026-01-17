@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "concurrently -n collection,admin,inference -c blue,green,magenta \"npm run dev:collection\" \"npm run dev:admin\" \"npm run dev:inference\"",
     "dev:collection": "tsx watch src/collection/index.ts",
     "dev:admin": "tsx watch src/admin/index.ts",
     "dev:inference": "tsx watch src/inference/index.ts",
@@ -32,6 +33,7 @@
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "concurrently": "^9.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.3.0",
     "tsx": "^4.19.0",
