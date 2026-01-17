@@ -32,9 +32,11 @@ Each folder contains an independent implementation of a system design problem:
 - [Design FB Post Search](./fb-post-search/) - Social media search engine
 - [Design Instagram](./instagram/) - Photo sharing platform
 - [Design Tinder](./tinder/) - Matching and recommendation system
+- [Design r/place](./r-place/) - Collaborative real-time pixel canvas
 
 ### Messaging & Communication
 - [Design WhatsApp](./whatsapp/) - Real-time messaging platform
+- [Design Discord](./discord/) - Real-time chat and community platform
 
 ### Video & Streaming
 - [Design YouTube](./youtube/) - Video hosting and streaming platform
@@ -50,12 +52,14 @@ Each folder contains an independent implementation of a system design problem:
 - [Design a Local Delivery Service](./local-delivery/) - Last-mile delivery system
 - [Design Strava](./strava/) - Fitness tracking and social platform
 
-### Ticketing & Events
+### Ticketing, Events & Reservations
 - [Design Ticketmaster](./ticketmaster/) - Event ticketing and inventory management
+- [Design Hotel Booking](./hotel-booking/) - Hotel reservation and management system
 
 ### Developer Tools & Platforms
 - [Design LeetCode](./leetcode/) - Online coding judge and practice platform
 - [Design Google Docs](./google-docs/) - Collaborative document editing
+- [Design Figma](./figma/) - Collaborative design and prototyping platform
 
 ### Financial Services
 - [Design Robinhood](./robinhood/) - Stock trading platform
@@ -66,6 +70,7 @@ Each folder contains an independent implementation of a system design problem:
 - [Design a Job Scheduler](./job-scheduler/) - Distributed task scheduling
 - [Design Ad Click Aggregator](./ad-click-aggregator/) - Real-time analytics aggregation
 - [Design a News Aggregator](./news-aggregator/) - Content aggregation and curation
+- [Design Dashboarding System](./dashboarding/) - Metrics monitoring and visualization (Datadog/Grafana-like)
 
 ## 🏗️ Project Structure
 
