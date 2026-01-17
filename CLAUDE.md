@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **system design learning repository** where each subdirectory represents an independent system design challenge. Most projects have both design documentation and working implementations.
 
+## Quick Start for Any Project
+
+1. Read the project's `architecture.md` first to understand the design
+2. Check `claude.md` for iteration history and key decisions (this is the primary source of truth for project-specific guidance)
+3. Look at `README.md` for setup instructions
+4. Check `package.json` to find available scripts
+
 ## Project Structure
 
 Each project folder typically contains:
@@ -78,6 +85,9 @@ node scripts/sloc.mjs scale-ai --summary
 
 # Update all project READMEs with SLOC stats
 node scripts/update-readme-sloc.mjs
+
+# Add Codex opinion comments to architecture files
+node scripts/add-codex-opinion.mjs
 ```
 
 ### Screenshot Automation
@@ -155,60 +165,25 @@ Use these unless there's a compelling reason to deviate (document justification 
 3. **Both user personas** - Implement end-user AND admin interfaces when applicable
 4. **Justify deviations** - Document why in the project's `claude.md` if straying from defaults
 
+## Port Conventions
+
+| Port | Service |
+|------|---------|
+| 5173 | Frontend (Vite dev server) |
+| 3000 | Backend API / Load balancer |
+| 3001-3003 | Additional API instances (distributed testing) |
+| 5432 | PostgreSQL |
+| 6379 | Redis/Valkey |
+| 9000 | MinIO |
+| 5672/15672 | RabbitMQ (AMQP/Management) |
+| 9200 | Elasticsearch |
+| 8123 | ClickHouse |
+
 ## Frontend Best Practices
 
 ### SVG Icon Organization
 
-**Never inline SVG code directly into components.** Instead, create separate icon components:
-
-```
-frontend/src/components/icons/
-├── index.ts              # Barrel export for all icons
-├── HeartIcon.tsx         # Individual icon component
-├── HomeIcon.tsx
-├── SearchIcon.tsx
-├── ShareIcon.tsx
-└── ...
-```
-
-**Why this matters:**
-- **Readability**: Component code stays focused on logic, not SVG paths
-- **Reusability**: Icons can be imported anywhere without duplication
-- **Maintainability**: Update an icon in one place, changes everywhere
-- **Bundle optimization**: Tree-shaking can exclude unused icons
-
-**Example icon component:**
-```tsx
-// src/components/icons/HeartIcon.tsx
-interface HeartIconProps {
-  className?: string;
-  filled?: boolean;
-}
-
-export function HeartIcon({ className = "w-6 h-6", filled = false }: HeartIconProps) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-    </svg>
-  );
-}
-```
-
-**Usage in components:**
-```tsx
-// Clean, readable component code
-import { HeartIcon, ShareIcon, CommentIcon } from '@/components/icons';
-
-function PostActions() {
-  return (
-    <div className="flex gap-4">
-      <button><HeartIcon filled={isLiked} className="w-5 h-5 text-red-500" /></button>
-      <button><CommentIcon /></button>
-      <button><ShareIcon /></button>
-    </div>
-  );
-}
-```
+Never inline SVG code directly into components. Create separate icon components in `frontend/src/components/icons/` with a barrel export (`index.ts`). Each icon should accept `className` and variant props.
 
 ### Other Frontend Guidelines
 
@@ -289,9 +264,16 @@ See [TECHNOLOGIES.md](./TECHNOLOGIES.md) for a comprehensive guide to all techno
 
 ## Implementation Notes
 
-Projects have both frontend and backend implementations following the standard `frontend/` + `backend/` structure. Some backends use TypeScript (`scale-ai`, `web-crawler`, `ad-click-aggregator`) with `tsx`, while others use plain JavaScript (`instagram`, `uber`) with `node --watch`. Check each project's `package.json` for available scripts.
+Projects have both frontend and backend implementations following the standard `frontend/` + `backend/` structure.
 
-**Project-level claude.md files:** Many projects have their own LLM collaboration notes with project-specific decisions and iteration history. Always check for these when working on a specific project.
+### Backend Language Variants
+
+| Language | Runner | Example Projects |
+|----------|--------|------------------|
+| TypeScript | `tsx` | scale-ai, web-crawler, ad-click-aggregator, discord |
+| JavaScript | `node --watch` | instagram, uber, twitter, airbnb |
+
+Check each project's `package.json` for available scripts.
 
 ## Creating New Projects
 
@@ -312,14 +294,6 @@ npx tailwindcss init -p
 /api/v1/*            → Public API
 /api/v1/admin/*      → Admin API
 ```
-
-## Working with Existing Projects
-
-When asked to work on a project:
-1. Read the project's `architecture.md` first to understand the design
-2. Check `claude.md` for iteration history and key decisions
-3. Look at `README.md` for setup instructions
-4. If implementation exists, check for `package.json` to find available scripts
 
 ## Local Development Philosophy
 
