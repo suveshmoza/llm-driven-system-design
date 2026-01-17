@@ -1,3 +1,65 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Repository Overview
+
+This is a **system design learning repository** where each subdirectory represents an independent system design challenge (Bitly, Discord, Uber, etc.). Each project folder contains design documentation (`architecture.md`, `claude.md`, `README.md`) and may eventually contain implementation code.
+
+## Project Structure
+
+```
+llm-driven-system-design/
+├── CLAUDE.md              # This file - Claude Code instructions
+├── README.md              # Repository overview and project index
+├── <project>/             # Each system design challenge
+│   ├── README.md          # Setup instructions and implementation guide
+│   ├── architecture.md    # System design documentation and trade-offs
+│   └── claude.md          # LLM collaboration notes and iteration history
+```
+
+## Common Commands
+
+When a project has implementation code:
+
+```bash
+# Frontend (Vite + React + TypeScript)
+npm run dev              # Start dev server
+npm run build            # Build for production
+npm run lint             # Run ESLint
+npm run format           # Run Prettier
+npm run type-check       # TypeScript type checking
+
+# Backend (Node.js + Express)
+npm run dev              # Start with hot reload
+npm run dev:server1      # Run on port 3001 (for distributed testing)
+npm run dev:server2      # Run on port 3002
+npm run dev:server3      # Run on port 3003
+
+# Infrastructure
+docker-compose up -d     # Start PostgreSQL, Redis/Valkey, etc.
+```
+
+## Technology Stack Defaults
+
+Use these unless there's a compelling reason to deviate (document justification if deviating):
+
+- **Frontend:** TypeScript + Vite + React 19 + Tanstack Router + Zustand + Tailwind CSS
+- **Backend:** Node.js + Express
+- **Databases:** PostgreSQL (relational), CouchDB (document), Valkey/Redis (cache), Cassandra (wide-column)
+- **Message Queues:** RabbitMQ, Kafka
+- **Search:** Elasticsearch/OpenSearch
+- **Monitoring:** Prometheus + Grafana
+
+## Key Principles
+
+1. **All projects must run locally** - Design for 2-5 service instances on different ports
+2. **Keep auth simple** - Session-based auth with Redis, avoid OAuth complexity
+3. **Both user personas** - Implement end-user AND admin interfaces when applicable
+4. **Justify deviations** - If using Go instead of Node.js, explain why with benchmarks
+
+---
+
 # Collaborating with Claude on System Design
 
 This document provides guidelines for effectively using Claude (or other LLMs) to learn system design through hands-on implementation.
