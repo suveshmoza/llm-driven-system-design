@@ -4,20 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is a **system design learning repository** where each subdirectory represents an independent system design challenge. Most projects contain only design documentation; some have partial implementations.
+This is a **system design learning repository** where each subdirectory represents an independent system design challenge. Most projects have both design documentation and working implementations.
 
 ## Project Structure
 
-Each project folder follows this pattern:
+Each project folder typically contains:
 ```
 <project>/
 ├── README.md                  # Setup instructions and implementation guide
 ├── architecture.md            # System design documentation and trade-offs
 ├── system-design-answer.md    # Interview-style answer (45-minute format)
-└── claude.md                  # LLM collaboration notes and iteration history
+├── claude.md                  # LLM collaboration notes and iteration history
+├── frontend/                  # React + TypeScript frontend (when applicable)
+├── backend/                   # Node.js + Express backend (when applicable)
+└── docker-compose.yml         # Infrastructure services (PostgreSQL, Redis, etc.)
 ```
-
-Some projects (like `scale-ai/frontend`) include actual implementation code.
 
 ## Common Commands
 
@@ -85,7 +86,7 @@ Use these unless there's a compelling reason to deviate (document justification 
 
 - **Frontend:** TypeScript + Vite + React 19 + Tanstack Router + Zustand + Tailwind CSS
 - **Backend:** Node.js + Express
-- **Databases:** PostgreSQL (relational), CouchDB (document), Valkey/Redis (cache), Cassandra (wide-column, time-series)
+- **Databases:** PostgreSQL (relational), Cassandra (wide-column, time-series), ClickHouse (OLAP analytics), Valkey/Redis (cache)
 - **Message Queues:** RabbitMQ, Kafka
 - **Search:** Elasticsearch/OpenSearch
 - **Object Storage:** MinIO (S3-compatible)
@@ -197,19 +198,27 @@ vi.mock('../shared/storage.js', () => ({
 import { app } from './app.js'
 ```
 
+## Database Selection Guide
+
+Choose the appropriate database based on access patterns:
+
+| Database | Use Case | Example Projects |
+|----------|----------|------------------|
+| **PostgreSQL** | ACID transactions, complex queries, relational data | Most projects (users, orders, metadata) |
+| **Cassandra** | High-write throughput, time-ordered data, partition-based access | `instagram` (DMs with TimeUUID ordering) |
+| **ClickHouse** | Real-time analytics, aggregations, OLAP workloads | `ad-click-aggregator` (metrics with materialized views) |
+| **Redis/Valkey** | Caching, sessions, pub/sub, rate limiting | All projects (session store, cache layer) |
+| **Elasticsearch** | Full-text search, relevance scoring | `fb-post-search` (social content search) |
+
 ## Technology Reference
 
-See [TECHNOLOGIES.md](./TECHNOLOGIES.md) for a comprehensive guide to all technologies used across projects, including alternatives and trade-offs.
+See [TECHNOLOGIES.md](./TECHNOLOGIES.md) for a comprehensive guide to all technologies used across projects, including alternatives and trade-offs. Consult this when choosing technologies for new projects or understanding existing implementations.
 
-## Projects with Implementations
+## Implementation Notes
 
-Most projects now have both frontend and backend implementations. Check each project's `package.json` for available scripts. Notable examples:
-- `scale-ai/` - Full-stack data labeling platform (TypeScript backend with tests)
-- `instagram/` - Photo sharing platform (JavaScript backend with Cassandra)
-- `discord/` - Real-time chat (WebSocket-based)
-- `ai-code-assistant/` - CLI coding assistant with Anthropic API (standalone TypeScript)
+Projects have both frontend and backend implementations following the standard `frontend/` + `backend/` structure. Some backends use TypeScript (`scale-ai`, `web-crawler`, `ad-click-aggregator`) with `tsx`, while others use plain JavaScript (`instagram`, `uber`) with `node --watch`. Check each project's `package.json` for available scripts.
 
-Some backends use TypeScript (`scale-ai`, `web-crawler`), while others use plain JavaScript (`instagram`, `uber`). Both patterns are acceptable.
+**Project-level claude.md files:** Many projects have their own LLM collaboration notes with project-specific decisions and iteration history. Always check for these when working on a specific project.
 
 ## Creating New Projects
 
