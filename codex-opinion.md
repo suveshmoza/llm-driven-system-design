@@ -1,307 +1,687 @@
 # Codex Opinion
 
-Concise critique for each system design architecture document.
+Detailed, actionable critique for each system design architecture document.
 
 ## 20forms-20designs
-- Strengths: caching/edge delivery strategy, monitoring/observability coverage.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Clear monorepo + iframe-based isolation design with detailed component breakdown and build orchestration.
+  - Tradeoff analysis for isolation approaches (iframe vs Shadow DOM vs CSS modules).
+- Actionable gaps:
+  - Define hosting/CDN strategy for static assets (cache headers, versioning, edge TTLs) plus rollback for 42-app builds.
+  - Set performance budgets (bundle size, load time) and add real-user monitoring/error tracking to validate them.
+  - Document build pipeline resilience (parallel build retries, artifact storage, CI/CD) and cost tradeoffs for hosting.
 
 ## ad-click-aggregator
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to ClickHouse, PostgreSQL, S3 for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
 
 ## ai-code-assistant
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## airbnb
-- Strengths: data model/schema detail, API surface definition.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Grounds the design with scale/latency targets and a basic capacity model.
+- Actionable gaps:
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## airtag
-- Strengths: data model/schema detail, security/auth considerations.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Grounds the design with scale/latency targets and a basic capacity model.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
 
 ## amazon
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## apns
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## app-store
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Places a CDN layer for read latency and fanout control.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## apple-maps
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL, S3 for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## apple-music
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## apple-pay
-- Strengths: data model/schema detail, security/auth considerations.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Grounds the design with scale/latency targets and a basic capacity model.
+- Actionable gaps:
+  - Quantify peak traffic (DAU/MAU, RPS, payload size) and use it to size shards, cache capacity, and queue throughput.
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
 
 ## apple-tv
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; observability/alerting plan.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## bitly
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## calendly
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, PostgreSQL for persistence.
+  - Includes an async processing path via RabbitMQ for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
 
 ## collaborative-editor
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Places a Redis layer for read latency and fanout control.
+- Actionable gaps:
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## dashboarding
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## discord
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, Elasticsearch, MinIO for persistence.
+  - Includes an async processing path via Kafka, Pub/Sub, RabbitMQ for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
 
 ## distributed-cache
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: cost guardrails.
+- Strengths:
+  - Detailed consistent-hashing/virtual-node design plus LRU + TTL eviction behavior and capacity estimates.
+  - Defines cache entry/statistics structures and API/admin endpoints for cluster operations.
+- Actionable gaps:
+  - Add replication/consistency strategy (quorum reads/writes, read repair) and explicit failover behavior.
+  - Define persistence/warmup approach (snapshotting, write-behind) and auth for admin endpoints.
+  - Expand observability: hit/miss, hot key detection, rebalancing impact, and chaos testing.
 
 ## docusign
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL, S3 for persistence.
+  - Places a Redis layer for read latency and fanout control.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## doordash
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## dropbox
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## etsy
-- Strengths: data model/schema detail.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Captures the main user flows and system scope clearly.
+- Actionable gaps:
+  - Quantify peak traffic (DAU/MAU, RPS, payload size) and use it to size shards, cache capacity, and queue throughput.
+  - Define explicit SLO/SLA targets (p95/p99 latency, availability) and error budgets that drive replication and caching choices.
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
 
 ## facetime
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## fb-live-comments
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## fb-news-feed
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## fb-post-search
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, MongoDB, PostgreSQL for persistence.
+  - Includes an async processing path via Kafka, Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
 
 ## figma
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
 
 ## github
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## google-docs
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## google-search
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## health-data-pipeline
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; data retention/TTL policy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Add cost tradeoffs: storage tiering, cache sizing, queue retention, and compute vs storage optimization.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
 
 ## hotel-booking
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## icloud
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, PostgreSQL, S3 for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## imessage
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
 
 ## instagram
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## jira
-- Strengths: data model/schema detail, API surface definition.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Grounds the design with scale/latency targets and a basic capacity model.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
 
 ## job-scheduler
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## kindle-highlights
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Add cost tradeoffs: storage tiering, cache sizing, queue retention, and compute vs storage optimization.
 
 ## leetcode
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## linkedin
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Places a Valkey layer for read latency and fanout control.
+- Actionable gaps:
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## local-delivery
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
 
 ## mcplator
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## mdreader
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Places a cache/CDN layer for read latency and fanout control.
+- Actionable gaps:
+  - Quantify peak traffic (DAU/MAU, RPS, payload size) and use it to size shards, cache capacity, and queue throughput.
+  - Define explicit SLO/SLA targets (p95/p99 latency, availability) and error budgets that drive replication and caching choices.
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
 
 ## netflix
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; security/privacy controls.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## news-aggregator
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## notification-system
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; security/privacy controls.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Add cost tradeoffs: storage tiering, cache sizing, queue retention, and compute vs storage optimization.
 
 ## notion
-- Strengths: data model/schema detail, real-time messaging flow.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Grounds the design with scale/latency targets and a basic capacity model.
+- Actionable gaps:
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## online-auction
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## payment-system
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## plugin-platform
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Places a CDN layer for read latency and fanout control.
+- Actionable gaps:
+  - Define explicit SLO/SLA targets (p95/p99 latency, availability) and error budgets that drive replication and caching choices.
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
 
 ## price-tracking
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## r-place
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## rate-limiter
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: failure recovery/multi-region strategy; data retention/TTL policy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Places a Redis layer for read latency and fanout control.
+- Actionable gaps:
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## reddit
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; observability/alerting plan.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
 
 ## robinhood
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## scalable-api
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via RabbitMQ for ingestion and background work.
+- Actionable gaps:
+  - Add cost tradeoffs: storage tiering, cache sizing, queue retention, and compute vs storage optimization.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
 
 ## scale-ai
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; data retention/TTL policy.
+- Strengths:
+  - Defines core data schemas and ties them to MinIO, PostgreSQL, S3 for persistence.
+  - Includes an async processing path via RabbitMQ for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## shopify
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Places a CDN, Redis, Valkey layer for read latency and fanout control.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## slack
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Add a caching/edge strategy (CDN + Redis/Memcached), including cache-aside vs write-through, TTLs, and invalidation rules.
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
 
 ## spotify
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
 
 ## spotlight
-- Strengths: data model/schema detail, real-time messaging flow.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## strava
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; data retention/TTL policy.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, PostgreSQL for persistence.
+  - Includes an async processing path via Kafka, RabbitMQ for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
 
 ## stripe
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Quantify peak traffic (DAU/MAU, RPS, payload size) and use it to size shards, cache capacity, and queue throughput.
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## ticketmaster
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## tiktok
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL, S3 for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## tinder
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to Elasticsearch, PostgreSQL for persistence.
+  - Includes an async processing path via Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
 
 ## twitch
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: concrete capacity sizing/SLO targets; failure recovery/multi-region strategy.
+- Strengths:
+  - Defines core data schemas and ties them to S3 for persistence.
+  - Includes an async processing path via Kafka, Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## twitter
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; data retention/TTL policy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
 
 ## typeahead
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; security/privacy controls.
+- Strengths:
+  - Defines core data schemas and ties them to storage engines for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## uber
-- Strengths: data model/schema detail, caching/edge delivery strategy.
-- Gaps: failure recovery/multi-region strategy; data retention/TTL policy.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL for persistence.
+  - Places a CDN, Redis layer for read latency and fanout control.
+- Actionable gaps:
+  - Specify consistency and idempotency semantics for core writes (e.g., strong vs eventual, replay handling, conflict resolution).
+  - Introduce an async queue/stream for fanout, background jobs, and backpressure (Kafka/RabbitMQ/SQS) with delivery semantics.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
 
 ## venmo
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; observability/alerting plan.
+- Strengths:
+  - Defines core data schemas and ties them to Cassandra, PostgreSQL for persistence.
+  - Includes an async processing path via queue/stream for ingestion and background work.
+- Actionable gaps:
+  - Expand observability with metrics/logs/traces, SLI dashboards, alert thresholds, and audit logging.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Add cost tradeoffs: storage tiering, cache sizing, queue retention, and compute vs storage optimization.
 
 ## web-crawler
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to PostgreSQL, S3 for persistence.
+  - Includes an async processing path via Kafka for ingestion and background work.
+- Actionable gaps:
+  - Document authn/authz (session/JWT/OAuth), rate limits, and RBAC boundaries for user vs admin operations.
+  - Detail failure handling: retries with idempotency keys, circuit breakers, multi-region DR, and backup/restore testing.
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
 
 ## whatsapp
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## yelp
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
-
-## youtube
-- Strengths: clear outline of core requirements and intended sections.
-- Gaps: needs concrete scale targets plus detailed component, data, and ops/security design.
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
 
 ## youtube-top-k
-- Strengths: data model/schema detail, async queue/stream processing.
-- Gaps: failure recovery/multi-region strategy; cost guardrails.
+- Strengths:
+  - Defines core data schemas and ties them to Postgres, PostgreSQL for persistence.
+  - Includes an async processing path via Pub/Sub for ingestion and background work.
+- Actionable gaps:
+  - Define data lifecycle policies (retention/TTL, archival to cold storage, backfill/replay procedures).
+  - Add deployment/ops specifics: rollout strategy, schema migrations, and rollback runbooks.
+  - Document capacity/cost guardrails (alerts on queue lag, storage growth, cache hit rate targets).
+
+## youtube
+- Strengths:
+  - Provides a clear outline of requirements and major sections, which makes the design checklist explicit.
+  - Calls out the key functional scope, giving a baseline for future component design.
+- Actionable gaps:
+  - Fill in capacity/SLO targets (peak RPS, storage growth, latency/availability) and use them to size components.
+  - Define the core architecture: request flow, storage engines, caching, queues, and data model/schema details.
+  - Add security, observability, and failure handling specifics (auth/RBAC, metrics/traces, retries/DR) plus cost tradeoffs.
