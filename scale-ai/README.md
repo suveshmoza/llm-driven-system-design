@@ -141,7 +141,10 @@ After infrastructure is running (via Docker or native):
 cd backend
 npm install
 npm run db:migrate   # Creates tables and seeds shape data
+npm run db:seed-admin   # Creates default admin user
 ```
+
+> **Admin credentials:** email: `admin@scaleai.local` / password: `admin123`
 
 ### 2. Start Backend Services
 
@@ -258,8 +261,15 @@ GET  /api/user/stats              # User's drawing count
 ### Admin Service (Port 3002)
 
 ```
+# Authentication
+POST /api/admin/auth/login        # Login with email/password
+POST /api/admin/auth/logout       # Logout (clears session)
+GET  /api/admin/auth/me           # Get current user
+
+# Dashboard (requires authentication)
 GET  /api/admin/stats             # Dashboard statistics
 GET  /api/admin/drawings          # Paginated drawing list
+GET  /api/admin/drawings/:id/strokes  # Get stroke data for drawing
 POST /api/admin/drawings/:id/flag # Flag drawing
 POST /api/admin/training/start    # Start training job
 GET  /api/admin/training/:id      # Training job status

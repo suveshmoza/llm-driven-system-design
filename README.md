@@ -37,6 +37,7 @@ Each folder contains an independent implementation of a system design problem:
 - [Design Twitter](./twitter/) - Microblogging and social network
 - [Design LinkedIn](./linkedin/) - Professional networking platform
 - [Design TikTok](./tiktok/) - Short-form video platform
+- [Design Kindle Community Highlights](./kindle-highlights/) - Social reading platform with real-time sync
 
 ### Messaging & Communication
 - [Design WhatsApp](./whatsapp/) - Real-time messaging platform
@@ -86,6 +87,7 @@ Each folder contains an independent implementation of a system design problem:
 - [Design Jira](./jira/) - Issue tracking and project management
 - [Design Collaborative Editor](./collaborative-editor/) - Real-time document editing
 - [Design AI Code Assistant](./ai-code-assistant/) - CLI coding assistant like Claude Code/Cursor
+- [Design Plugin Platform](./plugin-platform/) - VS Code-like extension system with sandboxing
 
 ### Financial Services & Payments
 - [Design Robinhood](./robinhood/) - Stock trading platform
@@ -116,12 +118,6 @@ Each folder contains an independent implementation of a system design problem:
 - [Design APNs](./apns/) - Apple Push Notification Service
 - [Design iCloud Sync](./icloud/) - File and photo synchronization
 - [Design Scalable API](./scalable-api/) - API serving millions of users
-
-### Standalone Design Documents
-Comprehensive design documents covering specific system design topics:
-- [Design a Web Crawler](./design-web-crawler.md) - Distributed web crawling with URL frontier, politeness policies
-- [Design a Plugin Platform](./design-plugin-platform.md) - VS Code-like extension system with sandboxing
-- [Design Kindle Community Highlights](./design-kindle-community-highlights.md) - Social reading platform with real-time sync
 
 ### Personal Projects & Experiments
 External projects demonstrating system design concepts in practice:
