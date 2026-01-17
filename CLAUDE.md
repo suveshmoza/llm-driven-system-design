@@ -92,21 +92,23 @@ node scripts/add-codex-opinion.mjs
 
 ### Screenshot Automation
 
-Capture screenshots of frontend projects for documentation using Playwright.
+Capture screenshots of frontend projects for documentation using Puppeteer in Docker.
 
-**One-time setup:**
-```bash
-npm install                      # Install Playwright
-npx playwright install chromium  # Download browser
-```
+**Prerequisites:**
+- Docker Desktop must be running
+- Frontend dev server must be running (or use `--start` flag)
+- For authenticated pages, backend and database must be running
 
 **Usage:**
 ```bash
-# Take screenshots for a specific project
+# Take screenshots (frontend must already be running)
 npm run screenshots instagram
 
-# Take screenshots for all configured projects
-npm run screenshots:all
+# Auto-start frontend, take screenshots, then stop
+node scripts/screenshots.mjs --start instagram
+
+# Auto-screenshot all configured projects
+node scripts/screenshots.mjs --start --all
 
 # Dry run (show what would be captured)
 npm run screenshots:dry instagram
@@ -115,14 +117,10 @@ npm run screenshots:dry instagram
 node scripts/screenshots.mjs --list
 ```
 
-**Prerequisites:**
-- Project infrastructure running (`docker-compose up -d`)
-- Frontend dev server running (`cd <project>/frontend && npm run dev`)
-
 **Adding a new project:**
 1. Create `scripts/screenshot-configs/<project>.json`
 2. Define screens to capture with selectors and routes
-3. Run `npm run screenshots <project>`
+3. Run `node scripts/screenshots.mjs --start <project>`
 
 **Configuration schema:**
 ```json
@@ -144,7 +142,7 @@ node scripts/screenshots.mjs --list
 }
 ```
 
-Screenshots are saved to `<project>/screenshots/`.
+Screenshots are saved to `<project>/screenshots/` at 2x resolution (retina).
 
 ## Technology Stack Defaults
 

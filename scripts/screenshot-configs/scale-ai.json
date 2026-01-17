@@ -8,20 +8,20 @@
   "screens": [
     {
       "name": "01-drawing-game",
-      "path": "/draw",
+      "path": "/",
       "waitFor": "canvas, main",
       "delay": 1000
     },
     {
-      "name": "02-admin-login",
-      "path": "/admin",
-      "waitFor": "form, main",
+      "name": "02-admin",
+      "path": "/#admin",
+      "waitFor": "main, .admin-dashboard",
       "skipAuth": true,
       "delay": 500
     },
     {
       "name": "03-implement",
-      "path": "/implement",
+      "path": "/#implement",
       "waitFor": "main",
       "delay": 500
     }

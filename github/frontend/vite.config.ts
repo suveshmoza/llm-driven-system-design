@@ -8,6 +8,7 @@ export default defineConfig({
     TanStackRouterVite(),
   ],
   server: {
+    allowedHosts: ['host.docker.internal'],
     port: 5173,
     proxy: {
       '/api': {

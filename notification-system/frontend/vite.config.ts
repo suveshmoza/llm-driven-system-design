@@ -8,6 +8,7 @@ export default defineConfig({
     react(),
   ],
   server: {
+    allowedHosts: ['host.docker.internal'],
     port: 5173,
     proxy: {
       '/api': {

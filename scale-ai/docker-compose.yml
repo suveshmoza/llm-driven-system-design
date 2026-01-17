@@ -84,6 +84,35 @@ services:
       timeout: 5s
       retries: 5
 
+  # Python Training Worker
+  training-worker:
+    build:
+      context: ./training
+      dockerfile: Dockerfile
+    container_name: scale-ai-training-worker
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: scaleai
+      DB_USER: scaleai
+      DB_PASSWORD: scaleai123
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: scaleai
+      RABBITMQ_PASSWORD: scaleai123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

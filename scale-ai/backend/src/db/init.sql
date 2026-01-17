@@ -58,9 +58,10 @@ CREATE TABLE drawings (
 -- Training job management
 CREATE TABLE training_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed')),
+    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed', 'cancelled')),
     config JSONB DEFAULT '{}',  -- hyperparameters, data filters, epochs
     error_message TEXT,
+    progress JSONB DEFAULT '{}',  -- current_epoch, total_epochs, current_loss, phase
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     metrics JSONB,  -- accuracy, loss, confusion matrix

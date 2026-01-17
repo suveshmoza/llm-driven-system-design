@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Screenshot automation script for frontend projects.
- * Uses Puppeteer in Docker to capture screenshots reliably on macOS.
+ * Uses Playwright to capture screenshots of key screens.
  *
  * Usage:
  *   node scripts/screenshots.mjs <project>                  # Screenshot (frontend must be running)
@@ -9,9 +9,10 @@
  *   node scripts/screenshots.mjs --start --all              # Auto-screenshot all projects
  *   node scripts/screenshots.mjs --dry-run <project>        # Show what would be captured
  *   node scripts/screenshots.mjs --list                     # List available configs
+ *   node scripts/screenshots.mjs --browser=chromium <proj>  # Use specific browser (chromium, firefox, webkit)
  *
  * Requirements:
- *   - Docker must be running
+ *   - Playwright browsers installed: npx playwright install
  *   - Frontend dev server must be running (or use --start flag)
  */
 
@@ -19,14 +20,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
+import { chromium, firefox, webkit } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const configDir = path.join(__dirname, 'screenshot-configs');
-
-// Docker image for Puppeteer
-const PUPPETEER_IMAGE = 'ghcr.io/puppeteer/puppeteer:latest';
 
 // CLI argument parsing
 const args = process.argv.slice(2);
@@ -34,6 +33,8 @@ const isDryRun = args.includes('--dry-run');
 const isAll = args.includes('--all');
 const isList = args.includes('--list');
 const shouldStart = args.includes('--start');
+const browserArg = args.find(arg => arg.startsWith('--browser='));
+const browserType = browserArg ? browserArg.split('=')[1] : 'chromium';
 const projectArgs = args.filter(arg => !arg.startsWith('--'));
 
 // Track spawned processes for cleanup
@@ -87,18 +88,6 @@ function loadConfigs() {
 }
 
 /**
- * Check if Docker is running
- */
-function isDockerRunning() {
-  try {
-    execSync('docker info', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Check if a URL is reachable
  */
 async function isUrlReachable(url, timeout = 5000) {
@@ -136,11 +125,20 @@ async function waitForFrontend(port, maxWait = 60000) {
 }
 
 /**
- * Check if docker-compose is available
+ * Check if docker-compose is available and Docker is running
  */
 function hasDockerCompose(projectDir) {
   return fs.existsSync(path.join(projectDir, 'docker-compose.yml')) ||
          fs.existsSync(path.join(projectDir, 'docker-compose.yaml'));
+}
+
+function isDockerRunning() {
+  try {
+    execSync('docker info', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -280,180 +278,136 @@ process.on('exit', () => {
 });
 
 /**
- * Generate Puppeteer script for Docker
+ * Capture screenshots using Playwright
  */
-function generatePuppeteerScript(config, screens) {
-  const baseUrl = `http://host.docker.internal:${config.frontendPort}`;
+async function captureWithPlaywright(config, outputDir) {
+  const browsers = { chromium, firefox, webkit };
+  const browserLauncher = browsers[browserType] || chromium;
+  const baseUrl = `http://localhost:${config.frontendPort}`;
 
-  const screensToCapture = screens.map(screen => ({
-    name: screen.name,
-    url: `${baseUrl}${screen.path}`,
-    waitFor: screen.waitFor || null,
-    delay: screen.delay || 500,
-    fullPage: screen.fullPage || false,
-  }));
+  logStep('BROWSER', `Launching ${browserType}...`);
 
-  // Helper to escape strings for JavaScript
-  const escapeJS = (str) => str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-
-  // Generate auth logic if needed
-  let authCode = '';
-  if (config.auth?.enabled) {
-    const auth = config.auth;
-    const usernameSelector = escapeJS(auth.usernameSelector);
-    const passwordSelector = escapeJS(auth.passwordSelector);
-    const submitSelector = escapeJS(auth.submitSelector);
-    const successIndicator = auth.successIndicator ? escapeJS(auth.successIndicator) : null;
-    const username = escapeJS(auth.credentials.username || auth.credentials.email);
-    const password = escapeJS(auth.credentials.password);
-    const loginUrl = escapeJS(auth.loginUrl);
-
-    authCode = `
-    // Perform login
-    console.log('Logging in...');
-    await page.goto('${baseUrl}${loginUrl}', { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.waitForSelector('${usernameSelector}', { timeout: 10000 });
-    await page.type('${usernameSelector}', '${username}');
-    await page.type('${passwordSelector}', '${password}');
-    await page.click('${submitSelector}');
-    ${successIndicator ? `await page.waitForSelector('${successIndicator}', { timeout: 10000 });` : 'await page.waitForNavigation({ waitUntil: "networkidle0" });'}
-    console.log('Login successful');
-    `;
+  let browser;
+  try {
+    browser = await browserLauncher.launch({ headless: true });
+  } catch (error) {
+    logError(`Failed to launch browser: ${error.message}`);
+    logWarning('Run: npx playwright install');
+    return { success: false, captured: 0, failed: config.screens.length };
   }
 
-  return `
-const puppeteer = require('puppeteer');
-
-const screens = ${JSON.stringify(screensToCapture, null, 2)};
-
-(async () => {
-  console.log('Launching browser...');
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  const context = await browser.newContext({
+    viewport: {
+      width: config.viewport?.width || 1280,
+      height: config.viewport?.height || 720,
+    },
+    deviceScaleFactor: 2,
   });
 
-  const page = await browser.newPage();
-  await page.setViewport({
-    width: ${config.viewport?.width || 1280},
-    height: ${config.viewport?.height || 720},
-    deviceScaleFactor: 2
-  });
+  const page = await context.newPage();
 
   let successCount = 0;
   let failCount = 0;
+  let isLoggedIn = false;
 
-  try {
-    ${authCode}
+  // Login function for authenticated screens
+  async function ensureLoggedIn() {
+    if (!config.auth?.enabled || isLoggedIn) return;
 
-    for (const screen of screens) {
-      try {
-        console.log('Capturing: ' + screen.name + ' (' + screen.url + ')');
-        await page.goto(screen.url, { waitUntil: 'networkidle0', timeout: 30000 });
+    const auth = config.auth;
+    logStep('AUTH', 'Logging in...');
 
-        if (screen.waitFor) {
-          try {
-            await page.waitForSelector(screen.waitFor, { timeout: 10000 });
-          } catch (e) {
-            console.log('Warning: selector not found: ' + screen.waitFor);
-          }
-        }
+    try {
+      await page.goto(`${baseUrl}${auth.loginUrl}`, { waitUntil: 'networkidle', timeout: 30000 });
 
-        await new Promise(r => setTimeout(r, screen.delay));
+      // Wait for and fill username/email field
+      const usernameSelector = auth.usernameSelector || 'input[name="username"], input[name="email"], input[type="email"], input[type="text"]';
+      await page.waitForSelector(usernameSelector, { timeout: 10000 });
+      await page.fill(usernameSelector, auth.credentials.username || auth.credentials.email);
 
-        await page.screenshot({
-          path: '/screenshots/' + screen.name + '.png',
-          fullPage: screen.fullPage
-        });
+      // Fill password field
+      const passwordSelector = auth.passwordSelector || 'input[name="password"], input[type="password"]';
+      await page.fill(passwordSelector, auth.credentials.password);
 
-        console.log('Saved: ' + screen.name + '.png');
-        successCount++;
-      } catch (e) {
-        console.error('Failed: ' + screen.name + ' - ' + e.message);
-        failCount++;
+      // Click submit
+      const submitSelector = auth.submitSelector || 'button[type="submit"]';
+      await page.click(submitSelector);
+
+      // Wait for success indicator or navigation
+      if (auth.successIndicator) {
+        await page.waitForSelector(auth.successIndicator, { timeout: 10000 });
+      } else {
+        await page.waitForLoadState('networkidle');
       }
+
+      logSuccess('Login successful');
+      isLoggedIn = true;
+    } catch (error) {
+      logError(`Login failed: ${error.message}`);
+      throw error;
     }
-  } finally {
-    await browser.close();
   }
 
-  console.log('Results: ' + successCount + ' captured, ' + failCount + ' failed');
-  process.exit(failCount > 0 ? 1 : 0);
-})().catch(e => {
-  console.error('Fatal error: ' + e.message);
-  process.exit(1);
-});
-`;
-}
-
-/**
- * Capture screenshots using Docker
- */
-async function captureWithDocker(config, outputDir) {
-  // Filter screens based on auth
-  const screens = config.screens.filter(screen => {
-    if (!config.auth?.enabled) return true;
-    return screen.skipAuth || true; // Include all if auth is configured
-  });
-
-  const script = generatePuppeteerScript(config, screens);
-
-  logStep('DOCKER', 'Running Puppeteer in Docker...');
-
-  return new Promise((resolve) => {
-    // Pass script via -e flag to avoid module resolution issues
-    const dockerArgs = [
-      'run', '--rm',
-      '-v', `${outputDir}:/screenshots`,
-      '--add-host=host.docker.internal:host-gateway',
-      PUPPETEER_IMAGE,
-      'node', '-e', script
-    ];
-
-    const dockerProcess = spawn('docker', dockerArgs, {
-      stdio: 'pipe',
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    dockerProcess.stdout.on('data', (data) => {
-      const lines = data.toString().trim().split('\n');
-      lines.forEach(line => {
-        stdout += line + '\n';
-        if (line.startsWith('Saved:')) {
-          logSuccess(line);
-        } else if (line.startsWith('Failed:')) {
-          logError(line);
-        } else if (line.startsWith('Warning:')) {
-          logWarning(line);
-        } else if (line.includes('Capturing:')) {
-          logStep('CAPTURE', line.replace('Capturing: ', ''));
-        } else if (line.startsWith('Results:')) {
-          log(line, 'cyan');
-        }
-      });
-    });
-
-    dockerProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    dockerProcess.on('close', (code) => {
-      if (code === 0) {
-        resolve({ success: true, stdout, stderr });
-      } else {
-        if (stderr) {
-          // Filter out Docker platform warnings
-          const filteredStderr = stderr.split('\n')
-            .filter(line => !line.includes('WARNING') && !line.includes('requested image'))
-            .join('\n').trim();
-          if (filteredStderr) logError(filteredStderr);
-        }
-        resolve({ success: false, stdout, stderr });
+  // Capture each screen
+  for (const screen of config.screens) {
+    try {
+      // Handle auth if needed
+      if (!screen.skipAuth && config.auth?.enabled) {
+        await ensureLoggedIn();
       }
-    });
-  });
+
+      logStep('CAPTURE', `${screen.name} (${screen.path})`);
+
+      await page.goto(`${baseUrl}${screen.path}`, { waitUntil: 'networkidle', timeout: 30000 });
+
+      // Wait for specific selector if specified
+      if (screen.waitFor) {
+        try {
+          // Handle comma-separated selectors (try first one that exists)
+          const selectors = screen.waitFor.split(',').map(s => s.trim());
+          let found = false;
+          for (const selector of selectors) {
+            try {
+              await page.waitForSelector(selector, { timeout: 5000 });
+              found = true;
+              break;
+            } catch {
+              // Try next selector
+            }
+          }
+          if (!found) {
+            logWarning(`Selector not found: ${screen.waitFor}`);
+          }
+        } catch {
+          logWarning(`Selector not found: ${screen.waitFor}`);
+        }
+      }
+
+      // Additional delay if specified
+      if (screen.delay) {
+        await page.waitForTimeout(screen.delay);
+      }
+
+      // Take screenshot
+      const screenshotPath = path.join(outputDir, `${screen.name}.png`);
+      await page.screenshot({
+        path: screenshotPath,
+        fullPage: screen.fullPage || false,
+      });
+
+      logSuccess(`Saved: ${screen.name}.png`);
+      successCount++;
+    } catch (error) {
+      logError(`Failed: ${screen.name} - ${error.message}`);
+      failCount++;
+    }
+  }
+
+  await browser.close();
+
+  log(`Results: ${successCount} captured, ${failCount} failed`, 'cyan');
+
+  return { success: failCount === 0, captured: successCount, failed: failCount };
 }
 
 /**
@@ -510,8 +464,8 @@ async function processProject(config) {
     return { project: config.name, success: true, captured: 0, failed: 0 };
   }
 
-  // Capture screenshots using Docker
-  const result = await captureWithDocker(config, outputDir);
+  // Capture screenshots using Playwright
+  const result = await captureWithPlaywright(config, outputDir);
 
   // Stop frontend if we started it
   if (frontendProcess && !frontendProcess.killed) {
@@ -534,8 +488,8 @@ async function processProject(config) {
   return {
     project: config.name,
     success: result.success,
-    captured: config.screens.length,
-    failed: result.success ? 0 : config.screens.length,
+    captured: result.captured,
+    failed: result.failed,
   };
 }
 
@@ -544,12 +498,6 @@ async function processProject(config) {
  */
 async function main() {
   console.log('\n📸 Screenshot Automation Tool\n');
-
-  // Check Docker
-  if (!isDockerRunning()) {
-    logError('Docker is not running. Please start Docker Desktop first.');
-    process.exit(1);
-  }
 
   // Load configurations
   const configs = loadConfigs();
@@ -588,7 +536,8 @@ async function main() {
     log('  node scripts/screenshots.mjs --start --all         # Auto-screenshot all projects');
     log('  node scripts/screenshots.mjs --list                # List available configs');
     log('  node scripts/screenshots.mjs --dry-run <project>   # Show what would be captured');
-    log('\nRequirements: Docker must be running', 'dim');
+    log('  node scripts/screenshots.mjs --browser=chromium    # Use specific browser');
+    log('\nBrowsers: chromium (default), firefox, webkit', 'dim');
     log('Available projects: ' + configs.map(c => c.name).join(', '), 'dim');
     return;
   }
