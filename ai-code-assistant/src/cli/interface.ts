@@ -1,11 +1,23 @@
 /**
- * CLI Interface - Terminal interaction layer
+ * CLI Interface - Terminal interaction layer for evylcode
  */
 
 import * as readline from 'readline';
 import chalk from 'chalk';
 import ora, { type Ora } from 'ora';
 import type { CLIConfig } from '../types/index.js';
+
+const VERSION = '1.0.0';
+
+// ASCII art logo for evylcode
+const LOGO = `
+${chalk.hex('#FF6B6B')('   _____ _    _ __     __ _      ')}${chalk.hex('#4ECDC4')('  _____ ____  _____  ______ ')}
+${chalk.hex('#FF6B6B')('  |  ___| |  | |\\ \\   / /| |     ')}${chalk.hex('#4ECDC4')(' / ____/ __ \\|  __ \\|  ____|')}
+${chalk.hex('#FF6B6B')('  | |__ | |  | | \\ \\_/ / | |     ')}${chalk.hex('#4ECDC4')('| |   | |  | | |  | | |__   ')}
+${chalk.hex('#FF6B6B')('  |  __|| |  | |  \\   /  | |     ')}${chalk.hex('#4ECDC4')('| |   | |  | | |  | |  __|  ')}
+${chalk.hex('#FF6B6B')('  | |___| |__| |   | |   | |____ ')}${chalk.hex('#4ECDC4')('| |___| |__| | |__| | |____ ')}
+${chalk.hex('#FF6B6B')('  |______\\____/    |_|   |______|')}${chalk.hex('#4ECDC4')(' \\_____\\____/|_____/|______|')}
+`;
 
 export class CLIInterface {
   private rl: readline.Interface;
@@ -21,7 +33,7 @@ export class CLIInterface {
       confirmBeforeWrite: true,
       autoApproveReads: true,
       saveHistory: true,
-      historyPath: '.ai-assistant-history',
+      historyPath: '.evylcode-history',
       ...config,
     };
 
@@ -36,29 +48,77 @@ export class CLIInterface {
    * Display welcome banner
    */
   showWelcome(): void {
-    const banner = `
-${chalk.cyan('╔══════════════════════════════════════════════════════════════╗')}
-${chalk.cyan('║')}           ${chalk.bold.white('AI Code Assistant')} ${chalk.gray('v1.0.0')}                        ${chalk.cyan('║')}
-${chalk.cyan('║')}                                                              ${chalk.cyan('║')}
-${chalk.cyan('║')}  ${chalk.gray('An intelligent CLI coding assistant with tool use')}           ${chalk.cyan('║')}
-${chalk.cyan('║')}                                                              ${chalk.cyan('║')}
-${chalk.cyan('║')}  ${chalk.yellow('Commands:')}                                                   ${chalk.cyan('║')}
-${chalk.cyan('║')}    ${chalk.green('/help')}     - Show available commands                      ${chalk.cyan('║')}
-${chalk.cyan('║')}    ${chalk.green('/clear')}    - Clear conversation history                   ${chalk.cyan('║')}
-${chalk.cyan('║')}    ${chalk.green('/session')}  - Show session info                            ${chalk.cyan('║')}
-${chalk.cyan('║')}    ${chalk.green('/exit')}     - Exit the assistant                           ${chalk.cyan('║')}
-${chalk.cyan('║')}                                                              ${chalk.cyan('║')}
-${chalk.cyan('╚══════════════════════════════════════════════════════════════╝')}
-`;
-    console.log(banner);
+    console.log(LOGO);
+    console.log();
+    console.log(
+      chalk.gray('  ') +
+      chalk.bold.white('evylcode CLI') +
+      chalk.gray(` v${VERSION}`) +
+      chalk.gray(' - AI-Powered Coding Assistant')
+    );
+    console.log();
+    console.log(chalk.gray('  Powered by ') + chalk.hex('#CC785C')('Claude') + chalk.gray(' from Anthropic'));
+    console.log();
+    console.log(chalk.hex('#555555')('  ─────────────────────────────────────────────────────────────'));
+    console.log();
+    console.log(
+      chalk.gray('  ') +
+      chalk.hex('#4ECDC4')('Commands: ') +
+      chalk.white('/help') +
+      chalk.gray(' | ') +
+      chalk.white('/clear') +
+      chalk.gray(' | ') +
+      chalk.white('/session') +
+      chalk.gray(' | ') +
+      chalk.white('/exit')
+    );
+    console.log();
+    console.log(chalk.hex('#555555')('  ─────────────────────────────────────────────────────────────'));
+    console.log();
   }
 
   /**
-   * Prompt for user input
+   * Show a greeting message
    */
-  async prompt(promptText: string = '> '): Promise<string> {
+  showGreeting(): void {
+    const hour = new Date().getHours();
+    let greeting: string;
+    let emoji: string;
+
+    if (hour < 12) {
+      greeting = 'Good morning';
+      emoji = ''; // sunrise
+    } else if (hour < 17) {
+      greeting = 'Good afternoon';
+      emoji = ''; // sun
+    } else if (hour < 21) {
+      greeting = 'Good evening';
+      emoji = ''; // sunset
+    } else {
+      greeting = 'Burning the midnight oil';
+      emoji = ''; // moon
+    }
+
+    console.log(
+      chalk.gray('  ') +
+      chalk.hex('#4ECDC4')(emoji + ' ' + greeting + '!') +
+      chalk.gray(" Let's build something amazing.")
+    );
+    console.log();
+  }
+
+  /**
+   * Prompt for user input with styled prompt
+   */
+  async prompt(promptText: string = ''): Promise<string> {
+    const styledPrompt = promptText || (
+      chalk.hex('#FF6B6B')('evyl') +
+      chalk.hex('#4ECDC4')('code') +
+      chalk.gray(' > ')
+    );
+
     return new Promise((resolve) => {
-      this.rl.question(chalk.cyan(promptText), (answer) => {
+      this.rl.question(styledPrompt, (answer) => {
         resolve(answer);
       });
     });
@@ -69,13 +129,23 @@ ${chalk.cyan('╚═════════════════════
    */
   async confirm(description: string): Promise<boolean> {
     console.log();
-    console.log(chalk.yellow('┌─ Permission Required ─────────────────────────────────────────┐'));
-    console.log(chalk.yellow('│'));
-    console.log(chalk.yellow('│  ') + description);
-    console.log(chalk.yellow('│'));
-    console.log(chalk.yellow('└────────────────────────────────────────────────────────────────┘'));
+    console.log(chalk.hex('#FFE66D')('  ┌─') + chalk.hex('#FFE66D').bold(' Permission Required ') + chalk.hex('#FFE66D')('──────────────────────────────────────┐'));
+    console.log(chalk.hex('#FFE66D')('  │'));
+    console.log(chalk.hex('#FFE66D')('  │  ') + chalk.white(description));
+    console.log(chalk.hex('#FFE66D')('  │'));
+    console.log(chalk.hex('#FFE66D')('  └──────────────────────────────────────────────────────────────┘'));
+    console.log();
 
-    const answer = await this.prompt(chalk.yellow('Allow? [y/n/a] (a=always) '));
+    const answer = await this.prompt(
+      chalk.hex('#FFE66D')('  Allow? ') +
+      chalk.gray('[') +
+      chalk.green('y') +
+      chalk.gray('/') +
+      chalk.red('n') +
+      chalk.gray('/') +
+      chalk.hex('#4ECDC4')('a') +
+      chalk.gray('lways] ')
+    );
     const normalized = answer.toLowerCase().trim();
     return normalized === 'y' || normalized === 'yes' || normalized === 'a' || normalized === 'always';
   }
@@ -88,8 +158,9 @@ ${chalk.cyan('╚═════════════════════
       this.spinner.stop();
     }
     this.spinner = ora({
-      text: chalk.gray(text),
-      spinner: 'dots',
+      text: chalk.hex('#4ECDC4')(text),
+      spinner: 'dots12',
+      color: 'cyan',
     }).start();
   }
 
@@ -122,17 +193,17 @@ ${chalk.cyan('╚═════════════════════
    */
   printAssistant(content: string): void {
     console.log();
-    console.log(chalk.blue('┌─ Assistant ─────────────────────────────────────────────────────┐'));
-    console.log(chalk.blue('│'));
+    console.log(chalk.hex('#4ECDC4')('  ┌─') + chalk.hex('#4ECDC4').bold(' Claude ') + chalk.hex('#4ECDC4')('─────────────────────────────────────────────────────┐'));
+    console.log(chalk.hex('#4ECDC4')('  │'));
 
     // Format content with proper indentation
     const lines = content.split('\n');
     for (const line of lines) {
-      console.log(chalk.blue('│  ') + this.formatLine(line));
+      console.log(chalk.hex('#4ECDC4')('  │  ') + this.formatLine(line));
     }
 
-    console.log(chalk.blue('│'));
-    console.log(chalk.blue('└─────────────────────────────────────────────────────────────────┘'));
+    console.log(chalk.hex('#4ECDC4')('  │'));
+    console.log(chalk.hex('#4ECDC4')('  └──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
 
@@ -141,13 +212,17 @@ ${chalk.cyan('╚═════════════════════
    */
   printToolCall(toolName: string, params: Record<string, unknown>): void {
     console.log();
-    console.log(chalk.magenta(`⚡ Tool: ${toolName}`));
+    console.log(
+      chalk.hex('#FF6B6B')('  ⚡ ') +
+      chalk.hex('#FF6B6B').bold('Tool: ') +
+      chalk.white(toolName)
+    );
 
     // Pretty print parameters
     for (const [key, value] of Object.entries(params)) {
       const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
-      const displayValue = valueStr.length > 50 ? valueStr.slice(0, 47) + '...' : valueStr;
-      console.log(chalk.gray(`   ${key}: ${displayValue}`));
+      const displayValue = valueStr.length > 60 ? valueStr.slice(0, 57) + '...' : valueStr;
+      console.log(chalk.gray('     ') + chalk.hex('#888')(key + ': ') + chalk.white(displayValue));
     }
   }
 
@@ -156,20 +231,20 @@ ${chalk.cyan('╚═════════════════════
    */
   printToolResult(success: boolean, output?: string, error?: string): void {
     if (success) {
-      console.log(chalk.green('   ✓ Success'));
+      console.log(chalk.green('     ✓ Success'));
       if (output && this.config.verbosity === 'verbose') {
         const lines = output.split('\n').slice(0, 10);
         for (const line of lines) {
-          console.log(chalk.gray(`     ${line}`));
+          console.log(chalk.gray('       ') + chalk.hex('#666')(line.slice(0, 80)));
         }
         if (output.split('\n').length > 10) {
-          console.log(chalk.gray('     ... (truncated)'));
+          console.log(chalk.gray('       ... (truncated)'));
         }
       }
     } else {
-      console.log(chalk.red('   ✗ Failed'));
+      console.log(chalk.red('     ✗ Failed'));
       if (error) {
-        console.log(chalk.red(`     ${error}`));
+        console.log(chalk.red('       ' + error));
       }
     }
   }
@@ -179,9 +254,11 @@ ${chalk.cyan('╚═════════════════════
    */
   printError(message: string): void {
     console.log();
-    console.log(chalk.red('┌─ Error ──────────────────────────────────────────────────────────┐'));
-    console.log(chalk.red('│  ') + message);
-    console.log(chalk.red('└──────────────────────────────────────────────────────────────────┘'));
+    console.log(chalk.red('  ┌─') + chalk.red.bold(' Error ') + chalk.red('──────────────────────────────────────────────────────┐'));
+    console.log(chalk.red('  │'));
+    console.log(chalk.red('  │  ') + chalk.white(message));
+    console.log(chalk.red('  │'));
+    console.log(chalk.red('  └──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
 
@@ -189,14 +266,21 @@ ${chalk.cyan('╚═════════════════════
    * Print info message
    */
   printInfo(message: string): void {
-    console.log(chalk.gray(`ℹ ${message}`));
+    console.log(chalk.hex('#4ECDC4')('  ℹ ') + chalk.gray(message));
   }
 
   /**
    * Print success message
    */
   printSuccess(message: string): void {
-    console.log(chalk.green(`✓ ${message}`));
+    console.log(chalk.green('  ✓ ') + chalk.white(message));
+  }
+
+  /**
+   * Print warning message
+   */
+  printWarning(message: string): void {
+    console.log(chalk.hex('#FFE66D')('  ⚠ ') + chalk.white(message));
   }
 
   /**
@@ -205,12 +289,12 @@ ${chalk.cyan('╚═════════════════════
   private formatLine(line: string): string {
     // Check for code block markers
     if (line.startsWith('```')) {
-      return chalk.gray(line);
+      return chalk.hex('#666')(line);
     }
 
     // Simple inline code highlighting
     const codeRegex = /`([^`]+)`/g;
-    return line.replace(codeRegex, (_match, code: string) => chalk.cyan(code));
+    return line.replace(codeRegex, (_match, code: string) => chalk.hex('#FF6B6B')(code));
   }
 
   /**
@@ -218,21 +302,21 @@ ${chalk.cyan('╚═════════════════════
    */
   showHelp(): void {
     console.log();
-    console.log(chalk.bold('Available Commands:'));
+    console.log(chalk.hex('#4ECDC4').bold('  Available Commands:'));
     console.log();
-    console.log(chalk.green('  /help      ') + chalk.gray('Show this help message'));
-    console.log(chalk.green('  /clear     ') + chalk.gray('Clear conversation history'));
-    console.log(chalk.green('  /session   ') + chalk.gray('Show current session information'));
-    console.log(chalk.green('  /sessions  ') + chalk.gray('List all saved sessions'));
-    console.log(chalk.green('  /tools     ') + chalk.gray('List available tools'));
-    console.log(chalk.green('  /exit      ') + chalk.gray('Exit the assistant'));
+    console.log(chalk.hex('#FF6B6B')('    /help      ') + chalk.gray('Show this help message'));
+    console.log(chalk.hex('#FF6B6B')('    /clear     ') + chalk.gray('Clear conversation history'));
+    console.log(chalk.hex('#FF6B6B')('    /session   ') + chalk.gray('Show current session information'));
+    console.log(chalk.hex('#FF6B6B')('    /sessions  ') + chalk.gray('List all saved sessions'));
+    console.log(chalk.hex('#FF6B6B')('    /tools     ') + chalk.gray('List available tools'));
+    console.log(chalk.hex('#FF6B6B')('    /exit      ') + chalk.gray('Exit evylcode'));
     console.log();
-    console.log(chalk.bold('Examples:'));
+    console.log(chalk.hex('#4ECDC4').bold('  Example Prompts:'));
     console.log();
-    console.log(chalk.gray('  "Read the file src/index.ts"'));
-    console.log(chalk.gray('  "Find all TypeScript files in src/"'));
-    console.log(chalk.gray('  "Edit the function foo to add error handling"'));
-    console.log(chalk.gray('  "Run npm test"'));
+    console.log(chalk.gray('    "Read the file src/index.ts"'));
+    console.log(chalk.gray('    "Find all TypeScript files in src/"'));
+    console.log(chalk.gray('    "Edit the function foo to add error handling"'));
+    console.log(chalk.gray('    "Run npm test and fix any failing tests"'));
     console.log();
   }
 
@@ -241,11 +325,23 @@ ${chalk.cyan('╚═════════════════════
    */
   showTools(tools: { name: string; description: string }[]): void {
     console.log();
-    console.log(chalk.bold('Available Tools:'));
+    console.log(chalk.hex('#4ECDC4').bold('  Available Tools:'));
     console.log();
     for (const tool of tools) {
-      console.log(chalk.green(`  ${tool.name.padEnd(12)}`), chalk.gray(tool.description));
+      console.log(
+        chalk.hex('#FF6B6B')('    ' + tool.name.padEnd(12)) +
+        chalk.gray(tool.description)
+      );
     }
+    console.log();
+  }
+
+  /**
+   * Show goodbye message
+   */
+  showGoodbye(): void {
+    console.log();
+    console.log(chalk.hex('#4ECDC4')('  ') + chalk.hex('#4ECDC4')('Until next time! Happy coding!'));
     console.log();
   }
 

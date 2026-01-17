@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 /**
- * AI Code Assistant - Main Entry Point
+ * evylcode CLI - AI-Powered Coding Assistant
  *
- * A terminal-based AI coding assistant with tool use and agentic loop.
+ * A terminal-based AI coding assistant with tool use and agentic loop,
+ * powered by Claude from Anthropic.
  */
 
 import { Command } from 'commander';
 import * as path from 'path';
+import chalk from 'chalk';
 import { CLIInterface } from './cli/index.js';
 import { AgentController } from './agent/index.js';
 import { ToolRegistry } from './tools/index.js';
-import { MockLLMProvider } from './llm/index.js';
+import { MockLLMProvider, AnthropicProvider } from './llm/index.js';
 import { PermissionManager } from './permissions/index.js';
 import { SessionManager } from './session/index.js';
+import type { LLMProvider } from './types/index.js';
 
 const VERSION = '1.0.0';
 
@@ -20,12 +23,15 @@ async function main(): Promise<void> {
   const program = new Command();
 
   program
-    .name('ai-assistant')
-    .description('AI-powered command-line coding assistant')
+    .name('evylcode')
+    .description('evylcode CLI - AI-powered command-line coding assistant')
     .version(VERSION)
     .option('-d, --directory <path>', 'Working directory', process.cwd())
+    .option('-k, --api-key <key>', 'Anthropic API key (or set ANTHROPIC_API_KEY env var)')
+    .option('-m, --model <model>', 'Claude model to use', 'claude-sonnet-4-20250514')
     .option('-r, --resume <sessionId>', 'Resume a previous session')
     .option('-v, --verbose', 'Verbose output')
+    .option('--demo', 'Run in demo mode with mock LLM (no API key needed)')
     .option('--list-sessions', 'List all saved sessions')
     .argument('[prompt]', 'Initial prompt to send to the assistant')
     .action(async (prompt, options) => {
@@ -37,13 +43,16 @@ async function main(): Promise<void> {
 
 interface CLIOptions {
   directory: string;
+  apiKey?: string;
+  model?: string;
   resume?: string;
   verbose?: boolean;
+  demo?: boolean;
   listSessions?: boolean;
 }
 
 async function runAssistant(initialPrompt: string | undefined, options: CLIOptions): Promise<void> {
-  // Initialize components
+  // Initialize CLI interface
   const cli = new CLIInterface({
     verbosity: options.verbose ? 'verbose' : 'normal',
   });
@@ -54,12 +63,21 @@ async function runAssistant(initialPrompt: string | undefined, options: CLIOptio
   if (options.listSessions) {
     const sessions = await sessionManager.list();
     if (sessions.length === 0) {
-      console.log('No saved sessions found.');
+      console.log(chalk.gray('  No saved sessions found.'));
     } else {
-      console.log('Saved sessions:\n');
+      console.log();
+      console.log(chalk.hex('#4ECDC4').bold('  Saved Sessions:'));
+      console.log();
       for (const session of sessions) {
-        console.log(`  ${session.id.slice(0, 8)}  ${session.workingDirectory}  (${session.messageCount} messages)`);
-        console.log(`           Started: ${new Date(session.startedAt).toLocaleString()}`);
+        console.log(
+          chalk.hex('#FF6B6B')(`    ${session.id.slice(0, 8)}`) +
+          chalk.gray('  ') +
+          chalk.white(session.workingDirectory) +
+          chalk.gray(` (${session.messageCount} messages)`)
+        );
+        console.log(
+          chalk.gray(`             Started: ${new Date(session.startedAt).toLocaleString()}`)
+        );
         console.log();
       }
     }
@@ -68,6 +86,42 @@ async function runAssistant(initialPrompt: string | undefined, options: CLIOptio
 
   // Resolve working directory
   const workingDirectory = path.resolve(options.directory);
+
+  // Get API key from options or environment
+  const apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY;
+
+  // Determine LLM provider
+  let llm: LLMProvider;
+
+  if (options.demo) {
+    llm = new MockLLMProvider();
+  } else if (!apiKey) {
+    // No API key - show helpful message
+    console.log();
+    console.log(chalk.hex('#FFE66D')('  ⚠  No Anthropic API key provided'));
+    console.log();
+    console.log(chalk.gray('  To use evylcode with Claude, set your API key:'));
+    console.log();
+    console.log(chalk.white('    Option 1: ') + chalk.gray('Set environment variable'));
+    console.log(chalk.hex('#4ECDC4')('      export ANTHROPIC_API_KEY=your-api-key'));
+    console.log();
+    console.log(chalk.white('    Option 2: ') + chalk.gray('Pass as command line argument'));
+    console.log(chalk.hex('#4ECDC4')('      evylcode --api-key your-api-key'));
+    console.log();
+    console.log(chalk.white('    Option 3: ') + chalk.gray('Run in demo mode (mock LLM)'));
+    console.log(chalk.hex('#4ECDC4')('      evylcode --demo'));
+    console.log();
+    console.log(chalk.gray('  Get your API key at: ') + chalk.hex('#4ECDC4')('https://console.anthropic.com/'));
+    console.log();
+    cli.close();
+    return;
+  } else {
+    // Create Anthropic provider with API key
+    llm = new AnthropicProvider({
+      apiKey,
+      model: options.model,
+    });
+  }
 
   // Initialize or resume session
   if (options.resume) {
@@ -91,9 +145,6 @@ async function runAssistant(initialPrompt: string | undefined, options: CLIOptio
   // Initialize tool registry
   const tools = new ToolRegistry();
 
-  // Initialize LLM provider (mock for demo)
-  const llm = new MockLLMProvider();
-
   // Initialize agent controller
   const agent = new AgentController(
     llm,
@@ -106,8 +157,14 @@ async function runAssistant(initialPrompt: string | undefined, options: CLIOptio
 
   // Show welcome banner
   cli.showWelcome();
+  cli.showGreeting();
   cli.printInfo(`Working directory: ${workingDirectory}`);
-  cli.printInfo(`Using mock LLM provider (demo mode)`);
+
+  if (options.demo) {
+    cli.printWarning('Running in demo mode with mock LLM');
+  } else {
+    cli.printInfo(`Model: ${options.model || 'claude-sonnet-4-20250514'}`);
+  }
   console.log();
 
   // Handle initial prompt if provided
@@ -142,7 +199,7 @@ async function runInteractionLoop(
           case '/exit':
           case '/quit':
           case '/q':
-            cli.printInfo('Goodbye!');
+            cli.showGoodbye();
             await sessionManager.saveCurrent();
             cli.close();
             return;
@@ -169,9 +226,14 @@ async function runInteractionLoop(
             if (sessions.length === 0) {
               cli.printInfo('No saved sessions');
             } else {
-              console.log('\nSaved sessions:');
+              console.log();
+              console.log(chalk.hex('#4ECDC4').bold('  Saved Sessions:'));
+              console.log();
               for (const s of sessions.slice(0, 10)) {
-                console.log(`  ${s.id.slice(0, 8)}  ${s.messageCount} messages  ${new Date(s.startedAt).toLocaleDateString()}`);
+                console.log(
+                  chalk.hex('#FF6B6B')(`    ${s.id.slice(0, 8)}`) +
+                  chalk.gray(`  ${s.messageCount} messages  ${new Date(s.startedAt).toLocaleDateString()}`)
+                );
               }
               console.log();
             }
@@ -204,23 +266,24 @@ async function runInteractionLoop(
 
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
+  console.error(chalk.red('\n  Uncaught exception:'), error.message);
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection:', reason);
+  console.error(chalk.red('\n  Unhandled rejection:'), reason);
   process.exit(1);
 });
 
 // Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
-  console.log('\n\nGoodbye!');
+  console.log();
+  console.log(chalk.hex('#4ECDC4')('\n  Until next time! Happy coding!\n'));
   process.exit(0);
 });
 
 // Run main
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  console.error(chalk.red('\n  Fatal error:'), error.message);
   process.exit(1);
 });

@@ -108,6 +108,7 @@ Each folder contains an independent implementation of a system design problem.
 |---------|-------------|--------|
 | [LeetCode](./leetcode/) | Online coding judge and practice platform | ✅ Implemented |
 | [Google Docs](./google-docs/) | Collaborative document editing | ✅ Implemented |
+| [Google Sheets](./google-sheets/) | Collaborative spreadsheet with real-time sync | ✅ Implemented |
 | [Figma](./figma/) | Collaborative design and prototyping platform | ✅ Implemented |
 | [GitHub](./github/) | Code hosting and version control | ✅ Implemented |
 | [Notion](./notion/) | Collaborative workspace with blocks | ✅ Implemented |

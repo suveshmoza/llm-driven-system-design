@@ -1,10 +1,22 @@
-# AI Code Assistant - CLI Tool
+# evylcode CLI - AI-Powered Coding Assistant
 
 A terminal-based AI coding assistant similar to Claude Code, GeminiCLI, or opencode. This project demonstrates the system design of an intelligent CLI tool that helps developers write, debug, and understand code.
 
+```
+   _____ _    _ __     __ _        _____ ____  _____  ______
+  |  ___| |  | |\ \   / /| |      / ____/ __ \|  __ \|  ____|
+  | |__ | |  | | \ \_/ / | |     | |   | |  | | |  | | |__
+  |  __|| |  | |  \   /  | |     | |   | |  | | |  | |  __|
+  | |___| |__| |   | |   | |____ | |___| |__| | |__| | |____
+  |______\____/    |_|   |______| \_____\____/|_____/|______|
+
+  evylcode CLI v1.0.0 - AI-Powered Coding Assistant
+  Powered by Claude from Anthropic
+```
+
 ## Overview
 
-The AI Code Assistant is a command-line interface that provides:
+evylcode CLI is a command-line interface that provides:
 - **Conversational coding help** - Ask questions, get explanations
 - **Code generation** - Generate code from natural language descriptions
 - **File operations** - Read, edit, and create files with AI assistance
@@ -13,12 +25,14 @@ The AI Code Assistant is a command-line interface that provides:
 
 ## Key Features
 
+- Real integration with **Claude** via the Anthropic API
 - Multi-turn conversation with context retention
 - File system access with safety controls
 - Shell command execution in sandboxed environment
 - Streaming responses for real-time feedback
 - Extensible tool/plugin system
 - Session management and history
+- Colorful, intuitive terminal UI
 
 ## Getting Started
 
@@ -26,6 +40,7 @@ The AI Code Assistant is a command-line interface that provides:
 
 - Node.js 20+
 - npm or yarn
+- **Anthropic API key** (get one at [console.anthropic.com](https://console.anthropic.com/))
 
 ### Installation
 
@@ -44,6 +59,26 @@ npm run build
 npm start
 ```
 
+### Setting Up Your API Key
+
+evylcode requires an Anthropic API key to work with Claude. You can provide it in two ways:
+
+**Option 1: Environment Variable (Recommended)**
+```bash
+export ANTHROPIC_API_KEY=your-api-key
+evylcode
+```
+
+**Option 2: Command Line Argument**
+```bash
+evylcode --api-key your-api-key
+```
+
+**Option 3: Demo Mode (No API Key)**
+```bash
+evylcode --demo
+```
+
 ### Quick Start
 
 ```bash
@@ -53,6 +88,9 @@ npm run dev
 # Start in a specific directory
 npm run dev -- -d /path/to/your/project
 
+# Start with a specific Claude model
+npm run dev -- -m claude-sonnet-4-20250514
+
 # Start with an initial prompt
 npm run dev -- "Read the package.json file"
 
@@ -61,6 +99,9 @@ npm run dev -- -r <session-id>
 
 # List all saved sessions
 npm run dev -- --list-sessions
+
+# Run in demo mode (no API key required)
+npm run dev -- --demo
 ```
 
 ## Usage
@@ -75,7 +116,7 @@ Once the assistant is running, you can interact with it using natural language o
 - `/session` - Show current session information
 - `/sessions` - List all saved sessions
 - `/tools` - List available tools
-- `/exit` - Exit the assistant
+- `/exit` - Exit evylcode
 
 **Example Prompts:**
 ```
@@ -86,6 +127,28 @@ Create a new config.json file
 Edit the main.ts to add error handling
 Run npm test
 Git status
+```
+
+### CLI Options
+
+```
+Usage: evylcode [options] [prompt]
+
+evylcode CLI - AI-powered command-line coding assistant
+
+Arguments:
+  prompt                    Initial prompt to send to the assistant
+
+Options:
+  -V, --version             output the version number
+  -d, --directory <path>    Working directory (default: current directory)
+  -k, --api-key <key>       Anthropic API key (or set ANTHROPIC_API_KEY env var)
+  -m, --model <model>       Claude model to use (default: "claude-sonnet-4-20250514")
+  -r, --resume <sessionId>  Resume a previous session
+  -v, --verbose             Verbose output
+  --demo                    Run in demo mode with mock LLM (no API key needed)
+  --list-sessions           List all saved sessions
+  -h, --help                display help for command
 ```
 
 ### Tools
@@ -103,41 +166,43 @@ The assistant has access to the following tools:
 
 ### Permission System
 
-The assistant uses a layered permission system:
+evylcode uses a layered permission system:
 
 1. **Auto-approved operations** - File reads, safe commands (ls, git status, npm run)
 2. **Session-approved** - Operations approved once apply for the session
 3. **Always-ask** - Destructive operations prompt every time
 4. **Blocked** - Dangerous patterns are never allowed (.ssh, credentials, rm -rf /, etc.)
 
-When an operation requires approval, you'll see a prompt:
+When an operation requires approval, you'll see a styled prompt:
 ```
-┌─ Permission Required ─────────────────────────────────────────┐
-│
-│  Edit: Edit file content
-│     Target: src/index.ts
-│
-└────────────────────────────────────────────────────────────────┘
-Allow? [y/n/a] (a=always)
+  ┌─ Permission Required ──────────────────────────────────────┐
+  │
+  │  Edit: Edit file content
+  │     Target: src/index.ts
+  │
+  └──────────────────────────────────────────────────────────────┘
+
+  Allow? [y/n/always]
 ```
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    AI Code Assistant                         │
+│                      evylcode CLI                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │   ┌──────────┐     ┌──────────┐     ┌──────────┐           │
-│   │   CLI    │────▶│  Agent   │────▶│   LLM    │           │
+│   │   CLI    │────▶│  Agent   │────▶│ Anthropic│           │
 │   │Interface │     │Controller│     │ Provider │           │
 │   └──────────┘     └──────────┘     └──────────┘           │
-│        │                │                                    │
-│        │                ▼                                    │
-│        │         ┌──────────┐                               │
-│        │         │   Tool   │                               │
-│        │         │  Router  │                               │
-│        │         └──────────┘                               │
+│        │                │                  │                 │
+│        │                │                  │ Claude API      │
+│        │                ▼                  ▼                 │
+│        │         ┌──────────┐      ┌─────────────┐         │
+│        │         │   Tool   │      │   Anthropic │         │
+│        │         │  Router  │      │     API     │         │
+│        │         └──────────┘      └─────────────┘         │
 │        │                │                                    │
 │        │    ┌───────────┼───────────┐                       │
 │        │    ▼           ▼           ▼                       │
@@ -155,10 +220,10 @@ Allow? [y/n/a] (a=always)
 
 ### Core Components
 
-- **CLI Interface** (`src/cli/`) - Terminal UI with input handling, streaming output
+- **CLI Interface** (`src/cli/`) - Colorful terminal UI with styled prompts and streaming output
 - **Agent Controller** (`src/agent/`) - Agentic loop orchestrating LLM and tools
 - **Tool System** (`src/tools/`) - Pluggable tools (Read, Edit, Bash, Glob, Grep)
-- **LLM Provider** (`src/llm/`) - Abstraction for LLM backends (mock provider for demo)
+- **LLM Provider** (`src/llm/`) - Anthropic Claude API integration + mock provider for demo
 - **Permission Manager** (`src/permissions/`) - Safety layer for sensitive operations
 - **Session Manager** (`src/session/`) - Persistence of conversation history
 
@@ -186,7 +251,8 @@ ai-code-assistant/
 │   │   └── grep.ts        # Content search
 │   ├── llm/               # LLM provider abstraction
 │   │   ├── index.ts
-│   │   └── mock-provider.ts
+│   │   ├── anthropic-provider.ts  # Real Claude integration
+│   │   └── mock-provider.ts       # Demo mode
 │   ├── permissions/       # Permission system
 │   │   ├── index.ts
 │   │   └── manager.ts
@@ -200,25 +266,35 @@ ai-code-assistant/
 └── CLAUDE.md              # Development notes
 ```
 
-## Demo Mode
+## LLM Providers
 
-This implementation uses a **mock LLM provider** that simulates AI responses for demonstration purposes. The mock provider:
+### Anthropic Provider (Default)
 
-- Parses natural language input to detect user intent
-- Generates appropriate tool calls based on patterns
-- Streams responses character by character
-- Demonstrates the full agentic loop
-
-To use with a real LLM provider, implement the `LLMProvider` interface:
+The default provider uses Claude via the Anthropic API:
 
 ```typescript
-interface LLMProvider {
-  name: string;
-  complete(request: CompletionRequest): Promise<CompletionResponse>;
-  stream(request: CompletionRequest): AsyncIterable<StreamChunk>;
-  countTokens(text: string): number;
-}
+import { AnthropicProvider } from './llm/anthropic-provider.js';
+
+const llm = new AnthropicProvider({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  model: 'claude-sonnet-4-20250514',
+});
 ```
+
+Supported models:
+- `claude-sonnet-4-20250514` (default) - Fast, capable
+- `claude-opus-4-20250514` - Most capable
+- `claude-3-5-haiku-20241022` - Fast and cost-effective
+
+### Mock Provider (Demo Mode)
+
+For testing without an API key, use the mock provider with `--demo`:
+
+```bash
+evylcode --demo
+```
+
+The mock provider simulates AI responses for demonstration purposes.
 
 ## Development
 
@@ -270,11 +346,13 @@ this.register(MyTool);
 
 ## Key Design Decisions
 
-1. **Streaming-first** - All LLM responses stream to terminal for responsive UX
-2. **Tool-use native** - Built around LLM tool calling with explicit tool definitions
-3. **Safety by default** - Explicit permissions for file writes and command execution
-4. **String-based edits** - Edit tool uses string replacement (not line numbers) for robustness
-5. **Session persistence** - Conversations are saved for later resumption
+1. **Real Claude Integration** - Uses official Anthropic SDK for production-quality AI
+2. **Streaming-first** - All LLM responses stream to terminal for responsive UX
+3. **Tool-use native** - Built around Claude's tool calling with explicit tool definitions
+4. **Safety by default** - Explicit permissions for file writes and command execution
+5. **String-based edits** - Edit tool uses string replacement (not line numbers) for robustness
+6. **Session persistence** - Conversations are saved for later resumption
+7. **Colorful UI** - Modern terminal aesthetics with chalk styling
 
 ## Related Documentation
 
@@ -286,6 +364,7 @@ this.register(MyTool);
 
 - **Runtime:** Node.js
 - **Language:** TypeScript
+- **LLM:** Anthropic Claude API (`@anthropic-ai/sdk`)
 - **CLI Framework:** Commander.js
 - **Terminal UI:** chalk, ora
 - **Testing:** Vitest

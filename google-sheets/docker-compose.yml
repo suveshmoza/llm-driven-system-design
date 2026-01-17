@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: sheets-postgres
+    environment:
+      POSTGRES_USER: sheets
+      POSTGRES_PASSWORD: sheets123
+      POSTGRES_DB: sheets
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sheets"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for pub/sub and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: sheets-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

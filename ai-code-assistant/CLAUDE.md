@@ -1,8 +1,8 @@
-# AI Code Assistant - Development with Claude
+# evylcode CLI - Development with Claude
 
 ## Project Context
 
-This document tracks the development journey of implementing an AI-powered CLI coding assistant similar to Claude Code, GeminiCLI, or opencode.
+This document tracks the development journey of implementing evylcode CLI, an AI-powered CLI coding assistant similar to Claude Code, GeminiCLI, or opencode. Now with real Anthropic Claude API integration!
 
 ## Key Challenges to Explore
 
@@ -32,7 +32,7 @@ This document tracks the development journey of implementing an AI-powered CLI c
 - Mock LLM provider for demo mode
 
 ### Phase 2: Initial Implementation
-*In Progress*
+*Completed*
 
 **Completed:**
 - Project structure and configuration (package.json, tsconfig.json)
@@ -51,18 +51,26 @@ This document tracks the development journey of implementing an AI-powered CLI c
 - Session manager with persistence (src/session/)
 - Main entry point with CLI argument parsing
 
-**Focus areas:**
-- Implement core functionality
-- Get something working end-to-end
-- Validate basic assumptions
+### Phase 3: Anthropic Integration
+*Completed*
 
-**To do:**
-- Add more sophisticated intent parsing to mock provider
-- Implement context window management with summarization
-- Add comprehensive error handling
-- Write tests for tools and agent loop
+**Added:**
+- Real Anthropic Claude API integration (src/llm/anthropic-provider.ts)
+- API key support via environment variable or CLI argument
+- Model selection (claude-sonnet-4-20250514, claude-opus-4-20250514, etc.)
+- Streaming responses from Claude
+- Colorful evylcode branding and UI
+- Time-based greeting messages
+- Enhanced terminal aesthetics with chalk styling
+- Demo mode flag for testing without API key
 
-### Phase 3: Scaling and Optimization
+**evylcode branding:**
+- Renamed from "ai-code-assistant" to "evylcode"
+- Custom ASCII art logo in coral (#FF6B6B) and teal (#4ECDC4)
+- Styled prompts and UI elements
+- Anthropic-branded messaging
+
+### Phase 4: Scaling and Optimization
 *Not started*
 
 **Focus areas:**
@@ -71,8 +79,8 @@ This document tracks the development journey of implementing an AI-powered CLI c
 - Implement load balancing for multiple LLM providers
 - Add monitoring
 
-### Phase 4: Polish and Documentation
-*Not started*
+### Phase 5: Polish and Documentation
+*In Progress*
 
 **Focus areas:**
 - Complete documentation
@@ -98,12 +106,30 @@ This document tracks the development journey of implementing an AI-powered CLI c
 **Decision: Mock LLM provider for demo**
 - Allows testing the full agentic loop without API keys
 - Pattern-based intent detection simulates LLM behavior
-- Easy to swap for real provider (AnthropicProvider, OpenAIProvider)
+- Easy to swap for real provider (AnthropicProvider)
 
 **Decision: Streaming responses**
 - Better UX - user sees progress in real-time
 - Character-by-character streaming with small delay for demo effect
-- Real LLM providers would stream actual tokens
+- Real LLM providers stream actual tokens
+
+### 2025 - Anthropic Integration
+
+**Decision: Use official Anthropic SDK**
+- @anthropic-ai/sdk provides type-safe API access
+- Native streaming support with proper event handling
+- Tool use support with input_schema
+
+**Decision: Default to Claude Sonnet**
+- claude-sonnet-4-20250514 provides good balance of speed and capability
+- Users can override with --model flag
+- Opus available for more complex tasks
+
+**Decision: Colorful terminal branding**
+- Coral (#FF6B6B) for "evyl" and interactive elements
+- Teal (#4ECDC4) for "code" and informational elements
+- Yellow (#FFE66D) for warnings and permission prompts
+- Creates memorable, polished user experience
 
 ## Iterations and Learnings
 
@@ -116,6 +142,12 @@ This document tracks the development journey of implementing an AI-powered CLI c
 - Implemented 6 core tools following the Tool interface
 - Each tool handles its own validation and error cases
 - Permission checking is done in ToolContext
+
+### Iteration 3: Real Claude Integration
+- Anthropic SDK provides clean abstraction over API
+- Streaming requires careful handling of different event types
+- Tool use responses need proper message conversion
+- Type system helps catch integration issues early
 
 ## Questions and Discussions
 
@@ -139,9 +171,13 @@ This document tracks the development journey of implementing an AI-powered CLI c
 - **Q: How to handle dangerous commands?**
   A: Layered system with blocked patterns, safe patterns, and approval prompts
 
+- **Q: Mock vs real LLM provider?**
+  A: Both! Mock for demo/testing, Anthropic for production use
+
 ## Resources and References
 
 - [Anthropic Tool Use Documentation](https://docs.anthropic.com/claude/docs/tool-use)
+- [Anthropic SDK for Node.js](https://github.com/anthropics/anthropic-sdk-typescript)
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [OpenAI Function Calling](https://platform.openai.com/docs/guides/function-calling)
 - [aider Architecture](https://aider.chat/docs/architecture.html)
@@ -152,10 +188,12 @@ This document tracks the development journey of implementing an AI-powered CLI c
 - [x] Sketch initial architecture
 - [x] Choose technology stack
 - [x] Implement MVP
+- [x] Add real LLM provider support (Anthropic)
+- [x] Add colorful branding and UI
 - [ ] Test and iterate
 - [ ] Add context window management
-- [ ] Add real LLM provider support
 - [ ] Add comprehensive tests
+- [ ] Add more LLM providers (OpenAI, local models)
 
 ---
 
