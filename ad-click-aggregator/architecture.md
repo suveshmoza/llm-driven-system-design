@@ -113,35 +113,168 @@ For production scale targeting 10,000 clicks/second:
 
 ### Database Schema
 
+The complete database schema is defined in `/backend/init.sql` (consolidated from migrations 001-004).
+
+#### Core Entity Tables
+
 ```sql
--- Raw click events
+-- Advertisers table
+CREATE TABLE advertisers (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Campaigns table
+CREATE TABLE campaigns (
+    id VARCHAR(50) PRIMARY KEY,
+    advertiser_id VARCHAR(50) NOT NULL REFERENCES advertisers(id),
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active',  -- 'active', 'paused', 'completed'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ads table
+CREATE TABLE ads (
+    id VARCHAR(50) PRIMARY KEY,
+    campaign_id VARCHAR(50) NOT NULL REFERENCES campaigns(id),
+    name VARCHAR(255) NOT NULL,
+    creative_url TEXT,
+    status VARCHAR(20) DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+#### Click Events Table
+
+```sql
+-- Raw click events (for debugging, reconciliation, and billing disputes)
 CREATE TABLE click_events (
     id SERIAL PRIMARY KEY,
-    click_id VARCHAR(50) UNIQUE NOT NULL,
+    click_id VARCHAR(50) UNIQUE NOT NULL,      -- Business identifier
     ad_id VARCHAR(50) NOT NULL,
     campaign_id VARCHAR(50) NOT NULL,
     advertiser_id VARCHAR(50) NOT NULL,
-    user_id VARCHAR(100),
+    user_id VARCHAR(100),                      -- Hashed user identifier
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-    device_type VARCHAR(20),
-    country VARCHAR(3),
+    device_type VARCHAR(20),                   -- 'mobile', 'desktop', 'tablet'
+    os VARCHAR(50),                            -- 'iOS', 'Android', 'Windows', etc.
+    browser VARCHAR(50),                       -- 'Safari', 'Chrome', 'Firefox', etc.
+    country VARCHAR(3),                        -- ISO 3166-1 alpha-3 code
+    region VARCHAR(50),                        -- State/province
+    ip_hash VARCHAR(64),                       -- SHA-256 hash of IP (privacy)
     is_fraudulent BOOLEAN DEFAULT FALSE,
-    fraud_reason VARCHAR(255)
+    fraud_reason VARCHAR(255),                 -- 'velocity_ip', 'velocity_user', etc.
+    idempotency_key VARCHAR(64),               -- Request-level deduplication
+    processed_at TIMESTAMP WITH TIME ZONE,     -- When fully processed (latency tracking)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Aggregation tables (minute, hour, day)
-CREATE TABLE click_aggregates_hour (
+-- Indexes for click_events
+CREATE INDEX idx_click_events_ad_id ON click_events(ad_id);
+CREATE INDEX idx_click_events_campaign_id ON click_events(campaign_id);
+CREATE INDEX idx_click_events_timestamp ON click_events(timestamp);
+CREATE INDEX idx_click_events_click_id ON click_events(click_id);
+CREATE INDEX idx_click_events_created_at ON click_events(created_at);
+CREATE INDEX idx_click_events_advertiser_timestamp ON click_events(advertiser_id, timestamp);
+
+-- Partial indexes (more efficient for specific queries)
+CREATE UNIQUE INDEX idx_click_events_idempotency_key ON click_events(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+CREATE INDEX idx_click_events_processed_at ON click_events(processed_at)
+    WHERE processed_at IS NOT NULL;
+CREATE INDEX idx_click_events_fraud_analysis ON click_events(is_fraudulent, timestamp)
+    WHERE is_fraudulent = true;
+```
+
+#### Aggregation Tables
+
+Three pre-computed aggregation tables at different granularities for fast analytics queries:
+
+```sql
+-- Per-minute aggregation (real-time dashboards, 7-day retention)
+CREATE TABLE click_aggregates_minute (
+    id SERIAL PRIMARY KEY,
     time_bucket TIMESTAMP WITH TIME ZONE NOT NULL,
     ad_id VARCHAR(50) NOT NULL,
     campaign_id VARCHAR(50) NOT NULL,
+    advertiser_id VARCHAR(50) NOT NULL,
     country VARCHAR(3),
     device_type VARCHAR(20),
     click_count BIGINT DEFAULT 0,
     unique_users BIGINT DEFAULT 0,
     fraud_count BIGINT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(time_bucket, ad_id, country, device_type)
 );
+
+-- Per-hour aggregation (standard analytics, 1-year retention)
+CREATE TABLE click_aggregates_hour (
+    id SERIAL PRIMARY KEY,
+    time_bucket TIMESTAMP WITH TIME ZONE NOT NULL,
+    ad_id VARCHAR(50) NOT NULL,
+    campaign_id VARCHAR(50) NOT NULL,
+    advertiser_id VARCHAR(50) NOT NULL,
+    country VARCHAR(3),
+    device_type VARCHAR(20),
+    click_count BIGINT DEFAULT 0,
+    unique_users BIGINT DEFAULT 0,
+    fraud_count BIGINT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(time_bucket, ad_id, country, device_type)
+);
+
+-- Per-day aggregation (historical trends, indefinite retention)
+CREATE TABLE click_aggregates_day (
+    id SERIAL PRIMARY KEY,
+    time_bucket DATE NOT NULL,
+    ad_id VARCHAR(50) NOT NULL,
+    campaign_id VARCHAR(50) NOT NULL,
+    advertiser_id VARCHAR(50) NOT NULL,
+    country VARCHAR(3),
+    device_type VARCHAR(20),
+    click_count BIGINT DEFAULT 0,
+    unique_users BIGINT DEFAULT 0,
+    fraud_count BIGINT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(time_bucket, ad_id, country, device_type)
+);
+
+-- Aggregation indexes (for time-range queries and campaign filtering)
+CREATE INDEX idx_agg_minute_time ON click_aggregates_minute(time_bucket);
+CREATE INDEX idx_agg_minute_campaign ON click_aggregates_minute(campaign_id);
+CREATE INDEX idx_agg_minute_created_at ON click_aggregates_minute(created_at);
+CREATE INDEX idx_agg_hour_time ON click_aggregates_hour(time_bucket);
+CREATE INDEX idx_agg_hour_campaign ON click_aggregates_hour(campaign_id);
+CREATE INDEX idx_agg_hour_created_at ON click_aggregates_hour(created_at);
+CREATE INDEX idx_agg_day_time ON click_aggregates_day(time_bucket);
+CREATE INDEX idx_agg_day_campaign ON click_aggregates_day(campaign_id);
+CREATE INDEX idx_agg_day_created_at ON click_aggregates_day(created_at);
 ```
+
+#### Schema Design Rationale
+
+| Table | Purpose | Key Design Decisions |
+|-------|---------|---------------------|
+| `advertisers` | Account hierarchy root | Simple lookup table, rarely updated |
+| `campaigns` | Group ads by marketing objective | Status field for pause/resume without deletion |
+| `ads` | Individual ad creatives | Links to campaigns for hierarchical queries |
+| `click_events` | Raw event storage | Full audit trail, supports billing disputes |
+| `click_aggregates_*` | Pre-computed metrics | UPSERT pattern for atomic updates, unique constraint for idempotency |
+
+#### Index Strategy
+
+| Index Type | Purpose | Example |
+|------------|---------|---------|
+| Primary key | Fast lookups by ID | `advertisers.id` |
+| Foreign key | Join performance | `campaigns.advertiser_id` |
+| Timestamp | Time-range queries | `click_events.timestamp` |
+| Composite | Multi-column filtering | `(advertiser_id, timestamp)` |
+| Partial | Efficient for sparse data | `WHERE is_fraudulent = true` |
+| Unique partial | Nullable deduplication | `idempotency_key WHERE NOT NULL`
 
 ## API Design
 

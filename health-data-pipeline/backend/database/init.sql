@@ -1,5 +1,16 @@
+-- ============================================================================
+-- Health Data Pipeline - Consolidated Database Schema
+-- ============================================================================
+-- This file consolidates all migrations into a single init script.
+-- Use this for fresh database setup or Docker initialization.
+-- ============================================================================
+
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
+-- Core Tables
+-- ============================================================================
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -26,6 +37,10 @@ CREATE TABLE IF NOT EXISTS user_devices (
 );
 
 CREATE INDEX idx_devices_user ON user_devices(user_id);
+
+-- ============================================================================
+-- Health Data Tables (TimescaleDB Hypertables)
+-- ============================================================================
 
 -- Raw health samples (TimescaleDB hypertable)
 CREATE TABLE IF NOT EXISTS health_samples (
@@ -68,6 +83,10 @@ SELECT create_hypertable('health_aggregates', 'period_start', if_not_exists => T
 
 CREATE INDEX idx_aggregates_user_type ON health_aggregates(user_id, type, period, period_start DESC);
 
+-- ============================================================================
+-- User Insights & Sharing
+-- ============================================================================
+
 -- User insights
 CREATE TABLE IF NOT EXISTS health_insights (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -104,6 +123,10 @@ CREATE INDEX idx_shares_user ON share_tokens(user_id);
 CREATE INDEX idx_shares_recipient ON share_tokens(recipient_id, expires_at);
 CREATE INDEX idx_shares_code ON share_tokens(access_code) WHERE revoked_at IS NULL;
 
+-- ============================================================================
+-- Authentication
+-- ============================================================================
+
 -- Sessions for authentication
 CREATE TABLE IF NOT EXISTS sessions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -115,6 +138,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_sessions_user ON sessions(user_id);
+
+-- ============================================================================
+-- Reference Data
+-- ============================================================================
 
 -- Health data type definitions (reference table)
 CREATE TABLE IF NOT EXISTS health_data_types (
@@ -146,6 +173,76 @@ INSERT INTO health_data_types (type, display_name, unit, aggregation, category, 
   ('HRV', 'Heart Rate Variability', 'ms', 'average', 'vitals', 'Heart rate variability')
 ON CONFLICT (type) DO NOTHING;
 
+-- ============================================================================
+-- Migration 001: Idempotency Keys
+-- ============================================================================
+
+-- Add idempotency tracking table for deduplicating sync requests
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  key VARCHAR(255) PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_hash VARCHAR(64) NOT NULL,
+  response JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX idx_idempotency_user ON idempotency_keys(user_id);
+CREATE INDEX idx_idempotency_expires ON idempotency_keys(expires_at);
+
+-- Schema migrations tracking table
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  applied_at TIMESTAMP DEFAULT NOW(),
+  checksum VARCHAR(64)
+);
+
+-- ============================================================================
+-- Migration 002: Retention Policies
+-- ============================================================================
+
+-- Add retention tracking table for audit purposes
+CREATE TABLE IF NOT EXISTS retention_jobs (
+  id SERIAL PRIMARY KEY,
+  job_type VARCHAR(50) NOT NULL,
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  samples_deleted INTEGER DEFAULT 0,
+  aggregates_deleted INTEGER DEFAULT 0,
+  insights_deleted INTEGER DEFAULT 0,
+  tokens_deleted INTEGER DEFAULT 0,
+  sessions_deleted INTEGER DEFAULT 0,
+  errors JSONB DEFAULT '[]',
+  status VARCHAR(20) DEFAULT 'running'
+);
+
+CREATE INDEX idx_retention_jobs_date ON retention_jobs(started_at DESC);
+
+-- Enable TimescaleDB compression policies (if TimescaleDB is available)
+DO $$
+BEGIN
+  -- Check if TimescaleDB is available
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+    -- Add compression policy for health_samples (compress after 90 days)
+    PERFORM add_compression_policy('health_samples', INTERVAL '90 days', if_not_exists => true);
+
+    -- Add compression policy for health_aggregates (compress after 90 days)
+    PERFORM add_compression_policy('health_aggregates', INTERVAL '90 days', if_not_exists => true);
+
+    RAISE NOTICE 'TimescaleDB compression policies added';
+  ELSE
+    RAISE NOTICE 'TimescaleDB not installed, skipping compression policies';
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'Could not add compression policies: %', SQLERRM;
+END $$;
+
+-- ============================================================================
+-- Functions and Triggers
+-- ============================================================================
+
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -165,3 +262,12 @@ CREATE TRIGGER update_aggregates_updated_at
   BEFORE UPDATE ON health_aggregates
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- Record applied migrations
+-- ============================================================================
+
+INSERT INTO schema_migrations (version, name, applied_at) VALUES
+  (1, '001_add_idempotency_keys.sql', NOW()),
+  (2, '002_add_retention_policies.sql', NOW())
+ON CONFLICT (version) DO NOTHING;

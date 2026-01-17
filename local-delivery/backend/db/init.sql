@@ -1,8 +1,13 @@
 -- Local Delivery Service Database Schema
 -- PostgreSQL initialization script
+-- Consolidated schema including all migrations
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ============================================================================
+-- CORE TABLES
+-- ============================================================================
 
 -- Users table (customers, drivers, merchants)
 CREATE TABLE users (
@@ -65,7 +70,7 @@ CREATE TABLE menu_items (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Orders table
+-- Orders table (includes retention policy columns from migration 002)
 CREATE TABLE orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -99,8 +104,14 @@ CREATE TABLE orders (
   delivered_at TIMESTAMP,
   cancelled_at TIMESTAMP,
   cancellation_reason TEXT,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  -- Retention policy columns (from migration 002)
+  archived_at TIMESTAMP,
+  retention_days INTEGER DEFAULT 90
 );
+
+COMMENT ON COLUMN orders.archived_at IS 'When the order was archived to cold storage';
+COMMENT ON COLUMN orders.retention_days IS 'Override retention period for this specific order';
 
 -- Order items
 CREATE TABLE order_items (
@@ -170,22 +181,87 @@ CREATE TABLE driver_location_history (
   recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create indexes for performance
+-- ============================================================================
+-- IDEMPOTENCY KEYS TABLE (from migration 001)
+-- Prevents duplicate orders when clients retry on network timeout
+-- ============================================================================
+
+CREATE TABLE idempotency_keys (
+  key VARCHAR(64) PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  operation VARCHAR(50) NOT NULL,
+  response JSONB,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL
+);
+
+COMMENT ON TABLE idempotency_keys IS 'Stores idempotency keys to prevent duplicate operations on retry';
+COMMENT ON COLUMN idempotency_keys.key IS 'Client-provided unique key (UUID format)';
+COMMENT ON COLUMN idempotency_keys.status IS 'pending = in progress, completed = success, failed = error';
+COMMENT ON COLUMN idempotency_keys.response IS 'Cached response for completed operations';
+
+-- ============================================================================
+-- RETENTION POLICIES TABLE (from migration 002)
+-- Supports data lifecycle policies for orders and location history
+-- ============================================================================
+
+CREATE TABLE retention_policies (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  table_name VARCHAR(100) NOT NULL UNIQUE,
+  hot_storage_days INTEGER NOT NULL DEFAULT 30,
+  warm_storage_days INTEGER NOT NULL DEFAULT 365,
+  archive_enabled BOOLEAN DEFAULT true,
+  last_cleanup_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE retention_policies IS 'Configures data retention periods for each table';
+COMMENT ON COLUMN retention_policies.hot_storage_days IS 'Days to keep in primary PostgreSQL tables';
+COMMENT ON COLUMN retention_policies.warm_storage_days IS 'Days before archival to cold storage (MinIO)';
+
+-- ============================================================================
+-- INDEXES
+-- ============================================================================
+
+-- Orders indexes
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_customer ON orders(customer_id);
 CREATE INDEX idx_orders_driver ON orders(driver_id) WHERE status IN ('driver_assigned', 'picked_up', 'in_transit');
 CREATE INDEX idx_orders_merchant ON orders(merchant_id);
 CREATE INDEX idx_orders_created ON orders(created_at DESC);
+CREATE INDEX idx_orders_archive ON orders(created_at, archived_at) WHERE archived_at IS NULL;
+
+-- Drivers indexes
 CREATE INDEX idx_drivers_status ON drivers(status);
 CREATE INDEX idx_drivers_location ON drivers(current_lat, current_lng) WHERE status = 'available';
+
+-- Merchants indexes
 CREATE INDEX idx_merchants_location ON merchants(lat, lng);
 CREATE INDEX idx_merchants_category ON merchants(category);
+
+-- Menu items indexes
 CREATE INDEX idx_menu_items_merchant ON menu_items(merchant_id);
+
+-- Driver offers indexes
 CREATE INDEX idx_driver_offers_order ON driver_offers(order_id);
 CREATE INDEX idx_driver_offers_driver ON driver_offers(driver_id);
+
+-- Sessions indexes
 CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_sessions_user ON sessions(user_id);
+
+-- Driver location history index
 CREATE INDEX idx_driver_location_history ON driver_location_history(driver_id, recorded_at DESC);
+
+-- Idempotency keys indexes (from migration 001)
+CREATE INDEX idx_idempotency_keys_expires ON idempotency_keys(expires_at);
+CREATE INDEX idx_idempotency_keys_user ON idempotency_keys(user_id);
+
+-- ============================================================================
+-- TRIGGERS AND FUNCTIONS
+-- ============================================================================
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -202,8 +278,11 @@ CREATE TRIGGER update_drivers_updated_at BEFORE UPDATE ON drivers FOR EACH ROW E
 CREATE TRIGGER update_merchants_updated_at BEFORE UPDATE ON merchants FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_retention_policies_updated_at BEFORE UPDATE ON retention_policies FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Seed data for development
+-- ============================================================================
+-- SEED DATA FOR DEVELOPMENT
+-- ============================================================================
 
 -- Create admin user (password: admin123)
 INSERT INTO users (id, email, password_hash, name, phone, role) VALUES
@@ -264,3 +343,13 @@ INSERT INTO menu_items (merchant_id, name, description, price, category) VALUES
 INSERT INTO delivery_zones (name, center_lat, center_lng, radius_km, base_delivery_fee, per_km_fee) VALUES
   ('San Francisco Downtown', 37.7749, -122.4194, 10.0, 2.99, 0.50),
   ('San Francisco Marina', 37.8024, -122.4372, 5.0, 3.99, 0.75);
+
+-- Insert default retention policies (from migration 002)
+INSERT INTO retention_policies (table_name, hot_storage_days, warm_storage_days, archive_enabled)
+VALUES
+  ('orders', 30, 365, true),
+  ('driver_location_history', 7, 30, true),
+  ('driver_offers', 7, 90, true),
+  ('ratings', 30, 365, false),
+  ('sessions', 1, 7, false)
+ON CONFLICT (table_name) DO NOTHING;

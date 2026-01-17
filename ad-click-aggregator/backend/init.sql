@@ -1,4 +1,9 @@
 -- Ad Click Aggregator Database Schema
+-- Consolidated from migrations 001-004
+
+--------------------------------------------------------------------------------
+-- Core Entity Tables
+--------------------------------------------------------------------------------
 
 -- Advertisers table
 CREATE TABLE IF NOT EXISTS advertisers (
@@ -26,6 +31,10 @@ CREATE TABLE IF NOT EXISTS ads (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+--------------------------------------------------------------------------------
+-- Click Events Table
+--------------------------------------------------------------------------------
+
 -- Raw click events table (for debugging and reconciliation)
 CREATE TABLE IF NOT EXISTS click_events (
     id SERIAL PRIMARY KEY,
@@ -43,14 +52,43 @@ CREATE TABLE IF NOT EXISTS click_events (
     ip_hash VARCHAR(64),
     is_fraudulent BOOLEAN DEFAULT FALSE,
     fraud_reason VARCHAR(255),
+    -- Idempotency tracking (migration 003)
+    idempotency_key VARCHAR(64),
+    processed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create indexes for efficient querying
+-- Click events indexes
 CREATE INDEX IF NOT EXISTS idx_click_events_ad_id ON click_events(ad_id);
 CREATE INDEX IF NOT EXISTS idx_click_events_campaign_id ON click_events(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_click_events_timestamp ON click_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_click_events_click_id ON click_events(click_id);
+
+-- Idempotency key unique index (partial, excludes NULL for legacy records)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_click_events_idempotency_key
+ON click_events(idempotency_key)
+WHERE idempotency_key IS NOT NULL;
+
+-- Processed at index for latency analysis
+CREATE INDEX IF NOT EXISTS idx_click_events_processed_at
+ON click_events(processed_at)
+WHERE processed_at IS NOT NULL;
+
+-- Retention and cleanup indexes (migration 004)
+CREATE INDEX IF NOT EXISTS idx_click_events_created_at ON click_events(created_at);
+
+-- Fraud analysis composite index (partial, only fraudulent clicks)
+CREATE INDEX IF NOT EXISTS idx_click_events_fraud_analysis
+ON click_events(is_fraudulent, timestamp)
+WHERE is_fraudulent = true;
+
+-- Advertiser-level analytics index
+CREATE INDEX IF NOT EXISTS idx_click_events_advertiser_timestamp
+ON click_events(advertiser_id, timestamp);
+
+--------------------------------------------------------------------------------
+-- Aggregation Tables
+--------------------------------------------------------------------------------
 
 -- Per-minute aggregation table
 CREATE TABLE IF NOT EXISTS click_aggregates_minute (
@@ -103,7 +141,7 @@ CREATE TABLE IF NOT EXISTS click_aggregates_day (
     UNIQUE(time_bucket, ad_id, country, device_type)
 );
 
--- Create indexes for aggregation queries
+-- Aggregation query indexes
 CREATE INDEX IF NOT EXISTS idx_agg_minute_time ON click_aggregates_minute(time_bucket);
 CREATE INDEX IF NOT EXISTS idx_agg_minute_campaign ON click_aggregates_minute(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_agg_hour_time ON click_aggregates_hour(time_bucket);
@@ -111,13 +149,23 @@ CREATE INDEX IF NOT EXISTS idx_agg_hour_campaign ON click_aggregates_hour(campai
 CREATE INDEX IF NOT EXISTS idx_agg_day_time ON click_aggregates_day(time_bucket);
 CREATE INDEX IF NOT EXISTS idx_agg_day_campaign ON click_aggregates_day(campaign_id);
 
--- Insert sample data for testing
+-- Retention cleanup indexes (migration 004)
+CREATE INDEX IF NOT EXISTS idx_agg_minute_created_at ON click_aggregates_minute(created_at);
+CREATE INDEX IF NOT EXISTS idx_agg_hour_created_at ON click_aggregates_hour(created_at);
+CREATE INDEX IF NOT EXISTS idx_agg_day_created_at ON click_aggregates_day(created_at);
+
+--------------------------------------------------------------------------------
+-- Sample Data for Testing
+--------------------------------------------------------------------------------
+
+-- Insert sample advertisers
 INSERT INTO advertisers (id, name) VALUES
     ('adv_001', 'Acme Corporation'),
     ('adv_002', 'TechStart Inc'),
     ('adv_003', 'Global Retail Co')
 ON CONFLICT (id) DO NOTHING;
 
+-- Insert sample campaigns
 INSERT INTO campaigns (id, advertiser_id, name, status) VALUES
     ('camp_001', 'adv_001', 'Summer Sale 2024', 'active'),
     ('camp_002', 'adv_001', 'Brand Awareness', 'active'),
@@ -125,6 +173,7 @@ INSERT INTO campaigns (id, advertiser_id, name, status) VALUES
     ('camp_004', 'adv_003', 'Holiday Special', 'active')
 ON CONFLICT (id) DO NOTHING;
 
+-- Insert sample ads
 INSERT INTO ads (id, campaign_id, name, creative_url, status) VALUES
     ('ad_001', 'camp_001', 'Summer Banner 300x250', 'https://example.com/ads/summer-300x250.jpg', 'active'),
     ('ad_002', 'camp_001', 'Summer Banner 728x90', 'https://example.com/ads/summer-728x90.jpg', 'active'),

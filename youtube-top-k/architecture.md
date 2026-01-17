@@ -101,7 +101,13 @@ A real-time analytics system for tracking video views and computing trending vid
 ### PostgreSQL Schema
 
 ```sql
--- Videos table
+-- Schema migrations tracking table
+CREATE TABLE schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Videos table (core metadata)
 CREATE TABLE videos (
   id UUID PRIMARY KEY,
   title VARCHAR(500) NOT NULL,
@@ -115,23 +121,45 @@ CREATE TABLE videos (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- View events (for historical analysis)
+-- Indexes for videos table
+CREATE INDEX idx_videos_category ON videos(category);
+CREATE INDEX idx_videos_created_at ON videos(created_at);
+CREATE INDEX idx_videos_total_views ON videos(total_views DESC);
+
+-- View events (for historical analysis, 7-day retention)
 CREATE TABLE view_events (
   id SERIAL PRIMARY KEY,
-  video_id UUID REFERENCES videos(id),
+  video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
   viewed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  session_id VARCHAR(100)
+  session_id VARCHAR(100),
+  idempotency_key VARCHAR(255)  -- For duplicate prevention
 );
 
--- Trending snapshots (for historical trending)
+-- Indexes for view_events table
+CREATE INDEX idx_view_events_video_id ON view_events(video_id);
+CREATE INDEX idx_view_events_viewed_at ON view_events(viewed_at);
+CREATE UNIQUE INDEX idx_view_events_idempotency_key
+  ON view_events(idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+CREATE INDEX idx_view_events_viewed_at_for_cleanup
+  ON view_events(viewed_at)
+  WHERE viewed_at < NOW() - INTERVAL '7 days';
+
+-- Trending snapshots (for historical trending, 30-day retention)
 CREATE TABLE trending_snapshots (
   id SERIAL PRIMARY KEY,
-  window_type VARCHAR(50) NOT NULL,
-  category VARCHAR(100),
-  video_rankings JSONB NOT NULL,
+  window_type VARCHAR(50) NOT NULL,  -- 'hourly', 'daily', etc.
+  category VARCHAR(100),              -- NULL for 'all' categories
+  video_rankings JSONB NOT NULL,      -- [{videoId, title, score, rank}, ...]
   snapshot_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Index for trending_snapshots table
+CREATE INDEX idx_trending_snapshots_window
+  ON trending_snapshots(window_type, snapshot_at);
 ```
+
+**Note:** For fresh database setup, use `backend/src/db/init.sql` which consolidates all migrations. For incremental changes, use the migration files in `backend/src/db/migrations/`.
 
 ### Redis Data Structures
 

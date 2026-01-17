@@ -84,49 +84,406 @@ For local development:
 
 ## Data Model
 
-### Database Schema
+### Entity-Relationship Diagram
 
-```sql
--- Files
-CREATE TABLE files (
-  id UUID PRIMARY KEY,
-  name VARCHAR(255),
-  owner_id UUID,
-  project_id UUID,
-  team_id UUID,
-  thumbnail_url VARCHAR(500),
-  canvas_data JSONB,
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP
-);
-
--- File versions
-CREATE TABLE file_versions (
-  id UUID PRIMARY KEY,
-  file_id UUID REFERENCES files(id),
-  version_number INTEGER,
-  name VARCHAR(255),
-  canvas_data JSONB,
-  created_by UUID,
-  created_at TIMESTAMP,
-  is_auto_save BOOLEAN
-);
-
--- Operations log
-CREATE TABLE operations (
-  id UUID PRIMARY KEY,
-  file_id UUID REFERENCES files(id),
-  user_id UUID,
-  operation_type VARCHAR(100),
-  object_id VARCHAR(100),
-  property_path VARCHAR(255),
-  old_value JSONB,
-  new_value JSONB,
-  timestamp BIGINT,
-  client_id VARCHAR(100),
-  created_at TIMESTAMP
-);
 ```
+                                    ┌─────────────────┐
+                                    │      users      │
+                                    ├─────────────────┤
+                                    │ id (PK)         │
+                                    │ email (UNIQUE)  │
+                                    │ name            │
+                                    │ avatar_url      │
+                                    │ password_hash   │
+                                    │ role            │
+                                    │ created_at      │
+                                    │ updated_at      │
+                                    └────────┬────────┘
+                                             │
+           ┌─────────────────────────────────┼─────────────────────────────────┐
+           │ owner_id (SET NULL)             │                                 │
+           ▼                                 │                                 │
+    ┌─────────────────┐                      │                                 │
+    │      teams      │                      │                                 │
+    ├─────────────────┤                      │                                 │
+    │ id (PK)         │◄──────────┐          │                                 │
+    │ name            │           │          │                                 │
+    │ owner_id (FK)───┼───────────┼──────────┘                                 │
+    │ created_at      │           │                                            │
+    │ updated_at      │           │                                            │
+    └────────┬────────┘           │                                            │
+             │                    │                                            │
+             │ CASCADE            │ team_id (CASCADE)                          │
+             ▼                    │                                            │
+    ┌─────────────────┐           │                                            │
+    │  team_members   │           │        ┌─────────────────┐                 │
+    ├─────────────────┤           │        │    projects     │                 │
+    │ id (PK)         │           │        ├─────────────────┤                 │
+    │ team_id (FK)────┼───────────┘        │ id (PK)         │◄───────────┐    │
+    │ user_id (FK)────┼────────────────┐   │ name            │            │    │
+    │ role            │                │   │ team_id (FK)────┼────────────┼────┘
+    │ joined_at       │                │   │ owner_id (FK)───┼────────────┼────┐
+    │ UNIQUE(team,usr)│                │   │ created_at      │            │    │
+    └─────────────────┘                │   │ updated_at      │            │    │
+                                       │   └────────┬────────┘            │    │
+                                       │            │                     │    │
+                                       │            │ CASCADE (project_id)│    │
+                                       │            ▼                     │    │
+                                       │   ┌─────────────────┐            │    │
+                                       │   │      files      │            │    │
+                                       │   ├─────────────────┤            │    │
+                                       │   │ id (PK)         │◄────────┐  │    │
+                                       │   │ name            │         │  │    │
+                                       │   │ project_id (FK) │         │  │    │
+                                       │   │ owner_id (FK)───┼─────────┼──┘    │
+                                       │   │ team_id (FK)────┼─────────┼───────┘
+                                       │   │ thumbnail_url   │         │
+                                       │   │ canvas_data     │         │ CASCADE
+                                       │   │ created_at      │         │
+                                       │   │ updated_at      │         │
+                                       │   │ deleted_at      │         │
+                                       │   └────────┬────────┘         │
+                                       │            │                  │
+           ┌───────────────────────────┼────────────┼──────────────────┤
+           │                           │            │                  │
+           ▼                           │            ▼                  ▼
+    ┌─────────────────┐                │   ┌─────────────────┐  ┌─────────────────┐
+    │ file_permissions│                │   │  file_versions  │  │    comments     │
+    ├─────────────────┤                │   ├─────────────────┤  ├─────────────────┤
+    │ id (PK)         │                │   │ id (PK)         │  │ id (PK)         │
+    │ file_id (FK)────┼──────────┐     │   │ file_id (FK)    │  │ file_id (FK)    │
+    │ user_id (FK)────┼──────────┼─────┘   │ version_number  │  │ user_id (FK)    │
+    │ permission      │          │         │ name            │  │ object_id       │
+    │ granted_at      │          │         │ canvas_data     │  │ position_x      │
+    │ UNIQUE(file,usr)│          │         │ created_by (FK) │  │ position_y      │
+    └─────────────────┘          │         │ created_at      │  │ content         │
+                                 │         │ is_auto_save    │  │ parent_id (FK)──┼──┐
+                                 │         │ UNIQUE(file,ver)│  │ resolved        │  │
+                                 │         └─────────────────┘  │ created_at      │  │
+                                 │                              │ updated_at      │  │
+                                 │                              └─────────────────┘  │
+                                 │                                      ▲            │
+                                 │                                      │ CASCADE    │
+                                 │                                      └────────────┘
+                                 │
+                                 │         ┌─────────────────┐
+                                 │         │   operations    │
+                                 │         ├─────────────────┤
+                                 └─────────┤ id (PK)         │
+                                           │ file_id (FK)    │
+                                           │ user_id (FK)    │
+                                           │ operation_type  │
+                                           │ object_id       │
+                                           │ property_path   │
+                                           │ old_value       │
+                                           │ new_value       │
+                                           │ timestamp       │
+                                           │ client_id       │
+                                           │ created_at      │
+                                           │ idempotency_key │
+                                           └─────────────────┘
+```
+
+### Complete Database Schema
+
+The schema is defined in `/backend/src/db/init.sql` and organized into 8 core tables:
+
+#### 1. users
+Stores user accounts and authentication information.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique user identifier |
+| email | VARCHAR(255) | UNIQUE, NOT NULL | User email address |
+| name | VARCHAR(255) | NOT NULL | Display name |
+| avatar_url | VARCHAR(500) | | Profile picture URL |
+| password_hash | VARCHAR(255) | NOT NULL | Bcrypt password hash |
+| role | VARCHAR(50) | DEFAULT 'user' | User role (user/admin) |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Account creation time |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Last update time |
+
+#### 2. teams
+Groups of users collaborating on projects.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique team identifier |
+| name | VARCHAR(255) | NOT NULL | Team name |
+| owner_id | UUID | REFERENCES users(id) ON DELETE SET NULL | Team owner |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Team creation time |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Last update time |
+
+#### 3. team_members
+Junction table for user-team relationships.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique membership identifier |
+| team_id | UUID | REFERENCES teams(id) ON DELETE CASCADE | Parent team |
+| user_id | UUID | REFERENCES users(id) ON DELETE CASCADE | Member user |
+| role | VARCHAR(50) | DEFAULT 'member' | Role in team (owner/admin/member) |
+| joined_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Join date |
+| | | UNIQUE(team_id, user_id) | Prevents duplicate memberships |
+
+#### 4. projects
+Folders for organizing design files within teams.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique project identifier |
+| name | VARCHAR(255) | NOT NULL | Project name |
+| team_id | UUID | REFERENCES teams(id) ON DELETE CASCADE | Parent team |
+| owner_id | UUID | REFERENCES users(id) ON DELETE SET NULL | Project creator |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation time |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Last update time |
+
+#### 5. files
+Design documents containing canvas data (the core entity).
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique file identifier |
+| name | VARCHAR(255) | NOT NULL | File name |
+| project_id | UUID | REFERENCES projects(id) ON DELETE SET NULL | Parent project |
+| owner_id | UUID | REFERENCES users(id) ON DELETE SET NULL | File creator |
+| team_id | UUID | REFERENCES teams(id) ON DELETE SET NULL | Owning team |
+| thumbnail_url | VARCHAR(500) | | Preview image URL |
+| canvas_data | JSONB | DEFAULT '{"objects": [], "pages": []}' | Vector graphics data |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation time |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Last modification time |
+| deleted_at | TIMESTAMP | DEFAULT NULL | Soft delete timestamp |
+
+**Indexes:**
+- `idx_files_owner` - Lookup files by owner
+- `idx_files_project` - Lookup files by project
+- `idx_files_team` - Lookup files by team
+- `idx_files_updated` - Sort by last update (DESC)
+- `idx_files_deleted` - Partial index for active files (WHERE deleted_at IS NULL)
+- `idx_files_deleted_at` - Partial index for cleanup job
+
+#### 6. file_versions
+Snapshots for version history and undo capability.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique version identifier |
+| file_id | UUID | REFERENCES files(id) ON DELETE CASCADE | Parent file |
+| version_number | INTEGER | NOT NULL | Sequential version number |
+| name | VARCHAR(255) | | Named version label (optional) |
+| canvas_data | JSONB | NOT NULL | Complete canvas snapshot |
+| created_by | UUID | REFERENCES users(id) ON DELETE SET NULL | User who saved version |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Version creation time |
+| is_auto_save | BOOLEAN | DEFAULT TRUE | Auto vs. manual save |
+| | | UNIQUE(file_id, version_number) | Ensures sequential numbering |
+
+**Indexes:**
+- `idx_file_versions_file` - Lookup versions by file
+- `idx_file_versions_file_number` - Lookup by file + version (DESC)
+- `idx_file_versions_created` - Sort by creation time
+- `idx_file_versions_autosave` - Filter auto-saves for cleanup
+
+#### 7. comments
+Feedback on designs with position anchoring for design review.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique comment identifier |
+| file_id | UUID | REFERENCES files(id) ON DELETE CASCADE | Parent file |
+| user_id | UUID | REFERENCES users(id) ON DELETE SET NULL | Comment author |
+| object_id | VARCHAR(100) | | ID of attached design object |
+| position_x | FLOAT | | X coordinate on canvas |
+| position_y | FLOAT | | Y coordinate on canvas |
+| content | TEXT | NOT NULL | Comment text |
+| parent_id | UUID | REFERENCES comments(id) ON DELETE CASCADE | Parent comment (for replies) |
+| resolved | BOOLEAN | DEFAULT FALSE | Comment resolution status |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation time |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Last update time |
+
+**Indexes:**
+- `idx_comments_file` - Lookup comments by file
+
+#### 8. file_permissions
+Access control for individual files.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique permission identifier |
+| file_id | UUID | REFERENCES files(id) ON DELETE CASCADE | Target file |
+| user_id | UUID | REFERENCES users(id) ON DELETE CASCADE | Grantee user |
+| permission | VARCHAR(50) | DEFAULT 'view' | Permission level (view/edit/admin) |
+| granted_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Grant time |
+| | | UNIQUE(file_id, user_id) | One permission per user per file |
+
+#### 9. operations
+CRDT operation log for real-time sync, undo/redo, and audit trail.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT uuid_generate_v4() | Unique operation identifier |
+| file_id | UUID | REFERENCES files(id) ON DELETE CASCADE | Target file |
+| user_id | UUID | REFERENCES users(id) ON DELETE SET NULL | User who made change |
+| operation_type | VARCHAR(100) | NOT NULL | Type (create/update/delete/move) |
+| object_id | VARCHAR(100) | | ID of affected design object |
+| property_path | VARCHAR(255) | | Property that changed (e.g., "fill", "x") |
+| old_value | JSONB | | Previous value (for undo) |
+| new_value | JSONB | | New value |
+| timestamp | BIGINT | NOT NULL | Client-side timestamp (ms) |
+| client_id | VARCHAR(100) | | Client identifier for LWW tiebreaker |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Server receipt time |
+| idempotency_key | VARCHAR(255) | DEFAULT NULL | Deduplication key for retries |
+
+**Indexes:**
+- `idx_operations_file` - Lookup operations by file
+- `idx_operations_timestamp` - Sort by timestamp
+- `idx_operations_file_timestamp` - Lookup by file + timestamp
+- `idx_operations_created` - Sort by creation time
+- `idx_operations_idempotency` - UNIQUE partial index (WHERE idempotency_key IS NOT NULL)
+- `idx_operations_idempotency_lookup` - Partial index for file + idempotency key
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| Relationship | On Delete Behavior | Rationale |
+|--------------|-------------------|-----------|
+| teams.owner_id -> users.id | SET NULL | Team persists if owner leaves; can be reassigned |
+| team_members.team_id -> teams.id | CASCADE | Members removed when team is deleted |
+| team_members.user_id -> users.id | CASCADE | Membership removed when user is deleted |
+| projects.team_id -> teams.id | CASCADE | Projects removed when team is deleted |
+| projects.owner_id -> users.id | SET NULL | Project persists; owner can be reassigned |
+| files.project_id -> projects.id | SET NULL | Files become orphaned (can be moved to another project) |
+| files.owner_id -> users.id | SET NULL | File persists; owner can be reassigned |
+| files.team_id -> teams.id | SET NULL | File persists; can be reassigned to another team |
+| file_versions.file_id -> files.id | CASCADE | Versions deleted with file |
+| file_versions.created_by -> users.id | SET NULL | Version persists; creator reference cleared |
+| comments.file_id -> files.id | CASCADE | Comments deleted with file |
+| comments.user_id -> users.id | SET NULL | Comment persists; author reference cleared |
+| comments.parent_id -> comments.id | CASCADE | Replies deleted with parent comment |
+| file_permissions.file_id -> files.id | CASCADE | Permissions deleted with file |
+| file_permissions.user_id -> users.id | CASCADE | Permission deleted when user is deleted |
+| operations.file_id -> files.id | CASCADE | Operations deleted with file |
+| operations.user_id -> users.id | SET NULL | Operation persists; user reference cleared |
+
+### Why Tables Are Structured This Way
+
+**1. User/Team/Project Hierarchy**
+The three-tier hierarchy (Users -> Teams -> Projects -> Files) mirrors Figma's organizational model:
+- Users belong to multiple teams (via team_members junction table)
+- Teams contain projects as organizational folders
+- Projects contain files
+- Files can optionally exist outside projects (project_id is nullable)
+
+This allows both personal files (no team) and organized team collaboration.
+
+**2. Denormalized canvas_data JSONB**
+Canvas data is stored as a single JSONB blob rather than normalized into object tables because:
+- Design objects have highly variable schemas (rectangles vs. text vs. groups)
+- JSONB allows atomic snapshots for versioning
+- Avoids expensive joins when loading/saving designs
+- PostgreSQL JSONB indexing provides querying capability if needed
+
+**3. Separate operations table**
+Operations are logged separately from canvas_data to support:
+- Real-time CRDT synchronization between clients
+- Fine-grained undo/redo without version snapshots
+- Audit trail for debugging collaboration conflicts
+- Rebuilding canvas state from operations if needed
+
+**4. Dual-index soft delete on files**
+Two partial indexes on deleted_at enable:
+- Fast queries for active files (WHERE deleted_at IS NULL)
+- Efficient cleanup job queries (WHERE deleted_at IS NOT NULL)
+- No index overhead for the common case (active file lookups)
+
+**5. Idempotency key with partial unique index**
+The idempotency_key column with a partial unique index (WHERE idempotency_key IS NOT NULL) allows:
+- Safe operation retries over unreliable WebSocket connections
+- Deduplication without blocking operations that do not need idempotency
+- Efficient lookups by file + idempotency_key
+
+### Data Flow Between Tables
+
+```
+                        WRITE PATH
+                        ==========
+
+User creates design     Browser Canvas
+         │                    │
+         ▼                    ▼
+    ┌─────────┐        ┌───────────────┐
+    │  users  │        │   Operation   │
+    └────┬────┘        │   (CRDT op)   │
+         │             └───────┬───────┘
+         │                     │
+         │         WebSocket   │
+         │             ▼       ▼
+         │        ┌─────────────────┐
+         │        │   operations    │  (log for sync/undo)
+         │        └────────┬────────┘
+         │                 │
+         │                 │ Apply to canvas
+         │                 ▼
+         │        ┌─────────────────┐
+         │        │      files      │  (update canvas_data JSONB)
+         │        │  .canvas_data   │
+         │        └────────┬────────┘
+         │                 │
+         │                 │ Periodic snapshot
+         │                 ▼
+         │        ┌─────────────────┐
+         └───────►│  file_versions  │  (full canvas backup)
+                  └─────────────────┘
+
+
+                        READ PATH
+                        =========
+
+Browser requests file
+         │
+         ▼
+    ┌─────────────────┐
+    │      files      │  (load canvas_data)
+    └────────┬────────┘
+             │
+             ├──────────────────┐
+             │                  │
+             ▼                  ▼
+    ┌─────────────────┐  ┌─────────────────┐
+    │    comments     │  │  file_versions  │
+    │   (load pins)   │  │  (show history) │
+    └─────────────────┘  └─────────────────┘
+
+
+                   COLLABORATION FLOW
+                   ==================
+
+  Client A                 Server                  Client B
+     │                        │                        │
+     │  1. operation          │                        │
+     │ ────────────────────►  │                        │
+     │                        │  2. persist to         │
+     │                        │     operations table   │
+     │                        │                        │
+     │                        │  3. update files       │
+     │                        │     .canvas_data       │
+     │                        │                        │
+     │                        │  4. broadcast          │
+     │                        │ ────────────────────►  │
+     │                        │                        │
+     │  5. ack                │                        │
+     │ ◄────────────────────  │                        │
+     │                        │                        │
+```
+
+### Migration History
+
+The schema is maintained through incremental migrations:
+
+| Migration | Description |
+|-----------|-------------|
+| 001_initial_schema.sql | Core tables: files, file_versions, operations with indexes |
+| 002_add_soft_delete.sql | Added deleted_at column to files with partial indexes |
+| 003_add_idempotency_key.sql | Added idempotency_key to operations for safe retries |
+
+All migrations are consolidated into `init.sql` for fresh database setup while individual migration files remain for incremental upgrades.
 
 ### Canvas Data Structure
 

@@ -358,49 +358,125 @@ Follows: Shard by follower_id (queries are "who do I follow")
 
 ## Database Schema
 
+The complete schema includes 6 tables, 15 indexes, and 5 triggers for maintaining denormalized counts.
+
+### Tables
+
 ```sql
+-- Users table with denormalized counts and celebrity flag
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
   display_name VARCHAR(100),
+  bio TEXT,
+  avatar_url TEXT,
   follower_count INTEGER DEFAULT 0,
   following_count INTEGER DEFAULT 0,
   tweet_count INTEGER DEFAULT 0,
-  is_celebrity BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT NOW()
+  is_celebrity BOOLEAN DEFAULT FALSE,  -- Auto-set via trigger at 10K followers
+  role VARCHAR(20) DEFAULT 'user',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Tweets with support for replies, retweets, and quote tweets
 CREATE TABLE tweets (
   id BIGSERIAL PRIMARY KEY,
-  author_id INTEGER REFERENCES users(id),
+  author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
   content VARCHAR(280) NOT NULL,
   media_urls TEXT[],
   hashtags TEXT[],
   mentions INTEGER[],
-  reply_to BIGINT REFERENCES tweets(id),
-  retweet_of BIGINT REFERENCES tweets(id),
+  reply_to BIGINT REFERENCES tweets(id) ON DELETE SET NULL,
+  retweet_of BIGINT REFERENCES tweets(id) ON DELETE SET NULL,
+  quote_of BIGINT REFERENCES tweets(id) ON DELETE SET NULL,
   like_count INTEGER DEFAULT 0,
   retweet_count INTEGER DEFAULT 0,
+  reply_count INTEGER DEFAULT 0,
+  is_deleted BOOLEAN DEFAULT FALSE,
+  deleted_at TIMESTAMP DEFAULT NULL,
+  archived_at TIMESTAMP DEFAULT NULL,
+  archive_location TEXT DEFAULT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_tweets_author ON tweets(author_id, created_at DESC);
-CREATE INDEX idx_tweets_hashtags ON tweets USING GIN(hashtags);
-
+-- Social graph: follow relationships
 CREATE TABLE follows (
-  follower_id INTEGER REFERENCES users(id),
-  following_id INTEGER REFERENCES users(id),
+  follower_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  following_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT NOW(),
   PRIMARY KEY (follower_id, following_id)
 );
 
+-- User likes on tweets
 CREATE TABLE likes (
-  user_id INTEGER REFERENCES users(id),
-  tweet_id BIGINT REFERENCES tweets(id),
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  tweet_id BIGINT REFERENCES tweets(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT NOW(),
   PRIMARY KEY (user_id, tweet_id)
 );
+
+-- User retweets for tracking
+CREATE TABLE retweets (
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  tweet_id BIGINT REFERENCES tweets(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (user_id, tweet_id)
+);
+
+-- Hashtag activity for trend detection
+CREATE TABLE hashtag_activity (
+  id BIGSERIAL PRIMARY KEY,
+  hashtag VARCHAR(100) NOT NULL,
+  tweet_id BIGINT REFERENCES tweets(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
 ```
+
+### Indexes
+
+```sql
+-- Tweets: author timeline, hashtag search, chronological, relationships
+CREATE INDEX idx_tweets_author ON tweets(author_id, created_at DESC);
+CREATE INDEX idx_tweets_hashtags ON tweets USING GIN(hashtags);
+CREATE INDEX idx_tweets_created_at ON tweets(created_at DESC);
+CREATE INDEX idx_tweets_reply_to ON tweets(reply_to) WHERE reply_to IS NOT NULL;
+CREATE INDEX idx_tweets_retweet_of ON tweets(retweet_of) WHERE retweet_of IS NOT NULL;
+CREATE INDEX idx_tweets_deleted ON tweets(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX idx_tweets_archived ON tweets(archived_at) WHERE archived_at IS NOT NULL;
+
+-- Follows: bidirectional lookups
+CREATE INDEX idx_follows_following ON follows(following_id);
+CREATE INDEX idx_follows_follower ON follows(follower_id);
+
+-- Likes: by tweet and by user
+CREATE INDEX idx_likes_tweet ON likes(tweet_id);
+CREATE INDEX idx_likes_user ON likes(user_id);
+
+-- Retweets: by tweet and by user
+CREATE INDEX idx_retweets_tweet ON retweets(tweet_id);
+CREATE INDEX idx_retweets_user ON retweets(user_id);
+
+-- Hashtag activity: for trend calculation
+CREATE INDEX idx_hashtag_activity_hashtag ON hashtag_activity(hashtag, created_at DESC);
+CREATE INDEX idx_hashtag_activity_created_at ON hashtag_activity(created_at DESC);
+```
+
+### Triggers for Denormalized Counts
+
+The schema uses PostgreSQL triggers to maintain denormalized counts atomically:
+
+| Trigger | Table | Updates |
+|---------|-------|---------|
+| `trigger_follow_counts` | follows | `users.follower_count`, `users.following_count`, `users.is_celebrity` |
+| `trigger_tweet_count` | tweets | `users.tweet_count` |
+| `trigger_like_count` | likes | `tweets.like_count` |
+| `trigger_retweet_count` | retweets | `tweets.retweet_count` |
+| `trigger_reply_count` | tweets | `tweets.reply_count` (on parent tweet) |
+
+The celebrity threshold (10,000 followers) is configured in the `update_follow_counts()` function.
 
 ## Closing Summary (1 minute)
 

@@ -703,82 +703,299 @@ class HealthQueryService {
 
 ## Database Schema
 
+The complete database schema is consolidated in `backend/database/init.sql`. This section documents all tables, their relationships, and purpose.
+
+### Entity Relationship Diagram
+
+```
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│     users       │       │  user_devices   │       │ health_samples  │
+├─────────────────┤       ├─────────────────┤       ├─────────────────┤
+│ id (PK)         │──┐    │ id (PK)         │       │ id (PK)         │
+│ email           │  │    │ user_id (FK)    │◄──────│ user_id (FK)    │
+│ password_hash   │  │    │ device_type     │       │ type            │
+│ name            │  │    │ device_name     │       │ value           │
+│ role            │  │    │ device_identifier│      │ unit            │
+│ created_at      │  │    │ priority        │◄──────│ source_device_id│
+│ updated_at      │  │    │ last_sync       │       │ start_date      │
+└────────┬────────┘  │    │ created_at      │       │ end_date        │
+         │           │    └─────────────────┘       │ metadata        │
+         │           │                              │ created_at      │
+         │           └──────────────────────────────┴─────────────────┘
+         │
+         │    ┌─────────────────┐       ┌─────────────────┐
+         │    │health_aggregates│       │ health_insights │
+         │    ├─────────────────┤       ├─────────────────┤
+         └────│ user_id (FK)    │       │ id (PK)         │
+              │ type            │       │ user_id (FK)    │◄───────┐
+              │ period          │       │ type            │        │
+              │ period_start    │       │ severity        │        │
+              │ value           │       │ direction       │        │
+              │ min_value       │       │ message         │        │
+              │ max_value       │       │ recommendation  │        │
+              │ sample_count    │       │ data            │        │
+              │ updated_at      │       │ acknowledged    │        │
+              └─────────────────┘       │ created_at      │        │
+                                        └─────────────────┘        │
+                                                                   │
+         ┌─────────────────┐       ┌─────────────────┐             │
+         │  share_tokens   │       │    sessions     │             │
+         ├─────────────────┤       ├─────────────────┤             │
+         │ id (PK)         │       │ id (PK)         │             │
+         │ user_id (FK)    │◄──────│ user_id (FK)    │◄────────────┘
+         │ recipient_email │       │ token           │
+         │ recipient_id    │       │ expires_at      │
+         │ data_types      │       │ created_at      │
+         │ date_start      │       └─────────────────┘
+         │ date_end        │
+         │ expires_at      │
+         │ access_code     │
+         │ revoked_at      │
+         └─────────────────┘
+```
+
+### Core Tables
+
+#### users
+User accounts with authentication credentials.
+
 ```sql
--- Raw health samples
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(100),
+  role VARCHAR(20) DEFAULT 'user',      -- 'user' or 'admin'
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### user_devices
+Registered devices for each user with priority ranking for deduplication.
+
+```sql
+CREATE TABLE user_devices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_type VARCHAR(50) NOT NULL,     -- 'apple_watch', 'iphone', 'third_party_wearable', etc.
+  device_name VARCHAR(100),             -- User-friendly name
+  device_identifier VARCHAR(255),       -- Unique device identifier
+  priority INTEGER DEFAULT 50,          -- Higher = preferred for deduplication
+  last_sync TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, device_identifier)
+);
+
+-- Device priority values:
+-- apple_watch: 100, iphone: 80, ipad: 70, third_party_wearable: 50, manual_entry: 10
+```
+
+### Health Data Tables (TimescaleDB Hypertables)
+
+#### health_samples
+Raw health measurements from devices. Converted to a TimescaleDB hypertable for efficient time-series queries.
+
+```sql
 CREATE TABLE health_samples (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL,
-  type VARCHAR(50) NOT NULL,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,            -- 'STEPS', 'HEART_RATE', etc.
   value DOUBLE PRECISION,
-  unit VARCHAR(20),
-  start_date TIMESTAMP NOT NULL,
-  end_date TIMESTAMP NOT NULL,
-  source_device VARCHAR(50),
-  source_app VARCHAR(100),
-  metadata JSONB DEFAULT '{}',
+  unit VARCHAR(20),                     -- 'count', 'bpm', 'kg', etc.
+  start_date TIMESTAMP NOT NULL,        -- Measurement start time
+  end_date TIMESTAMP NOT NULL,          -- Measurement end time
+  source_device VARCHAR(50),            -- Device type string
+  source_device_id UUID REFERENCES user_devices(id),
+  source_app VARCHAR(100),              -- Source application name
+  metadata JSONB DEFAULT '{}',          -- Additional properties
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Use TimescaleDB for efficient time-series queries
-SELECT create_hypertable('health_samples', 'start_date');
-
+SELECT create_hypertable('health_samples', 'start_date', if_not_exists => TRUE);
 CREATE INDEX idx_samples_user_type ON health_samples(user_id, type, start_date DESC);
+CREATE INDEX idx_samples_device ON health_samples(source_device_id);
+```
 
--- Aggregated data
+#### health_aggregates
+Pre-computed aggregations by time period. Also a TimescaleDB hypertable.
+
+```sql
 CREATE TABLE health_aggregates (
-  user_id UUID NOT NULL,
-  type VARCHAR(50) NOT NULL,
-  period VARCHAR(10) NOT NULL, -- hour, day, week, month
-  period_start TIMESTAMP NOT NULL,
-  value DOUBLE PRECISION NOT NULL,
-  sample_count INTEGER DEFAULT 1,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,            -- 'STEPS', 'HEART_RATE', etc.
+  period VARCHAR(10) NOT NULL,          -- 'hour', 'day', 'week', 'month'
+  period_start TIMESTAMP NOT NULL,      -- Start of aggregation period
+  value DOUBLE PRECISION NOT NULL,      -- Aggregated value
+  min_value DOUBLE PRECISION,           -- Minimum in period
+  max_value DOUBLE PRECISION,           -- Maximum in period
+  sample_count INTEGER DEFAULT 1,       -- Number of samples aggregated
   updated_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, type, period, period_start)
+  UNIQUE(user_id, type, period, period_start)
 );
 
-SELECT create_hypertable('health_aggregates', 'period_start');
+SELECT create_hypertable('health_aggregates', 'period_start', if_not_exists => TRUE);
+CREATE INDEX idx_aggregates_user_type ON health_aggregates(user_id, type, period, period_start DESC);
+```
 
--- User insights
+### Insights & Sharing
+
+#### health_insights
+AI-generated health recommendations and trend alerts.
+
+```sql
 CREATE TABLE health_insights (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL,
-  type VARCHAR(50) NOT NULL,
-  severity VARCHAR(20),
-  message TEXT,
-  data JSONB,
-  acknowledged BOOLEAN DEFAULT false,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,            -- 'HEART_RATE_TREND', 'SLEEP_DEFICIT', etc.
+  severity VARCHAR(20),                 -- 'low', 'medium', 'high'
+  direction VARCHAR(20),                -- 'increasing', 'decreasing'
+  message TEXT,                         -- User-facing message
+  recommendation TEXT,                  -- Actionable advice
+  data JSONB,                           -- Supporting data
+  acknowledged BOOLEAN DEFAULT false,   -- User dismissed
   created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX idx_insights_user ON health_insights(user_id, created_at DESC);
+CREATE INDEX idx_insights_unread ON health_insights(user_id, acknowledged) WHERE acknowledged = false;
+```
 
--- Share tokens
+#### share_tokens
+Time-limited tokens for sharing health data with others (doctors, family).
+
+```sql
 CREATE TABLE share_tokens (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL,
-  recipient_id UUID NOT NULL,
-  data_types TEXT[] NOT NULL,
-  date_start DATE,
-  date_end DATE,
-  expires_at TIMESTAMP NOT NULL,
-  encrypted_key BYTEA,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_email VARCHAR(255),         -- For email-based sharing
+  recipient_id UUID REFERENCES users(id),-- For user-to-user sharing
+  data_types TEXT[] NOT NULL,           -- ['STEPS', 'HEART_RATE']
+  date_start DATE,                      -- Share window start
+  date_end DATE,                        -- Share window end
+  expires_at TIMESTAMP NOT NULL,        -- Token expiration
+  access_code VARCHAR(64) UNIQUE,       -- Public access code
   created_at TIMESTAMP DEFAULT NOW(),
-  revoked_at TIMESTAMP
+  revoked_at TIMESTAMP                  -- Null if active
 );
 
+CREATE INDEX idx_shares_user ON share_tokens(user_id);
 CREATE INDEX idx_shares_recipient ON share_tokens(recipient_id, expires_at);
+CREATE INDEX idx_shares_code ON share_tokens(access_code) WHERE revoked_at IS NULL;
+```
 
--- Devices
-CREATE TABLE user_devices (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL,
-  device_type VARCHAR(50) NOT NULL,
-  device_name VARCHAR(100),
-  last_sync TIMESTAMP,
+### Authentication
+
+#### sessions
+Session-based authentication tokens.
+
+```sql
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_devices_user ON user_devices(user_id);
+CREATE INDEX idx_sessions_token ON sessions(token);
+CREATE INDEX idx_sessions_user ON sessions(user_id);
+```
+
+### Reference Data
+
+#### health_data_types
+Metadata for supported health data types.
+
+```sql
+CREATE TABLE health_data_types (
+  type VARCHAR(50) PRIMARY KEY,         -- 'STEPS', 'HEART_RATE', etc.
+  display_name VARCHAR(100) NOT NULL,   -- 'Heart Rate'
+  unit VARCHAR(20),                     -- 'bpm', 'count', 'kg'
+  aggregation VARCHAR(20) NOT NULL,     -- 'sum', 'average', 'latest'
+  category VARCHAR(50),                 -- 'activity', 'vitals', 'body', 'sleep'
+  description TEXT
+);
+
+-- Pre-populated with 16 health data types across 4 categories
+```
+
+### Operational Tables
+
+#### idempotency_keys
+Prevents duplicate processing of sync requests from mobile devices.
+
+```sql
+CREATE TABLE idempotency_keys (
+  key VARCHAR(255) PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_hash VARCHAR(64) NOT NULL,
+  response JSONB,                       -- Cached response
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL         -- Auto-cleanup after 24h
+);
+
+CREATE INDEX idx_idempotency_user ON idempotency_keys(user_id);
+CREATE INDEX idx_idempotency_expires ON idempotency_keys(expires_at);
+```
+
+#### schema_migrations
+Tracks applied database migrations.
+
+```sql
+CREATE TABLE schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  applied_at TIMESTAMP DEFAULT NOW(),
+  checksum VARCHAR(64)                  -- For migration file integrity
+);
+```
+
+#### retention_jobs
+Audit log for data retention cleanup jobs.
+
+```sql
+CREATE TABLE retention_jobs (
+  id SERIAL PRIMARY KEY,
+  job_type VARCHAR(50) NOT NULL,        -- 'daily_cleanup', 'compression'
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  samples_deleted INTEGER DEFAULT 0,
+  aggregates_deleted INTEGER DEFAULT 0,
+  insights_deleted INTEGER DEFAULT 0,
+  tokens_deleted INTEGER DEFAULT 0,
+  sessions_deleted INTEGER DEFAULT 0,
+  errors JSONB DEFAULT '[]',
+  status VARCHAR(20) DEFAULT 'running'  -- 'running', 'completed', 'failed'
+);
+
+CREATE INDEX idx_retention_jobs_date ON retention_jobs(started_at DESC);
+```
+
+### TimescaleDB Compression Policies
+
+Automatically applied to reduce storage for data older than 90 days:
+
+```sql
+-- Applied if TimescaleDB extension is available
+add_compression_policy('health_samples', INTERVAL '90 days');
+add_compression_policy('health_aggregates', INTERVAL '90 days');
+```
+
+### Functions and Triggers
+
+```sql
+-- Auto-update updated_at timestamps
+CREATE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Applied to: users, health_aggregates
 ```
 
 ---

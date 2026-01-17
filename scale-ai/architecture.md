@@ -98,63 +98,119 @@ A crowdsourced data collection platform for training machine learning models. Us
 
 ### PostgreSQL Schema
 
+The complete schema is available at `backend/src/db/init.sql`. Below is the full implementation with all tables, indexes, and constraints.
+
 ```sql
--- Users (optional, can be anonymous)
+-- Extensions
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Users table for session tracking (anonymous or authenticated)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id VARCHAR(255) UNIQUE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    total_drawings INT DEFAULT 0
+    session_id VARCHAR(255) UNIQUE NOT NULL,
+    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    total_drawings INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Shape definitions
+-- Shape definitions for the drawing game
 CREATE TABLE shapes (
     id SERIAL PRIMARY KEY,
     name VARCHAR(50) UNIQUE NOT NULL,  -- 'line', 'heart', 'circle', 'square', 'triangle'
     description TEXT,
-    difficulty INT DEFAULT 1
+    difficulty INT DEFAULT 1 CHECK (difficulty BETWEEN 1 AND 5),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Drawing submissions
+-- Drawing submissions from users
 CREATE TABLE drawings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id),
-    shape_id INT REFERENCES shapes(id),
-    stroke_data_path VARCHAR(500),  -- Path to object storage
-    metadata JSONB,  -- canvas size, duration, stroke count
-    quality_score FLOAT,  -- 0-1, computed or admin-assigned
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    shape_id INT REFERENCES shapes(id) ON DELETE CASCADE,
+    stroke_data_path VARCHAR(500) NOT NULL,  -- Path in MinIO object storage
+    metadata JSONB DEFAULT '{}',  -- canvas size, duration, stroke count, device type
+    quality_score FLOAT CHECK (quality_score IS NULL OR quality_score BETWEEN 0 AND 1),
     is_flagged BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL  -- Soft delete support
 );
 
--- Training jobs
+-- Training job management
 CREATE TABLE training_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    status VARCHAR(50) DEFAULT 'pending',  -- pending, running, completed, failed
-    config JSONB,  -- hyperparameters, data filters
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    metrics JSONB,  -- accuracy, loss, etc.
-    model_path VARCHAR(500),
-    created_by UUID REFERENCES users(id)
+    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed')),
+    config JSONB DEFAULT '{}',  -- hyperparameters, data filters, epochs
+    error_message TEXT,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    metrics JSONB,  -- accuracy, loss, confusion matrix
+    model_path VARCHAR(500),  -- Path in MinIO when completed
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Model versions
+-- Trained model versions
 CREATE TABLE models (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    training_job_id UUID REFERENCES training_jobs(id),
-    version VARCHAR(50),
+    training_job_id UUID REFERENCES training_jobs(id) ON DELETE CASCADE,
+    version VARCHAR(50) NOT NULL,
     is_active BOOLEAN DEFAULT FALSE,
-    accuracy FLOAT,
-    model_path VARCHAR(500),
-    created_at TIMESTAMP DEFAULT NOW()
+    accuracy FLOAT CHECK (accuracy IS NULL OR accuracy BETWEEN 0 AND 1),
+    model_path VARCHAR(500) NOT NULL,  -- Path in MinIO
+    config JSONB DEFAULT '{}',  -- Model architecture details
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Indexes
+-- Admin users with email/password authentication
+CREATE TABLE admin_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for users
+CREATE INDEX idx_users_session ON users(session_id);
+CREATE INDEX idx_users_role ON users(role);
+
+-- Indexes for drawings (optimized for common query patterns)
 CREATE INDEX idx_drawings_shape ON drawings(shape_id);
-CREATE INDEX idx_drawings_created ON drawings(created_at);
-CREATE INDEX idx_drawings_quality ON drawings(quality_score);
+CREATE INDEX idx_drawings_user ON drawings(user_id);
+CREATE INDEX idx_drawings_created ON drawings(created_at DESC);
+CREATE INDEX idx_drawings_quality ON drawings(quality_score) WHERE quality_score IS NOT NULL;
+CREATE INDEX idx_drawings_flagged ON drawings(is_flagged) WHERE is_flagged = TRUE;
+CREATE INDEX idx_drawings_deleted_at ON drawings(deleted_at);
+
+-- Indexes for training_jobs
+CREATE INDEX idx_training_jobs_status ON training_jobs(status);
+CREATE INDEX idx_training_jobs_created ON training_jobs(created_at DESC);
+
+-- Indexes for models (ensures only one active model at a time)
+CREATE UNIQUE INDEX idx_models_active ON models(is_active) WHERE is_active = TRUE;
+CREATE INDEX idx_models_version ON models(version);
+CREATE INDEX idx_models_created ON models(created_at DESC);
+
+-- Indexes for admin_users
+CREATE INDEX idx_admin_users_email ON admin_users(email);
+
+-- Seed data: 5 shapes for the drawing game
+INSERT INTO shapes (name, description, difficulty) VALUES
+    ('line', 'A straight line from one point to another', 1),
+    ('circle', 'A round shape with no corners', 2),
+    ('square', 'A shape with 4 equal sides and 4 right angles', 2),
+    ('triangle', 'A shape with 3 sides and 3 corners', 2),
+    ('heart', 'A classic heart shape symbolizing love', 3);
 ```
+
+**Schema Notes:**
+- **Soft deletes:** The `drawings.deleted_at` column enables soft delete functionality. Queries should filter `WHERE deleted_at IS NULL` to exclude deleted drawings.
+- **Partial indexes:** Flagged and quality score indexes use `WHERE` clauses to reduce index size and improve performance.
+- **Single active model constraint:** The unique partial index on `models.is_active` ensures only one model can be active at a time.
+- **Timezone-aware timestamps:** All timestamps use `TIMESTAMP WITH TIME ZONE` for consistent handling across timezones.
+- **Check constraints:** Enforce valid ranges for `role`, `status`, `difficulty`, `quality_score`, and `accuracy`.
 
 ### Drawing Data Format (Stored in Object Storage)
 

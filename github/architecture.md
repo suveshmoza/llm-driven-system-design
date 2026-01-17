@@ -258,58 +258,610 @@ async function processWebhookJob(job) {
 
 ## Database Schema
 
+### Entity-Relationship Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            USER & ORGANIZATION LAYER                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────┐         ┌───────────────────┐         ┌──────────────┐        │
+│  │  users   │◄────────│ organization_     │─────────▶│ organizations│        │
+│  │          │         │ members           │          │              │        │
+│  └────┬─────┘         └───────────────────┘          └──────┬───────┘        │
+│       │                                                      │               │
+│       │ created_by                                           │               │
+│       │                                                      │               │
+│       ▼                                                      ▼               │
+│  ┌─────────────────────────────────────────────────────────────────┐        │
+│  │                        repositories                              │        │
+│  │  (owner_id XOR org_id - repository belongs to user OR org)      │        │
+│  └─────────────────────────────────┬───────────────────────────────┘        │
+│                                    │                                         │
+└────────────────────────────────────┼─────────────────────────────────────────┘
+                                     │
+┌────────────────────────────────────┼─────────────────────────────────────────┐
+│                     REPOSITORY ENGAGEMENT LAYER                              │
+├────────────────────────────────────┼─────────────────────────────────────────┤
+│                                    │                                         │
+│        ┌───────────────────────────┼───────────────────────────┐            │
+│        │                           │                           │            │
+│        ▼                           ▼                           ▼            │
+│  ┌───────────┐              ┌───────────┐              ┌───────────┐        │
+│  │   stars   │              │   forks   │              │collabora- │        │
+│  │           │              │           │              │   tors    │        │
+│  └───────────┘              └───────────┘              └───────────┘        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     ISSUE & PR TRACKING LAYER                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  repositories ─────────┬──────────────┬──────────────┬──────────────────────│
+│                        │              │              │                       │
+│                        ▼              ▼              ▼                       │
+│                  ┌─────────┐   ┌─────────────┐  ┌────────────┐              │
+│                  │ issues  │   │pull_requests│  │ discussions│              │
+│                  └────┬────┘   └──────┬──────┘  └─────┬──────┘              │
+│                       │               │               │                      │
+│         ┌─────────────┼───────────────┼───────────────┤                      │
+│         │             │               │               │                      │
+│         ▼             ▼               ▼               ▼                      │
+│   ┌───────────┐ ┌──────────┐   ┌──────────┐   ┌────────────────┐            │
+│   │  labels   │ │ comments │   │ reviews  │   │ discussion_    │            │
+│   └─────┬─────┘ │(issue/pr)│   └────┬─────┘   │ comments       │            │
+│         │       └──────────┘        │         └────────────────┘            │
+│         │                           │                                        │
+│   ┌─────┴─────────────┐       ┌─────┴─────────────┐                         │
+│   │  issue_labels     │       │  review_comments  │                         │
+│   │  pr_labels        │       │  (inline code)    │                         │
+│   └───────────────────┘       └───────────────────┘                         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     AUTOMATION & INTEGRATION LAYER                           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  repositories ─────────┬────────────────────────────────────────────────────│
+│                        │                                                     │
+│                        ▼                                                     │
+│                  ┌───────────┐                                               │
+│                  │ webhooks  │                                               │
+│                  └─────┬─────┘                                               │
+│                        │                                                     │
+│                        ▼                                                     │
+│              ┌───────────────────┐                                           │
+│              │ webhook_deliveries│                                           │
+│              └───────────────────┘                                           │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     SYSTEM & SECURITY LAYER                                  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────┐   ┌───────────────┐   ┌─────────────────┐                 │
+│  │   sessions   │   │  audit_logs   │   │idempotency_keys │                 │
+│  │              │   │               │   │                 │                 │
+│  └──────────────┘   └───────────────┘   └─────────────────┘                 │
+│                                                                              │
+│  ┌──────────────┐                                                            │
+│  │notifications │                                                            │
+│  └──────────────┘                                                            │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Complete Table Definitions
+
+#### User & Organization Tables
+
 ```sql
--- Repositories
+-- Users table - Core user identity
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(100) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(255),
+  bio TEXT,
+  avatar_url VARCHAR(500),
+  location VARCHAR(255),
+  company VARCHAR(255),
+  website VARCHAR(500),
+  role VARCHAR(20) DEFAULT 'user',         -- 'user' or 'admin'
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Organizations table - Team/company accounts
+CREATE TABLE organizations (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) UNIQUE NOT NULL,
+  display_name VARCHAR(255),
+  description TEXT,
+  avatar_url VARCHAR(500),
+  website VARCHAR(500),
+  location VARCHAR(255),
+  created_by INTEGER REFERENCES users(id), -- Organization creator
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Organization members - User membership in organizations
+CREATE TABLE organization_members (
+  id SERIAL PRIMARY KEY,
+  org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  role VARCHAR(20) DEFAULT 'member',       -- 'owner', 'admin', 'member'
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(org_id, user_id)                  -- User can only be member once per org
+);
+```
+
+#### Repository Tables
+
+```sql
+-- Repositories table - Git repository metadata
 CREATE TABLE repositories (
   id SERIAL PRIMARY KEY,
-  owner_id INTEGER REFERENCES users(id),
+  owner_id INTEGER REFERENCES users(id),   -- Personal repository owner
+  org_id INTEGER REFERENCES organizations(id), -- Organization owner
   name VARCHAR(100) NOT NULL,
   description TEXT,
   is_private BOOLEAN DEFAULT FALSE,
   default_branch VARCHAR(100) DEFAULT 'main',
-  storage_path VARCHAR(500),
+  storage_path VARCHAR(500),               -- Path to bare git repo on disk
+  language VARCHAR(50),                    -- Primary programming language
+  stars_count INTEGER DEFAULT 0,           -- Denormalized star count
+  forks_count INTEGER DEFAULT 0,           -- Denormalized fork count
+  watchers_count INTEGER DEFAULT 0,        -- Denormalized watcher count
   created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(owner_id, name)
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT unique_user_repo UNIQUE(owner_id, name),
+  CONSTRAINT unique_org_repo UNIQUE(org_id, name),
+  -- Repository belongs to either a user OR an organization, never both
+  CONSTRAINT owner_or_org CHECK (
+    (owner_id IS NOT NULL AND org_id IS NULL) OR
+    (owner_id IS NULL AND org_id IS NOT NULL)
+  )
 );
 
--- Pull Requests
-CREATE TABLE pull_requests (
+-- Repository collaborators - External users with access
+CREATE TABLE collaborators (
   id SERIAL PRIMARY KEY,
-  repo_id INTEGER REFERENCES repositories(id),
-  number INTEGER NOT NULL,
-  title VARCHAR(500) NOT NULL,
-  body TEXT,
-  state VARCHAR(20) DEFAULT 'open',
-  head_branch VARCHAR(100),
-  base_branch VARCHAR(100),
-  author_id INTEGER REFERENCES users(id),
-  merged_by INTEGER REFERENCES users(id),
-  merged_at TIMESTAMP,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  permission VARCHAR(20) DEFAULT 'read',   -- 'read', 'triage', 'write', 'maintain', 'admin'
   created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(repo_id, number)
+  UNIQUE(repo_id, user_id)
 );
 
--- PR Reviews
-CREATE TABLE reviews (
+-- Stars - User favorites
+CREATE TABLE stars (
   id SERIAL PRIMARY KEY,
-  pr_id INTEGER REFERENCES pull_requests(id),
-  reviewer_id INTEGER REFERENCES users(id),
-  state VARCHAR(20), -- 'approved', 'changes_requested', 'commented'
-  body TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, repo_id)                 -- User can only star once
 );
 
--- Webhooks
-CREATE TABLE webhooks (
+-- Forks - Repository fork relationships
+CREATE TABLE forks (
   id SERIAL PRIMARY KEY,
-  repo_id INTEGER REFERENCES repositories(id),
-  url VARCHAR(500) NOT NULL,
-  secret VARCHAR(100),
-  events TEXT[],
-  is_active BOOLEAN DEFAULT TRUE,
+  source_repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  forked_repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT NOW()
 );
 ```
+
+#### Issue Tracking Tables
+
+```sql
+-- Issues table - Bug reports and feature requests
+CREATE TABLE issues (
+  id SERIAL PRIMARY KEY,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,                 -- Repository-scoped issue number
+  title VARCHAR(500) NOT NULL,
+  body TEXT,
+  state VARCHAR(20) DEFAULT 'open',        -- 'open', 'closed'
+  author_id INTEGER REFERENCES users(id),
+  assignee_id INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  closed_at TIMESTAMP,
+  UNIQUE(repo_id, number)                  -- Issue numbers are unique per repo
+);
+
+-- Labels table - Issue/PR categorization
+CREATE TABLE labels (
+  id SERIAL PRIMARY KEY,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  name VARCHAR(50) NOT NULL,
+  color VARCHAR(7) DEFAULT '#1a73e8',      -- Hex color code
+  description TEXT,
+  UNIQUE(repo_id, name)                    -- Labels are unique per repo
+);
+
+-- Issue labels - Many-to-many junction
+CREATE TABLE issue_labels (
+  id SERIAL PRIMARY KEY,
+  issue_id INTEGER REFERENCES issues(id) ON DELETE CASCADE,
+  label_id INTEGER REFERENCES labels(id) ON DELETE CASCADE,
+  UNIQUE(issue_id, label_id)
+);
+```
+
+#### Pull Request Tables
+
+```sql
+-- Pull Requests table - Code review and merge workflow
+CREATE TABLE pull_requests (
+  id SERIAL PRIMARY KEY,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,                 -- Repository-scoped PR number
+  title VARCHAR(500) NOT NULL,
+  body TEXT,
+  state VARCHAR(20) DEFAULT 'open',        -- 'open', 'closed', 'merged'
+  head_branch VARCHAR(100) NOT NULL,       -- Source branch
+  head_sha VARCHAR(40),                    -- Latest commit on head branch
+  base_branch VARCHAR(100) NOT NULL,       -- Target branch
+  base_sha VARCHAR(40),                    -- Commit on base branch at PR creation
+  author_id INTEGER REFERENCES users(id),
+  merged_by INTEGER REFERENCES users(id),
+  merged_at TIMESTAMP,
+  additions INTEGER DEFAULT 0,             -- Lines added
+  deletions INTEGER DEFAULT 0,             -- Lines removed
+  changed_files INTEGER DEFAULT 0,         -- Number of files changed
+  is_draft BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  closed_at TIMESTAMP,
+  UNIQUE(repo_id, number)
+);
+
+-- PR labels - Many-to-many junction
+CREATE TABLE pr_labels (
+  id SERIAL PRIMARY KEY,
+  pr_id INTEGER REFERENCES pull_requests(id) ON DELETE CASCADE,
+  label_id INTEGER REFERENCES labels(id) ON DELETE CASCADE,
+  UNIQUE(pr_id, label_id)
+);
+
+-- Reviews - PR approval/rejection workflow
+CREATE TABLE reviews (
+  id SERIAL PRIMARY KEY,
+  pr_id INTEGER REFERENCES pull_requests(id) ON DELETE CASCADE,
+  reviewer_id INTEGER REFERENCES users(id),
+  state VARCHAR(20),                       -- 'approved', 'changes_requested', 'commented', 'pending'
+  body TEXT,
+  commit_sha VARCHAR(40),                  -- Commit SHA at time of review
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Review comments - Inline code comments during review
+CREATE TABLE review_comments (
+  id SERIAL PRIMARY KEY,
+  review_id INTEGER REFERENCES reviews(id) ON DELETE CASCADE,
+  pr_id INTEGER REFERENCES pull_requests(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id),
+  path VARCHAR(500),                       -- File path being commented on
+  line INTEGER,                            -- Line number in diff
+  side VARCHAR(10),                        -- 'LEFT' or 'RIGHT' side of diff
+  body TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Comments - General comments on issues and PRs
+CREATE TABLE comments (
+  id SERIAL PRIMARY KEY,
+  issue_id INTEGER REFERENCES issues(id) ON DELETE CASCADE,
+  pr_id INTEGER REFERENCES pull_requests(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  -- Comment belongs to either an issue OR a PR, never both
+  CONSTRAINT issue_or_pr CHECK (
+    (issue_id IS NOT NULL AND pr_id IS NULL) OR
+    (issue_id IS NULL AND pr_id IS NOT NULL)
+  )
+);
+```
+
+#### Discussion Tables
+
+```sql
+-- Discussions - Q&A and community discussions
+CREATE TABLE discussions (
+  id SERIAL PRIMARY KEY,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  title VARCHAR(500) NOT NULL,
+  body TEXT,
+  category VARCHAR(50),                    -- 'general', 'ideas', 'q-and-a', 'show-and-tell'
+  author_id INTEGER REFERENCES users(id),
+  is_answered BOOLEAN DEFAULT FALSE,
+  answer_comment_id INTEGER,               -- ID of accepted answer
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(repo_id, number)
+);
+
+-- Discussion comments - Threaded replies with nesting
+CREATE TABLE discussion_comments (
+  id SERIAL PRIMARY KEY,
+  discussion_id INTEGER REFERENCES discussions(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id),
+  parent_id INTEGER REFERENCES discussion_comments(id), -- Self-reference for threading
+  body TEXT NOT NULL,
+  upvotes INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### Webhook Tables
+
+```sql
+-- Webhooks - External system integrations
+CREATE TABLE webhooks (
+  id SERIAL PRIMARY KEY,
+  repo_id INTEGER REFERENCES repositories(id) ON DELETE CASCADE,
+  url VARCHAR(500) NOT NULL,
+  secret VARCHAR(100),                     -- HMAC signing secret
+  events TEXT[],                           -- Array of event types to trigger on
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Webhook deliveries - Delivery history and retry tracking
+CREATE TABLE webhook_deliveries (
+  id SERIAL PRIMARY KEY,
+  webhook_id INTEGER REFERENCES webhooks(id) ON DELETE CASCADE,
+  event VARCHAR(50),                       -- Event type that triggered delivery
+  payload JSONB,                           -- Full event payload
+  response_status INTEGER,                 -- HTTP response status code
+  response_body TEXT,                      -- Response from external system
+  duration_ms INTEGER,                     -- Request duration
+  attempt INTEGER DEFAULT 1,               -- Retry attempt number
+  delivered_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### System Tables
+
+```sql
+-- Sessions - User authentication sessions
+CREATE TABLE sessions (
+  id SERIAL PRIMARY KEY,
+  session_id VARCHAR(255) UNIQUE NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  data JSONB,                              -- Session metadata
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Notifications - User notification inbox
+CREATE TABLE notifications (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(50),                        -- 'mention', 'review_requested', 'pr_merged', etc.
+  title VARCHAR(255),
+  message TEXT,
+  url VARCHAR(500),                        -- Link to related resource
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Audit logs - Security-sensitive operation tracking
+CREATE TABLE audit_logs (
+  id SERIAL PRIMARY KEY,
+  timestamp TIMESTAMP DEFAULT NOW(),
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, -- Preserve log even if user deleted
+  action VARCHAR(100) NOT NULL,            -- 'repo.create', 'pr.merge', 'user.login', etc.
+  resource_type VARCHAR(50) NOT NULL,      -- 'repository', 'user', 'webhook', etc.
+  resource_id VARCHAR(100),
+  ip_address INET,
+  user_agent TEXT,
+  request_id VARCHAR(64),                  -- For distributed tracing correlation
+  details JSONB DEFAULT '{}',              -- Additional context
+  outcome VARCHAR(20) DEFAULT 'success'    -- 'success', 'denied', 'error'
+);
+
+-- Idempotency keys - Prevent duplicate operations
+CREATE TABLE idempotency_keys (
+  key VARCHAR(64) PRIMARY KEY,
+  operation_type VARCHAR(50) NOT NULL,     -- 'pr_create', 'issue_create', etc.
+  resource_id INTEGER,                     -- ID of created resource
+  response_body JSONB,                     -- Cached response for replay
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Indexes
+
+```sql
+-- Repository lookup indexes
+CREATE INDEX idx_repos_owner ON repositories(owner_id);
+CREATE INDEX idx_repos_org ON repositories(org_id);
+
+-- Issue and PR lookup indexes
+CREATE INDEX idx_issues_repo ON issues(repo_id);
+CREATE INDEX idx_issues_author ON issues(author_id);
+CREATE INDEX idx_prs_repo ON pull_requests(repo_id);
+CREATE INDEX idx_prs_author ON pull_requests(author_id);
+
+-- Comment lookup indexes
+CREATE INDEX idx_comments_issue ON comments(issue_id);
+CREATE INDEX idx_comments_pr ON comments(pr_id);
+CREATE INDEX idx_reviews_pr ON reviews(pr_id);
+
+-- Star lookup indexes (for showing user's starred repos and repo star count)
+CREATE INDEX idx_stars_user ON stars(user_id);
+CREATE INDEX idx_stars_repo ON stars(repo_id);
+
+-- Notification inbox (unread first)
+CREATE INDEX idx_notifications_user ON notifications(user_id, is_read);
+
+-- Audit log query indexes
+CREATE INDEX idx_audit_timestamp ON audit_logs(timestamp);
+CREATE INDEX idx_audit_user ON audit_logs(user_id);
+CREATE INDEX idx_audit_resource ON audit_logs(resource_type, resource_id);
+CREATE INDEX idx_audit_action ON audit_logs(action);
+
+-- Idempotency key cleanup index
+CREATE INDEX idx_idempotency_created ON idempotency_keys(created_at);
+```
+
+### Foreign Key Relationships and Cascade Behaviors
+
+| Parent Table | Child Table | FK Column | ON DELETE Behavior | Rationale |
+|--------------|-------------|-----------|-------------------|-----------|
+| `users` | `organizations` | `created_by` | NO ACTION | Preserve org history |
+| `users` | `organization_members` | `user_id` | CASCADE | Remove membership when user deleted |
+| `organizations` | `organization_members` | `org_id` | CASCADE | Remove all members when org deleted |
+| `users` | `repositories` | `owner_id` | NO ACTION | Prevent accidental repo deletion |
+| `organizations` | `repositories` | `org_id` | NO ACTION | Prevent accidental repo deletion |
+| `repositories` | `collaborators` | `repo_id` | CASCADE | Remove collaborators with repo |
+| `users` | `collaborators` | `user_id` | CASCADE | Remove access when user deleted |
+| `users` | `stars` | `user_id` | CASCADE | Remove stars when user deleted |
+| `repositories` | `stars` | `repo_id` | CASCADE | Remove stars when repo deleted |
+| `repositories` | `forks` | `source_repo_id` | CASCADE | Remove fork records with source |
+| `repositories` | `forks` | `forked_repo_id` | CASCADE | Remove fork records with fork |
+| `repositories` | `issues` | `repo_id` | CASCADE | Delete issues with repo |
+| `repositories` | `labels` | `repo_id` | CASCADE | Delete labels with repo |
+| `issues` | `issue_labels` | `issue_id` | CASCADE | Remove label associations |
+| `labels` | `issue_labels` | `label_id` | CASCADE | Remove label associations |
+| `repositories` | `pull_requests` | `repo_id` | CASCADE | Delete PRs with repo |
+| `pull_requests` | `pr_labels` | `pr_id` | CASCADE | Remove label associations |
+| `pull_requests` | `reviews` | `pr_id` | CASCADE | Delete reviews with PR |
+| `reviews` | `review_comments` | `review_id` | CASCADE | Delete comments with review |
+| `pull_requests` | `review_comments` | `pr_id` | CASCADE | Delete comments with PR |
+| `issues` | `comments` | `issue_id` | CASCADE | Delete comments with issue |
+| `pull_requests` | `comments` | `pr_id` | CASCADE | Delete comments with PR |
+| `repositories` | `discussions` | `repo_id` | CASCADE | Delete discussions with repo |
+| `discussions` | `discussion_comments` | `discussion_id` | CASCADE | Delete comments with discussion |
+| `discussion_comments` | `discussion_comments` | `parent_id` | NO ACTION | Preserve thread structure |
+| `repositories` | `webhooks` | `repo_id` | CASCADE | Delete webhooks with repo |
+| `webhooks` | `webhook_deliveries` | `webhook_id` | CASCADE | Delete delivery logs with webhook |
+| `users` | `sessions` | `user_id` | CASCADE | Invalidate sessions when user deleted |
+| `users` | `notifications` | `user_id` | CASCADE | Delete notifications with user |
+| `users` | `audit_logs` | `user_id` | SET NULL | Preserve audit trail even if user deleted |
+
+### Data Flow Between Tables
+
+#### 1. User Creates a Repository
+
+```
+users ──[owner_id]──▶ repositories
+                          │
+                          ├──▶ Creates default labels (optional)
+                          └──▶ Creates webhook subscriptions (optional)
+```
+
+#### 2. User Opens a Pull Request
+
+```
+users ──[author_id]──▶ pull_requests ◀──[repo_id]── repositories
+                              │
+                              ├──▶ pr_labels (apply labels)
+                              ├──▶ reviews (request reviews)
+                              │        └──▶ review_comments (inline feedback)
+                              └──▶ comments (general discussion)
+```
+
+#### 3. Pull Request Merge Flow
+
+```
+pull_requests ──[merge]──▶ Update state to 'merged'
+      │                         │
+      │                         └──▶ Set merged_by, merged_at
+      │
+      └──▶ webhooks ──▶ webhook_deliveries (emit 'pull_request.merged')
+                              │
+                              └──▶ Retry on failure (attempt counter)
+```
+
+#### 4. Repository Fork Flow
+
+```
+repositories (source) ──▶ forks ◀── repositories (fork)
+      │                                    │
+      │                                    └──[owner_id]── users
+      │
+      └──▶ Update forks_count (denormalized)
+```
+
+#### 5. Issue Lifecycle
+
+```
+users ──[author_id]──▶ issues ◀──[repo_id]── repositories
+                           │
+                           ├──[assignee_id]──▶ users (assignment)
+                           ├──▶ issue_labels ◀── labels
+                           ├──▶ comments (discussion)
+                           │
+                           └──▶ notifications ──▶ users (mentions, assignments)
+```
+
+#### 6. Code Review Flow
+
+```
+pull_requests ──▶ reviews ──▶ review_comments
+      │               │              │
+      │               │              └── Inline comments on specific lines
+      │               │
+      │               └── Review state: 'approved', 'changes_requested'
+      │
+      └──▶ Merge blocked until required approvals met
+```
+
+### Why Tables Are Structured This Way
+
+#### 1. Separation of Users and Organizations
+**Design**: Organizations are separate entities with a membership junction table.
+**Rationale**: Organizations can have multiple owners, different permission models, and billing separate from personal accounts. The membership table allows flexible role assignment.
+
+#### 2. Repository Owner Constraint (XOR Check)
+**Design**: `owner_id IS NOT NULL XOR org_id IS NOT NULL`
+**Rationale**: A repository must belong to exactly one owner (user or organization). This constraint prevents ambiguous ownership and simplifies permission checking.
+
+#### 3. Denormalized Counts (stars_count, forks_count)
+**Design**: Store counts directly on repositories instead of computing via COUNT(*).
+**Rationale**: Popular repositories can have millions of stars. Denormalized counts provide O(1) read performance. The tradeoff is maintaining consistency during star/unstar operations (handled via triggers or application logic).
+
+#### 4. Repository-Scoped Numbers (issues.number, pull_requests.number)
+**Design**: Auto-incrementing numbers unique per repository, not globally.
+**Rationale**: Matches GitHub's URL scheme (`/owner/repo/issues/42`). Humans find sequential per-repo numbers easier to reference than global UUIDs.
+
+#### 5. Separate Comments Table with Polymorphic FK
+**Design**: Single comments table with mutually exclusive issue_id/pr_id.
+**Rationale**: Issues and PRs share the same comment format and operations. A single table simplifies queries for "all comments by user" and reduces schema duplication. The CHECK constraint ensures data integrity.
+
+#### 6. Review Comments Separate from Reviews
+**Design**: review_comments linked to both reviews and PRs.
+**Rationale**: Inline code comments are tied to specific review sessions but must persist even if the review is updated. The dual FK allows querying all comments on a PR while maintaining review grouping.
+
+#### 7. Threaded Discussion Comments (parent_id self-reference)
+**Design**: Self-referential FK for nested replies.
+**Rationale**: GitHub Discussions support threaded conversations. The self-reference with ON DELETE NO ACTION preserves reply context even if parent is somehow orphaned.
+
+#### 8. Webhook Delivery Log
+**Design**: Separate table for delivery attempts.
+**Rationale**: Each webhook event may require multiple delivery attempts (retries). Logging each attempt enables debugging delivery issues, computing delivery latency metrics, and auditing integration health.
+
+#### 9. Audit Logs with SET NULL on User Delete
+**Design**: user_id FK uses ON DELETE SET NULL instead of CASCADE.
+**Rationale**: Audit logs serve as a permanent security record. If a user is deleted, we must preserve the audit trail with user_id = NULL rather than losing critical security information.
+
+#### 10. Idempotency Keys Table
+**Design**: Dedicated table for idempotency tracking.
+**Rationale**: Webhook retries and network issues can cause duplicate requests. Storing idempotency keys in PostgreSQL (not Redis) ensures transactional consistency with resource creation. The 24-hour TTL is implemented via a cleanup job using the created_at index.
 
 ---
 
