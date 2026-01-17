@@ -104,8 +104,11 @@ function WatchPage() {
     );
   }
 
+  const isLiked = currentVideo.userReaction === 'like';
+  const isDisliked = currentVideo.userReaction === 'dislike';
+
   return (
-    <div className="flex flex-col lg:flex-row gap-6 p-6">
+    <div className="flex flex-col lg:flex-row gap-6 p-6 max-w-[1800px] mx-auto">
       {/* Main content */}
       <div className="flex-1 min-w-0">
         {/* Video player */}
@@ -116,18 +119,18 @@ function WatchPage() {
             initialPosition={currentVideo.watchProgress?.position}
           />
         ) : (
-          <div className="aspect-video bg-black flex items-center justify-center">
+          <div className="aspect-video bg-black rounded-xl flex items-center justify-center">
             <div className="animate-spin w-8 h-8 border-2 border-white border-t-transparent rounded-full" />
           </div>
         )}
 
         {/* Video info */}
-        <div className="mt-4">
-          <h1 className="text-xl font-medium mb-2">{currentVideo.title}</h1>
+        <div className="mt-3">
+          <h1 className="text-xl font-semibold leading-7 mb-3">{currentVideo.title}</h1>
 
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Channel info */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {channel && (
                 <>
                   <img
@@ -135,16 +138,20 @@ function WatchPage() {
                     alt={channel.name}
                     className="w-10 h-10 rounded-full"
                   />
-                  <div>
-                    <p className="font-medium">{channel.name}</p>
-                    <p className="text-xs text-gray-400">
+                  <div className="mr-3">
+                    <p className="font-medium text-sm leading-5">{channel.name}</p>
+                    <p className="text-xs text-yt-text-secondary-dark">
                       {formatSubscriberCount(channel.subscriberCount)}
                     </p>
                   </div>
                   {user && user.id !== channel.id && (
                     <button
                       onClick={handleSubscribe}
-                      className={isSubscribed ? 'btn-subscribed' : 'btn-subscribe'}
+                      className={`px-4 py-2 rounded-full font-medium text-sm transition-colors ${
+                        isSubscribed
+                          ? 'bg-yt-dark-hover text-white hover:bg-yt-dark-elevated'
+                          : 'bg-white text-black hover:bg-gray-200'
+                      }`}
                     >
                       {isSubscribed ? 'Subscribed' : 'Subscribe'}
                     </button>
@@ -154,59 +161,102 @@ function WatchPage() {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2">
-              {/* Like/Dislike */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Like/Dislike pill */}
               <div className="flex items-center bg-yt-dark-hover rounded-full">
                 <button
                   onClick={() => handleReact('like')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-l-full hover:bg-gray-600 ${
-                    currentVideo.userReaction === 'like' ? 'text-yt-blue' : ''
+                  className={`flex items-center gap-2 pl-4 pr-3 py-2 rounded-l-full hover:bg-yt-dark-elevated transition-colors ${
+                    isLiked ? 'text-white' : 'text-white'
                   }`}
+                  title="I like this"
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
-                  </svg>
-                  <span>{currentVideo.likeCount}</span>
+                  {isLiked ? (
+                    // Filled like icon
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M3 21v-2h2V9c0-1.1.9-2 2-2h9c.83 0 1.54.5 1.84 1.22l3.02 7.05c.09.23.14.47.14.73v2c0 1.1-.9 2-2 2h-6.31l.95 4.57.03.32c0 .41-.17.79-.44 1.06L12.17 27 5.59 20.41C5.22 20.05 5 19.55 5 19V9H3v12z"/>
+                    </svg>
+                  ) : (
+                    // Outline like icon
+                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.77 11h-4.23l1.52-4.94C16.38 5.03 15.54 4 14.38 4c-.58 0-1.14.24-1.52.65L7 11H3v10h4h1l5.5 0c1.5-.02 2.87-1.1 3.27-2.55l1.38-5.03c.43-1.56-.58-3.19-2.18-3.7zM5 13v6H4v-6h1zm4 6V12l5.76-6.43c.18-.2.43-.31.69-.31.4 0 .74.28.86.66L14.6 10.4l-1.69 5.5h6.09c.78.25 1.11 1.14.73 1.84l-1.38 5.03c-.18.65-.76 1.11-1.44 1.12L9 24V19z"/>
+                    </svg>
+                  )}
+                  <span className="font-medium text-sm">{currentVideo.likeCount}</span>
                 </button>
                 <div className="w-px h-6 bg-gray-600" />
                 <button
                   onClick={() => handleReact('dislike')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-r-full hover:bg-gray-600 ${
-                    currentVideo.userReaction === 'dislike' ? 'text-yt-blue' : ''
+                  className={`flex items-center gap-2 pl-3 pr-4 py-2 rounded-r-full hover:bg-yt-dark-elevated transition-colors ${
+                    isDisliked ? 'text-white' : 'text-white'
                   }`}
+                  title="I dislike this"
                 >
-                  <svg className="w-5 h-5 rotate-180" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
-                  </svg>
+                  {isDisliked ? (
+                    // Filled dislike icon
+                    <svg className="w-6 h-6 rotate-180" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M3 21v-2h2V9c0-1.1.9-2 2-2h9c.83 0 1.54.5 1.84 1.22l3.02 7.05c.09.23.14.47.14.73v2c0 1.1-.9 2-2 2h-6.31l.95 4.57.03.32c0 .41-.17.79-.44 1.06L12.17 27 5.59 20.41C5.22 20.05 5 19.55 5 19V9H3v12z"/>
+                    </svg>
+                  ) : (
+                    // Outline dislike icon
+                    <svg className="w-6 h-6 rotate-180" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.77 11h-4.23l1.52-4.94C16.38 5.03 15.54 4 14.38 4c-.58 0-1.14.24-1.52.65L7 11H3v10h4h1l5.5 0c1.5-.02 2.87-1.1 3.27-2.55l1.38-5.03c.43-1.56-.58-3.19-2.18-3.7zM5 13v6H4v-6h1zm4 6V12l5.76-6.43c.18-.2.43-.31.69-.31.4 0 .74.28.86.66L14.6 10.4l-1.69 5.5h6.09c.78.25 1.11 1.14.73 1.84l-1.38 5.03c-.18.65-.76 1.11-1.44 1.12L9 24V19z"/>
+                    </svg>
+                  )}
                 </button>
               </div>
 
-              {/* Share */}
-              <button className="btn-secondary flex items-center gap-2">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M14 9V3L22 12L14 21V14.9C9 14.9 5.5 16.5 3 20C4 15 7 10 14 9Z"/>
+              {/* Share button */}
+              <button className="flex items-center gap-2 px-4 py-2 bg-yt-dark-hover rounded-full hover:bg-yt-dark-elevated transition-colors">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M15 5.63 20.66 12 15 18.37V14h-1c-3.96 0-7.14 1-9.75 3.09 1.84-4.07 5.11-6.4 9.89-7.1l.86-.13V5.63M14 3v6C6.22 10.13 3.11 15.33 2 21c2.78-3.97 6.44-6 12-6v6l8-9-8-9z"/>
                 </svg>
-                Share
+                <span className="font-medium text-sm">Share</span>
+              </button>
+
+              {/* Download button */}
+              <button className="flex items-center gap-2 px-4 py-2 bg-yt-dark-hover rounded-full hover:bg-yt-dark-elevated transition-colors">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M17 18v1H6v-1h11zm-.5-6.6-.7-.7-3.8 3.7V4h-1v10.4l-3.8-3.8-.7.7 5 5 5-5z"/>
+                </svg>
+                <span className="font-medium text-sm">Download</span>
+              </button>
+
+              {/* More button */}
+              <button className="p-2 bg-yt-dark-hover rounded-full hover:bg-yt-dark-elevated transition-colors">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M7.5 12c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5.67-1.5 1.5-1.5 1.5.67 1.5 1.5zm4.5-1.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm6 0c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/>
+                </svg>
               </button>
             </div>
           </div>
 
-          {/* Description */}
-          <div className="mt-4 bg-yt-dark-hover rounded-xl p-3">
-            <div className="flex items-center gap-2 text-sm mb-2">
+          {/* Description box */}
+          <div
+            className={`mt-3 bg-yt-dark-hover rounded-xl p-3 cursor-pointer hover:bg-yt-dark-elevated transition-colors ${
+              isDescriptionExpanded ? '' : ''
+            }`}
+            onClick={() => !isDescriptionExpanded && setIsDescriptionExpanded(true)}
+          >
+            <div className="flex items-center gap-2 text-sm font-medium mb-2">
               <span>{formatViewCount(currentVideo.viewCount)}</span>
-              <span>-</span>
               <span>{timeAgo(currentVideo.publishedAt)}</span>
+              {currentVideo.tags && currentVideo.tags.length > 0 && (
+                <span className="text-yt-blue-light">#{currentVideo.tags[0]}</span>
+              )}
             </div>
             <div className={`${isDescriptionExpanded ? '' : 'line-clamp-2'}`}>
-              <p className="whitespace-pre-wrap">{currentVideo.description || 'No description'}</p>
+              <p className="whitespace-pre-wrap text-sm">{currentVideo.description || 'No description'}</p>
             </div>
             {currentVideo.description && currentVideo.description.length > 100 && (
               <button
-                onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
-                className="text-sm font-medium mt-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsDescriptionExpanded(!isDescriptionExpanded);
+                }}
+                className="text-sm font-medium mt-3 hover:underline"
               >
-                {isDescriptionExpanded ? 'Show less' : 'Show more'}
+                {isDescriptionExpanded ? 'Show less' : '...more'}
               </button>
             )}
           </div>
@@ -217,12 +267,11 @@ function WatchPage() {
       </div>
 
       {/* Sidebar - Recommendations */}
-      <div className="w-full lg:w-96 flex-shrink-0">
-        <h3 className="font-medium mb-4">Up next</h3>
+      <div className="w-full lg:w-[402px] flex-shrink-0">
         <div className="space-y-2">
           {recommendations
             .filter((v) => v.id !== videoId)
-            .slice(0, 10)
+            .slice(0, 20)
             .map((video) => (
               <VideoCard key={video.id} video={video} layout="list" />
             ))}

@@ -8,117 +8,157 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as LayoutRouteImport } from './routes/_layout'
+import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
+import { Route as LayoutExploreRouteImport } from './routes/_layout/explore'
+import { Route as LayoutUsernameRouteImport } from './routes/_layout/$username'
+import { Route as LayoutHashtagTagRouteImport } from './routes/_layout/hashtag.$tag'
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as RegisterImport } from './routes/register'
-import { Route as LoginImport } from './routes/login'
-import { Route as LayoutImport } from './routes/_layout'
-import { Route as LayoutIndexImport } from './routes/_layout/index'
-import { Route as LayoutExploreImport } from './routes/_layout/explore'
-import { Route as LayoutUsernameImport } from './routes/_layout/$username'
-import { Route as LayoutHashtagTagImport } from './routes/_layout/hashtag.$tag'
-
-// Create/Update Routes
-
-const RegisterRoute = RegisterImport.update({
+const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const LoginRoute = LoginImport.update({
+const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const LayoutRoute = LayoutImport.update({
+const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const LayoutIndexRoute = LayoutIndexImport.update({
+const LayoutIndexRoute = LayoutIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => LayoutRoute,
 } as any)
-
-const LayoutExploreRoute = LayoutExploreImport.update({
+const LayoutExploreRoute = LayoutExploreRouteImport.update({
   id: '/explore',
   path: '/explore',
   getParentRoute: () => LayoutRoute,
 } as any)
-
-const LayoutUsernameRoute = LayoutUsernameImport.update({
+const LayoutUsernameRoute = LayoutUsernameRouteImport.update({
   id: '/$username',
   path: '/$username',
   getParentRoute: () => LayoutRoute,
 } as any)
-
-const LayoutHashtagTagRoute = LayoutHashtagTagImport.update({
+const LayoutHashtagTagRoute = LayoutHashtagTagRouteImport.update({
   id: '/hashtag/$tag',
   path: '/hashtag/$tag',
   getParentRoute: () => LayoutRoute,
 } as any)
 
-// Populate the FileRoutesByPath interface
+export interface FileRoutesByFullPath {
+  '/': typeof LayoutIndexRoute
+  '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
+  '/$username': typeof LayoutUsernameRoute
+  '/explore': typeof LayoutExploreRoute
+  '/hashtag/$tag': typeof LayoutHashtagTagRoute
+}
+export interface FileRoutesByTo {
+  '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
+  '/$username': typeof LayoutUsernameRoute
+  '/explore': typeof LayoutExploreRoute
+  '/': typeof LayoutIndexRoute
+  '/hashtag/$tag': typeof LayoutHashtagTagRoute
+}
+export interface FileRoutesById {
+  __root__: typeof rootRouteImport
+  '/_layout': typeof LayoutRouteWithChildren
+  '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
+  '/_layout/$username': typeof LayoutUsernameRoute
+  '/_layout/explore': typeof LayoutExploreRoute
+  '/_layout/': typeof LayoutIndexRoute
+  '/_layout/hashtag/$tag': typeof LayoutHashtagTagRoute
+}
+export interface FileRouteTypes {
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/register'
+    | '/$username'
+    | '/explore'
+    | '/hashtag/$tag'
+  fileRoutesByTo: FileRoutesByTo
+  to: '/login' | '/register' | '/$username' | '/explore' | '/' | '/hashtag/$tag'
+  id:
+    | '__root__'
+    | '/_layout'
+    | '/login'
+    | '/register'
+    | '/_layout/$username'
+    | '/_layout/explore'
+    | '/_layout/'
+    | '/_layout/hashtag/$tag'
+  fileRoutesById: FileRoutesById
+}
+export interface RootRouteChildren {
+  LayoutRoute: typeof LayoutRouteWithChildren
+  LoginRoute: typeof LoginRoute
+  RegisterRoute: typeof RegisterRoute
+}
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_layout': {
-      id: '/_layout'
-      path: ''
-      fullPath: ''
-      preLoaderRoute: typeof LayoutImport
-      parentRoute: typeof rootRoute
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
-      preLoaderRoute: typeof LoginImport
-      parentRoute: typeof rootRoute
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterImport
-      parentRoute: typeof rootRoute
-    }
-    '/_layout/$username': {
-      id: '/_layout/$username'
-      path: '/$username'
-      fullPath: '/$username'
-      preLoaderRoute: typeof LayoutUsernameImport
-      parentRoute: typeof LayoutImport
-    }
-    '/_layout/explore': {
-      id: '/_layout/explore'
-      path: '/explore'
-      fullPath: '/explore'
-      preLoaderRoute: typeof LayoutExploreImport
-      parentRoute: typeof LayoutImport
+    '/_layout': {
+      id: '/_layout'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof LayoutRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_layout/': {
       id: '/_layout/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof LayoutIndexImport
-      parentRoute: typeof LayoutImport
+      preLoaderRoute: typeof LayoutIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/explore': {
+      id: '/_layout/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof LayoutExploreRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/$username': {
+      id: '/_layout/$username'
+      path: '/$username'
+      fullPath: '/$username'
+      preLoaderRoute: typeof LayoutUsernameRouteImport
+      parentRoute: typeof LayoutRoute
     }
     '/_layout/hashtag/$tag': {
       id: '/_layout/hashtag/$tag'
       path: '/hashtag/$tag'
       fullPath: '/hashtag/$tag'
-      preLoaderRoute: typeof LayoutHashtagTagImport
-      parentRoute: typeof LayoutImport
+      preLoaderRoute: typeof LayoutHashtagTagRouteImport
+      parentRoute: typeof LayoutRoute
     }
   }
 }
-
-// Create and export the route tree
 
 interface LayoutRouteChildren {
   LayoutUsernameRoute: typeof LayoutUsernameRoute
@@ -137,78 +177,11 @@ const LayoutRouteChildren: LayoutRouteChildren = {
 const LayoutRouteWithChildren =
   LayoutRoute._addFileChildren(LayoutRouteChildren)
 
-export interface FileRoutesByFullPath {
-  '': typeof LayoutRouteWithChildren
-  '/login': typeof LoginRoute
-  '/register': typeof RegisterRoute
-  '/$username': typeof LayoutUsernameRoute
-  '/explore': typeof LayoutExploreRoute
-  '/': typeof LayoutIndexRoute
-  '/hashtag/$tag': typeof LayoutHashtagTagRoute
-}
-
-export interface FileRoutesByTo {
-  '/login': typeof LoginRoute
-  '/register': typeof RegisterRoute
-  '/$username': typeof LayoutUsernameRoute
-  '/explore': typeof LayoutExploreRoute
-  '/': typeof LayoutIndexRoute
-  '/hashtag/$tag': typeof LayoutHashtagTagRoute
-}
-
-export interface FileRoutesById {
-  __root__: typeof rootRoute
-  '/_layout': typeof LayoutRouteWithChildren
-  '/login': typeof LoginRoute
-  '/register': typeof RegisterRoute
-  '/_layout/$username': typeof LayoutUsernameRoute
-  '/_layout/explore': typeof LayoutExploreRoute
-  '/_layout/': typeof LayoutIndexRoute
-  '/_layout/hashtag/$tag': typeof LayoutHashtagTagRoute
-}
-
-export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | ''
-    | '/login'
-    | '/register'
-    | '/$username'
-    | '/explore'
-    | '/'
-    | '/hashtag/$tag'
-  fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/login'
-    | '/register'
-    | '/$username'
-    | '/explore'
-    | '/'
-    | '/hashtag/$tag'
-  id:
-    | '__root__'
-    | '/_layout'
-    | '/login'
-    | '/register'
-    | '/_layout/$username'
-    | '/_layout/explore'
-    | '/_layout/'
-    | '/_layout/hashtag/$tag'
-  fileRoutesById: FileRoutesById
-}
-
-export interface RootRouteChildren {
-  LayoutRoute: typeof LayoutRouteWithChildren
-  LoginRoute: typeof LoginRoute
-  RegisterRoute: typeof RegisterRoute
-}
-
 const rootRouteChildren: RootRouteChildren = {
   LayoutRoute: LayoutRouteWithChildren,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
 }
-
-export const routeTree = rootRoute
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()

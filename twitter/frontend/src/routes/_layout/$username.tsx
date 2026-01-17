@@ -73,7 +73,7 @@ function ProfilePage() {
   if (profileError || !profile) {
     return (
       <div className="p-8 text-center">
-        <p className="text-red-500">{profileError || 'User not found'}</p>
+        <p className="text-twitter-like text-[15px]">{profileError || 'User not found'}</p>
       </div>
     );
   }
@@ -82,63 +82,68 @@ function ProfilePage() {
 
   return (
     <div>
-      <header className="sticky top-0 bg-white/80 backdrop-blur border-b border-twitter-extraLightGray z-10">
-        <div className="flex items-center gap-4 p-4">
-          <Link to="/" className="p-2 hover:bg-gray-100 rounded-full">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <header className="sticky top-0 bg-white/85 backdrop-blur-md border-b border-twitter-border z-10">
+        <div className="flex items-center gap-6 px-4 py-1">
+          <Link to="/" className="p-2 -ml-2 hover:bg-twitter-dark/10 rounded-full transition-colors">
+            <svg className="w-5 h-5 text-twitter-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </Link>
           <div>
-            <h1 className="text-xl font-bold">{profile.displayName}</h1>
-            <p className="text-sm text-twitter-gray">{formatNumber(profile.tweetCount)} tweets</p>
+            <h1 className="text-xl font-bold text-twitter-dark leading-6">{profile.displayName}</h1>
+            <p className="text-[13px] text-twitter-gray">{formatNumber(profile.tweetCount)} tweets</p>
           </div>
         </div>
       </header>
 
       {/* Profile banner */}
-      <div className="h-48 bg-twitter-blue"></div>
+      <div className="h-[200px] bg-twitter-blue"></div>
 
       {/* Profile info */}
-      <div className="relative px-4 pb-4 border-b border-twitter-extraLightGray">
+      <div className="relative px-4 pb-4 border-b border-twitter-border">
         {/* Avatar */}
-        <div className="absolute -top-16 w-32 h-32 rounded-full border-4 border-white bg-twitter-blue flex items-center justify-center text-white text-4xl font-bold">
+        <div className="absolute -top-[68px] w-[134px] h-[134px] rounded-full border-4 border-white bg-twitter-blue flex items-center justify-center text-white text-5xl font-bold">
           {profile.displayName.charAt(0).toUpperCase()}
         </div>
 
         {/* Follow button */}
-        <div className="flex justify-end pt-4">
+        <div className="flex justify-end pt-3 min-h-[68px]">
           {!isOwnProfile && currentUser && (
             <button
               onClick={handleFollow}
               disabled={followLoading}
-              className={`px-4 py-2 rounded-full font-bold transition-colors ${
+              className={`px-5 py-2 rounded-full font-bold text-[15px] transition-colors ${
                 isFollowing
-                  ? 'border border-twitter-gray text-twitter-dark hover:border-red-500 hover:text-red-500 hover:bg-red-50'
-                  : 'bg-twitter-dark text-white hover:bg-gray-800'
+                  ? 'border border-twitter-border text-twitter-dark hover:border-twitter-like hover:text-twitter-like hover:bg-twitter-like/10'
+                  : 'bg-twitter-dark text-white hover:bg-twitter-dark/90'
               }`}
             >
               {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
             </button>
           )}
+          {isOwnProfile && (
+            <button className="px-5 py-2 rounded-full font-bold text-[15px] border border-twitter-border text-twitter-dark hover:bg-twitter-dark/5 transition-colors">
+              Edit profile
+            </button>
+          )}
         </div>
 
         {/* User info */}
-        <div className="mt-8">
-          <h2 className="text-xl font-bold">{profile.displayName}</h2>
-          <p className="text-twitter-gray">@{profile.username}</p>
+        <div className="mt-1">
+          <h2 className="text-xl font-bold text-twitter-dark">{profile.displayName}</h2>
+          <p className="text-twitter-gray text-[15px]">@{profile.username}</p>
 
           {profile.bio && (
-            <p className="mt-3">{profile.bio}</p>
+            <p className="mt-3 text-[15px] text-twitter-dark">{profile.bio}</p>
           )}
 
-          <div className="flex items-center gap-4 mt-3 text-sm">
+          <div className="flex items-center gap-5 mt-3 text-[15px]">
             <Link to={`/${username}/following`} className="hover:underline">
-              <span className="font-bold">{formatNumber(profile.followingCount)}</span>{' '}
+              <span className="font-bold text-twitter-dark">{formatNumber(profile.followingCount)}</span>{' '}
               <span className="text-twitter-gray">Following</span>
             </Link>
             <Link to={`/${username}/followers`} className="hover:underline">
-              <span className="font-bold">{formatNumber(profile.followerCount)}</span>{' '}
+              <span className="font-bold text-twitter-dark">{formatNumber(profile.followerCount)}</span>{' '}
               <span className="text-twitter-gray">Followers</span>
             </Link>
           </div>
@@ -146,14 +151,15 @@ function ProfilePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-twitter-extraLightGray">
-        <button className="flex-1 py-4 text-center font-bold border-b-4 border-twitter-blue">
+      <div className="flex border-b border-twitter-border">
+        <button className="flex-1 py-4 text-center font-bold text-[15px] text-twitter-dark relative hover:bg-twitter-dark/5 transition-colors">
           Tweets
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-14 h-1 bg-twitter-blue rounded-full"></div>
         </button>
-        <button className="flex-1 py-4 text-center text-twitter-gray hover:bg-gray-50">
+        <button className="flex-1 py-4 text-center text-[15px] text-twitter-gray hover:bg-twitter-dark/5 transition-colors">
           Replies
         </button>
-        <button className="flex-1 py-4 text-center text-twitter-gray hover:bg-gray-50">
+        <button className="flex-1 py-4 text-center text-[15px] text-twitter-gray hover:bg-twitter-dark/5 transition-colors">
           Likes
         </button>
       </div>

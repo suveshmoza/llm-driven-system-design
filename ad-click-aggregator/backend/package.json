@@ -18,6 +18,7 @@
     "db:migrate:rollback": "tsx src/db/migrate.ts rollback"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.8.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "ioredis": "^5.6.1",
