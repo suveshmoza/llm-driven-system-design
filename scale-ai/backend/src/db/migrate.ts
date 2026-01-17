@@ -1,7 +1,7 @@
 /**
  * Database migration runner.
- * Executes SQL migration files in order to set up the database schema.
- * Idempotent - safe to run multiple times; skips already-applied migrations.
+ * Executes the init.sql file to set up the database schema.
+ * Idempotent - safe to run multiple times; skips already-applied objects.
  * @module db/migrate
  */
 
@@ -13,35 +13,34 @@ import { pool } from '../shared/db.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 /**
- * Runs all SQL migration files from the migrations directory.
- * Migrations are sorted alphabetically and executed in order.
+ * Runs the init.sql file to set up the database schema.
  * "Already exists" errors are treated as success (idempotent design).
  */
 async function migrate() {
   console.log('Running database migrations...')
 
-  const migrationsDir = path.join(__dirname, 'migrations')
-  const files = fs.readdirSync(migrationsDir).sort()
+  const initSqlPath = path.join(__dirname, 'init.sql')
 
-  for (const file of files) {
-    if (!file.endsWith('.sql')) continue
+  if (!fs.existsSync(initSqlPath)) {
+    throw new Error(`init.sql not found at ${initSqlPath}`)
+  }
 
-    const filePath = path.join(migrationsDir, file)
-    const sql = fs.readFileSync(filePath, 'utf-8')
+  const sql = fs.readFileSync(initSqlPath, 'utf-8')
 
-    console.log(`Running: ${file}`)
+  console.log('Running: init.sql')
 
-    try {
-      await pool.query(sql)
-      console.log(`✓ ${file}`)
-    } catch (error) {
-      // Ignore "already exists" errors for idempotency
-      if ((error as Error).message.includes('already exists')) {
-        console.log(`⊘ ${file} (already applied)`)
-      } else {
-        console.error(`✗ ${file}:`, error)
-        throw error
-      }
+  try {
+    await pool.query(sql)
+    console.log('✓ init.sql')
+  } catch (error) {
+    // Ignore "already exists" errors for idempotency
+    if ((error as Error).message.includes('already exists')) {
+      console.log('⊘ init.sql (already applied)')
+    } else if ((error as Error).message.includes('duplicate key value')) {
+      console.log('⊘ init.sql (seed data already exists)')
+    } else {
+      console.error('✗ init.sql:', error)
+      throw error
     }
   }
 

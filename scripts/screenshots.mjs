@@ -4,8 +4,9 @@
  * Uses Playwright to capture screenshots of key screens.
  *
  * Usage:
- *   node scripts/screenshots.mjs <project>                  # Screenshot specific project
- *   node scripts/screenshots.mjs --all                      # Screenshot all configured projects
+ *   node scripts/screenshots.mjs <project>                  # Screenshot specific project (frontend must be running)
+ *   node scripts/screenshots.mjs --start <project>          # Auto-start frontend, take screenshots, then stop
+ *   node scripts/screenshots.mjs --start --all              # Auto-start and screenshot all projects
  *   node scripts/screenshots.mjs --dry-run                  # Show what would be captured
  *   node scripts/screenshots.mjs --list                     # List available configs
  *   node scripts/screenshots.mjs --browser=chromium <proj>  # Use specific browser
@@ -14,6 +15,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn, execSync } from 'child_process';
 import { chromium, firefox, webkit } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,9 +28,13 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes('--dry-run');
 const isAll = args.includes('--all');
 const isList = args.includes('--list');
+const shouldStart = args.includes('--start');
 const browserArg = args.find(arg => arg.startsWith('--browser='));
 const browserType = browserArg ? browserArg.split('=')[1] : 'webkit';
 const projectArgs = args.filter(arg => !arg.startsWith('--'));
+
+// Track spawned processes for cleanup
+const spawnedProcesses = [];
 
 // Colors for console output
 const colors = {
@@ -113,6 +119,171 @@ async function waitForFrontend(port, maxWait = 30000) {
 
   return false;
 }
+
+/**
+ * Check if docker-compose is available
+ */
+function hasDockerCompose(projectDir) {
+  return fs.existsSync(path.join(projectDir, 'docker-compose.yml')) ||
+         fs.existsSync(path.join(projectDir, 'docker-compose.yaml'));
+}
+
+/**
+ * Check if docker is running
+ */
+function isDockerRunning() {
+  try {
+    execSync('docker info', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Start docker-compose services
+ */
+async function startDockerCompose(projectDir, projectName) {
+  if (!hasDockerCompose(projectDir)) {
+    return true; // No docker-compose needed
+  }
+
+  if (!isDockerRunning()) {
+    logWarning('Docker is not running, skipping docker-compose');
+    return true;
+  }
+
+  logStep('DOCKER', `Starting infrastructure for ${projectName}...`);
+
+  try {
+    execSync('docker-compose up -d', {
+      cwd: projectDir,
+      stdio: 'pipe',
+    });
+    logSuccess('Docker services started');
+    // Give services time to initialize
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    return true;
+  } catch (error) {
+    logWarning(`Docker-compose failed: ${error.message}`);
+    return true; // Continue anyway, frontend might work without it
+  }
+}
+
+/**
+ * Install frontend dependencies if needed
+ */
+async function installFrontendDeps(frontendDir) {
+  const nodeModulesPath = path.join(frontendDir, 'node_modules');
+
+  if (fs.existsSync(nodeModulesPath)) {
+    return true;
+  }
+
+  logStep('NPM', 'Installing frontend dependencies...');
+
+  try {
+    execSync('npm install', {
+      cwd: frontendDir,
+      stdio: 'pipe',
+    });
+    logSuccess('Dependencies installed');
+    return true;
+  } catch (error) {
+    logError(`npm install failed: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Start the frontend dev server
+ */
+async function startFrontend(projectDir, config) {
+  const frontendDir = path.join(projectDir, 'frontend');
+
+  if (!fs.existsSync(frontendDir)) {
+    logError(`Frontend directory not found: ${frontendDir}`);
+    return null;
+  }
+
+  // Install deps if needed
+  const depsInstalled = await installFrontendDeps(frontendDir);
+  if (!depsInstalled) {
+    return null;
+  }
+
+  logStep('START', `Starting frontend on port ${config.frontendPort}...`);
+
+  // Spawn npm run dev
+  const child = spawn('npm', ['run', 'dev'], {
+    cwd: frontendDir,
+    stdio: 'pipe',
+    detached: false,
+    env: { ...process.env, FORCE_COLOR: '0' },
+  });
+
+  spawnedProcesses.push({ process: child, name: `${config.name} frontend` });
+
+  // Log errors
+  child.stderr.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg && !msg.includes('ExperimentalWarning')) {
+      // Only log real errors, not warnings
+      if (msg.toLowerCase().includes('error')) {
+        logWarning(`Frontend stderr: ${msg}`);
+      }
+    }
+  });
+
+  // Wait for frontend to be ready
+  const ready = await waitForFrontend(config.frontendPort, 60000);
+
+  if (ready) {
+    logSuccess(`Frontend ready on port ${config.frontendPort}`);
+    return child;
+  } else {
+    logError('Frontend failed to start within 60 seconds');
+    return null;
+  }
+}
+
+/**
+ * Stop all spawned processes
+ */
+function cleanup() {
+  for (const { process: child, name } of spawnedProcesses) {
+    if (child && !child.killed) {
+      logStep('STOP', `Stopping ${name}...`);
+      try {
+        // Kill the process group on Unix
+        if (process.platform !== 'win32') {
+          process.kill(-child.pid, 'SIGTERM');
+        } else {
+          child.kill('SIGTERM');
+        }
+      } catch {
+        // Process may have already exited
+      }
+    }
+  }
+  spawnedProcesses.length = 0;
+}
+
+// Handle cleanup on exit
+process.on('SIGINT', () => {
+  log('\nInterrupted, cleaning up...', 'yellow');
+  cleanup();
+  process.exit(130);
+});
+
+process.on('SIGTERM', () => {
+  cleanup();
+  process.exit(143);
+});
+
+process.on('exit', () => {
+  cleanup();
+});
 
 /**
  * Perform login if authentication is required
@@ -216,15 +387,35 @@ async function processProject(config, browser) {
     return { project: config.name, success: false, reason: 'Project not found' };
   }
 
-  // Check if frontend is running
-  const frontendReady = await isUrlReachable(`http://localhost:${config.frontendPort}`);
-  if (!frontendReady) {
-    logError(`Frontend not running on port ${config.frontendPort}`);
-    logWarning(`Start with: cd ${config.name}/frontend && npm run dev`);
-    return { project: config.name, success: false, reason: 'Frontend not running' };
-  }
+  let frontendProcess = null;
 
-  logSuccess(`Frontend detected on port ${config.frontendPort}`);
+  // Auto-start mode: start infrastructure and frontend
+  if (shouldStart) {
+    // Start docker-compose if available
+    await startDockerCompose(projectDir, config.name);
+
+    // Check if frontend is already running
+    const alreadyRunning = await isUrlReachable(`http://localhost:${config.frontendPort}`);
+    if (alreadyRunning) {
+      logSuccess(`Frontend already running on port ${config.frontendPort}`);
+    } else {
+      // Start the frontend
+      frontendProcess = await startFrontend(projectDir, config);
+      if (!frontendProcess) {
+        return { project: config.name, success: false, reason: 'Failed to start frontend' };
+      }
+    }
+  } else {
+    // Manual mode: check if frontend is running
+    const frontendReady = await isUrlReachable(`http://localhost:${config.frontendPort}`);
+    if (!frontendReady) {
+      logError(`Frontend not running on port ${config.frontendPort}`);
+      logWarning(`Start with: cd ${config.name}/frontend && npm run dev`);
+      logWarning(`Or use --start flag to auto-start: node scripts/screenshots.mjs --start ${config.name}`);
+      return { project: config.name, success: false, reason: 'Frontend not running' };
+    }
+    logSuccess(`Frontend detected on port ${config.frontendPort}`);
+  }
 
   // Create output directory
   if (!isDryRun) {
@@ -286,6 +477,23 @@ async function processProject(config, browser) {
     }
   }
 
+  // Stop frontend if we started it
+  if (frontendProcess && !frontendProcess.killed) {
+    logStep('STOP', `Stopping ${config.name} frontend...`);
+    try {
+      if (process.platform !== 'win32') {
+        process.kill(-frontendProcess.pid, 'SIGTERM');
+      } else {
+        frontendProcess.kill('SIGTERM');
+      }
+      // Remove from spawned processes since we handled it
+      const idx = spawnedProcesses.findIndex(p => p.process === frontendProcess);
+      if (idx >= 0) spawnedProcesses.splice(idx, 1);
+    } catch {
+      // Process may have already exited
+    }
+  }
+
   return {
     project: config.name,
     success: screenshotsFailed === 0,
@@ -332,8 +540,9 @@ async function main() {
     }
   } else {
     log('Usage:', 'cyan');
-    log('  node scripts/screenshots.mjs <project>             # Screenshot specific project');
-    log('  node scripts/screenshots.mjs --all                 # Screenshot all projects');
+    log('  node scripts/screenshots.mjs <project>             # Screenshot (frontend must be running)');
+    log('  node scripts/screenshots.mjs --start <project>     # Auto-start frontend, screenshot, then stop');
+    log('  node scripts/screenshots.mjs --start --all         # Auto-screenshot all projects');
     log('  node scripts/screenshots.mjs --list                # List available configs');
     log('  node scripts/screenshots.mjs --dry-run             # Show what would be captured');
     log('  node scripts/screenshots.mjs --browser=chromium    # Use specific browser');
