@@ -26,7 +26,7 @@ import redis from './utils/redis.js';
 const app = express();
 
 /** Server port, configurable for running multiple instances */
-const port = parseInt(process.env.PORT || '3001');
+const port = parseInt(process.env.PORT || '3000');
 
 // Structured logging middleware
 app.use(pinoHttp({

@@ -36,9 +36,9 @@ export const config = {
   /**
    * Port number for the Express HTTP server.
    * Used by both the API server and health check endpoints.
-   * @default 3001
+   * @default 3000
    */
-  port: parseInt(process.env.PORT || '3001', 10),
+  port: parseInt(process.env.PORT || '3000', 10),
 
   /**
    * Current Node.js environment.

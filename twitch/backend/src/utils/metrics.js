@@ -16,7 +16,7 @@ const register = new client.Registry();
 // Add default labels
 register.setDefaultLabels({
   service: 'twitch-api',
-  instance: process.env.INSTANCE_ID || `port-${process.env.PORT || 3001}`
+  instance: process.env.INSTANCE_ID || `port-${process.env.PORT || 3000}`
 });
 
 // Collect default metrics (CPU, memory, event loop, etc.)

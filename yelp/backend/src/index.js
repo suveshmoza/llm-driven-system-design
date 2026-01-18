@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { pool } from './utils/db.js';
 import { redis } from './utils/redis.js';
 import { elasticsearch, initElasticsearch } from './utils/elasticsearch.js';
+import { connectQueue, closeQueue, isQueueConnected } from './utils/queue.js';
 import { logger, logRequest } from './utils/logger.js';
 import {
   getMetrics,
@@ -93,6 +94,7 @@ app.get('/health', async (req, res) => {
     postgresql: { status: 'unknown', latency: null },
     redis: { status: 'unknown', latency: null },
     elasticsearch: { status: 'unknown', latency: null },
+    rabbitmq: { status: 'unknown' },
   };
 
   let overallStatus = 'healthy';
@@ -143,6 +145,14 @@ app.get('/health', async (req, res) => {
       error: error.message,
     };
     overallStatus = 'degraded'; // ES is not critical
+  }
+
+  // Check RabbitMQ
+  checks.rabbitmq = {
+    status: isQueueConnected() ? 'connected' : 'disconnected',
+  };
+  if (!isQueueConnected()) {
+    overallStatus = 'degraded'; // Queue is not critical for reads
   }
 
   // Get circuit breaker status
@@ -266,6 +276,15 @@ async function start() {
     await initElasticsearch();
     logger.info({ component: 'search' }, 'Elasticsearch initialized');
 
+    // Connect to RabbitMQ for async processing
+    try {
+      await connectQueue();
+      logger.info({ component: 'queue' }, 'RabbitMQ connected');
+    } catch (error) {
+      // Queue is not critical for server startup - log warning and continue
+      logger.warn({ component: 'queue', error: error.message }, 'RabbitMQ not available, async indexing disabled');
+    }
+
     app.listen(PORT, () => {
       logger.info({
         port: PORT,
@@ -283,6 +302,7 @@ async function start() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  await closeQueue();
   await pool.end();
   await redis.quit();
   process.exit(0);
@@ -290,6 +310,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully');
+  await closeQueue();
   await pool.end();
   await redis.quit();
   process.exit(0);

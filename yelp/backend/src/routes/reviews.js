@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../utils/db.js';
 import { cache } from '../utils/redis.js';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
-import { updateBusinessIndex } from '../utils/elasticsearch.js';
+import { publishBusinessIndexUpdate } from '../utils/queue.js';
 import { logger } from '../utils/logger.js';
 import {
   recordReviewCreated,
@@ -103,17 +103,11 @@ router.post(
         [business_id]
       );
 
-      // Update Elasticsearch
-      try {
-        await updateBusinessIndex(business_id, {
-          rating: parseFloat(businessResult.rows[0].rating),
-          review_count: parseInt(businessResult.rows[0].review_count)
-        });
-      } catch (esError) {
-        // Log but don't fail the request if ES update fails
-        logger.warn({ component: 'review', businessId: business_id, error: esError.message },
-          'Failed to update Elasticsearch');
-      }
+      // Update Elasticsearch asynchronously via queue
+      publishBusinessIndexUpdate(business_id, {
+        rating: parseFloat(businessResult.rows[0].rating),
+        review_count: parseInt(businessResult.rows[0].review_count)
+      });
 
       // Clear caches
       await cache.delPattern(`business:${business_id}*`);
@@ -254,16 +248,11 @@ router.patch('/:id', authenticate, async (req, res) => {
       [businessId]
     );
 
-    // Update Elasticsearch
-    try {
-      await updateBusinessIndex(businessId, {
-        rating: parseFloat(businessResult.rows[0].rating),
-        review_count: parseInt(businessResult.rows[0].review_count)
-      });
-    } catch (esError) {
-      logger.warn({ component: 'review', businessId, error: esError.message },
-        'Failed to update Elasticsearch');
-    }
+    // Update Elasticsearch asynchronously via queue
+    publishBusinessIndexUpdate(businessId, {
+      rating: parseFloat(businessResult.rows[0].rating),
+      review_count: parseInt(businessResult.rows[0].review_count)
+    });
 
     // Clear caches
     await cache.delPattern(`business:${businessId}*`);
@@ -315,16 +304,11 @@ router.delete('/:id', authenticate, async (req, res) => {
       [businessId]
     );
 
-    // Update Elasticsearch
-    try {
-      await updateBusinessIndex(businessId, {
-        rating: parseFloat(businessResult.rows[0].rating) || 0,
-        review_count: parseInt(businessResult.rows[0].review_count) || 0
-      });
-    } catch (esError) {
-      logger.warn({ component: 'review', businessId, error: esError.message },
-        'Failed to update Elasticsearch');
-    }
+    // Update Elasticsearch asynchronously via queue
+    publishBusinessIndexUpdate(businessId, {
+      rating: parseFloat(businessResult.rows[0].rating) || 0,
+      review_count: parseInt(businessResult.rows[0].review_count) || 0
+    });
 
     // Clear caches
     await cache.delPattern(`business:${businessId}*`);

@@ -40,7 +40,7 @@ export const MINIO_CONFIG = {
  * Controls port, CORS settings, and session parameters for the API server.
  */
 export const SERVER_CONFIG = {
-  port: parseInt(process.env.PORT || '3001'),
+  port: parseInt(process.env.PORT || '3000'),
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   sessionSecret: process.env.SESSION_SECRET || 'netflix-session-secret-change-in-prod',
   sessionMaxAge: 7 * 24 * 60 * 60 * 1000, // 7 days

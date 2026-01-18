@@ -1,4 +1,4 @@
-import { pool } from './index.js';
+import { pool, redis } from './index.js';
 import { logger } from '../shared/logger.js';
 import fs from 'fs';
 import path from 'path';
@@ -329,6 +329,7 @@ async function main() {
     process.exit(1);
   } finally {
     await pool.end();
+    await redis.quit();
   }
 }
 

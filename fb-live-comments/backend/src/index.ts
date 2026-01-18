@@ -32,8 +32,8 @@ const serverLogger = logger.child({ module: 'server' });
 /** Express application instance */
 const app = express();
 
-/** Server port from environment or default to 3001 */
-const PORT = parseInt(process.env.PORT || '3001', 10);
+/** Server port from environment or default to 3000 */
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 /** Flag to track shutdown state */
 let isShuttingDown = false;

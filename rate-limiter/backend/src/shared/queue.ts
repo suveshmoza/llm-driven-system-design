@@ -185,7 +185,7 @@ export function publishRateLimitEvent(
     remaining,
     algorithm,
     timestamp: Date.now(),
-    serverId: process.env.SERVER_ID || `server-${process.env.PORT || '3001'}`,
+    serverId: process.env.SERVER_ID || `server-${process.env.PORT || '3000'}`,
   };
 
   try {

@@ -30,6 +30,7 @@ A local business review and discovery platform inspired by Yelp, built with mode
 - **Database**: PostgreSQL with PostGIS for geo-spatial queries
 - **Search**: Elasticsearch for full-text and geo search
 - **Cache**: Redis for session management and caching
+- **Queue**: RabbitMQ for async Elasticsearch indexing
 
 ### Frontend
 - **Framework**: React 19 with TypeScript
@@ -57,6 +58,7 @@ A local business review and discovery platform inspired by Yelp, built with mode
    - PostgreSQL with PostGIS on port 5432
    - Redis on port 6379
    - Elasticsearch on port 9200
+   - RabbitMQ on port 5672 (management UI on 15672)
 
 2. **Wait for services to be healthy**
    ```bash
@@ -77,14 +79,20 @@ A local business review and discovery platform inspired by Yelp, built with mode
    npm run sync-elasticsearch
    ```
 
-5. **Install and start the frontend** (in a new terminal)
+5. **Start the index worker** (optional, for async ES updates)
+   ```bash
+   cd backend
+   npm run dev:worker
+   ```
+
+6. **Install and start the frontend** (in a new terminal)
    ```bash
    cd frontend
    npm install
    npm run dev
    ```
 
-6. **Access the application**
+7. **Access the application**
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:3000
    - Health check: http://localhost:3000/health
@@ -214,6 +222,7 @@ To add more sample data, edit `backend/db/init.sql`.
 ```bash
 cd backend
 npm run dev        # Start with hot reload
+npm run dev:worker # Start index worker
 npm run lint       # Run ESLint
 ```
 

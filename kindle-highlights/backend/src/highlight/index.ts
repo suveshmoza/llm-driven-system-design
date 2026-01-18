@@ -7,7 +7,7 @@ import { initRedis } from '../shared/cache.js'
 import { createLogger } from '../shared/logger.js'
 
 const logger = createLogger('highlight-service')
-const PORT = process.env.HIGHLIGHT_PORT || 3001
+const PORT = process.env.HIGHLIGHT_PORT || 3000
 
 async function start(): Promise<void> {
   await initRedis()

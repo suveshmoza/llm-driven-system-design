@@ -16,7 +16,7 @@ const logger = pino({
   },
   base: {
     service: 'twitch-api',
-    instance: process.env.INSTANCE_ID || `port-${process.env.PORT || 3001}`,
+    instance: process.env.INSTANCE_ID || `port-${process.env.PORT || 3000}`,
     pid: process.pid
   },
   timestamp: pino.stdTimeFunctions.isoTime

@@ -26,7 +26,7 @@ import feedRoutes from './routes/feed.js';
 import jobRoutes from './routes/jobs.js';
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3001');
+const PORT = parseInt(process.env.PORT || '3000');
 
 // Trust proxy for accurate client IP (needed for rate limiting)
 app.set('trust proxy', 1);

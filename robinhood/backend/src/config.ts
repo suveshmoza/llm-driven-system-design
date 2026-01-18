@@ -5,7 +5,7 @@
  */
 export const config = {
   /** HTTP server port for the Express application */
-  port: parseInt(process.env.PORT || '3001', 10),
+  port: parseInt(process.env.PORT || '3000', 10),
   /** PostgreSQL database connection settings */
   database: {
     host: process.env.DB_HOST || 'localhost',

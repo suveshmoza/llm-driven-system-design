@@ -31,7 +31,7 @@ import {
 } from './shared/index.js';
 
 /** Server port, configurable via PORT environment variable */
-const PORT = parseInt(process.env.PORT || '3001');
+const PORT = parseInt(process.env.PORT || '3000');
 const SERVER_ID = getServerId();
 
 const app = express();

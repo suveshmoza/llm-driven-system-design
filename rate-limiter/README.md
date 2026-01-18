@@ -28,6 +28,7 @@ This project implements five rate limiting algorithms:
 
 - Multiple rate limiting algorithms with configurable parameters
 - Redis-based distributed state for horizontal scaling
+- RabbitMQ event publishing for analytics and monitoring
 - Real-time metrics and health monitoring
 - Interactive dashboard for testing and visualization
 - Proper rate limit headers (X-RateLimit-*)
@@ -366,6 +367,7 @@ Requests fill a bucket that "leaks" at a constant rate.
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_PASSWORD` | - | Redis password (optional) |
 | `REDIS_DB` | `0` | Redis database number |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | RabbitMQ connection URL |
 | `POSTGRES_HOST` | `localhost` | PostgreSQL host |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | `ratelimiter` | PostgreSQL database |
@@ -389,10 +391,12 @@ Requests fill a bucket that "leaks" at a constant rate.
                                │           │            │
                                └───────────┼────────────┘
                                            │
-                                   ┌───────▼───────┐
-                                   │     Redis     │
-                                   │  (Counters)   │
-                                   └───────────────┘
+                          ┌────────────────┼────────────────┐
+                          │                │                │
+                  ┌───────▼───────┐  ┌─────▼──────┐  ┌──────▼──────┐
+                  │     Redis     │  │  RabbitMQ  │  │ PostgreSQL  │
+                  │  (Counters)   │  │  (Events)  │  │  (Config)   │
+                  └───────────────┘  └────────────┘  └─────────────┘
 ```
 
 ## Testing

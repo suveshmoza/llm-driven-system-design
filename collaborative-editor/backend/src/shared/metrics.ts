@@ -212,5 +212,5 @@ export const duplicateOperationsCounter = new Counter({
  * Get the current server ID for metrics labels.
  */
 export function getServerId(): string {
-  return process.env.SERVER_ID || `server-${process.env.PORT || '3001'}`;
+  return process.env.SERVER_ID || `server-${process.env.PORT || '3000'}`;
 }

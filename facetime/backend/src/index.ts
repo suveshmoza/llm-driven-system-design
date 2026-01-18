@@ -44,8 +44,8 @@ declare global {
 /** Express application instance */
 const app = express();
 
-/** Server port from environment or default 3001 */
-const PORT = parseInt(process.env.PORT || '3001');
+/** Server port from environment or default 3000 */
+const PORT = parseInt(process.env.PORT || '3000');
 
 // ============================================================================
 // Middleware

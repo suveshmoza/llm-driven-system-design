@@ -24,7 +24,7 @@ import pool from './models/db.js';
 import redis from './models/redis.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 const SERVER_ID = process.env.SERVER_ID || `server-${PORT}`;
 
 // Middleware

@@ -33,6 +33,7 @@ This document tracks the development journey of implementing a local business re
 - Elasticsearch integration for search
 - Frontend with home, search, business detail, and dashboard pages
 - Admin panel for user/business/review management
+- RabbitMQ for async Elasticsearch indexing
 
 **Focus areas:**
 - Implement core functionality
@@ -74,6 +75,12 @@ This document tracks the development journey of implementing a local business re
 - **Cookie-based tokens**: HttpOnly cookies for security
 - **Role-based access**: user, business_owner, admin roles
 
+### Async Indexing with RabbitMQ
+- **Queue-based updates**: Business/review changes publish events to RabbitMQ queue
+- **Index worker**: Separate process consumes queue and updates Elasticsearch
+- **Decoupling benefits**: API responses are faster, index failures don't affect writes
+- **Graceful degradation**: If RabbitMQ is down, server continues (search may be stale)
+
 ## Iterations and Learnings
 
 ### Iteration 1: Basic Structure
@@ -90,6 +97,12 @@ This document tracks the development journey of implementing a local business re
 - Created React frontend with TanStack Router
 - Implemented search, business detail, and review pages
 - Added user dashboard and admin panel
+
+### Iteration 4: Async Elasticsearch Indexing
+- Added RabbitMQ for async processing
+- Created index worker to consume queue messages
+- Decoupled Elasticsearch updates from API responses
+- API now publishes events to queue instead of sync updates
 
 ## Questions and Discussions
 

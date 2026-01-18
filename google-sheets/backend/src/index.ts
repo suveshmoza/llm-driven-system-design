@@ -21,7 +21,7 @@ import { redis } from './shared/redis.js';
 const app = express();
 
 /** Server port, configurable via PORT environment variable */
-const PORT = parseInt(process.env.PORT || '3001');
+const PORT = parseInt(process.env.PORT || '3000');
 
 // Request logging middleware with pino
 app.use(pinoHttp.default({

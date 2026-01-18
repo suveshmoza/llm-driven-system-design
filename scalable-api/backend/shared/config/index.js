@@ -10,7 +10,7 @@ const config = {
   instanceId: process.env.INSTANCE_ID || 'api-1',
 
   server: {
-    port: parseInt(process.env.PORT, 10) || 3001,
+    port: parseInt(process.env.PORT, 10) || 3000,
   },
 
   gateway: {

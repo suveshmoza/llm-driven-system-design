@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../utils/db.js';
 import { cache } from '../utils/redis.js';
 import { authenticate, optionalAuth, requireBusinessOwner } from '../middleware/auth.js';
-import { indexBusiness, updateBusinessIndex, deleteBusinessIndex } from '../utils/elasticsearch.js';
+import { publishBusinessReindex } from '../utils/queue.js';
 
 const router = Router();
 
@@ -269,12 +269,8 @@ router.post('/', authenticate, async (req, res) => {
       [business.id]
     );
 
-    // Index in Elasticsearch
-    await indexBusiness({
-      ...business,
-      categories: catResult.rows.map(c => c.slug),
-      category_names: catResult.rows.map(c => c.name)
-    });
+    // Publish to queue for async Elasticsearch indexing
+    publishBusinessReindex(business.id);
 
     res.status(201).json({ business });
   } catch (error) {
@@ -349,16 +345,8 @@ router.patch('/:id', authenticate, async (req, res) => {
       [id]
     );
 
-    // Update Elasticsearch index
-    await updateBusinessIndex(id, {
-      ...business,
-      location: {
-        lat: parseFloat(business.latitude),
-        lon: parseFloat(business.longitude)
-      },
-      categories: catResult.rows.map(c => c.slug),
-      category_names: catResult.rows.map(c => c.name)
-    });
+    // Publish to queue for async Elasticsearch reindex
+    publishBusinessReindex(id);
 
     // Clear cache
     await cache.delPattern(`business:${id}*`);

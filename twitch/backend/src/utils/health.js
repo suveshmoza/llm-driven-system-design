@@ -167,7 +167,7 @@ function createHealthChecks(deps) {
         res.status(statusCode).json({
           status: overallStatus,
           version: process.env.npm_package_version || '1.0.0',
-          instance: process.env.INSTANCE_ID || `port-${process.env.PORT || 3001}`,
+          instance: process.env.INSTANCE_ID || `port-${process.env.PORT || 3000}`,
           uptime_seconds: Math.floor(process.uptime()),
           checks,
           timestamp: new Date().toISOString()
@@ -190,7 +190,7 @@ function createHealthChecks(deps) {
 function simpleHealthCheck(req, res) {
   res.json({
     status: 'ok',
-    port: process.env.PORT || 3001,
+    port: process.env.PORT || 3000,
     timestamp: new Date().toISOString()
   });
 }

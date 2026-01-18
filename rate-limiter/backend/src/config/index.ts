@@ -16,7 +16,7 @@ export type DegradationMode = 'allow' | 'deny';
  */
 export const config = {
   /** Port the HTTP server listens on */
-  port: parseInt(process.env.PORT || '3001', 10),
+  port: parseInt(process.env.PORT || '3000', 10),
 
   /** Node environment */
   nodeEnv: process.env.NODE_ENV || 'development',

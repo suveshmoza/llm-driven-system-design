@@ -34,6 +34,7 @@ A photo and video sharing social platform with photo/video uploads, filters, fee
 - **Database:** PostgreSQL
 - **Cache:** Redis
 - **Object Storage:** MinIO (S3-compatible)
+- **Message Queue:** RabbitMQ (async image processing)
 - **Image Processing:** Sharp
 
 ## Implementation Status
@@ -62,7 +63,7 @@ cd instagram
 docker-compose up -d
 ```
 
-This starts PostgreSQL, Redis, and MinIO with automatic bucket creation.
+This starts PostgreSQL, Redis, MinIO, and RabbitMQ with automatic bucket creation.
 
 2. **Install backend dependencies:**
 
@@ -186,6 +187,21 @@ npm run dev:server2  # Port 3002
 npm run dev:server3  # Port 3003
 ```
 
+### Running Image Processing Workers
+
+Image processing is handled asynchronously via RabbitMQ. Start workers to process uploaded images:
+
+```bash
+# Single worker
+npm run dev:worker
+
+# Multiple workers for parallel processing
+npm run dev:worker1  # Terminal 1
+npm run dev:worker2  # Terminal 2
+```
+
+Workers apply filters (resize, Sharp processing) to uploaded images in the background. Posts are returned immediately with status `processing` and updated to `published` once complete.
+
 ## Service URLs
 
 | Service | URL |
@@ -193,6 +209,7 @@ npm run dev:server3  # Port 3003
 | Frontend | http://localhost:5173 |
 | Backend API | http://localhost:3001/api/v1 |
 | MinIO Console | http://localhost:9001 |
+| RabbitMQ Management | http://localhost:15672 |
 | PostgreSQL | localhost:5432 |
 | Redis | localhost:6379 |
 

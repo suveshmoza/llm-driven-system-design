@@ -43,6 +43,7 @@ A simplified DoorDash-like platform demonstrating real-time order tracking, rest
 - **Frontend:** TypeScript + Vite + React 19 + Tanstack Router + Zustand + Tailwind CSS
 - **Backend:** Node.js + Express + WebSocket
 - **Database:** PostgreSQL (orders, users, restaurants) + Redis (geo commands, sessions, real-time)
+- **Message Queue:** Kafka (order events, location updates, dispatch events)
 - **Real-time:** WebSocket for live updates
 
 ## Quick Start
@@ -63,6 +64,7 @@ docker-compose up -d
 This starts:
 - PostgreSQL on port 5432 (with seed data)
 - Redis on port 6379
+- Kafka on port 9092 (event streaming)
 
 ### 2. Start Backend
 
@@ -161,6 +163,47 @@ ws.send(JSON.stringify({ type: 'subscribe', channel: 'restaurant:1:orders' }))
 - `order_status_update` - Order status changed
 - `driver_location` - Driver location update
 - `order_assigned` - Order assigned to driver
+
+## Kafka Events
+
+Order and location events are published to Kafka for analytics, auditing, and downstream services.
+
+### Topics
+- `order-events` - Order lifecycle events (created, confirmed, preparing, ready, picked_up, delivered, cancelled)
+- `location-updates` - Real-time driver GPS location updates
+- `dispatch-events` - Driver assignment events (assigned, accepted, declined)
+
+### Example Events
+```javascript
+// order-events topic
+{
+  "orderId": "123",
+  "eventType": "created",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "customerId": 1,
+  "restaurantId": 2,
+  "total": "25.99"
+}
+
+// location-updates topic
+{
+  "driverId": "5",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "orderId": "123",
+  "timestamp": "2024-01-15T10:35:00.000Z"
+}
+
+// dispatch-events topic
+{
+  "orderId": "123",
+  "driverId": "5",
+  "eventType": "assigned",
+  "timestamp": "2024-01-15T10:32:00.000Z",
+  "score": 85.5,
+  "distance": 1.2
+}
+```
 
 ## Order Flow
 

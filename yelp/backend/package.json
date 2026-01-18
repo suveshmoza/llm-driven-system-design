@@ -9,7 +9,9 @@
     "dev:server1": "PORT=3001 node --watch src/index.js",
     "dev:server2": "PORT=3002 node --watch src/index.js",
     "dev:server3": "PORT=3003 node --watch src/index.js",
+    "dev:worker": "node --watch src/workers/indexWorker.js",
     "start": "node src/index.js",
+    "start:worker": "node src/workers/indexWorker.js",
     "seed": "node src/utils/seed.js",
     "sync-elasticsearch": "node src/utils/syncElasticsearch.js"
   },

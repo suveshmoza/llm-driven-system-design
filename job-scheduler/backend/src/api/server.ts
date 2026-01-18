@@ -48,7 +48,7 @@ import { runCleanup, getCleanupPreview, getStorageStats, retentionConfig } from 
 /** Express application instance */
 const app = express();
 /** API server port from environment */
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Middleware configuration
 app.use(cors({

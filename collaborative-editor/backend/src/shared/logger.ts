@@ -21,7 +21,7 @@ import pino from 'pino';
  * Server identifier for distinguishing logs from multiple instances.
  * Set via SERVER_ID environment variable (e.g., 'server1', 'server2').
  */
-const SERVER_ID = process.env.SERVER_ID || `server-${process.env.PORT || '3001'}`;
+const SERVER_ID = process.env.SERVER_ID || `server-${process.env.PORT || '3000'}`;
 
 /**
  * Main logger instance with base context fields.

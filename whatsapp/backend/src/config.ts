@@ -5,8 +5,8 @@
  * while sharing database and cache connections.
  */
 export const config = {
-  port: parseInt(process.env.PORT || '3001', 10),
-  serverId: process.env.SERVER_ID || `server-${process.env.PORT || '3001'}`,
+  port: parseInt(process.env.PORT || '3000', 10),
+  serverId: process.env.SERVER_ID || `server-${process.env.PORT || '3000'}`,
 
   postgres: {
     host: process.env.POSTGRES_HOST || 'localhost',

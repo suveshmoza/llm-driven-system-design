@@ -27,7 +27,7 @@ import { HealthChecker } from './shared/health.js';
 
 const app = express();
 const server = createServer(app);
-const port = parseInt(process.env.PORT || '3001');
+const port = parseInt(process.env.PORT || '3000');
 
 // Initialize shared infrastructure
 const caches = createCaches(redis, pool);
