@@ -41,41 +41,41 @@ ON CONFLICT DO NOTHING;
 -- Document permissions (sharing)
 INSERT INTO document_permissions (id, document_id, user_id, email, permission_level) VALUES
   -- Project Proposal shared with team
-  ('perm1111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', '22222222-2222-2222-2222-222222222222', NULL, 'edit'),
-  ('perm1111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', '33333333-3333-3333-3333-333333333333', NULL, 'comment'),
-  ('perm1111-0001-0001-0001-000000000003', 'aaaa1111-0001-0001-0001-000000000001', '44444444-4444-4444-4444-444444444444', NULL, 'view'),
+  ('be041111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', '22222222-2222-2222-2222-222222222222', NULL, 'edit'),
+  ('be041111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', '33333333-3333-3333-3333-333333333333', NULL, 'comment'),
+  ('be041111-0001-0001-0001-000000000003', 'aaaa1111-0001-0001-0001-000000000001', '44444444-4444-4444-4444-444444444444', NULL, 'view'),
   -- Meeting notes shared with Bob
-  ('perm1111-0001-0001-0001-000000000004', 'aaaa1111-0001-0001-0001-000000000002', '22222222-2222-2222-2222-222222222222', NULL, 'edit'),
-  ('perm1111-0001-0001-0001-000000000005', 'aaaa1111-0001-0001-0001-000000000002', '33333333-3333-3333-3333-333333333333', NULL, 'edit'),
+  ('be041111-0001-0001-0001-000000000004', 'aaaa1111-0001-0001-0001-000000000002', '22222222-2222-2222-2222-222222222222', NULL, 'edit'),
+  ('be041111-0001-0001-0001-000000000005', 'aaaa1111-0001-0001-0001-000000000002', '33333333-3333-3333-3333-333333333333', NULL, 'edit'),
   -- Tech design shared with Alice
-  ('perm1111-0001-0001-0001-000000000006', 'bbbb2222-0001-0001-0001-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'edit'),
+  ('be041111-0001-0001-0001-000000000006', 'bbbb2222-0001-0001-0001-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'edit'),
   -- Onboarding guide shared with everyone via email
-  ('perm1111-0001-0001-0001-000000000007', 'cccc3333-0001-0001-0001-000000000001', NULL, 'team@company.com', 'view'),
+  ('be041111-0001-0001-0001-000000000007', 'cccc3333-0001-0001-0001-000000000001', NULL, 'team@company.com', 'view'),
   -- Sprint planning shared with team
-  ('perm1111-0001-0001-0001-000000000008', 'dddd4444-0001-0001-0001-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'edit'),
-  ('perm1111-0001-0001-0001-000000000009', 'dddd4444-0001-0001-0001-000000000001', '22222222-2222-2222-2222-222222222222', NULL, 'edit'),
-  ('perm1111-0001-0001-0001-000000000010', 'dddd4444-0001-0001-0001-000000000001', '33333333-3333-3333-3333-333333333333', NULL, 'edit')
+  ('be041111-0001-0001-0001-000000000008', 'dddd4444-0001-0001-0001-000000000001', '11111111-1111-1111-1111-111111111111', NULL, 'edit'),
+  ('be041111-0001-0001-0001-000000000009', 'dddd4444-0001-0001-0001-000000000001', '22222222-2222-2222-2222-222222222222', NULL, 'edit'),
+  ('be041111-0001-0001-0001-000000000010', 'dddd4444-0001-0001-0001-000000000001', '33333333-3333-3333-3333-333333333333', NULL, 'edit')
 ON CONFLICT DO NOTHING;
 
 -- Document versions (snapshots)
 INSERT INTO document_versions (id, document_id, version_number, content, created_by, is_named, name) VALUES
-  ('ver11111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', 1, '{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Project Proposal"}]},{"type":"paragraph","content":[{"type":"text","text":"Initial draft..."}]}]}', '11111111-1111-1111-1111-111111111111', true, 'Initial Draft'),
-  ('ver11111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', 3, '{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Project Proposal: Analytics Platform"}]},{"type":"paragraph","content":[{"type":"text","text":"Added executive summary and goals..."}]}]}', '11111111-1111-1111-1111-111111111111', true, 'After Review'),
-  ('ver11111-0001-0001-0001-000000000003', 'aaaa1111-0001-0001-0001-000000000001', 5, '{"type":"doc","content":[]}', '11111111-1111-1111-1111-111111111111', false, NULL),
-  ('ver11111-0001-0001-0001-000000000004', 'bbbb2222-0001-0001-0001-000000000001', 1, '{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Tech Design Draft"}]}]}', '22222222-2222-2222-2222-222222222222', true, 'First Draft')
+  ('b3e11111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', 1, '{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Project Proposal"}]},{"type":"paragraph","content":[{"type":"text","text":"Initial draft..."}]}]}', '11111111-1111-1111-1111-111111111111', true, 'Initial Draft'),
+  ('b3e11111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', 3, '{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Project Proposal: Analytics Platform"}]},{"type":"paragraph","content":[{"type":"text","text":"Added executive summary and goals..."}]}]}', '11111111-1111-1111-1111-111111111111', true, 'After Review'),
+  ('b3e11111-0001-0001-0001-000000000003', 'aaaa1111-0001-0001-0001-000000000001', 5, '{"type":"doc","content":[]}', '11111111-1111-1111-1111-111111111111', false, NULL),
+  ('b3e11111-0001-0001-0001-000000000004', 'bbbb2222-0001-0001-0001-000000000001', 1, '{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Tech Design Draft"}]}]}', '22222222-2222-2222-2222-222222222222', true, 'First Draft')
 ON CONFLICT (document_id, version_number) DO NOTHING;
 
 -- Comments
 INSERT INTO comments (id, document_id, parent_id, anchor_start, anchor_end, anchor_version, content, author_id, resolved) VALUES
-  ('com11111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', NULL, 150, 200, 5, 'Can we add more details about the technical architecture here?', '22222222-2222-2222-2222-222222222222', false),
-  ('com11111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', 'com11111-0001-0001-0001-000000000001', NULL, NULL, NULL, 'Good point! I will add a section on the tech stack.', '11111111-1111-1111-1111-111111111111', false),
-  ('com11111-0001-0001-0001-000000000003', 'aaaa1111-0001-0001-0001-000000000001', NULL, 300, 350, 5, 'The timeline looks aggressive. Should we add a buffer?', '33333333-3333-3333-3333-333333333333', true),
-  ('com11111-0001-0001-0001-000000000004', 'bbbb2222-0001-0001-0001-000000000001', NULL, 100, 150, 8, 'Great security considerations! Maybe also mention CSRF protection?', '11111111-1111-1111-1111-111111111111', false)
+  ('c0411111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', NULL, 150, 200, 5, 'Can we add more details about the technical architecture here?', '22222222-2222-2222-2222-222222222222', false),
+  ('c0411111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', 'c0411111-0001-0001-0001-000000000001', NULL, NULL, NULL, 'Good point! I will add a section on the tech stack.', '11111111-1111-1111-1111-111111111111', false),
+  ('c0411111-0001-0001-0001-000000000003', 'aaaa1111-0001-0001-0001-000000000001', NULL, 300, 350, 5, 'The timeline looks aggressive. Should we add a buffer?', '33333333-3333-3333-3333-333333333333', true),
+  ('c0411111-0001-0001-0001-000000000004', 'bbbb2222-0001-0001-0001-000000000001', NULL, 100, 150, 8, 'Great security considerations! Maybe also mention CSRF protection?', '11111111-1111-1111-1111-111111111111', false)
 ON CONFLICT DO NOTHING;
 
 -- Suggestions (tracked changes)
 INSERT INTO suggestions (id, document_id, suggestion_type, anchor_start, anchor_end, anchor_version, original_text, suggested_text, author_id, status) VALUES
-  ('sug11111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', 'replace', 50, 70, 5, 'Q1 2024', 'Q1-Q2 2024', '22222222-2222-2222-2222-222222222222', 'pending'),
-  ('sug11111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', 'insert', 250, 250, 5, NULL, ' This will require coordination with the data engineering team.', '33333333-3333-3333-3333-333333333333', 'pending'),
-  ('sug11111-0001-0001-0001-000000000003', 'bbbb2222-0001-0001-0001-000000000001', 'delete', 200, 220, 8, 'This is optional', NULL, '11111111-1111-1111-1111-111111111111', 'accepted')
+  ('d0611111-0001-0001-0001-000000000001', 'aaaa1111-0001-0001-0001-000000000001', 'replace', 50, 70, 5, 'Q1 2024', 'Q1-Q2 2024', '22222222-2222-2222-2222-222222222222', 'pending'),
+  ('d0611111-0001-0001-0001-000000000002', 'aaaa1111-0001-0001-0001-000000000001', 'insert', 250, 250, 5, NULL, ' This will require coordination with the data engineering team.', '33333333-3333-3333-3333-333333333333', 'pending'),
+  ('d0611111-0001-0001-0001-000000000003', 'bbbb2222-0001-0001-0001-000000000001', 'delete', 200, 220, 8, 'This is optional', NULL, '11111111-1111-1111-1111-111111111111', 'accepted')
 ON CONFLICT DO NOTHING;

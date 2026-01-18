@@ -25,22 +25,22 @@ ON CONFLICT (email) DO NOTHING;
 
 -- Alice's meeting types
 INSERT INTO meeting_types (id, user_id, name, slug, description, duration_minutes, buffer_before_minutes, buffer_after_minutes, color, max_bookings_per_day) VALUES
-    ('mt11eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Quick Call', 'quick-call', 'A brief 15-minute check-in', 15, 0, 5, '#10B981', 10),
-    ('mt12eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Strategy Session', 'strategy-session', '1-hour deep dive into your project strategy', 60, 10, 15, '#8B5CF6', 3),
-    ('mt13eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Team Sync', 'team-sync', 'Regular team synchronization meeting', 30, 5, 5, '#3B82F6', 5)
+    ('4611eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Quick Call', 'quick-call', 'A brief 15-minute check-in', 15, 0, 5, '#10B981', 10),
+    ('4612eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Strategy Session', 'strategy-session', '1-hour deep dive into your project strategy', 60, 10, 15, '#8B5CF6', 3),
+    ('4613eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Team Sync', 'team-sync', 'Regular team synchronization meeting', 30, 5, 5, '#3B82F6', 5)
 ON CONFLICT (user_id, slug) DO NOTHING;
 
 -- Bob's meeting types
 INSERT INTO meeting_types (id, user_id, name, slug, description, duration_minutes, buffer_before_minutes, buffer_after_minutes, color) VALUES
-    ('mt21eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Coffee Chat', 'coffee-chat', 'Casual virtual coffee and conversation', 20, 0, 5, '#F59E0B'),
-    ('mt22eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Interview', 'interview', 'Technical interview session', 45, 10, 10, '#EF4444'),
-    ('mt23eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Mentorship', 'mentorship', 'One-on-one mentorship session', 60, 5, 10, '#06B6D4')
+    ('4621eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Coffee Chat', 'coffee-chat', 'Casual virtual coffee and conversation', 20, 0, 5, '#F59E0B'),
+    ('4622eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Interview', 'interview', 'Technical interview session', 45, 10, 10, '#EF4444'),
+    ('4623eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Mentorship', 'mentorship', 'One-on-one mentorship session', 60, 5, 10, '#06B6D4')
 ON CONFLICT (user_id, slug) DO NOTHING;
 
 -- Charlie's meeting types
 INSERT INTO meeting_types (id, user_id, name, slug, description, duration_minutes, buffer_before_minutes, buffer_after_minutes, color) VALUES
-    ('mt31eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Consultation', 'consultation', 'Initial consultation for new clients', 45, 10, 10, '#EC4899'),
-    ('mt32eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Project Review', 'project-review', 'Review ongoing project progress', 30, 5, 5, '#14B8A6')
+    ('4631eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Consultation', 'consultation', 'Initial consultation for new clients', 45, 10, 10, '#EC4899'),
+    ('4632eebc-9c0b-4ef8-bb6d-6bb9bd380a11', 'd3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Project Review', 'project-review', 'Review ongoing project progress', 30, 5, 5, '#14B8A6')
 ON CONFLICT (user_id, slug) DO NOTHING;
 
 -- ============================================================================
@@ -122,7 +122,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Bookings for Alice
 INSERT INTO bookings (id, meeting_type_id, host_user_id, invitee_name, invitee_email, start_time, end_time, invitee_timezone, status, notes, idempotency_key) VALUES
     ('bk511111-1111-1111-1111-111111111111',
-     'mt11eebc-9c0b-4ef8-bb6d-6bb9bd380a11', -- Quick Call
+     '4611eebc-9c0b-4ef8-bb6d-6bb9bd380a11', -- Quick Call
      'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
      'Tom Wilson', 'tom.wilson@corp.com',
      (CURRENT_DATE + INTERVAL '1 day' + TIME '09:00')::timestamp with time zone,
@@ -131,7 +131,7 @@ INSERT INTO bookings (id, meeting_type_id, host_user_id, invitee_name, invitee_e
      'idem-511111'),
 
     ('bk522222-2222-2222-2222-222222222222',
-     'mt12eebc-9c0b-4ef8-bb6d-6bb9bd380a11', -- Strategy Session
+     '4612eebc-9c0b-4ef8-bb6d-6bb9bd380a11', -- Strategy Session
      'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
      'Lisa Park', 'lisa.park@agency.io',
      (CURRENT_DATE + INTERVAL '3 days' + TIME '13:00')::timestamp with time zone,
