@@ -59,10 +59,10 @@ export function generateFeatures(seed: string): AvatarFeatures {
   // Hair style options differ by gender
   const hairStyles: HairStyle[] =
     gender === 'feminine'
-      ? ['medium', 'long', 'wavy', 'braided']
-      : ['short', 'medium', 'bald', 'wavy'];
+      ? ['short', 'medium', 'long']
+      : ['short', 'medium', 'bald'];
 
-  const faceShapes: FaceShape[] = ['oval', 'round', 'angular', 'square'];
+  const faceShapes: FaceShape[] = ['oval', 'round', 'square'];
 
   return {
     gender,
@@ -73,15 +73,15 @@ export function generateFeatures(seed: string): AvatarFeatures {
     clothingPalette: CLOTHING_PALETTES[Math.floor(random() * CLOTHING_PALETTES.length)],
     accessoryColor: ACCESSORY_COLORS[Math.floor(random() * ACCESSORY_COLORS.length)],
     faceShape: faceShapes[Math.floor(random() * faceShapes.length)],
-    hasBeard: gender === 'masculine' && random() > 0.6,
-    hasCrown: random() > 0.7,
-    hasNecklace: random() > 0.5,
-    hasEarrings: gender === 'feminine' && random() > 0.4,
-    eyeSize: 0.8 + random() * 0.4,
-    noseSize: 0.8 + random() * 0.4,
-    lipSize: 0.8 + random() * 0.4,
-    browThickness: 0.6 + random() * 0.6,
-    cheekbones: random(),
+    hasBeard: gender === 'masculine' && random() > 0.8,
+    hasCrown: random() > 0.85,
+    hasNecklace: random() > 0.75,
+    hasEarrings: gender === 'feminine' && random() > 0.75,
+    eyeSize: 0.85 + random() * 0.2,
+    noseSize: 0.9 + random() * 0.2,
+    lipSize: 0.85 + random() * 0.2,
+    browThickness: 0.5 + random() * 0.3,
+    cheekbones: 0.2 + random() * 0.4,
   };
 }
 
