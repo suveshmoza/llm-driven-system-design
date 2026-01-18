@@ -20,7 +20,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
-import { webkit } from 'playwright';
+import { chromium } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -281,14 +281,18 @@ process.on('exit', () => {
 async function captureWithPlaywright(config, outputDir) {
   const baseUrl = `http://localhost:${config.frontendPort}`;
 
-  logStep('BROWSER', 'Launching WebKit...');
+  logStep('BROWSER', 'Launching Chrome...');
 
   let browser;
   try {
-    browser = await webkit.launch({ headless: true });
+    // Use installed Chrome via channel option (more stable on macOS)
+    browser = await chromium.launch({
+      headless: true,
+      channel: 'chrome',
+    });
   } catch (error) {
     logError(`Failed to launch browser: ${error.message}`);
-    logWarning('Run: npx playwright install webkit');
+    logWarning('Make sure Google Chrome is installed');
     return { success: false, captured: 0, failed: config.screens.length };
   }
 
