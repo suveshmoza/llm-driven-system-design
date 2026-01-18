@@ -99,10 +99,11 @@ node scripts/add-codex-opinion.mjs
 
 ### Screenshot Automation
 
-Capture screenshots of frontend projects for documentation using Puppeteer in Docker (Playwright also available).
+Capture screenshots of frontend projects for documentation using Playwright.
 
 **Prerequisites:**
-- Docker Desktop must be running
+- Playwright installed: `npm install playwright` and `npx playwright install`
+- Docker Desktop running (for projects with docker-compose.yml)
 - Frontend dev server must be running (or use `--start` flag)
 - For authenticated pages, backend and database must be running
 
@@ -111,7 +112,7 @@ Capture screenshots of frontend projects for documentation using Puppeteer in Do
 # Take screenshots (frontend must already be running)
 npm run screenshots instagram
 
-# Auto-start frontend, take screenshots, then stop
+# Full automated workflow: starts docker, backend, frontend, captures, then stops all
 node scripts/screenshots.mjs --start instagram
 
 # Auto-screenshot all configured projects
@@ -122,6 +123,12 @@ npm run screenshots:dry instagram
 
 # List available configurations
 node scripts/screenshots.mjs --list
+```
+
+**Note:** Projects run their infrastructure in Docker. Only one project can run at a time on the default ports. Stop the previous project's Docker before starting a new one:
+```bash
+cd <previous-project> && docker-compose down
+cd <new-project> && docker-compose up -d
 ```
 
 **Adding a new project:**
