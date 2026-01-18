@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
-import { bookingsApi } from '../../services/api';
-import type { Booking } from '../../types';
-import { LoadingSpinner } from '../../components/LoadingSpinner';
-import { formatDateTime, getLocalTimezone, getTimezoneDisplayName } from '../../utils/time';
+import { bookingsApi } from '../services/api';
+import type { Booking } from '../types';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+import { formatDateTime, getLocalTimezone, getTimezoneDisplayName } from '../utils/time';
 
 export const Route = createFileRoute('/bookings/$bookingId')({
   component: BookingDetailPage,

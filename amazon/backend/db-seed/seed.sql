@@ -287,6 +287,8 @@ DECLARE
     product3_id INTEGER;
     order1_id INTEGER;
     order2_id INTEGER;
+    order3_id INTEGER;
+    order4_id INTEGER;
 BEGIN
     SELECT id INTO alice_id FROM users WHERE email = 'alice@example.com';
     SELECT id INTO bob_id FROM users WHERE email = 'bob@example.com';
@@ -296,12 +298,12 @@ BEGIN
     SELECT id INTO product2_id FROM products WHERE slug = 'the-art-of-code-developers-journey' LIMIT 1;
     SELECT id INTO product3_id FROM products WHERE slug = 'smart-coffee-maker-pro' LIMIT 1;
 
-    -- Alice's completed order
-    INSERT INTO orders (user_id, status, subtotal, tax, shipping_cost, total, shipping_address, payment_method, payment_status)
+    -- Alice's completed order (delivered)
+    INSERT INTO orders (user_id, status, subtotal, tax, shipping_cost, total, shipping_address, payment_method, payment_status, created_at)
     VALUES (
         alice_id, 'delivered', 174.98, 15.75, 0, 190.73,
         '{"name": "Alice Johnson", "street": "123 Main St", "city": "San Francisco", "state": "CA", "zip": "94102", "country": "USA"}',
-        'credit_card', 'completed'
+        'credit_card', 'completed', NOW() - INTERVAL '10 days'
     ) RETURNING id INTO order1_id;
 
     IF product1_id IS NOT NULL THEN
@@ -313,6 +315,30 @@ BEGIN
         INSERT INTO order_items (order_id, product_id, product_title, quantity, price)
         VALUES (order1_id, product2_id, 'The Art of Code: A Developer''s Journey', 1, 24.99);
     END IF;
+
+    -- Alice's shipped order (in transit)
+    INSERT INTO orders (user_id, status, subtotal, tax, shipping_cost, total, shipping_address, payment_method, payment_status, created_at)
+    VALUES (
+        alice_id, 'shipped', 999.99, 90.00, 0, 1089.99,
+        '{"name": "Alice Johnson", "street": "123 Main St", "city": "San Francisco", "state": "CA", "zip": "94102", "country": "USA"}',
+        'credit_card', 'completed', NOW() - INTERVAL '3 days'
+    ) RETURNING id INTO order3_id;
+
+    INSERT INTO order_items (order_id, product_id, product_title, quantity, price)
+    SELECT order3_id, id, 'Smartphone X12 Pro Max', 1, 999.99
+    FROM products WHERE slug = 'smartphone-x12-pro-max' LIMIT 1;
+
+    -- Alice's processing order (just placed)
+    INSERT INTO orders (user_id, status, subtotal, tax, shipping_cost, total, shipping_address, payment_method, payment_status, created_at)
+    VALUES (
+        alice_id, 'processing', 349.99, 31.50, 5.99, 387.48,
+        '{"name": "Alice Johnson", "street": "123 Main St", "city": "San Francisco", "state": "CA", "zip": "94102", "country": "USA"}',
+        'credit_card', 'completed', NOW() - INTERVAL '1 day'
+    ) RETURNING id INTO order4_id;
+
+    INSERT INTO order_items (order_id, product_id, product_title, quantity, price)
+    SELECT order4_id, id, 'Smart Watch Series 7', 1, 349.99
+    FROM products WHERE slug = 'smart-watch-series-7' LIMIT 1;
 
     -- Bob's pending order
     INSERT INTO orders (user_id, status, subtotal, tax, shipping_cost, total, shipping_address, payment_method, payment_status)
@@ -387,21 +413,49 @@ END $$;
 
 DO $$
 DECLARE
+    alice_id INTEGER;
     charlie_id INTEGER;
+    earbuds_id INTEGER;
+    watch_id INTEGER;
+    book_id INTEGER;
     coffee_maker_id INTEGER;
     blender_id INTEGER;
 BEGIN
+    SELECT id INTO alice_id FROM users WHERE email = 'alice@example.com';
     SELECT id INTO charlie_id FROM users WHERE email = 'charlie@example.com';
+    SELECT id INTO earbuds_id FROM products WHERE slug = 'premium-wireless-earbuds-pro' LIMIT 1;
+    SELECT id INTO watch_id FROM products WHERE slug = 'smart-watch-series-7' LIMIT 1;
+    SELECT id INTO book_id FROM products WHERE slug = 'learning-system-design' LIMIT 1;
     SELECT id INTO coffee_maker_id FROM products WHERE slug = 'smart-coffee-maker-pro' LIMIT 1;
     SELECT id INTO blender_id FROM products WHERE slug = 'premium-blender-1200w' LIMIT 1;
 
-    IF coffee_maker_id IS NOT NULL THEN
+    -- Alice's cart items
+    IF earbuds_id IS NOT NULL AND alice_id IS NOT NULL THEN
+        INSERT INTO cart_items (user_id, product_id, quantity, reserved_until)
+        VALUES (alice_id, earbuds_id, 2, NOW() + INTERVAL '30 minutes')
+        ON CONFLICT (user_id, product_id) DO NOTHING;
+    END IF;
+
+    IF watch_id IS NOT NULL AND alice_id IS NOT NULL THEN
+        INSERT INTO cart_items (user_id, product_id, quantity, reserved_until)
+        VALUES (alice_id, watch_id, 1, NOW() + INTERVAL '30 minutes')
+        ON CONFLICT (user_id, product_id) DO NOTHING;
+    END IF;
+
+    IF book_id IS NOT NULL AND alice_id IS NOT NULL THEN
+        INSERT INTO cart_items (user_id, product_id, quantity, reserved_until)
+        VALUES (alice_id, book_id, 1, NOW() + INTERVAL '30 minutes')
+        ON CONFLICT (user_id, product_id) DO NOTHING;
+    END IF;
+
+    -- Charlie's cart items (existing)
+    IF coffee_maker_id IS NOT NULL AND charlie_id IS NOT NULL THEN
         INSERT INTO cart_items (user_id, product_id, quantity, reserved_until)
         VALUES (charlie_id, coffee_maker_id, 1, NOW() + INTERVAL '30 minutes')
         ON CONFLICT (user_id, product_id) DO NOTHING;
     END IF;
 
-    IF blender_id IS NOT NULL THEN
+    IF blender_id IS NOT NULL AND charlie_id IS NOT NULL THEN
         INSERT INTO cart_items (user_id, product_id, quantity, reserved_until)
         VALUES (charlie_id, blender_id, 1, NOW() + INTERVAL '30 minutes')
         ON CONFLICT (user_id, product_id) DO NOTHING;

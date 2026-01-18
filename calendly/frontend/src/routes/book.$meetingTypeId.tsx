@@ -1,11 +1,11 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
-import { meetingTypesApi, availabilityApi, bookingsApi } from '../../services/api';
-import type { MeetingType, TimeSlot } from '../../types';
-import { LoadingSpinner } from '../../components/LoadingSpinner';
-import { CalendarPicker } from '../../components/CalendarPicker';
-import { TimeSlotPicker } from '../../components/TimeSlotPicker';
-import { getLocalTimezone, formatDate, formatInTimezone, commonTimezones } from '../../utils/time';
+import { meetingTypesApi, availabilityApi, bookingsApi } from '../services/api';
+import type { MeetingType, TimeSlot } from '../types';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+import { CalendarPicker } from '../components/CalendarPicker';
+import { TimeSlotPicker } from '../components/TimeSlotPicker';
+import { getLocalTimezone, formatDate, formatInTimezone, commonTimezones } from '../utils/time';
 import { format } from 'date-fns';
 
 export const Route = createFileRoute('/book/$meetingTypeId')({
