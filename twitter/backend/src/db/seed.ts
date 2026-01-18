@@ -4,7 +4,20 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-async function seed() {
+interface UserSeedData {
+  username: string;
+  email: string;
+  display_name: string;
+  bio: string;
+  role?: 'user' | 'admin';
+}
+
+interface TweetSeedData {
+  author: number;
+  content: string;
+}
+
+async function seed(): Promise<void> {
   console.log('Seeding database with test data...');
 
   try {
@@ -14,7 +27,7 @@ async function seed() {
     // Create test users
     const passwordHash = await bcrypt.hash('password123', 10);
 
-    const usersData = [
+    const usersData: UserSeedData[] = [
       { username: 'alice', email: 'alice@example.com', display_name: 'Alice Johnson', bio: 'Tech enthusiast and coffee lover' },
       { username: 'bob', email: 'bob@example.com', display_name: 'Bob Smith', bio: 'Developer by day, gamer by night' },
       { username: 'charlie', email: 'charlie@example.com', display_name: 'Charlie Brown', bio: 'Music is life' },
@@ -25,7 +38,7 @@ async function seed() {
       { username: 'admin', email: 'admin@example.com', display_name: 'Admin User', bio: 'Platform administrator', role: 'admin' },
     ];
 
-    const userIds = [];
+    const userIds: number[] = [];
     for (const user of usersData) {
       const result = await pool.query(
         `INSERT INTO users (username, email, password_hash, display_name, bio, role)
@@ -39,7 +52,7 @@ async function seed() {
     console.log(`Created ${userIds.length} users`);
 
     // Create follow relationships
-    const followPairs = [
+    const followPairs: [number, number][] = [
       [0, 1], [0, 2], [0, 3], [0, 4], // Alice follows bob, charlie, diana, eve
       [1, 0], [1, 2], [1, 4], // Bob follows alice, charlie, eve
       [2, 0], [2, 1], [2, 3], [2, 5], // Charlie follows alice, bob, diana, frank
@@ -59,7 +72,7 @@ async function seed() {
     console.log(`Created ${followPairs.length} follow relationships`);
 
     // Create sample tweets
-    const tweetsData = [
+    const tweetsData: TweetSeedData[] = [
       { author: 0, content: 'Just started learning about distributed systems! #coding #learning' },
       { author: 1, content: 'Weekend gaming session was epic! #gaming #weekend' },
       { author: 2, content: 'New album dropping next week! Stay tuned #music #newrelease' },
@@ -77,7 +90,7 @@ async function seed() {
       { author: 1, content: 'Pro tip: always save your game before boss fights #gaming #tips' },
     ];
 
-    const tweetIds = [];
+    const tweetIds: number[] = [];
     for (const tweet of tweetsData) {
       // Extract hashtags from content
       const hashtags = tweet.content.match(/#\w+/g)?.map(h => h.toLowerCase().slice(1)) || [];
@@ -102,7 +115,7 @@ async function seed() {
     console.log(`Created ${tweetIds.length} tweets`);
 
     // Create some likes
-    const likePairs = [
+    const likePairs: [number, number][] = [
       [0, 1], [0, 2], [0, 4], // Alice likes bob's tweet, charlie's, eve's
       [1, 0], [1, 3], [1, 4], // Bob likes alice's, diana's, eve's
       [2, 0], [2, 5], // Charlie likes alice's tweets
@@ -122,7 +135,7 @@ async function seed() {
     console.log(`Created ${likePairs.length} likes`);
 
     // Create some retweets
-    const retweetPairs = [
+    const retweetPairs: [number, number][] = [
       [0, 4], // Alice retweets eve's announcement
       [1, 0], // Bob retweets alice's first tweet
       [4, 11], // Eve retweets alice's kubernetes tweet

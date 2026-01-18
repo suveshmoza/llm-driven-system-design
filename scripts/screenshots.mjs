@@ -600,9 +600,11 @@ async function captureWithPlaywright(config, outputDir) {
       await page.waitForSelector(usernameSelector, { timeout: 10000 });
       await page.fill(usernameSelector, auth.credentials.username || auth.credentials.email);
 
-      // Fill password field
-      const passwordSelector = auth.passwordSelector || 'input[name="password"], input[type="password"]';
-      await page.fill(passwordSelector, auth.credentials.password);
+      // Fill password field (optional - some apps only need username/nickname)
+      if (auth.credentials.password && auth.passwordSelector !== false) {
+        const passwordSelector = auth.passwordSelector || 'input[name="password"], input[type="password"]';
+        await page.fill(passwordSelector, auth.credentials.password);
+      }
 
       // Click submit and wait for navigation
       const submitSelector = auth.submitSelector || 'button[type="submit"]';

@@ -13,8 +13,18 @@ import { circuitBreakerState, circuitBreakerTrips } from './metrics.js';
  * - HALF_OPEN: Testing if service recovered, allowing limited requests
  */
 
+export interface CircuitBreakerOptions {
+  timeout?: number;
+  errorThresholdPercentage?: number;
+  resetTimeout?: number;
+  volumeThreshold?: number;
+  rollingCountTimeout?: number;
+  rollingCountBuckets?: number;
+  name?: string;
+}
+
 // Default options for circuit breakers
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: CircuitBreakerOptions = {
   timeout: 10000, // 10 seconds
   errorThresholdPercentage: 50, // Trip after 50% failures
   resetTimeout: 30000, // Try again after 30 seconds
@@ -24,17 +34,16 @@ const DEFAULT_OPTIONS = {
 };
 
 // Circuit breaker instances registry
-const circuitBreakers = new Map();
+const circuitBreakers = new Map<string, CircuitBreaker>();
 
 /**
  * Create a circuit breaker for a given function
- *
- * @param {string} name - Unique name for the circuit breaker
- * @param {Function} fn - The function to wrap
- * @param {object} options - Circuit breaker options
- * @returns {CircuitBreaker}
  */
-export function createCircuitBreaker(name, fn, options = {}) {
+export function createCircuitBreaker<T extends (...args: unknown[]) => unknown>(
+  name: string,
+  fn: T,
+  options: CircuitBreakerOptions = {}
+): CircuitBreaker {
   const circuitOptions = {
     ...DEFAULT_OPTIONS,
     ...options,
@@ -44,7 +53,7 @@ export function createCircuitBreaker(name, fn, options = {}) {
   const breaker = new CircuitBreaker(fn, circuitOptions);
 
   // Set up event handlers for logging and metrics
-  breaker.on('success', (result, latencyMs) => {
+  breaker.on('success', (_result: unknown, latencyMs: number) => {
     logger.debug({ circuit: name, latencyMs }, 'Circuit breaker call succeeded');
   });
 
@@ -72,7 +81,7 @@ export function createCircuitBreaker(name, fn, options = {}) {
     circuitBreakerState.set({ circuit_name: name }, 0); // CLOSED = 0
   });
 
-  breaker.on('fallback', (result) => {
+  breaker.on('fallback', (result: unknown) => {
     logger.info({ circuit: name, fallbackResult: typeof result }, 'Circuit breaker using fallback');
   });
 
@@ -87,21 +96,21 @@ export function createCircuitBreaker(name, fn, options = {}) {
 
 /**
  * Get an existing circuit breaker by name
- *
- * @param {string} name - Circuit breaker name
- * @returns {CircuitBreaker|undefined}
  */
-export function getCircuitBreaker(name) {
+export function getCircuitBreaker(name: string): CircuitBreaker | undefined {
   return circuitBreakers.get(name);
+}
+
+interface CircuitBreakerStatus {
+  state: 'OPEN' | 'HALF_OPEN' | 'CLOSED';
+  stats: unknown;
 }
 
 /**
  * Get status of all circuit breakers
- *
- * @returns {object} Status object with all circuit breaker states
  */
-export function getAllCircuitBreakerStatus() {
-  const status = {};
+export function getAllCircuitBreakerStatus(): Record<string, CircuitBreakerStatus> {
+  const status: Record<string, CircuitBreakerStatus> = {};
   for (const [name, breaker] of circuitBreakers) {
     status[name] = {
       state: breaker.opened ? 'OPEN' : breaker.halfOpen ? 'HALF_OPEN' : 'CLOSED',
@@ -118,7 +127,7 @@ export function getAllCircuitBreakerStatus() {
 /**
  * Redis Circuit Breaker Configuration
  */
-export const REDIS_CIRCUIT_OPTIONS = {
+export const REDIS_CIRCUIT_OPTIONS: CircuitBreakerOptions = {
   timeout: 5000, // 5 second timeout for Redis
   errorThresholdPercentage: 50,
   resetTimeout: 15000, // Retry faster for Redis
@@ -130,7 +139,7 @@ export const REDIS_CIRCUIT_OPTIONS = {
  *
  * More lenient because fanout is not user-facing critical path
  */
-export const FANOUT_CIRCUIT_OPTIONS = {
+export const FANOUT_CIRCUIT_OPTIONS: CircuitBreakerOptions = {
   timeout: 30000, // 30 second timeout for bulk operations
   errorThresholdPercentage: 60,
   resetTimeout: 60000, // 1 minute before retry
@@ -140,7 +149,7 @@ export const FANOUT_CIRCUIT_OPTIONS = {
 /**
  * Database Circuit Breaker Configuration
  */
-export const DATABASE_CIRCUIT_OPTIONS = {
+export const DATABASE_CIRCUIT_OPTIONS: CircuitBreakerOptions = {
   timeout: 10000, // 10 second timeout
   errorThresholdPercentage: 40,
   resetTimeout: 30000,
@@ -149,14 +158,13 @@ export const DATABASE_CIRCUIT_OPTIONS = {
 
 /**
  * Create a wrapped function with circuit breaker protection
- *
- * @param {string} name - Circuit breaker name
- * @param {Function} fn - Function to wrap
- * @param {Function} fallback - Fallback function when circuit is open
- * @param {object} options - Circuit breaker options
- * @returns {Function} Wrapped function
  */
-export function withCircuitBreaker(name, fn, fallback = null, options = {}) {
+export function withCircuitBreaker<T extends (...args: unknown[]) => Promise<unknown>>(
+  name: string,
+  fn: T,
+  fallback: ((...args: unknown[]) => unknown) | null = null,
+  options: CircuitBreakerOptions = {}
+): (...args: Parameters<T>) => Promise<unknown> {
   const breaker = createCircuitBreaker(name, fn, options);
 
   if (fallback) {
@@ -164,7 +172,7 @@ export function withCircuitBreaker(name, fn, fallback = null, options = {}) {
   }
 
   // Return a function that fires the circuit breaker
-  return async (...args) => {
+  return async (...args: Parameters<T>) => {
     return breaker.fire(...args);
   };
 }

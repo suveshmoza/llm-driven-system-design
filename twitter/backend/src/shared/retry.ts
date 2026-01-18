@@ -3,7 +3,23 @@ import logger from './logger.js';
 /**
  * Retry Configuration
  */
-const DEFAULT_CONFIG = {
+export interface RetryConfig {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitterFactor: number;
+  context?: string;
+  isRetryable?: (error: RetryableError) => boolean;
+  onRetry?: (error: Error, attempt: number, delay: number) => Promise<void>;
+}
+
+interface RetryableError extends Error {
+  code?: string;
+  status?: number;
+  statusCode?: number;
+}
+
+const DEFAULT_CONFIG: RetryConfig = {
   maxAttempts: 3,
   baseDelayMs: 100,
   maxDelayMs: 10000,
@@ -12,22 +28,8 @@ const DEFAULT_CONFIG = {
 
 /**
  * Determine if an error is retryable
- *
- * We only retry on transient errors that might resolve on retry:
- * - Network errors (ECONNRESET, ETIMEDOUT, ECONNREFUSED)
- * - Server errors (5xx)
- * - Rate limiting (429)
- * - Database connection errors
- *
- * We do NOT retry on:
- * - Client errors (4xx except 429)
- * - Validation errors
- * - Authentication errors
- *
- * @param {Error} error - The error to check
- * @returns {boolean} Whether the error is retryable
  */
-export function isRetryableError(error) {
+export function isRetryableError(error: RetryableError): boolean {
   // Network errors
   if (error.code) {
     const retryableCodes = [
@@ -49,11 +51,11 @@ export function isRetryableError(error) {
   if (error.status || error.statusCode) {
     const status = error.status || error.statusCode;
     // Retry on 429 (rate limited) and 5xx (server errors)
-    if (status === 429 || (status >= 500 && status < 600)) {
+    if (status === 429 || (status && status >= 500 && status < 600)) {
       return true;
     }
     // Don't retry on other 4xx errors
-    if (status >= 400 && status < 500) {
+    if (status && status >= 400 && status < 500) {
       return false;
     }
   }
@@ -74,14 +76,8 @@ export function isRetryableError(error) {
 
 /**
  * Calculate delay with exponential backoff and jitter
- *
- * Formula: min(baseDelay * 2^attempt, maxDelay) + random jitter
- *
- * @param {number} attempt - Current attempt number (1-based)
- * @param {object} config - Retry configuration
- * @returns {number} Delay in milliseconds
  */
-export function calculateDelay(attempt, config = DEFAULT_CONFIG) {
+export function calculateDelay(attempt: number, config: RetryConfig = DEFAULT_CONFIG): number {
   // Exponential backoff
   const exponentialDelay = config.baseDelayMs * Math.pow(2, attempt - 1);
 
@@ -96,30 +92,19 @@ export function calculateDelay(attempt, config = DEFAULT_CONFIG) {
 
 /**
  * Sleep for a specified duration
- *
- * @param {number} ms - Duration in milliseconds
- * @returns {Promise<void>}
  */
-export function sleep(ms) {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
  * Execute an operation with retry logic
- *
- * @param {Function} operation - Async function to execute
- * @param {object} options - Configuration options
- * @param {string} options.context - Description of the operation (for logging)
- * @param {number} options.maxAttempts - Maximum number of attempts
- * @param {number} options.baseDelayMs - Base delay between retries
- * @param {number} options.maxDelayMs - Maximum delay between retries
- * @param {Function} options.isRetryable - Custom function to determine if error is retryable
- * @param {Function} options.onRetry - Callback function called before each retry
- * @returns {Promise<any>} Result of the operation
- * @throws {Error} The last error if all retries fail
  */
-export async function withRetry(operation, options = {}) {
-  const config = {
+export async function withRetry<T>(
+  operation: () => Promise<T>,
+  options: Partial<RetryConfig> = {}
+): Promise<T> {
+  const config: RetryConfig = {
     ...DEFAULT_CONFIG,
     ...options,
   };
@@ -127,13 +112,13 @@ export async function withRetry(operation, options = {}) {
   const context = options.context || 'operation';
   const checkRetryable = options.isRetryable || isRetryableError;
 
-  let lastError;
+  let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      lastError = error;
+      lastError = error as Error;
 
       // Check if we should retry
       if (attempt === config.maxAttempts) {
@@ -142,19 +127,19 @@ export async function withRetry(operation, options = {}) {
             context,
             attempt,
             maxAttempts: config.maxAttempts,
-            error: error.message,
+            error: (error as Error).message,
           },
           `${context} failed after ${config.maxAttempts} attempts`,
         );
         throw error;
       }
 
-      if (!checkRetryable(error)) {
+      if (!checkRetryable(error as RetryableError)) {
         logger.warn(
           {
             context,
             attempt,
-            error: error.message,
+            error: (error as Error).message,
             retryable: false,
           },
           `${context} failed with non-retryable error`,
@@ -171,14 +156,14 @@ export async function withRetry(operation, options = {}) {
           attempt,
           maxAttempts: config.maxAttempts,
           delayMs: delay,
-          error: error.message,
+          error: (error as Error).message,
         },
         `${context} failed, retrying in ${delay}ms`,
       );
 
       // Call onRetry callback if provided
       if (options.onRetry) {
-        await options.onRetry(error, attempt, delay);
+        await options.onRetry(error as Error, attempt, delay);
       }
 
       await sleep(delay);
@@ -190,14 +175,13 @@ export async function withRetry(operation, options = {}) {
 
 /**
  * Create a retryable version of a function
- *
- * @param {Function} fn - Function to wrap
- * @param {object} options - Retry options
- * @returns {Function} Wrapped function with retry logic
  */
-export function retryable(fn, options = {}) {
-  return async (...args) => {
-    return withRetry(() => fn(...args), options);
+export function retryable<T extends (...args: unknown[]) => Promise<unknown>>(
+  fn: T,
+  options: Partial<RetryConfig> = {}
+): (...args: Parameters<T>) => Promise<ReturnType<T>> {
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    return withRetry(() => fn(...args), options) as Promise<ReturnType<T>>;
   };
 }
 
@@ -207,9 +191,8 @@ export function retryable(fn, options = {}) {
 
 /**
  * Configuration for database operations
- * More attempts with longer delays for transient connection issues
  */
-export const DATABASE_RETRY_CONFIG = {
+export const DATABASE_RETRY_CONFIG: Partial<RetryConfig> = {
   maxAttempts: 3,
   baseDelayMs: 100,
   maxDelayMs: 5000,
@@ -218,9 +201,8 @@ export const DATABASE_RETRY_CONFIG = {
 
 /**
  * Configuration for Redis operations
- * Fewer attempts with shorter delays for cache operations
  */
-export const REDIS_RETRY_CONFIG = {
+export const REDIS_RETRY_CONFIG: Partial<RetryConfig> = {
   maxAttempts: 2,
   baseDelayMs: 50,
   maxDelayMs: 1000,
@@ -229,9 +211,8 @@ export const REDIS_RETRY_CONFIG = {
 
 /**
  * Configuration for external API calls
- * More attempts with longer delays
  */
-export const EXTERNAL_API_RETRY_CONFIG = {
+export const EXTERNAL_API_RETRY_CONFIG: Partial<RetryConfig> = {
   maxAttempts: 3,
   baseDelayMs: 500,
   maxDelayMs: 10000,
@@ -240,9 +221,8 @@ export const EXTERNAL_API_RETRY_CONFIG = {
 
 /**
  * Configuration for fanout operations
- * More tolerant since not user-facing
  */
-export const FANOUT_RETRY_CONFIG = {
+export const FANOUT_RETRY_CONFIG: Partial<RetryConfig> = {
   maxAttempts: 5,
   baseDelayMs: 200,
   maxDelayMs: 15000,

@@ -1,4 +1,5 @@
-import pino from 'pino';
+import pino, { Logger } from 'pino';
+import type { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -41,19 +42,17 @@ const logger = pino({
 
 /**
  * Create a child logger with request context
- * @param {object} context - Additional context fields (requestId, userId, etc.)
- * @returns {pino.Logger}
  */
-export function createRequestLogger(context) {
+export function createRequestLogger(context: object): Logger {
   return logger.child(context);
 }
 
 /**
  * Express middleware for request logging
  */
-export function requestLoggerMiddleware(req, res, next) {
+export function requestLoggerMiddleware(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
-  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
 
   // Attach request ID to request object
   req.requestId = requestId;
@@ -80,11 +79,11 @@ export function requestLoggerMiddleware(req, res, next) {
     };
 
     if (res.statusCode >= 500) {
-      req.log.error(logData, `${req.method} ${req.path} - ${res.statusCode}`);
+      req.log?.error(logData, `${req.method} ${req.path} - ${res.statusCode}`);
     } else if (res.statusCode >= 400) {
-      req.log.warn(logData, `${req.method} ${req.path} - ${res.statusCode}`);
+      req.log?.warn(logData, `${req.method} ${req.path} - ${res.statusCode}`);
     } else {
-      req.log.info(logData, `${req.method} ${req.path} - ${res.statusCode}`);
+      req.log?.info(logData, `${req.method} ${req.path} - ${res.statusCode}`);
     }
   });
 
