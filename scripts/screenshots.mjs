@@ -289,11 +289,20 @@ async function captureWithPlaywright(config, outputDir) {
 
   let browser;
   try {
-    browser = await browserLauncher.launch({ headless: true });
+    // Try using installed Chrome first (more stable on macOS)
+    browser = await browserLauncher.launch({
+      headless: true,
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    });
   } catch (error) {
-    logError(`Failed to launch browser: ${error.message}`);
-    logWarning('Run: npx playwright install');
-    return { success: false, captured: 0, failed: config.screens.length };
+    // Fall back to Playwright-bundled browser
+    try {
+      browser = await browserLauncher.launch({ headless: true });
+    } catch (error2) {
+      logError(`Failed to launch browser: ${error2.message}`);
+      logWarning('Run: npx playwright install');
+      return { success: false, captured: 0, failed: config.screens.length };
+    }
   }
 
   const context = await browser.newContext({

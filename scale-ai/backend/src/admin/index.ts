@@ -748,7 +748,7 @@ app.get('/api/admin/training/:id', requireAdmin, async (req, res) => {
 app.get('/api/admin/training', requireAdmin, async (_req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, status, config, started_at, completed_at,
+      SELECT id, status, config, started_at, completed_at, progress,
              metrics->>'accuracy' as accuracy
       FROM training_jobs
       ORDER BY created_at DESC
@@ -759,6 +759,49 @@ app.get('/api/admin/training', requireAdmin, async (_req, res) => {
   } catch (error) {
     logError(error as Error, { endpoint: '/api/admin/training' })
     res.status(500).json({ error: 'Failed to fetch training jobs' })
+  }
+})
+
+/**
+ * POST /api/admin/training/:id/cancel - Cancels a training job.
+ * Only pending, queued, or running jobs can be cancelled.
+ */
+app.post('/api/admin/training/:id/cancel', requireAdmin, async (req, res) => {
+  const reqLogger = createChildLogger({ endpoint: '/api/admin/training/:id/cancel' })
+
+  try {
+    const { id } = req.params
+
+    // Check current status
+    const result = await pool.query(
+      'SELECT status FROM training_jobs WHERE id = $1',
+      [id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Training job not found' })
+    }
+
+    const currentStatus = result.rows[0].status
+    if (!['pending', 'queued', 'running'].includes(currentStatus)) {
+      return res.status(400).json({
+        error: `Cannot cancel job with status '${currentStatus}'`,
+      })
+    }
+
+    // Update status to cancelled
+    await pool.query(
+      `UPDATE training_jobs
+       SET status = 'cancelled', completed_at = NOW()
+       WHERE id = $1`,
+      [id]
+    )
+
+    reqLogger.info({ msg: 'Training job cancelled', jobId: id })
+    res.json({ success: true, message: 'Training job cancelled' })
+  } catch (error) {
+    logError(error as Error, { endpoint: '/api/admin/training/:id/cancel' })
+    res.status(500).json({ error: 'Failed to cancel training job' })
   }
 })
 

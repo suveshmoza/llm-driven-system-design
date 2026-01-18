@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { getTrainingJobs, type Model, type TrainingJob } from '../../../services/api'
+import { getTrainingJobs, cancelTrainingJob, type Model, type TrainingJob } from '../../../services/api'
 
 /**
  * Props for the TrainingTab component.
@@ -99,6 +99,21 @@ export function TrainingTab({
     }
   }, [trainingInProgress, loadJobs])
 
+  /**
+   * Cancels a training job.
+   *
+   * @param jobId - The job ID to cancel
+   */
+  const handleCancelJob = async (jobId: string) => {
+    try {
+      await cancelTrainingJob(jobId)
+      // Refresh jobs list
+      loadJobs()
+    } catch (err) {
+      setJobsError(err instanceof Error ? err.message : 'Failed to cancel job')
+    }
+  }
+
   return (
     <div className="training-section">
       <div className="training-header">
@@ -123,7 +138,12 @@ export function TrainingTab({
         />
       )}
 
-      <JobsSection jobs={jobs} loading={jobsLoading} error={jobsError} />
+      <JobsSection
+        jobs={jobs}
+        loading={jobsLoading}
+        error={jobsError}
+        onCancelJob={handleCancelJob}
+      />
 
       <ModelsTable models={models} onActivate={onActivateModel} />
     </div>
@@ -140,6 +160,8 @@ interface JobsSectionProps {
   loading: boolean
   /** Error message if loading failed */
   error: string | null
+  /** Callback to cancel a job */
+  onCancelJob: (jobId: string) => void
 }
 
 /**
@@ -147,7 +169,7 @@ interface JobsSectionProps {
  *
  * @param props - Component props
  */
-function JobsSection({ jobs, loading, error }: JobsSectionProps) {
+function JobsSection({ jobs, loading, error, onCancelJob }: JobsSectionProps) {
   if (loading) {
     return (
       <div className="jobs-section">
@@ -174,7 +196,7 @@ function JobsSection({ jobs, loading, error }: JobsSectionProps) {
       ) : (
         <div className="jobs-list">
           {jobs.slice(0, 10).map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} onCancel={() => onCancelJob(job.id)} />
           ))}
         </div>
       )}
@@ -188,6 +210,8 @@ function JobsSection({ jobs, loading, error }: JobsSectionProps) {
 interface JobCardProps {
   /** The training job to display */
   job: TrainingJob
+  /** Callback to cancel this job */
+  onCancel: () => void
 }
 
 /**
@@ -195,8 +219,9 @@ interface JobCardProps {
  *
  * @param props - Component props
  */
-function JobCard({ job }: JobCardProps) {
+function JobCard({ job, onCancel }: JobCardProps) {
   const statusInfo = getStatusInfo(job.status)
+  const canCancel = ['pending', 'queued', 'running'].includes(job.status)
 
   return (
     <div className={`job-card status-${job.status}`}>
@@ -204,11 +229,42 @@ function JobCard({ job }: JobCardProps) {
         <span className={`job-status ${job.status}`}>
           {statusInfo.icon} {statusInfo.label}
         </span>
-        <span className="job-date">{formatDate(job.created_at)}</span>
+        <div className="job-header-right">
+          {canCancel && (
+            <button className="cancel-btn" onClick={onCancel} title="Cancel training">
+              Cancel
+            </button>
+          )}
+          <span className="job-date">{formatDate(job.created_at)}</span>
+        </div>
       </div>
 
       <div className="job-details">
-        {job.status === 'running' && (
+        {job.status === 'running' && job.progress && (
+          <div className="job-progress">
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${(job.progress.current_epoch / job.progress.total_epochs) * 100}%`,
+                }}
+              />
+            </div>
+            <span className="progress-text">
+              {formatProgressPhase(job.progress)}
+            </span>
+            {job.progress.train_loss !== undefined && (
+              <div className="progress-metrics">
+                <span>Loss: {job.progress.train_loss.toFixed(4)}</span>
+                {job.progress.val_accuracy !== undefined && (
+                  <span>Accuracy: {(job.progress.val_accuracy * 100).toFixed(1)}%</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {job.status === 'running' && !job.progress && (
           <div className="job-progress">
             <div className="progress-bar">
               <div className="progress-fill running" />
@@ -231,6 +287,12 @@ function JobCard({ job }: JobCardProps) {
           </div>
         )}
 
+        {job.status === 'cancelled' && (
+          <div className="job-cancelled">
+            <span className="cancelled-text">Training was cancelled</span>
+          </div>
+        )}
+
         {(job.status === 'pending' || job.status === 'queued') && (
           <div className="job-waiting">
             <span className="waiting-text">Waiting for worker to pick up job...</span>
@@ -241,12 +303,36 @@ function JobCard({ job }: JobCardProps) {
       {job.completed_at && (
         <div className="job-footer">
           <span className="job-completed">
-            Completed: {formatDate(job.completed_at)}
+            {job.status === 'cancelled' ? 'Cancelled' : 'Completed'}: {formatDate(job.completed_at)}
           </span>
         </div>
       )}
     </div>
   )
+}
+
+/**
+ * Formats the progress phase for display.
+ *
+ * @param progress - Progress object
+ */
+function formatProgressPhase(progress: TrainingJob['progress']): string {
+  if (!progress) return 'Training...'
+
+  switch (progress.phase) {
+    case 'initializing':
+      return 'Initializing...'
+    case 'loading_data':
+      return 'Loading training data...'
+    case 'preparing_data':
+      return 'Preparing datasets...'
+    case 'training':
+      return `Epoch ${progress.current_epoch}/${progress.total_epochs}`
+    case 'saving_model':
+      return 'Saving model...'
+    default:
+      return `${progress.phase} (${progress.current_epoch}/${progress.total_epochs})`
+  }
 }
 
 /**
@@ -266,6 +352,8 @@ function getStatusInfo(status: string): { icon: string; label: string } {
       return { icon: '✓', label: 'Completed' }
     case 'failed':
       return { icon: '✗', label: 'Failed' }
+    case 'cancelled':
+      return { icon: '⊘', label: 'Cancelled' }
     default:
       return { icon: '?', label: status }
   }

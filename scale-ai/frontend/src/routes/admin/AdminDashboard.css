@@ -452,11 +452,22 @@
   border-left-color: #ef4444;
 }
 
+.job-card.status-cancelled {
+  border-left-color: #94a3b8;
+  opacity: 0.8;
+}
+
 .job-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.5rem;
+}
+
+.job-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .job-status {
@@ -491,6 +502,27 @@
   color: #991b1b;
 }
 
+.job-status.cancelled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.cancel-btn {
+  padding: 0.25rem 0.75rem;
+  background: transparent;
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-btn:hover {
+  background: #fee2e2;
+}
+
 .job-date {
   font-size: 0.75rem;
   color: #94a3b8;
@@ -513,13 +545,25 @@
   overflow: hidden;
 }
 
-.progress-fill.running {
+.progress-fill {
   height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.running {
   width: 100%;
   background: linear-gradient(90deg, #8b5cf6, #a78bfa, #8b5cf6);
   background-size: 200% 100%;
   animation: progress-animation 1.5s linear infinite;
-  border-radius: 3px;
+}
+
+.progress-metrics {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
 @keyframes progress-animation {
@@ -578,6 +622,16 @@
 .waiting-text {
   font-size: 0.75rem;
   color: #64748b;
+  font-style: italic;
+}
+
+.job-cancelled {
+  padding: 0.25rem 0;
+}
+
+.cancelled-text {
+  font-size: 0.75rem;
+  color: #94a3b8;
   font-style: italic;
 }
 

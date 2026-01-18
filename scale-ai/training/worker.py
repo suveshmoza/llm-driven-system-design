@@ -121,15 +121,22 @@ def update_job_status(
     metrics: dict | None = None,
     model_path: str | None = None,
     error_message: str | None = None,
+    progress: dict | None = None,
 ):
     """Update training job status in database."""
     with conn.cursor() as cur:
         if status == 'running':
-            cur.execute(
-                "UPDATE training_jobs SET status = %s, started_at = NOW() WHERE id = %s",
-                (status, job_id)
-            )
-        elif status in ('completed', 'failed'):
+            if progress:
+                cur.execute(
+                    "UPDATE training_jobs SET status = %s, started_at = NOW(), progress = %s WHERE id = %s",
+                    (status, json.dumps(progress), job_id)
+                )
+            else:
+                cur.execute(
+                    "UPDATE training_jobs SET status = %s, started_at = NOW() WHERE id = %s",
+                    (status, job_id)
+                )
+        elif status in ('completed', 'failed', 'cancelled'):
             cur.execute(
                 """UPDATE training_jobs
                    SET status = %s, completed_at = NOW(),
@@ -143,6 +150,29 @@ def update_job_status(
                 (status, job_id)
             )
         conn.commit()
+
+
+def update_job_progress(conn, job_id: str, progress: dict):
+    """Update training job progress in database."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE training_jobs SET progress = %s WHERE id = %s",
+            (json.dumps(progress), job_id)
+        )
+        conn.commit()
+
+
+def check_job_cancelled(conn, job_id: str) -> bool:
+    """Check if a job has been cancelled."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM training_jobs WHERE id = %s",
+            (job_id,)
+        )
+        row = cur.fetchone()
+        if row and row[0] == 'cancelled':
+            return True
+    return False
 
 
 def fetch_training_data(conn, config: dict) -> list[dict[str, Any]]:
@@ -179,8 +209,19 @@ def train_model(
     val_loader: DataLoader,
     config: dict,
     device: torch.device,
+    progress_callback=None,
+    cancellation_checker=None,
 ) -> tuple[nn.Module, dict]:
-    """Train the model and return it with metrics."""
+    """Train the model and return it with metrics.
+
+    Args:
+        train_loader: DataLoader for training data
+        val_loader: DataLoader for validation data
+        config: Training configuration
+        device: PyTorch device to use
+        progress_callback: Optional callback(progress_dict) called after each epoch
+        cancellation_checker: Optional callback() returns True if job was cancelled
+    """
     epochs = config.get('epochs', 10)
     lr = config.get('learning_rate', 0.001)
     num_classes = len(SHAPE_NAMES)
@@ -197,6 +238,11 @@ def train_model(
     history = {'train_loss': [], 'val_loss': [], 'val_acc': []}
 
     for epoch in range(epochs):
+        # Check for cancellation at start of each epoch
+        if cancellation_checker and cancellation_checker():
+            print(f"Job cancelled at epoch {epoch + 1}")
+            raise Exception("Training cancelled by user")
+
         # Training
         model.train()
         train_loss = 0.0
@@ -247,6 +293,17 @@ def train_model(
         history['val_acc'].append(val_acc)
 
         print(f"  Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+
+        # Report progress after each epoch
+        if progress_callback:
+            progress_callback({
+                'current_epoch': epoch + 1,
+                'total_epochs': epochs,
+                'train_loss': round(train_loss, 4),
+                'val_loss': round(val_loss, 4),
+                'val_accuracy': round(val_acc, 4),
+                'phase': 'training',
+            })
 
         # Save best model
         if val_acc > best_val_acc:
@@ -342,12 +399,30 @@ def process_job(job_id: str, config: dict):
     conn = get_db_connection()
     minio_client = get_minio_client()
 
+    # Progress callback that updates the database
+    def report_progress(progress: dict):
+        update_job_progress(conn, job_id, progress)
+
+    # Cancellation checker
+    def is_cancelled() -> bool:
+        return check_job_cancelled(conn, job_id)
+
     try:
-        # Update status to running
-        update_job_status(conn, job_id, 'running')
+        # Check if already cancelled before starting
+        if is_cancelled():
+            print(f"Job {job_id} was cancelled before starting")
+            return
+
+        # Update status to running with initial progress
+        update_job_status(conn, job_id, 'running', progress={
+            'phase': 'initializing',
+            'current_epoch': 0,
+            'total_epochs': config.get('epochs', 10),
+        })
 
         # Fetch training data
         print("Fetching training data...")
+        report_progress({'phase': 'loading_data', 'current_epoch': 0, 'total_epochs': config.get('epochs', 10)})
         drawings = fetch_training_data(conn, config)
         print(f"Found {len(drawings)} drawings")
 
@@ -363,6 +438,7 @@ def process_job(job_id: str, config: dict):
         print(f"Train: {len(train_drawings)}, Val: {len(val_drawings)}")
 
         # Create datasets
+        report_progress({'phase': 'preparing_data', 'current_epoch': 0, 'total_epochs': config.get('epochs', 10)})
         train_dataset = DrawingDataset(train_drawings, minio_client, augment=True)
         val_dataset = DrawingDataset(val_drawings, minio_client, augment=False)
 
@@ -370,15 +446,23 @@ def process_job(job_id: str, config: dict):
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-        # Train model
+        # Train model with progress reporting and cancellation checking
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Training on: {device}")
 
-        model, metrics = train_model(train_loader, val_loader, config, device)
+        model, metrics = train_model(
+            train_loader,
+            val_loader,
+            config,
+            device,
+            progress_callback=report_progress,
+            cancellation_checker=is_cancelled,
+        )
         print(f"\nFinal accuracy: {metrics['accuracy']:.4f}")
 
         # Save model to MinIO
         print("Saving model to MinIO...")
+        report_progress({'phase': 'saving_model', 'current_epoch': config.get('epochs', 10), 'total_epochs': config.get('epochs', 10)})
         model_path = save_model_to_minio(model, job_id, minio_client)
 
         # Create model record
@@ -389,8 +473,15 @@ def process_job(job_id: str, config: dict):
         print(f"Job {job_id} completed successfully!")
 
     except Exception as e:
-        print(f"Job {job_id} failed: {e}")
-        update_job_status(conn, job_id, 'failed', error_message=str(e))
+        error_msg = str(e)
+        print(f"Job {job_id} failed: {error_msg}")
+
+        # Check if it was a cancellation
+        if 'cancelled' in error_msg.lower():
+            # Status already set to cancelled by the admin endpoint
+            print(f"Job {job_id} was cancelled")
+        else:
+            update_job_status(conn, job_id, 'failed', error_message=error_msg)
         raise
 
     finally:

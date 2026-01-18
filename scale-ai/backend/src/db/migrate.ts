@@ -44,8 +44,63 @@ async function migrate() {
     }
   }
 
+  // Run incremental migrations for existing databases
+  await runIncrementalMigrations()
+
   console.log('Migrations complete!')
   await pool.end()
+}
+
+/**
+ * Runs incremental ALTER TABLE migrations for existing databases.
+ * These migrations add new columns and constraints to existing tables.
+ */
+async function runIncrementalMigrations() {
+  console.log('Checking for incremental migrations...')
+
+  // Migration: Add progress column to training_jobs
+  try {
+    await pool.query(`
+      ALTER TABLE training_jobs
+      ADD COLUMN IF NOT EXISTS progress JSONB DEFAULT '{}'
+    `)
+    console.log('✓ Added progress column to training_jobs')
+  } catch (error) {
+    // Column might already exist
+    if (!(error as Error).message.includes('already exists')) {
+      console.log('⊘ progress column already exists')
+    }
+  }
+
+  // Migration: Update status check constraint to include 'cancelled'
+  // First, check if 'cancelled' is already in the constraint
+  try {
+    const result = await pool.query(`
+      SELECT conname, pg_get_constraintdef(oid) as definition
+      FROM pg_constraint
+      WHERE conrelid = 'training_jobs'::regclass
+        AND conname = 'training_jobs_status_check'
+    `)
+
+    if (result.rows.length > 0) {
+      const definition = result.rows[0].definition
+      if (!definition.includes('cancelled')) {
+        // Need to recreate the constraint with 'cancelled' included
+        await pool.query('ALTER TABLE training_jobs DROP CONSTRAINT training_jobs_status_check')
+        await pool.query(`
+          ALTER TABLE training_jobs
+          ADD CONSTRAINT training_jobs_status_check
+          CHECK (status IN ('pending', 'queued', 'running', 'completed', 'failed', 'cancelled'))
+        `)
+        console.log('✓ Updated training_jobs status constraint to include cancelled')
+      } else {
+        console.log('⊘ training_jobs status constraint already includes cancelled')
+      }
+    }
+  } catch (error) {
+    // Constraint might not exist or already be correct
+    console.log('⊘ Could not update status constraint (may already be correct)')
+  }
 }
 
 migrate().catch((err) => {

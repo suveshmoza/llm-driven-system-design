@@ -172,6 +172,18 @@ export interface Drawing {
 }
 
 /**
+ * Progress info for a running training job.
+ */
+export interface TrainingProgress {
+  phase: string
+  current_epoch: number
+  total_epochs: number
+  train_loss?: number
+  val_loss?: number
+  val_accuracy?: number
+}
+
+/**
  * Training job status and metadata.
  */
 export interface TrainingJob {
@@ -181,6 +193,7 @@ export interface TrainingJob {
   started_at: string | null
   completed_at: string | null
   accuracy: string | null
+  progress: TrainingProgress | null
 }
 
 /**
@@ -407,6 +420,23 @@ export async function getTrainingJobs(): Promise<TrainingJob[]> {
   const response = await adminFetch('/api/admin/training')
   if (!response.ok) throw new Error('Failed to fetch training jobs')
   return response.json()
+}
+
+/**
+ * Cancels a training job.
+ * Only pending, queued, or running jobs can be cancelled.
+ *
+ * @param id - Training job ID to cancel
+ * @throws Error if job cannot be cancelled
+ */
+export async function cancelTrainingJob(id: string): Promise<void> {
+  const response = await adminFetch(`/api/admin/training/${id}/cancel`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const data = await response.json()
+    throw new Error(data.error || 'Failed to cancel training job')
+  }
 }
 
 /**
