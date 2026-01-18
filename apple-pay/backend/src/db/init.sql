@@ -140,4 +140,4 @@ CREATE TABLE IF NOT EXISTS token_atc (
 
 CREATE INDEX IF NOT EXISTS idx_token_atc_updated ON token_atc(updated_at DESC);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

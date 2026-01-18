@@ -160,4 +160,4 @@ CREATE TABLE sessions (
 
 CREATE INDEX idx_sessions_expire ON sessions(expire);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

@@ -108,4 +108,4 @@ CREATE TABLE IF NOT EXISTS session (
 
 CREATE INDEX idx_session_expire ON session(expire);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

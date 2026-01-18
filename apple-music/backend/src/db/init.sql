@@ -249,4 +249,4 @@ CREATE TRIGGER trigger_update_playlist_totals
 AFTER INSERT OR UPDATE OR DELETE ON playlist_tracks
 FOR EACH ROW EXECUTE FUNCTION update_playlist_totals();
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
