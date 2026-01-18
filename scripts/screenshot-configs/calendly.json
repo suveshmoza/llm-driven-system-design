@@ -25,28 +25,48 @@
       "delay": 500
     },
     {
-      "name": "02-dashboard",
+      "name": "02-register",
+      "path": "/register",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "03-dashboard",
       "path": "/dashboard",
       "waitFor": "main",
       "delay": 1000
     },
     {
-      "name": "03-meeting-types",
+      "name": "04-meeting-types",
       "path": "/meeting-types",
       "waitFor": "main",
       "delay": 500
     },
     {
-      "name": "04-availability",
+      "name": "05-availability",
       "path": "/availability",
       "waitFor": "main",
       "delay": 500
     },
     {
-      "name": "05-bookings",
+      "name": "06-bookings",
       "path": "/bookings",
       "waitFor": "main",
       "delay": 500
+    },
+    {
+      "name": "07-booking-detail",
+      "path": "/bookings/bk511111-1111-1111-1111-111111111111",
+      "waitFor": "main",
+      "delay": 500
+    },
+    {
+      "name": "08-book-calendar",
+      "path": "/book/4611eebc-9c0b-4ef8-bb6d-6bb9bd380a11",
+      "waitFor": "main",
+      "skipAuth": true,
+      "delay": 1500
     }
   ],
   "viewport": {
