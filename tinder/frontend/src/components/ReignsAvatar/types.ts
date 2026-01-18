@@ -52,15 +52,15 @@ export interface AvatarFeatures {
   hasNecklace: boolean;
   /** Whether to render earrings (feminine only) */
   hasEarrings: boolean;
-  /** Eye size multiplier (0.8-1.2) */
+  /** Eye size multiplier (0.85-1.05) */
   eyeSize: number;
-  /** Nose size multiplier (0.8-1.2) */
+  /** Nose size multiplier (0.9-1.1) */
   noseSize: number;
-  /** Lip size multiplier (0.8-1.2) */
+  /** Lip size multiplier (0.85-1.05) */
   lipSize: number;
-  /** Eyebrow thickness multiplier (0.6-1.2) */
+  /** Eyebrow thickness multiplier (0.5-0.8) */
   browThickness: number;
-  /** Cheekbone prominence (0-1) */
+  /** Cheekbone prominence (0.2-0.6) */
   cheekbones: number;
 }
 

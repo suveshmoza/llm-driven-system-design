@@ -22,12 +22,11 @@ export interface SkinPalette {
  * Each palette includes base, shadow, and highlight colors for realistic rendering.
  */
 export const SKIN_PALETTES: SkinPalette[] = [
-  { base: '#F5DEB3', shadow: '#DEB887', highlight: '#FFF8DC' }, // Wheat
-  { base: '#D2B48C', shadow: '#BC8F8F', highlight: '#F5DEB3' }, // Tan
-  { base: '#FFDAB9', shadow: '#E6C9A8', highlight: '#FFF5EE' }, // Peach
-  { base: '#8B7355', shadow: '#6B5344', highlight: '#A08060' }, // Brown
-  { base: '#CD853F', shadow: '#A0522D', highlight: '#DEB887' }, // Peru
-  { base: '#F4E4D0', shadow: '#E8D4B8', highlight: '#FFFAF0' }, // Cream
+  { base: '#E7D3C0', shadow: '#CBB7A3', highlight: '#F4E7D9' }, // Porcelain
+  { base: '#D9C1A6', shadow: '#B79F86', highlight: '#EAD9C5' }, // Warm beige
+  { base: '#C7A98E', shadow: '#A3866D', highlight: '#D9C2AE' }, // Honey
+  { base: '#9F7F65', shadow: '#7D624E', highlight: '#B4947A' }, // Umber
+  { base: '#F0E2D5', shadow: '#D7C8BA', highlight: '#FAF3EB' }, // Almond
 ];
 
 /**
@@ -45,14 +44,11 @@ export interface HairColorPalette {
  * Each palette includes base and highlight colors for gradient effects.
  */
 export const HAIR_COLORS: HairColorPalette[] = [
-  { base: '#2C1810', highlight: '#4A3728' }, // Dark brown
-  { base: '#8B4513', highlight: '#A0522D' }, // Saddle brown
-  { base: '#FFD700', highlight: '#FFF8DC' }, // Golden
-  { base: '#B87333', highlight: '#CD853F' }, // Copper
-  { base: '#1C1C1C', highlight: '#383838' }, // Black
-  { base: '#C0C0C0', highlight: '#E8E8E8' }, // Silver
-  { base: '#8B0000', highlight: '#B22222' }, // Dark red
-  { base: '#D2691E', highlight: '#E9967A' }, // Chocolate
+  { base: '#2B1E16', highlight: '#3D2D23' }, // Espresso
+  { base: '#503626', highlight: '#6B4A35' }, // Chestnut
+  { base: '#7A5A3B', highlight: '#8E6A4A' }, // Hazel
+  { base: '#1F1F1F', highlight: '#353535' }, // Charcoal
+  { base: '#C2B8A3', highlight: '#D6CDBC' }, // Ash
 ];
 
 /**
@@ -60,14 +56,11 @@ export const HAIR_COLORS: HairColorPalette[] = [
  * Covers common natural eye colors with varied tones.
  */
 export const EYE_COLORS: string[] = [
-  '#4169E1', // Royal blue
-  '#228B22', // Forest green
-  '#8B4513', // Saddle brown
-  '#2F4F4F', // Dark slate
-  '#6B8E23', // Olive
-  '#4682B4', // Steel blue
-  '#556B2F', // Dark olive
-  '#8B7355', // Hazel
+  '#3F3A32', // Umber
+  '#5B6B5B', // Sage
+  '#6C7A89', // Slate
+  '#4F6A8C', // Dusty blue
+  '#7A6350', // Hazel
 ];
 
 /**
@@ -88,14 +81,11 @@ export interface ClothingPalette {
  * Each palette creates a cohesive royal aesthetic.
  */
 export const CLOTHING_PALETTES: ClothingPalette[] = [
-  { primary: '#8B0000', secondary: '#FFD700', accent: '#FFF8DC' }, // Royal red
-  { primary: '#191970', secondary: '#C0C0C0', accent: '#B8860B' }, // Midnight blue
-  { primary: '#2F4F4F', secondary: '#D4AF37', accent: '#F0E68C' }, // Dark slate
-  { primary: '#4B0082', secondary: '#DDA0DD', accent: '#FFD700' }, // Indigo
-  { primary: '#006400', secondary: '#DAA520', accent: '#FFFACD' }, // Dark green
-  { primary: '#800020', secondary: '#FFE4E1', accent: '#C0C0C0' }, // Burgundy
-  { primary: '#483D8B', secondary: '#E6E6FA', accent: '#B8860B' }, // Dark slate blue
-  { primary: '#2E8B57', secondary: '#F0FFF0', accent: '#DAA520' }, // Sea green
+  { primary: '#4B4A57', secondary: '#B7B0A3', accent: '#D8D1C6' }, // Stone plum
+  { primary: '#2F3B45', secondary: '#A9AFAE', accent: '#D2D7D6' }, // Slate navy
+  { primary: '#4A3A2F', secondary: '#C2B4A2', accent: '#E3D7C7' }, // Warm taupe
+  { primary: '#3E4B3E', secondary: '#B9C1B2', accent: '#DDE5D8' }, // Moss
+  { primary: '#5A3E45', secondary: '#CBB6B7', accent: '#E8DADA' }, // Dusty rose
 ];
 
 /**
@@ -103,8 +93,7 @@ export const CLOTHING_PALETTES: ClothingPalette[] = [
  * Represents gold, silver, and bronze metal finishes.
  */
 export const ACCESSORY_COLORS: string[] = [
-  '#FFD700', // Gold
-  '#C0C0C0', // Silver
-  '#B8860B', // Dark gold
-  '#CD853F', // Peru (bronze)
+  '#C7B48A', // Soft gold
+  '#AFA79A', // Brushed silver
+  '#8F7C5E', // Antique bronze
 ];
