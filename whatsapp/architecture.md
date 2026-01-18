@@ -1671,3 +1671,246 @@ GET /ready  - Can accept traffic (readiness probe)
 
 **Implementation**: See `/backend/src/index.ts` health endpoints
 
+---
+
+## Advanced Frontend Features
+
+This section documents the advanced frontend capabilities for offline-first functionality, performance optimization, and enhanced user experience.
+
+### Progressive Web App (PWA)
+
+**Purpose**: Enable app-like experience with offline capabilities, install prompt, and background sync.
+
+**Configuration** (`vite.config.ts`):
+```typescript
+import { VitePWA } from 'vite-plugin-pwa';
+
+VitePWA({
+  registerType: 'autoUpdate',
+  manifest: {
+    name: 'WhatsApp Clone',
+    short_name: 'WhatsApp',
+    theme_color: '#075e54',
+    background_color: '#111b21',
+    display: 'standalone',
+    icons: [
+      { src: '/whatsapp-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/whatsapp-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ]
+  },
+  workbox: {
+    globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+    runtimeCaching: [
+      {
+        urlPattern: /^https:\/\/api\./i,
+        handler: 'NetworkFirst',
+        options: {
+          cacheName: 'api-cache',
+          expiration: { maxAgeSeconds: 86400 }
+        }
+      }
+    ]
+  }
+})
+```
+
+**Key Features**:
+- Service worker caches static assets for offline access
+- `NetworkFirst` strategy for API calls with 24-hour fallback
+- App can be installed on desktop/mobile home screen
+- Automatic updates when new version is deployed
+
+**Implementation**: See `/frontend/vite.config.ts`, `/frontend/src/components/OfflineIndicator.tsx`
+
+---
+
+### IndexedDB for Offline Capabilities
+
+**Purpose**: Store conversations and messages locally for offline access and faster load times.
+
+**Database Schema** (Dexie):
+```typescript
+class WhatsAppDatabase extends Dexie {
+  pendingMessages!: Table<PendingMessage, string>;  // Offline queue
+  conversations!: Table<CachedConversation, string>; // Cached conversations
+  messages!: Table<CachedMessage, string>;           // Cached messages
+  syncMetadata!: Table<SyncMetadata, string>;        // Sync timestamps
+}
+
+// Indexes for efficient queries
+pendingMessages: 'clientMessageId, conversationId, status, createdAt'
+messages: 'id, conversationId, createdAt, [conversationId+createdAt]'
+```
+
+**Offline Sync Flow**:
+```
+User sends message while offline:
+1. Message queued in IndexedDB with status='pending'
+2. UI shows message with 'sending' indicator
+3. When online, sync service retries pending messages
+4. On success, message removed from queue
+5. On failure (3 retries), marked as 'failed'
+```
+
+**Key Features**:
+- Messages cached on fetch for offline viewing
+- Pending message queue with retry logic (max 3 attempts)
+- Automatic cache pruning (7 days retention)
+- Sync timestamps to minimize data fetched on reconnect
+
+**Implementation**: See `/frontend/src/db/database.ts`, `/frontend/src/services/offlineSync.ts`
+
+---
+
+### Infinite Scroll with Virtualization
+
+**Purpose**: Efficiently render large message histories without performance degradation.
+
+**Why Virtualization?**
+
+| Messages | Without Virtualization | With Virtualization |
+|----------|------------------------|---------------------|
+| 100 | ~100 DOM nodes | ~15 DOM nodes |
+| 1,000 | ~1,000 DOM nodes (lag) | ~15 DOM nodes |
+| 10,000 | ~10,000 DOM nodes (crash) | ~15 DOM nodes |
+
+**Implementation** (`@tanstack/react-virtual`):
+```typescript
+const virtualizer = useVirtualizer({
+  count: messages.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: () => 60,    // Estimated message height
+  overscan: 5,               // Extra items rendered above/below
+  getItemKey: (index) => messages[index].id,
+});
+
+// Dynamic height measurement for accurate positioning
+ref={virtualizer.measureElement}
+```
+
+**Infinite Scroll Logic**:
+```
+Scroll Handler:
+1. User scrolls up past threshold (100px from top)
+2. Check hasMore && !isLoading
+3. Call loadMoreMessages() with beforeId cursor
+4. Prepend older messages to array
+5. Maintain scroll position during prepend
+```
+
+**Pagination API**:
+```
+GET /api/messages/:conversationId?limit=50&before=<messageId>
+
+Response: { messages: [...] }
+- If messages.length === 50, hasMore = true
+- If messages.length < 50, hasMore = false
+```
+
+**Implementation**: See `/frontend/src/components/MessageList.tsx`, `/frontend/src/stores/chatStore.ts`
+
+---
+
+### Message Reactions
+
+**Purpose**: Allow users to react to messages with emoji, similar to modern messaging apps.
+
+**Database Schema**:
+```sql
+CREATE TABLE message_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    emoji VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(message_id, user_id, emoji)  -- One reaction per emoji per user
+);
+CREATE INDEX idx_reactions_message ON message_reactions(message_id);
+```
+
+**Allowed Emojis** (limited set for consistent display):
+```typescript
+const ALLOWED_EMOJIS = ['❤️', '😂', '😮', '😢', '😠', '👍'];
+```
+
+**API Endpoints**:
+```
+POST /api/messages/:conversationId/:messageId/reactions
+Body: { emoji: "❤️" }
+Response: { reaction: {...}, reactions: ReactionSummary[] }
+
+DELETE /api/messages/:conversationId/:messageId/reactions/:emoji
+Response: { success: true, reactions: ReactionSummary[] }
+
+GET /api/messages/:conversationId/:messageId/reactions
+Response: { reactions: ReactionSummary[], allowedEmojis: string[] }
+```
+
+**Real-time Updates via WebSocket**:
+```typescript
+// Server broadcasts reaction changes
+{
+  type: 'reaction_update',
+  payload: {
+    conversationId: 'uuid',
+    messageId: 'uuid',
+    reactions: [
+      { emoji: '❤️', count: 3, userReacted: true },
+      { emoji: '😂', count: 1, userReacted: false }
+    ],
+    actorId: 'uuid'
+  }
+}
+```
+
+**UI Interaction**:
+1. Double-click or hover+click on message to open reaction picker
+2. Select emoji to toggle reaction (add if not reacted, remove if already reacted)
+3. Reactions displayed below message bubble with counts
+4. Real-time sync across all participants
+
+**Implementation**:
+- Backend: `/backend/src/services/reactionService.ts`, `/backend/src/routes/messages.ts`
+- Frontend: `/frontend/src/components/ReactionPicker.tsx`, `/frontend/src/components/MessageReactions.tsx`
+- WebSocket: `/backend/src/websocket.ts` - `broadcastReactionUpdate()`
+
+---
+
+### Offline Indicator
+
+**Purpose**: Provide clear visual feedback when the user is offline.
+
+**States**:
+| State | UI | Behavior |
+|-------|-----|----------|
+| Online | No indicator | Normal operation |
+| Offline | Red banner: "You're offline. Messages will be sent when you reconnect." | Queue messages locally |
+| Reconnected | Green banner: "Back online!" (auto-dismiss after 3s) | Sync pending messages |
+
+**Implementation**: See `/frontend/src/hooks/useOnlineStatus.ts`, `/frontend/src/components/OfflineIndicator.tsx`
+
+---
+
+### Frontend Architecture Summary
+
+```
+/frontend/src/
+├── components/
+│   ├── ChatView.tsx         # Main chat interface
+│   ├── MessageList.tsx      # Virtualized message list
+│   ├── MessageBubble.tsx    # Individual message rendering
+│   ├── MessageReactions.tsx # Reaction badges display
+│   ├── ReactionPicker.tsx   # Emoji selection popup
+│   └── OfflineIndicator.tsx # Online/offline status banner
+├── hooks/
+│   ├── useWebSocket.ts      # WebSocket connection + reaction handling
+│   └── useOnlineStatus.ts   # Browser online/offline detection
+├── stores/
+│   └── chatStore.ts         # Zustand: messages, pagination, reactions
+├── db/
+│   └── database.ts          # Dexie IndexedDB schema
+└── services/
+    ├── api.ts               # REST API client + reactions
+    └── offlineSync.ts       # Offline message queue + cache
+```
+

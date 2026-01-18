@@ -51,6 +51,7 @@ export function useWebSocket() {
     currentConversationId,
     updateConversationLastMessage,
     loadConversations,
+    updateMessageReactions,
   } = useChatStore();
 
   const currentConversationIdRef = useRef(currentConversationId);
@@ -167,6 +168,15 @@ export function useWebSocket() {
           break;
         }
 
+        case 'reaction_update': {
+          const payload = message.payload as {
+            messageId: string;
+            reactions: Array<{ emoji: string; count: number; userReacted: boolean }>;
+          };
+          updateMessageReactions(payload.messageId, payload.reactions);
+          break;
+        }
+
         case 'error': {
           console.error('WebSocket error from server:', message.payload);
           break;
@@ -182,6 +192,7 @@ export function useWebSocket() {
       updatePresence,
       updateConversationLastMessage,
       loadConversations,
+      updateMessageReactions,
     ]
   );
 

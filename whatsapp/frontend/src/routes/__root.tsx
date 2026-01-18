@@ -9,6 +9,7 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
+import { OfflineIndicator } from '../components/OfflineIndicator';
 
 /**
  * Root component that checks authentication on mount.
@@ -32,7 +33,12 @@ function RootComponent() {
     );
   }
 
-  return <Outlet />;
+  return (
+    <>
+      <OfflineIndicator />
+      <Outlet />
+    </>
+  );
 }
 
 /**

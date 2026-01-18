@@ -16,7 +16,7 @@ import {
   getPendingMessagesForUser,
   markConversationAsRead,
 } from './services/messageService.js';
-import { WSMessage, WSChatMessage, WSTypingMessage, WSReadReceiptMessage } from './types/index.js';
+import { WSMessage, WSChatMessage, WSTypingMessage, WSReadReceiptMessage, ReactionSummary } from './types/index.js';
 
 // Shared modules for observability and resilience
 import { createServiceLogger, LogEvents, logEvent } from './shared/logger.js';
@@ -694,7 +694,8 @@ async function handleRedisMessage(data: any) {
     }
 
     case 'forward_typing':
-    case 'forward_receipt': {
+    case 'forward_receipt':
+    case 'forward_reaction': {
       const socket = connections.get(data.recipientId);
       if (socket) {
         sendToSocket(socket, data.payload);
@@ -725,4 +726,62 @@ function sendToSocket(socket: WebSocket, message: any) {
  */
 export function getConnectionCount(): number {
   return connections.size;
+}
+
+/**
+ * Broadcasts a reaction update to all participants in a conversation.
+ * Called when a reaction is added or removed via REST API.
+ * Uses local delivery for same-server recipients, Redis pub/sub for others.
+ *
+ * @param conversationId - The conversation containing the message
+ * @param messageId - The message that was reacted to
+ * @param reactions - The updated reaction summaries
+ * @param actorId - The user who added/removed the reaction
+ */
+export async function broadcastReactionUpdate(
+  conversationId: string,
+  messageId: string,
+  reactions: ReactionSummary[],
+  actorId: string
+): Promise<void> {
+  try {
+    const participants = await getConversationParticipants(conversationId);
+
+    const reactionPayload = {
+      type: 'reaction_update',
+      payload: {
+        conversationId,
+        messageId,
+        reactions,
+        actorId,
+        timestamp: new Date(),
+      },
+    };
+
+    for (const participant of participants) {
+      const recipientServer = await getUserServer(participant.user_id);
+
+      if (recipientServer === config.serverId) {
+        // Local delivery
+        const recipientSocket = connections.get(participant.user_id);
+        if (recipientSocket) {
+          sendToSocket(recipientSocket, reactionPayload);
+        }
+      } else if (recipientServer) {
+        // Route through Redis pub/sub to other server
+        await withRedisCircuit(async () => {
+          await redisPub.publish(
+            KEYS.serverChannel(recipientServer),
+            JSON.stringify({
+              type: 'forward_reaction',
+              recipientId: participant.user_id,
+              payload: reactionPayload,
+            })
+          );
+        });
+      }
+    }
+  } catch (error) {
+    wsLogger.error({ error, conversationId, messageId }, 'Error broadcasting reaction update');
+  }
 }

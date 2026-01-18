@@ -124,3 +124,38 @@ export const messagesApi = {
       method: 'POST',
     }),
 };
+
+/**
+ * Reaction summary returned from the API.
+ */
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  userReacted: boolean;
+}
+
+/**
+ * Reaction API endpoints.
+ * Handles adding, removing, and fetching reactions for messages.
+ */
+export const reactionsApi = {
+  get: (conversationId: string, messageId: string) =>
+    request<{ reactions: ReactionSummary[]; allowedEmojis: string[] }>(
+      `/messages/${conversationId}/${messageId}/reactions`
+    ),
+
+  add: (conversationId: string, messageId: string, emoji: string) =>
+    request<{ reaction: unknown; reactions: ReactionSummary[] }>(
+      `/messages/${conversationId}/${messageId}/reactions`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      }
+    ),
+
+  remove: (conversationId: string, messageId: string, emoji: string) =>
+    request<{ success: boolean; reactions: ReactionSummary[] }>(
+      `/messages/${conversationId}/${messageId}/reactions/${encodeURIComponent(emoji)}`,
+      { method: 'DELETE' }
+    ),
+};

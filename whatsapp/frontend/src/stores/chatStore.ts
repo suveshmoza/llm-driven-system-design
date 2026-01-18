@@ -3,14 +3,15 @@
  *
  * Manages messaging state using Zustand including:
  * - Conversation list and current selection
- * - Message history per conversation
+ * - Message history per conversation with pagination
  * - Typing indicators and user presence
  * - Pending message tracking for optimistic updates
+ * - Message reactions
  */
 
 import { create } from 'zustand';
 import { Conversation, Message, MessageStatus, PresenceInfo } from '../types';
-import { conversationsApi, messagesApi } from '../services/api';
+import { conversationsApi, messagesApi, reactionsApi, ReactionSummary } from '../services/api';
 
 /**
  * Chat state interface.
@@ -25,10 +26,15 @@ interface ChatState {
   pendingMessages: Map<string, Message>; // clientMessageId -> message
   isLoadingConversations: boolean;
   isLoadingMessages: boolean;
+  hasMoreMessages: Record<string, boolean>; // conversationId -> hasMore
+  oldestMessageId: Record<string, string | null>; // conversationId -> oldest message id
+  messageReactions: Record<string, ReactionSummary[]>; // messageId -> reactions
+  isLoadingMoreMessages: boolean;
 
   // Actions
   loadConversations: () => Promise<void>;
   loadMessages: (conversationId: string) => Promise<void>;
+  loadMoreMessages: (conversationId: string) => Promise<void>;
   setCurrentConversation: (conversationId: string | null) => void;
   addMessage: (message: Message) => void;
   updateMessageStatus: (messageId: string, status: MessageStatus) => void;
@@ -38,6 +44,8 @@ interface ChatState {
   updatePresence: (userId: string, status: 'online' | 'offline', lastSeen?: number) => void;
   addConversation: (conversation: Conversation) => void;
   updateConversationLastMessage: (conversationId: string, message: Message) => void;
+  toggleReaction: (conversationId: string, messageId: string, emoji: string) => Promise<void>;
+  updateMessageReactions: (messageId: string, reactions: ReactionSummary[]) => void;
 }
 
 /**
@@ -53,6 +61,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingMessages: new Map(),
   isLoadingConversations: false,
   isLoadingMessages: false,
+  hasMoreMessages: {},
+  oldestMessageId: {},
+  messageReactions: {},
+  isLoadingMoreMessages: false,
 
   loadConversations: async () => {
     set({ isLoadingConversations: true });
@@ -69,16 +81,60 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isLoadingMessages: true });
     try {
       const { messages } = await messagesApi.list(conversationId, 50);
+      const oldestId = messages.length > 0 ? messages[0].id : null;
       set((state) => ({
         messages: {
           ...state.messages,
           [conversationId]: messages,
+        },
+        hasMoreMessages: {
+          ...state.hasMoreMessages,
+          [conversationId]: messages.length === 50,
+        },
+        oldestMessageId: {
+          ...state.oldestMessageId,
+          [conversationId]: oldestId,
         },
         isLoadingMessages: false,
       }));
     } catch (error) {
       console.error('Failed to load messages:', error);
       set({ isLoadingMessages: false });
+    }
+  },
+
+  loadMoreMessages: async (conversationId: string) => {
+    const state = get();
+    if (state.isLoadingMoreMessages || !state.hasMoreMessages[conversationId]) {
+      return;
+    }
+
+    const beforeId = state.oldestMessageId[conversationId];
+    if (!beforeId) return;
+
+    set({ isLoadingMoreMessages: true });
+    try {
+      const { messages: olderMessages } = await messagesApi.list(conversationId, 50, beforeId);
+      const newOldestId = olderMessages.length > 0 ? olderMessages[0].id : beforeId;
+
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [conversationId]: [...olderMessages, ...(state.messages[conversationId] || [])],
+        },
+        hasMoreMessages: {
+          ...state.hasMoreMessages,
+          [conversationId]: olderMessages.length === 50,
+        },
+        oldestMessageId: {
+          ...state.oldestMessageId,
+          [conversationId]: newOldestId,
+        },
+        isLoadingMoreMessages: false,
+      }));
+    } catch (error) {
+      console.error('Failed to load more messages:', error);
+      set({ isLoadingMoreMessages: false });
     }
   },
 
@@ -229,6 +285,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
           (a, b) =>
             new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
         ),
+    }));
+  },
+
+  toggleReaction: async (conversationId: string, messageId: string, emoji: string) => {
+    const state = get();
+    const currentReactions = state.messageReactions[messageId] || [];
+    const existingReaction = currentReactions.find((r) => r.emoji === emoji);
+    const userReacted = existingReaction?.userReacted ?? false;
+
+    try {
+      if (userReacted) {
+        const { reactions } = await reactionsApi.remove(conversationId, messageId, emoji);
+        set((state) => ({
+          messageReactions: {
+            ...state.messageReactions,
+            [messageId]: reactions,
+          },
+        }));
+      } else {
+        const { reactions } = await reactionsApi.add(conversationId, messageId, emoji);
+        set((state) => ({
+          messageReactions: {
+            ...state.messageReactions,
+            [messageId]: reactions,
+          },
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error);
+    }
+  },
+
+  updateMessageReactions: (messageId: string, reactions: ReactionSummary[]) => {
+    set((state) => ({
+      messageReactions: {
+        ...state.messageReactions,
+        [messageId]: reactions,
+      },
     }));
   },
 }));

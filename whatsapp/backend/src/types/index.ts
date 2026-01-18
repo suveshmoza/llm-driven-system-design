@@ -72,6 +72,27 @@ export interface MessageStatusUpdate {
 }
 
 /**
+ * Represents a single reaction on a message.
+ */
+export interface Reaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: Date;
+}
+
+/**
+ * Aggregated reaction summary for displaying reaction counts.
+ * Includes whether the current user has reacted with this emoji.
+ */
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  userReacted: boolean;
+}
+
+/**
  * User online/offline status.
  */
 export type PresenceStatus = 'online' | 'offline';
@@ -99,7 +120,8 @@ export type WSMessageType =
   | 'presence'
   | 'error'
   | 'conversation_update'
-  | 'group_message';
+  | 'group_message'
+  | 'reaction_update';
 
 /**
  * Base WebSocket message structure.
