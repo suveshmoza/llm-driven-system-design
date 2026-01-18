@@ -1,4 +1,4 @@
-import { pool } from './index.js';
+import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../shared/logger.js';
@@ -7,7 +7,23 @@ import { logger } from '../shared/logger.js';
  * Database migration runner.
  * Applies SQL migrations in order, tracking which have been applied.
  * Supports up (apply) and down (rollback) migrations.
+ *
+ * NOTE: This file creates its own PostgreSQL pool instead of importing from
+ * ./index.js to avoid initializing Redis and Elasticsearch connections,
+ * which can cause hangs if those services aren't ready yet.
  */
+
+// Standalone PostgreSQL pool for migrations only
+const pool = new Pool({
+  host: process.env.POSTGRES_HOST || 'localhost',
+  port: parseInt(process.env.POSTGRES_PORT || '5432'),
+  user: process.env.POSTGRES_USER || 'tinder',
+  password: process.env.POSTGRES_PASSWORD || 'tinder_password',
+  database: process.env.POSTGRES_DB || 'tinder_db',
+  max: 5,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000,
+});
 
 // Get the migrations directory relative to current working directory
 // This works with tsx which runs from the backend directory
