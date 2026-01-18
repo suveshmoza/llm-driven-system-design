@@ -114,46 +114,46 @@ ON CONFLICT (device_id, topic) DO NOTHING;
 
 INSERT INTO notifications (id, device_id, topic, payload, priority, expiration, collapse_id, status, created_at) VALUES
     -- Delivered notifications
-    ('n1111111-1111-1111-1111-111111111111',
+    ('aa111111-1111-1111-1111-111111111111',
      'd1111111-1111-1111-1111-111111111111',
      NULL,
      '{"aps": {"alert": {"title": "Welcome!", "body": "Thanks for installing our app"}, "badge": 1, "sound": "default"}}',
      10, NOW() + INTERVAL '1 day', NULL, 'delivered', NOW() - INTERVAL '2 days'),
 
-    ('n2222222-2222-2222-2222-222222222222',
+    ('aa222222-2222-2222-2222-222222222222',
      'd1111111-1111-1111-1111-111111111111',
      'news.breaking',
      '{"aps": {"alert": {"title": "Breaking News", "body": "Major tech announcement today"}, "badge": 2, "sound": "default"}}',
      10, NOW() + INTERVAL '4 hours', 'breaking-news-001', 'delivered', NOW() - INTERVAL '1 hour'),
 
-    ('n3333333-3333-3333-3333-333333333333',
+    ('aa333333-3333-3333-3333-333333333333',
      'd2222222-2222-2222-2222-222222222222',
      'news.sports',
      '{"aps": {"alert": {"title": "Game Update", "body": "Your team scored!"}, "badge": 1, "sound": "cheer.wav"}}',
      5, NOW() + INTERVAL '1 hour', 'sports-game-123', 'delivered', NOW() - INTERVAL '30 minutes'),
 
     -- Pending notifications
-    ('n4444444-4444-4444-4444-444444444444',
+    ('aa444444-4444-4444-4444-444444444444',
      'd4444444-4444-4444-4444-444444444444',
      'marketing.promotions',
      '{"aps": {"alert": {"title": "Flash Sale!", "body": "50% off for the next 24 hours"}, "badge": 1, "sound": "default"}, "data": {"promo_code": "FLASH50"}}',
      5, NOW() + INTERVAL '1 day', 'promo-flash-sale', 'pending', NOW() - INTERVAL '5 minutes'),
 
-    ('n5555555-5555-5555-5555-555555555555',
+    ('aa555555-5555-5555-5555-555555555555',
      'd5555555-5555-5555-5555-555555555555',
      'chat.direct_messages',
      '{"aps": {"alert": {"title": "New Message", "body": "Alice: Hey, are you free tonight?"}, "badge": 3, "sound": "message.wav"}, "data": {"sender_id": "alice123", "thread_id": "thread-456"}}',
      10, NOW() + INTERVAL '1 day', NULL, 'delivered', NOW() - INTERVAL '2 minutes'),
 
     -- Silent push notification
-    ('n6666666-6666-6666-6666-666666666666',
+    ('aa666666-6666-6666-6666-666666666666',
      'd3333333-3333-3333-3333-333333333333',
      NULL,
      '{"aps": {"content-available": 1}, "data": {"action": "sync_data", "version": "2.1.0"}}',
      1, NOW() + INTERVAL '12 hours', 'background-sync', 'delivered', NOW() - INTERVAL '15 minutes'),
 
     -- Failed notification
-    ('n7777777-7777-7777-7777-777777777777',
+    ('aa777777-7777-7777-7777-777777777777',
      'd7777777-7777-7777-7777-777777777777',
      NULL,
      '{"aps": {"alert": {"title": "Test", "body": "This should fail"}, "sound": "default"}}',
@@ -165,12 +165,12 @@ ON CONFLICT (id) DO NOTHING;
 -- ============================================================================
 
 INSERT INTO delivery_log (notification_id, device_id, status, delivered_at, created_at) VALUES
-    ('n1111111-1111-1111-1111-111111111111', 'd1111111-1111-1111-1111-111111111111', 'delivered', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'),
-    ('n2222222-2222-2222-2222-222222222222', 'd1111111-1111-1111-1111-111111111111', 'delivered', NOW() - INTERVAL '59 minutes', NOW() - INTERVAL '1 hour'),
-    ('n3333333-3333-3333-3333-333333333333', 'd2222222-2222-2222-2222-222222222222', 'delivered', NOW() - INTERVAL '29 minutes', NOW() - INTERVAL '30 minutes'),
-    ('n5555555-5555-5555-5555-555555555555', 'd5555555-5555-5555-5555-555555555555', 'delivered', NOW() - INTERVAL '1 minute', NOW() - INTERVAL '2 minutes'),
-    ('n6666666-6666-6666-6666-666666666666', 'd3333333-3333-3333-3333-333333333333', 'delivered', NOW() - INTERVAL '14 minutes', NOW() - INTERVAL '15 minutes'),
-    ('n7777777-7777-7777-7777-777777777777', 'd7777777-7777-7777-7777-777777777777', 'failed', NULL, NOW() - INTERVAL '25 days')
+    ('aa111111-1111-1111-1111-111111111111', 'd1111111-1111-1111-1111-111111111111', 'delivered', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'),
+    ('aa222222-2222-2222-2222-222222222222', 'd1111111-1111-1111-1111-111111111111', 'delivered', NOW() - INTERVAL '59 minutes', NOW() - INTERVAL '1 hour'),
+    ('aa333333-3333-3333-3333-333333333333', 'd2222222-2222-2222-2222-222222222222', 'delivered', NOW() - INTERVAL '29 minutes', NOW() - INTERVAL '30 minutes'),
+    ('aa555555-5555-5555-5555-555555555555', 'd5555555-5555-5555-5555-555555555555', 'delivered', NOW() - INTERVAL '1 minute', NOW() - INTERVAL '2 minutes'),
+    ('aa666666-6666-6666-6666-666666666666', 'd3333333-3333-3333-3333-333333333333', 'delivered', NOW() - INTERVAL '14 minutes', NOW() - INTERVAL '15 minutes'),
+    ('aa777777-7777-7777-7777-777777777777', 'd7777777-7777-7777-7777-777777777777', 'failed', NULL, NOW() - INTERVAL '25 days')
 ON CONFLICT (notification_id) DO NOTHING;
 
 -- ============================================================================
@@ -178,12 +178,12 @@ ON CONFLICT (notification_id) DO NOTHING;
 -- ============================================================================
 
 INSERT INTO pending_notifications (id, device_id, payload, priority, expiration, collapse_id) VALUES
-    ('p1111111-1111-1111-1111-111111111111',
+    ('ab111111-1111-1111-1111-111111111111',
      'd4444444-4444-4444-4444-444444444444',
      '{"aps": {"alert": {"title": "Daily Digest", "body": "Check out today''s top stories"}, "badge": 5, "sound": "default"}}',
      5, NOW() + INTERVAL '12 hours', 'daily-digest'),
 
-    ('p2222222-2222-2222-2222-222222222222',
+    ('ab222222-2222-2222-2222-222222222222',
      'd6666666-6666-6666-6666-666666666666',
      '{"aps": {"alert": {"title": "Missed Call", "body": "Bob tried to reach you"}, "badge": 1, "sound": "ringtone.wav"}}',
      10, NOW() + INTERVAL '1 hour', NULL)
