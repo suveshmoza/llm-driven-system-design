@@ -15,7 +15,7 @@ import {
   timeAsync,
 } from '../shared/metrics.js';
 import { getVideoRetentionPolicy, archiveDeletedVideo } from '../shared/retention.js';
-import { generateVideoEmbedding } from '../services/embeddings.js';
+import { generateVideoEmbedding, findVideosLikeThis } from '../services/embeddings.js';
 
 const router = express.Router();
 const logger = createLogger('videos');
@@ -187,11 +187,6 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
     const video = result.rows[0];
 
-    // Generate video embedding asynchronously (don't block response)
-    generateVideoEmbedding(video.id, description, hashtagArray).catch(err => {
-      logger.error({ error: err.message, videoId: video.id }, 'Failed to generate video embedding');
-    });
-
     // Check if user liked this video
     let likedVideoIds = [];
     if (req.session?.userId) {
@@ -220,11 +215,6 @@ router.get('/:id/retention', requireAuth, async (req, res) => {
     }
 
     const video = result.rows[0];
-
-    // Generate video embedding asynchronously (don't block response)
-    generateVideoEmbedding(video.id, description, hashtagArray).catch(err => {
-      logger.error({ error: err.message, videoId: video.id }, 'Failed to generate video embedding');
-    });
 
     // Only owner, moderators, or admins can view retention policy
     if (video.creator_id !== req.session.userId &&
@@ -524,6 +514,50 @@ router.post('/:id/share', optionalAuth, async (req, res) => {
 });
 
 // Helper to update user hashtag preferences
+
+// Get similar videos using embedding similarity
+router.get('/:id/similar', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+    const userId = req.session?.userId;
+
+    // Find similar videos using vector similarity
+    const similarVideos = await findVideosLikeThis(parseInt(id), limit);
+
+    if (similarVideos.length === 0) {
+      return res.json({
+        videos: [],
+        hasMore: false,
+      });
+    }
+
+    // Get liked video IDs if user is logged in
+    let likedVideoIds = [];
+    if (userId) {
+      const videoIds = similarVideos.map(v => v.id);
+      if (videoIds.length > 0) {
+        const likeResult = await query(
+          'SELECT video_id FROM likes WHERE user_id = $1 AND video_id = ANY($2)',
+          [userId, videoIds]
+        );
+        likedVideoIds = likeResult.rows.map(r => r.video_id);
+      }
+    }
+
+    res.json({
+      videos: similarVideos.map(v => ({
+        ...formatVideo(v, userId, likedVideoIds),
+        similarity: v.similarity,
+      })),
+      hasMore: similarVideos.length === limit,
+    });
+  } catch (error) {
+    logger.error({ error: error.message, videoId: req.params.id }, 'Get similar videos error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 async function updateUserHashtagPreferences(userId, hashtags, weight) {
   try {
     // Get current preferences

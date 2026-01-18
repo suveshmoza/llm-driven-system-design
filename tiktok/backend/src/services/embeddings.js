@@ -283,7 +283,7 @@ export async function findVideosLikeThis(videoId, limit = 10) {
       [videoId]
     );
 
-    if (videoResult.rows.length === 0 || \!videoResult.rows[0].embedding) {
+    if (videoResult.rows.length === 0 || !videoResult.rows[0].embedding) {
       logger.debug({ videoId }, 'Video not found or has no embedding');
       return [];
     }
@@ -310,14 +310,14 @@ export async function getEmbeddingBasedRecommendations(userId, limit = 10) {
       [userId]
     );
 
-    if (userResult.rows.length === 0 || \!userResult.rows[0].interest_embedding) {
+    if (userResult.rows.length === 0 || !userResult.rows[0].interest_embedding) {
       // Generate embedding if missing
       await generateUserEmbedding(userId);
       const updatedUser = await query(
         'SELECT interest_embedding FROM users WHERE id = $1',
         [userId]
       );
-      if (\!updatedUser.rows[0]?.interest_embedding) {
+      if (!updatedUser.rows[0]?.interest_embedding) {
         logger.debug({ userId }, 'Could not generate user embedding');
         return [];
       }

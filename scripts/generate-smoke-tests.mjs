@@ -87,13 +87,18 @@ export default defineConfig({
     headless: true,
     viewport: { width: ${viewport.width}, height: ${viewport.height} },
   },
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:${config.frontendPort || 5173}',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-    cwd: './frontend',
-  },
+  // webServer is conditionally enabled:
+  // - Disabled when SKIP_WEBSERVER=1 (when run via 'npm run test:smoke')
+  // - Enabled when running 'npm run test:e2e' directly in the project
+  ...(process.env.SKIP_WEBSERVER ? {} : {
+    webServer: {
+      command: 'npm run dev',
+      url: 'http://localhost:${config.frontendPort || 5173}',
+      reuseExistingServer: true,
+      timeout: 120000,
+      cwd: './frontend',
+    },
+  }),
 });
 `;
 }

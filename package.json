@@ -10,7 +10,9 @@
     "screenshots:all": "node scripts/screenshots.mjs --start --all",
     "screenshots:dry": "node scripts/screenshots.mjs --dry-run",
     "generate-tests": "node scripts/generate-smoke-tests.mjs",
-    "generate-tests:all": "node scripts/generate-smoke-tests.mjs"
+    "generate-tests:all": "node scripts/generate-smoke-tests.mjs",
+    "test:smoke": "node scripts/run-smoke-tests.mjs",
+    "test:smoke:all": "node scripts/run-smoke-tests.mjs --all"
   },
   "devDependencies": {
     "playwright": "^1.49.0",
