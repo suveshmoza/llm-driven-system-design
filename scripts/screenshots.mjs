@@ -29,7 +29,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
-import { chromium } from 'playwright';
+import { webkit } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,65 +149,6 @@ function isDockerRunning() {
 }
 
 /**
- * Aggressively stop ALL Docker containers and free up common ports
- * This ensures clean port bindings when switching between projects
- */
-async function aggressiveCleanup() {
-  logStep('CLEANUP', 'Aggressive cleanup: stopping all Docker containers...');
-
-  // Stop ALL running Docker containers
-  if (isDockerRunning()) {
-    try {
-      // Get all running container IDs
-      const containers = execSync('docker ps -q', { encoding: 'utf-8' }).trim();
-      if (containers) {
-        execSync(`docker stop ${containers.split('\n').join(' ')}`, { stdio: 'pipe', timeout: 30000 });
-        logSuccess('Stopped all running Docker containers');
-      }
-    } catch {
-      // Ignore errors
-    }
-
-    // Force remove all containers (including stopped ones)
-    try {
-      execSync('docker rm -f $(docker ps -aq) 2>/dev/null || true', { stdio: 'pipe', shell: true });
-    } catch {
-      // Ignore errors
-    }
-
-    // Prune networks to avoid conflicts
-    try {
-      execSync('docker network prune -f', { stdio: 'pipe' });
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  // Kill processes on ALL common ports used by projects
-  const commonPorts = [
-    3000, 3001, 3002, 3003,  // Backend API ports
-    5173,                     // Frontend (Vite)
-    5432,                     // PostgreSQL
-    6379,                     // Redis/Valkey
-    9000,                     // MinIO
-    5672, 15672,              // RabbitMQ
-    9200,                     // Elasticsearch
-    8123,                     // ClickHouse
-    9042,                     // Cassandra
-  ];
-
-  logStep('CLEANUP', 'Killing processes on common ports...');
-  for (const port of commonPorts) {
-    killProcessOnPort(port);
-  }
-
-  // Wait a moment for ports to be released
-  await new Promise(resolve => setTimeout(resolve, 3000));
-
-  logSuccess('Aggressive cleanup complete');
-}
-
-/**
  * Kill any process using a specific port
  */
 function killProcessOnPort(port) {
@@ -247,7 +188,7 @@ function killProcessOnPort(port) {
 /**
  * Stop docker-compose services
  */
-async function stopDockerCompose(projectDir, projectName) {
+async function stopDockerCompose(projectDir, projectName, waitAfterStop = false) {
   if (!hasDockerCompose(projectDir)) {
     return true;
   }
@@ -260,29 +201,97 @@ async function stopDockerCompose(projectDir, projectName) {
 
   try {
     // Use -v flag to remove volumes (ensures clean database state)
-    execSync('docker-compose down -v', {
+    // Use --remove-orphans to clean up any orphaned containers
+    execSync('docker-compose down -v --remove-orphans', {
       cwd: projectDir,
       stdio: 'pipe',
+      timeout: 60000, // 60 second timeout
     });
     logSuccess('Docker services stopped (volumes removed)');
+
+    // Wait for containers to fully stop and ports to be released
+    if (waitAfterStop) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
     return true;
   } catch (error) {
     logWarning(`Docker-compose stop failed: ${error.message}`);
+    // Try force stop if normal stop fails
+    try {
+      execSync('docker-compose kill', {
+        cwd: projectDir,
+        stdio: 'pipe',
+        timeout: 30000,
+      });
+      execSync('docker-compose down -v --remove-orphans', {
+        cwd: projectDir,
+        stdio: 'pipe',
+        timeout: 30000,
+      });
+    } catch {}
     return true;
   }
 }
 
 /**
+ * Stop all docker-compose projects in the repository
+ * This is useful when running --all mode to ensure clean state between projects
+ */
+async function stopAllDockerProjects() {
+  if (!isDockerRunning()) {
+    return;
+  }
+
+  logStep('CLEANUP', 'Stopping all Docker containers from previous runs...');
+
+  const configs = loadConfigs();
+  for (const config of configs) {
+    const projectDir = path.join(repoRoot, config.name);
+    if (hasDockerCompose(projectDir)) {
+      try {
+        execSync('docker-compose down -v --remove-orphans', {
+          cwd: projectDir,
+          stdio: 'pipe',
+          timeout: 30000,
+        });
+      } catch {
+        // Ignore errors, just try to stop what we can
+      }
+    }
+  }
+
+  // Also kill any containers using common ports
+  try {
+    // Stop all containers that might be using our ports
+    const commonPorts = [5432, 6379, 9000, 5672, 15672, 9200, 8123];
+    for (const port of commonPorts) {
+      try {
+        // Find docker containers using this port
+        const result = execSync(`docker ps -q --filter "publish=${port}"`, { encoding: 'utf-8', stdio: 'pipe' }).trim();
+        if (result) {
+          execSync(`docker stop ${result}`, { stdio: 'pipe', timeout: 10000 });
+        }
+      } catch {}
+    }
+  } catch {}
+
+  // Wait for ports to be released
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  logSuccess('Docker cleanup complete');
+}
+
+/**
  * Start docker-compose services
+ * @returns {boolean} true if docker was started by this function
  */
 async function startDockerCompose(projectDir, projectName) {
   if (!hasDockerCompose(projectDir)) {
-    return true;
+    return false;
   }
 
   if (!isDockerRunning()) {
     logWarning('Docker is not running, skipping docker-compose');
-    return true;
+    return false;
   }
 
   logStep('DOCKER', `Starting infrastructure for ${projectName}...`);
@@ -293,80 +302,17 @@ async function startDockerCompose(projectDir, projectName) {
       stdio: 'pipe',
     });
     logSuccess('Docker services started');
-
-    // Wait for PostgreSQL to be ready by checking if port 5432 is accepting connections
-    logStep('DOCKER', 'Waiting for database services to be ready...');
-    let dbReady = false;
-    for (let i = 0; i < 30; i++) {
-      try {
-        // Try to connect to PostgreSQL port
-        const nc = process.platform === 'darwin' ? 'nc -z localhost 5432' : 'nc -z localhost 5432 || timeout 1 bash -c "cat < /dev/null > /dev/tcp/localhost/5432"';
-        execSync(nc, { stdio: 'pipe', timeout: 2000 });
-        dbReady = true;
-        break;
-      } catch {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-
-    if (dbReady) {
-      logSuccess('Database port 5432 is accessible');
-      // Wait for PostgreSQL to be fully ready (including init scripts)
-      logStep('DOCKER', 'Waiting for PostgreSQL to be fully initialized...');
-      let pgInitialized = false;
-      for (let i = 0; i < 30; i++) {
-        try {
-          // Check if postgres container's healthcheck passes
-          const health = execSync('docker inspect --format="{{.State.Health.Status}}" $(docker-compose ps -q postgres 2>/dev/null || echo "none") 2>/dev/null || echo "none"', {
-            cwd: projectDir,
-            encoding: 'utf-8',
-            shell: true,
-            timeout: 5000,
-          }).trim();
-          if (health === 'healthy') {
-            pgInitialized = true;
-            break;
-          }
-        } catch {
-          // Ignore errors
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      if (pgInitialized) {
-        logSuccess('PostgreSQL is fully initialized');
-      } else {
-        logWarning('PostgreSQL healthcheck did not pass, but continuing...');
-      }
-      // Extra wait for init scripts to complete
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    } else {
-      logWarning('Database may not be ready (continuing anyway)');
-    }
-
-    // Wait for Redis to be ready
-    try {
-      for (let i = 0; i < 10; i++) {
-        try {
-          execSync('nc -z localhost 6379', { stdio: 'pipe', timeout: 2000 });
-          logSuccess('Redis port 6379 is accessible');
-          break;
-        } catch {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-    } catch {
-      // Ignore - Redis might not be used by all projects
-    }
-
+    // Wait for services to be healthy
+    await new Promise(resolve => setTimeout(resolve, 5000));
     return true;
   } catch (error) {
     logWarning(`Docker-compose failed: ${error.message}`);
-    return true;
+    return false;
   }
 }
 
 /**
- * Setup database (run seed.sql or npm run seed if available)
+ * Setup database (run seed.sql if it exists)
  * Note: init.sql is automatically run by PostgreSQL on first startup via docker-entrypoint-initdb.d
  */
 async function setupDatabase(projectDir, projectName, config) {
@@ -376,22 +322,8 @@ async function setupDatabase(projectDir, projectName, config) {
 
   const backendDir = path.join(projectDir, 'backend');
   const seedSqlPath = path.join(backendDir, 'seed.sql');
-  const packageJsonPath = path.join(backendDir, 'package.json');
 
-  // Check if there's a seed.sql or a seed script in package.json
-  const hasSeedSql = fs.existsSync(seedSqlPath);
-  let hasNpmSeed = false;
-
-  if (fs.existsSync(packageJsonPath)) {
-    try {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-      hasNpmSeed = packageJson.scripts && packageJson.scripts.seed;
-    } catch {
-      // Ignore parse errors
-    }
-  }
-
-  if (!hasSeedSql && !hasNpmSeed) {
+  if (!fs.existsSync(seedSqlPath)) {
     return true; // No seeding needed
   }
 
@@ -399,41 +331,44 @@ async function setupDatabase(projectDir, projectName, config) {
   const dbName = config.dbName || projectName.replace(/-/g, '_');
   const dbUser = config.dbUser || projectName.replace(/-/g, '_');
 
-  logStep('DATABASE', 'Seeding database...');
-
-  // Option 1: Run seed.sql via docker-compose exec
-  if (hasSeedSql) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        execSync(`docker-compose exec -T postgres psql -U ${dbUser} -d ${dbName} < backend/seed.sql`, {
-          cwd: projectDir,
-          stdio: 'pipe',
-        });
-        logSuccess('Database seeded (SQL)');
-        return true;
-      } catch (error) {
-        if (attempt === 3) {
-          logWarning(`SQL seeding failed after ${attempt} attempts: ${error.message}`);
-        } else {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
+  // Wait for PostgreSQL to be ready with retries
+  logStep('DATABASE', 'Waiting for database to be ready...');
+  let dbReady = false;
+  for (let i = 0; i < 15; i++) {
+    try {
+      execSync(`docker-compose exec -T postgres pg_isready -U ${dbUser}`, {
+        cwd: projectDir,
+        stdio: 'pipe',
+      });
+      dbReady = true;
+      break;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
-  // Option 2: Run npm run seed
-  if (hasNpmSeed) {
+  if (!dbReady) {
+    logWarning('Database not ready after 15 seconds');
+    return false;
+  }
+
+  logStep('DATABASE', 'Seeding database...');
+
+  // Retry seeding a few times (in case database just became ready)
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      execSync('npm run seed', {
-        cwd: backendDir,
+      execSync(`docker-compose exec -T postgres psql -U ${dbUser} -d ${dbName} < backend/seed.sql`, {
+        cwd: projectDir,
         stdio: 'pipe',
-        timeout: 30000,
       });
-      logSuccess('Database seeded (npm run seed)');
+      logSuccess('Database seeded');
       return true;
     } catch (error) {
-      logWarning(`npm run seed failed: ${error.message}`);
-      return false;
+      if (attempt === 3) {
+        logWarning(`Database seeding failed after ${attempt} attempts: ${error.message}`);
+        return false;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
@@ -441,26 +376,26 @@ async function setupDatabase(projectDir, projectName, config) {
 }
 
 /**
- * Install backend dependencies if needed
+ * Install frontend dependencies if needed
  */
-async function installBackendDeps(backendDir) {
-  const nodeModulesPath = path.join(backendDir, 'node_modules');
+async function installDeps(dir, name = 'frontend') {
+  const nodeModulesPath = path.join(dir, 'node_modules');
 
   if (fs.existsSync(nodeModulesPath)) {
     return true;
   }
 
-  logStep('NPM', 'Installing backend dependencies...');
+  logStep('NPM', `Installing ${name} dependencies...`);
 
   try {
     execSync('npm install', {
-      cwd: backendDir,
+      cwd: dir,
       stdio: 'pipe',
     });
-    logSuccess('Backend dependencies installed');
+    logSuccess(`${name} dependencies installed`);
     return true;
   } catch (error) {
-    logError(`Backend npm install failed: ${error.message}`);
+    logError(`npm install failed for ${name}: ${error.message}`);
     return false;
   }
 }
@@ -469,23 +404,37 @@ async function installBackendDeps(backendDir) {
  * Start the backend dev server
  */
 async function startBackend(projectDir, config) {
-  if (!config.backendRequired) {
-    return null;
-  }
-
   const backendDir = path.join(projectDir, 'backend');
 
   if (!fs.existsSync(backendDir)) {
-    logWarning('Backend required but directory not found');
+    logWarning(`Backend directory not found: ${backendDir}`);
     return null;
   }
 
-  const depsInstalled = await installBackendDeps(backendDir);
+  const depsInstalled = await installDeps(backendDir, 'backend');
   if (!depsInstalled) {
     return null;
   }
 
-  logStep('START', 'Starting backend server...');
+  // Run migrations if db:migrate script exists
+  const pkgJsonPath = path.join(backendDir, 'package.json');
+  if (fs.existsSync(pkgJsonPath)) {
+    const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+    if (pkgJson.scripts?.['db:migrate']) {
+      logStep('DB', 'Running database migrations...');
+      try {
+        execSync('npm run db:migrate', {
+          cwd: backendDir,
+          stdio: 'pipe',
+        });
+        logSuccess('Migrations complete');
+      } catch (error) {
+        logWarning(`Migration failed: ${error.message}`);
+      }
+    }
+  }
+
+  logStep('START', 'Starting backend...');
 
   const child = spawn('npm', ['run', 'dev'], {
     cwd: backendDir,
@@ -503,49 +452,22 @@ async function startBackend(projectDir, config) {
     }
   });
 
-  // Wait for backend to be ready (typically on port 3000)
+  // Wait for backend to be ready (check port 3000)
   const backendPort = config.backendPort || 3000;
-  let backendReady = false;
-  for (let i = 0; i < 30; i++) {
-    if (await isUrlReachable(`http://localhost:${backendPort}`)) {
-      backendReady = true;
-      break;
+  const backendUrl = `http://localhost:${backendPort}`;
+  const startTime = Date.now();
+  const maxWait = 30000;
+
+  while (Date.now() - startTime < maxWait) {
+    if (await isUrlReachable(backendUrl)) {
+      logSuccess(`Backend ready on port ${backendPort}`);
+      return child;
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  if (backendReady) {
-    logSuccess('Backend server ready');
-    return child;
-  } else {
-    logWarning('Backend may not be ready (continuing anyway)');
-    return child;
-  }
-}
-
-/**
- * Install frontend dependencies if needed
- */
-async function installFrontendDeps(frontendDir) {
-  const nodeModulesPath = path.join(frontendDir, 'node_modules');
-
-  if (fs.existsSync(nodeModulesPath)) {
-    return true;
-  }
-
-  logStep('NPM', 'Installing frontend dependencies...');
-
-  try {
-    execSync('npm install', {
-      cwd: frontendDir,
-      stdio: 'pipe',
-    });
-    logSuccess('Dependencies installed');
-    return true;
-  } catch (error) {
-    logError(`npm install failed: ${error.message}`);
-    return false;
-  }
+  logWarning('Backend may not be fully ready, continuing anyway...');
+  return child;
 }
 
 /**
@@ -559,7 +481,7 @@ async function startFrontend(projectDir, config) {
     return null;
   }
 
-  const depsInstalled = await installFrontendDeps(frontendDir);
+  const depsInstalled = await installDeps(frontendDir, 'frontend');
   if (!depsInstalled) {
     return null;
   }
@@ -636,18 +558,16 @@ process.on('exit', () => {
 async function captureWithPlaywright(config, outputDir) {
   const baseUrl = `http://localhost:${config.frontendPort}`;
 
-  logStep('BROWSER', 'Launching Chrome...');
+  logStep('BROWSER', 'Launching WebKit...');
 
   let browser;
   try {
-    // Use installed Chrome via channel option (more stable on macOS)
-    browser = await chromium.launch({
+    browser = await webkit.launch({
       headless: true,
-      channel: 'chrome',
     });
   } catch (error) {
     logError(`Failed to launch browser: ${error.message}`);
-    logWarning('Make sure Google Chrome is installed');
+    logWarning('Run: npx playwright install webkit');
     return { success: false, captured: 0, failed: config.screens.length };
   }
 
@@ -802,14 +722,22 @@ async function processProject(config) {
 
   let frontendProcess = null;
   let backendProcess = null;
+  let dockerStarted = false;
 
   // Auto-start mode
   if (shouldStart) {
-    // Step 1: Aggressive cleanup - stop all Docker and kill all common ports
-    await aggressiveCleanup();
+    // Step 1: Kill any processes on frontend/backend ports (clean slate)
+    logStep('CLEANUP', 'Killing processes on ports...');
+    killProcessOnPort(config.frontendPort);
+    if (config.backendRequired && config.backendPort) {
+      killProcessOnPort(config.backendPort);
+    }
+
+    // Step 2: Stop any existing docker containers (clean slate)
+    await stopDockerCompose(projectDir, config.name);
 
     // Step 3: Start docker-compose services
-    await startDockerCompose(projectDir, config.name);
+    dockerStarted = await startDockerCompose(projectDir, config.name);
 
     // Step 4: Setup database (seed.sql)
     const dbSetup = await setupDatabase(projectDir, config.name, config);
@@ -851,6 +779,10 @@ async function processProject(config) {
     config.screens.forEach(screen => {
       log(`  • ${screen.name} (${screen.path})`, 'dim');
     });
+    // Cleanup
+    if (dockerStarted) {
+      stopDockerCompose(projectDir, config.name);
+    }
     return { project: config.name, success: true, captured: 0, failed: 0 };
   }
 
@@ -887,8 +819,19 @@ async function processProject(config) {
       } catch {}
     }
 
-    // Stop docker-compose
-    await stopDockerCompose(projectDir, config.name);
+    // Stop docker-compose if we started it
+    // Wait after stop when running --all to ensure ports are released for next project
+    if (dockerStarted) {
+      await stopDockerCompose(projectDir, config.name, isAll);
+    }
+
+    // Extra cleanup: kill any remaining processes on the ports
+    if (isAll) {
+      killProcessOnPort(config.frontendPort);
+      if (config.backendPort) {
+        killProcessOnPort(config.backendPort);
+      }
+    }
   }
 
   if (result.success) {
@@ -952,6 +895,11 @@ async function main() {
 
   if (isDryRun) {
     log('DRY RUN MODE - No screenshots will be saved\n', 'yellow');
+  }
+
+  // When running --all with --start, stop all Docker containers first for a clean slate
+  if (isAll && shouldStart) {
+    await stopAllDockerProjects();
   }
 
   const results = [];

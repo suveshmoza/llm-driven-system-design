@@ -11,9 +11,11 @@ This is a **system design learning repository** where each subdirectory represen
 ## Quick Start for Any Project
 
 1. Read the project's `architecture.md` first to understand the design
-2. Check `claude.md` for iteration history and key decisions (this is the primary source of truth for project-specific guidance)
+2. Check `claude.md` (lowercase) for iteration history and key decisions (this is the primary source of truth for project-specific guidance)
 3. Look at `README.md` for setup instructions
 4. Check `package.json` to find available scripts
+
+**Note:** Project-level files use lowercase `claude.md` to distinguish from the repository-wide `CLAUDE.md`.
 
 ## Project Structure
 
@@ -91,16 +93,21 @@ node scripts/sloc.mjs scale-ai --summary
 # Update all project READMEs with SLOC stats
 npm run sloc:update
 
-# Add Codex opinion comments to architecture files
+# Add Codex opinion comments to architecture files (appends to codex-opinion.md)
 node scripts/add-codex-opinion.mjs
+
+# Generate Playwright smoke tests from screenshot configs
+npm run generate-tests              # Generate for all projects
+npm run generate-tests bitly        # Generate for specific project
 ```
 
 ### Screenshot Automation
 
-Capture screenshots of frontend projects for documentation using Puppeteer in Docker (Playwright also available).
+Capture screenshots of frontend projects for documentation using Playwright.
 
 **Prerequisites:**
-- Docker Desktop must be running
+- Playwright installed: `npm install playwright` and `npx playwright install`
+- Docker Desktop running (for projects with docker-compose.yml)
 - Frontend dev server must be running (or use `--start` flag)
 - For authenticated pages, backend and database must be running
 
@@ -109,10 +116,10 @@ Capture screenshots of frontend projects for documentation using Puppeteer in Do
 # Take screenshots (frontend must already be running)
 npm run screenshots instagram
 
-# Auto-start frontend, take screenshots, then stop
+# Full automated workflow: starts docker, backend, frontend, captures, then stops all
 node scripts/screenshots.mjs --start instagram
 
-# Auto-screenshot all configured projects
+# Auto-screenshot all configured projects (handles Docker cleanup between projects)
 npm run screenshots:all
 
 # Dry run (show what would be captured)
@@ -121,6 +128,8 @@ npm run screenshots:dry instagram
 # List available configurations
 node scripts/screenshots.mjs --list
 ```
+
+**Note:** When running individual projects manually, only one project can run at a time on the default ports. The `screenshots:all` workflow handles Docker cleanup automatically between projects.
 
 **Adding a new project:**
 1. Create `scripts/screenshot-configs/<project>.json`
@@ -244,6 +253,17 @@ For projects using multiple databases:
 - **ClickHouse**: `backend/db/clickhouse-init.sql` (e.g., ad-click-aggregator)
 
 The `npm run db:migrate` command runs `migrate.ts` which executes `init.sql` against the database.
+
+### Database Seed Files
+
+Seed files populate the database with sample data for development and testing. They are stored as `seed.sql` alongside `init.sql`:
+
+| Location | Purpose |
+|----------|---------|
+| `backend/src/db/seed.sql` | Sample data (users, posts, etc.) |
+| `backend/db/seed.sql` | Alternative location in some projects |
+
+The screenshot automation script (`scripts/screenshots.mjs --start`) automatically runs `seed.sql` after `init.sql` when setting up the database for capturing screenshots.
 
 ### Testing
 
