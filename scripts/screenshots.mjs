@@ -285,7 +285,7 @@ async function captureWithPlaywright(config, outputDir) {
 
   let browser;
   try {
-    browser = await webkit.launch({ headless: false });
+    browser = await webkit.launch({ headless: true });
   } catch (error) {
     logError(`Failed to launch browser: ${error.message}`);
     logWarning('Run: npx playwright install webkit');

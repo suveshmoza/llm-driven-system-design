@@ -583,6 +583,12 @@
 
 .job-result {
   display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.result-row {
+  display: flex;
   gap: 0.5rem;
   align-items: center;
 }
@@ -596,6 +602,18 @@
   font-size: 0.875rem;
   font-weight: 600;
   color: #22c55e;
+}
+
+.result-config {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.result-duration {
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .job-error {

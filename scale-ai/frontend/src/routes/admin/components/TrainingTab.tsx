@@ -387,10 +387,25 @@ function JobCard({ job, onCancel }: JobCardProps) {
           </div>
         )}
 
-        {job.status === 'completed' && job.accuracy && (
+        {job.status === 'completed' && (
           <div className="job-result">
-            <span className="result-label">Accuracy:</span>
-            <span className="result-value">{formatAccuracy(job.accuracy)}</span>
+            <div className="result-row">
+              <span className="result-label">Accuracy:</span>
+              <span className="result-value">
+                {job.accuracy ? formatAccuracy(job.accuracy) : 'N/A'}
+              </span>
+            </div>
+            {job.config && (
+              <div className="result-config">
+                {job.config.epochs && <span>Epochs: {job.config.epochs as number}</span>}
+                {job.config.batch_size && <span>Batch: {job.config.batch_size as number}</span>}
+              </div>
+            )}
+            {job.started_at && job.completed_at && (
+              <div className="result-duration">
+                Duration: {formatDuration(job.started_at, job.completed_at)}
+              </div>
+            )}
           </div>
         )}
 
@@ -495,6 +510,32 @@ function formatAccuracy(accuracy: string | null): string {
 function formatDate(dateString: string | null): string {
   if (!dateString) return ''
   return new Date(dateString).toLocaleString()
+}
+
+/**
+ * Formats duration between two dates.
+ *
+ * @param startDate - ISO date string for start
+ * @param endDate - ISO date string for end
+ */
+function formatDuration(startDate: string, endDate: string): string {
+  const start = new Date(startDate).getTime()
+  const end = new Date(endDate).getTime()
+  const durationMs = end - start
+
+  if (durationMs < 0) return 'N/A'
+
+  const seconds = Math.floor(durationMs / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`
+  } else {
+    return `${seconds}s`
+  }
 }
 
 /**
