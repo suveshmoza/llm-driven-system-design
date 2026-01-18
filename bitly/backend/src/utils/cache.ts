@@ -22,27 +22,39 @@ export const redis = new Redis({
 
 /**
  * Track Redis connection state for health checks.
+ * hasEverConnected: Used to suppress initial connection errors during startup
+ * isShuttingDown: Used to suppress errors during graceful shutdown
  */
 let redisConnected = false;
+let hasEverConnected = false;
+let isShuttingDown = false;
 
 redis.on('connect', () => {
   redisConnected = true;
+  hasEverConnected = true;
   logger.info('Redis connected');
 });
 
 redis.on('ready', () => {
   redisConnected = true;
+  hasEverConnected = true;
   logger.info('Redis ready');
 });
 
 redis.on('error', (error) => {
   redisConnected = false;
-  logger.error({ err: error }, 'Redis error');
+  // Only log errors after we've connected at least once (not during startup)
+  // and not during shutdown
+  if (hasEverConnected && !isShuttingDown) {
+    logger.error({ err: error }, 'Redis connection error');
+  }
 });
 
 redis.on('close', () => {
   redisConnected = false;
-  logger.warn('Redis connection closed');
+  if (!isShuttingDown) {
+    logger.warn('Redis connection closed');
+  }
 });
 
 /**
@@ -172,9 +184,11 @@ export const keyPoolCache = {
 
 /**
  * Closes the Redis connection during graceful shutdown.
+ * Sets the shutdown flag to suppress connection error logs.
  * @returns Promise that resolves when the connection is closed
  */
 export async function closeRedis(): Promise<void> {
+  isShuttingDown = true;
   await redis.quit();
   logger.info('Redis connection closed');
 }
