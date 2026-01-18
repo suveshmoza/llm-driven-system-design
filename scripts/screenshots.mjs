@@ -188,7 +188,7 @@ function killProcessOnPort(port) {
 /**
  * Stop docker-compose services
  */
-async function stopDockerCompose(projectDir, projectName) {
+async function stopDockerCompose(projectDir, projectName, waitAfterStop = false) {
   if (!hasDockerCompose(projectDir)) {
     return true;
   }
@@ -201,16 +201,83 @@ async function stopDockerCompose(projectDir, projectName) {
 
   try {
     // Use -v flag to remove volumes (ensures clean database state)
-    execSync('docker-compose down -v', {
+    // Use --remove-orphans to clean up any orphaned containers
+    execSync('docker-compose down -v --remove-orphans', {
       cwd: projectDir,
       stdio: 'pipe',
+      timeout: 60000, // 60 second timeout
     });
     logSuccess('Docker services stopped (volumes removed)');
+
+    // Wait for containers to fully stop and ports to be released
+    if (waitAfterStop) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
     return true;
   } catch (error) {
     logWarning(`Docker-compose stop failed: ${error.message}`);
+    // Try force stop if normal stop fails
+    try {
+      execSync('docker-compose kill', {
+        cwd: projectDir,
+        stdio: 'pipe',
+        timeout: 30000,
+      });
+      execSync('docker-compose down -v --remove-orphans', {
+        cwd: projectDir,
+        stdio: 'pipe',
+        timeout: 30000,
+      });
+    } catch {}
     return true;
   }
+}
+
+/**
+ * Stop all docker-compose projects in the repository
+ * This is useful when running --all mode to ensure clean state between projects
+ */
+async function stopAllDockerProjects() {
+  if (!isDockerRunning()) {
+    return;
+  }
+
+  logStep('CLEANUP', 'Stopping all Docker containers from previous runs...');
+
+  const configs = loadConfigs();
+  for (const config of configs) {
+    const projectDir = path.join(repoRoot, config.name);
+    if (hasDockerCompose(projectDir)) {
+      try {
+        execSync('docker-compose down -v --remove-orphans', {
+          cwd: projectDir,
+          stdio: 'pipe',
+          timeout: 30000,
+        });
+      } catch {
+        // Ignore errors, just try to stop what we can
+      }
+    }
+  }
+
+  // Also kill any containers using common ports
+  try {
+    // Stop all containers that might be using our ports
+    const commonPorts = [5432, 6379, 9000, 5672, 15672, 9200, 8123];
+    for (const port of commonPorts) {
+      try {
+        // Find docker containers using this port
+        const result = execSync(`docker ps -q --filter "publish=${port}"`, { encoding: 'utf-8', stdio: 'pipe' }).trim();
+        if (result) {
+          execSync(`docker stop ${result}`, { stdio: 'pipe', timeout: 10000 });
+        }
+      } catch {}
+    }
+  } catch {}
+
+  // Wait for ports to be released
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  logSuccess('Docker cleanup complete');
 }
 
 /**
@@ -753,8 +820,17 @@ async function processProject(config) {
     }
 
     // Stop docker-compose if we started it
+    // Wait after stop when running --all to ensure ports are released for next project
     if (dockerStarted) {
-      await stopDockerCompose(projectDir, config.name);
+      await stopDockerCompose(projectDir, config.name, isAll);
+    }
+
+    // Extra cleanup: kill any remaining processes on the ports
+    if (isAll) {
+      killProcessOnPort(config.frontendPort);
+      if (config.backendPort) {
+        killProcessOnPort(config.backendPort);
+      }
     }
   }
 
@@ -819,6 +895,11 @@ async function main() {
 
   if (isDryRun) {
     log('DRY RUN MODE - No screenshots will be saved\n', 'yellow');
+  }
+
+  // When running --all with --start, stop all Docker containers first for a clean slate
+  if (isAll && shouldStart) {
+    await stopAllDockerProjects();
   }
 
   const results = [];

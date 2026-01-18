@@ -46,7 +46,7 @@ Each folder contains an independent implementation of a system design problem.
 | [Twitter](./twitter/) | Microblogging and social network | ✅ Implemented |
 | [LinkedIn](./linkedin/) | Professional networking platform | ✅ Implemented |
 | [TikTok](./tiktok/) | Short-form video platform | ✅ Implemented |
-| [Kindle Highlights](./kindle-highlights/) | Social reading platform with real-time sync | 📝 Design Only |
+| [Kindle Highlights](./kindle-highlights/) | Social reading platform with real-time sync | ✅ Implemented |
 
 ### Messaging & Communication
 
@@ -114,8 +114,8 @@ Each folder contains an independent implementation of a system design problem.
 | [Notion](./notion/) | Collaborative workspace with blocks | ✅ Implemented |
 | [Jira](./jira/) | Issue tracking and project management | ✅ Implemented |
 | [Collaborative Editor](./collaborative-editor/) | Real-time document editing | ✅ Implemented |
-| [AI Code Assistant](./ai-code-assistant/) | CLI coding assistant like Claude Code/Cursor | 📝 Design Only |
-| [Plugin Platform](./plugin-platform/) | VS Code-like extension system with sandboxing | 📝 Design Only |
+| [AI Code Assistant](./ai-code-assistant/) | CLI coding assistant like Claude Code/Cursor | ✅ Implemented |
+| [Plugin Platform](./plugin-platform/) | VS Code-like extension system with sandboxing | ✅ Implemented |
 
 ### Financial Services & Payments
 

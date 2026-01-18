@@ -95,6 +95,10 @@ npm run sloc:update
 
 # Add Codex opinion comments to architecture files (appends to codex-opinion.md)
 node scripts/add-codex-opinion.mjs
+
+# Generate Playwright smoke tests from screenshot configs
+npm run generate-tests              # Generate for all projects
+npm run generate-tests bitly        # Generate for specific project
 ```
 
 ### Screenshot Automation
@@ -115,7 +119,7 @@ npm run screenshots instagram
 # Full automated workflow: starts docker, backend, frontend, captures, then stops all
 node scripts/screenshots.mjs --start instagram
 
-# Auto-screenshot all configured projects
+# Auto-screenshot all configured projects (handles Docker cleanup between projects)
 npm run screenshots:all
 
 # Dry run (show what would be captured)
@@ -125,11 +129,7 @@ npm run screenshots:dry instagram
 node scripts/screenshots.mjs --list
 ```
 
-**Note:** Projects run their infrastructure in Docker. Only one project can run at a time on the default ports. Stop the previous project's Docker before starting a new one:
-```bash
-cd <previous-project> && docker-compose down
-cd <new-project> && docker-compose up -d
-```
+**Note:** When running individual projects manually, only one project can run at a time on the default ports. The `screenshots:all` workflow handles Docker cleanup automatically between projects.
 
 **Adding a new project:**
 1. Create `scripts/screenshot-configs/<project>.json`
@@ -253,6 +253,17 @@ For projects using multiple databases:
 - **ClickHouse**: `backend/db/clickhouse-init.sql` (e.g., ad-click-aggregator)
 
 The `npm run db:migrate` command runs `migrate.ts` which executes `init.sql` against the database.
+
+### Database Seed Files
+
+Seed files populate the database with sample data for development and testing. They are stored as `seed.sql` alongside `init.sql`:
+
+| Location | Purpose |
+|----------|---------|
+| `backend/src/db/seed.sql` | Sample data (users, posts, etc.) |
+| `backend/db/seed.sql` | Alternative location in some projects |
+
+The screenshot automation script (`scripts/screenshots.mjs --start`) automatically runs `seed.sql` after `init.sql` when setting up the database for capturing screenshots.
 
 ### Testing
 

@@ -169,17 +169,23 @@ function generateSmokeTests(config) {
 }
 
 /**
- * Update package.json with test scripts
+ * Update or create package.json with test scripts
  */
 function updatePackageJson(projectDir, config) {
   const pkgPath = path.join(projectDir, 'package.json');
 
-  if (!fs.existsSync(pkgPath)) {
-    logWarning(`No package.json found in ${config.name}`);
-    return false;
+  let pkg;
+  if (fs.existsSync(pkgPath)) {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } else {
+    // Create minimal package.json for test running
+    pkg = {
+      name: `${config.name}-tests`,
+      private: true,
+      scripts: {},
+      devDependencies: {},
+    };
   }
-
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
 
   // Add test scripts
   pkg.scripts = pkg.scripts || {};
@@ -233,7 +239,7 @@ function generateForProject(config) {
 
   // Update package.json
   if (updatePackageJson(projectDir, config)) {
-    logSuccess(`Updated ${config.name}/package.json with test scripts`);
+    logSuccess(`Created/updated ${config.name}/package.json with test scripts`);
   }
 
   return true;
