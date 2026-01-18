@@ -99,6 +99,10 @@ node scripts/add-codex-opinion.mjs
 # Generate Playwright smoke tests from screenshot configs
 npm run generate-tests              # Generate for all projects
 npm run generate-tests bitly        # Generate for specific project
+
+# Run smoke tests (automated UI tests)
+npm run test:smoke instagram        # Run smoke tests for specific project
+npm run test:smoke:all              # Run smoke tests for all projects
 ```
 
 ### Screenshot Automation
@@ -190,6 +194,7 @@ Use these unless there's a compelling reason to deviate (document justification 
 | 5672/15672 | RabbitMQ (AMQP/Management) |
 | 9200 | Elasticsearch |
 | 8123 | ClickHouse |
+| 9092 | Kafka |
 
 ## Frontend Best Practices
 
@@ -333,6 +338,22 @@ Projects have both frontend and backend implementations following the standard `
 | JavaScript | `node --watch` | instagram, uber, twitter, airbnb |
 
 Check each project's `package.json` for available scripts.
+
+### Python Training Scripts
+
+Some projects include Python-based ML training code in a `training/` directory:
+
+```bash
+cd <project>/training
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Run training (typically consumes from RabbitMQ or reads from DB)
+python train.py
+```
+
+Python dependencies are managed via `requirements.txt` with PyTorch, NumPy, and project-specific libraries.
 
 ## Creating New Projects
 
