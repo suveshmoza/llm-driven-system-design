@@ -149,31 +149,55 @@ function isDockerRunning() {
 }
 
 /**
- * Stop Docker containers in ALL configured projects
+ * Aggressively stop ALL Docker containers and free up common ports
  * This ensures clean port bindings when switching between projects
  */
-async function stopAllProjectDocker(configs) {
-  if (!isDockerRunning()) {
-    return;
-  }
+async function aggressiveCleanup() {
+  logStep('CLEANUP', 'Aggressive cleanup: stopping all Docker containers...');
 
-  logStep('CLEANUP', 'Stopping Docker in all projects...');
-
-  for (const config of configs) {
-    const projectDir = path.join(repoRoot, config.name);
-    if (hasDockerCompose(projectDir)) {
-      try {
-        execSync('docker-compose down -v', {
-          cwd: projectDir,
-          stdio: 'pipe',
-        });
-      } catch {
-        // Ignore errors - project might not have running containers
+  // Stop ALL running Docker containers
+  if (isDockerRunning()) {
+    try {
+      // Get all running container IDs
+      const containers = execSync('docker ps -q', { encoding: 'utf-8' }).trim();
+      if (containers) {
+        execSync(`docker stop ${containers.split('\n').join(' ')}`, { stdio: 'pipe' });
+        logSuccess('Stopped all running Docker containers');
       }
+    } catch {
+      // Ignore errors
+    }
+
+    // Also try to remove stopped containers to free up names
+    try {
+      execSync('docker container prune -f', { stdio: 'pipe' });
+    } catch {
+      // Ignore errors
     }
   }
 
-  logSuccess('All project Docker containers stopped');
+  // Kill processes on ALL common ports used by projects
+  const commonPorts = [
+    3000, 3001, 3002, 3003,  // Backend API ports
+    5173,                     // Frontend (Vite)
+    5432,                     // PostgreSQL
+    6379,                     // Redis/Valkey
+    9000,                     // MinIO
+    5672, 15672,              // RabbitMQ
+    9200,                     // Elasticsearch
+    8123,                     // ClickHouse
+    9042,                     // Cassandra
+  ];
+
+  logStep('CLEANUP', 'Killing processes on common ports...');
+  for (const port of commonPorts) {
+    killProcessOnPort(port);
+  }
+
+  // Wait a moment for ports to be released
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  logSuccess('Aggressive cleanup complete');
 }
 
 /**
@@ -859,10 +883,10 @@ async function main() {
   const results = [];
 
   for (const config of projectsToProcess) {
-    // When processing multiple projects, stop ALL Docker containers first
+    // When processing multiple projects, do aggressive cleanup first
     // This ensures no port conflicts between projects
     if (shouldStart && projectsToProcess.length > 1) {
-      await stopAllProjectDocker(configs);
+      await aggressiveCleanup();
     }
 
     const result = await processProject(config);
