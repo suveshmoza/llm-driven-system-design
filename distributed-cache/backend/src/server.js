@@ -41,7 +41,7 @@ import {
 import { createPersistenceManager } from './shared/persistence.js';
 
 // Configuration from environment
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 const NODE_ID = process.env.NODE_ID || `node-${PORT}`;
 const MAX_SIZE = parseInt(process.env.MAX_SIZE || '10000', 10);
 const MAX_MEMORY_MB = parseInt(process.env.MAX_MEMORY_MB || '100', 10);

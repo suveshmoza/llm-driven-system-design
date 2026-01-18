@@ -16,7 +16,7 @@ import { authMiddleware } from './middleware/auth.js';
 
 const log = createLogger('api-server');
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({

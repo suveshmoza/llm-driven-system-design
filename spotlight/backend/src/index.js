@@ -15,7 +15,7 @@ import { getIdempotencyStore } from './shared/idempotency.js';
 const { Pool } = pg;
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());

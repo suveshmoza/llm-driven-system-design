@@ -19,7 +19,7 @@ import redis from './db/redis.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Track server state for graceful shutdown
 let isShuttingDown = false;

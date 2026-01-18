@@ -13,7 +13,7 @@ export default {
     url: process.env.RABBITMQ_URL || 'amqp://shopify:shopify_dev@localhost:5672',
   },
   server: {
-    port: process.env.PORT || 3001,
+    port: process.env.PORT || 3000,
     sessionSecret: process.env.SESSION_SECRET || 'shopify-dev-secret-change-in-production',
   },
   platform: {

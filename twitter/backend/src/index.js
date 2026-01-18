@@ -25,7 +25,7 @@ import timelineRoutes from './routes/timeline.js';
 import trendsRoutes from './routes/trends.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // ============================================================================
 // Startup Logging
