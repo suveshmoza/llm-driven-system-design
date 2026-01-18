@@ -5,6 +5,14 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
+import { FormField, SelectField, TextareaField } from '../components/forms';
+
+/** Gender options for the registration form. */
+const GENDER_OPTIONS = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+  { value: 'other', label: 'Other' },
+];
 
 /**
  * Registration page component.
@@ -43,6 +51,11 @@ function RegisterPage() {
     }));
   };
 
+  /** Maximum birthdate (must be 18+ years old). */
+  const maxBirthdate = new Date(new Date().setFullYear(new Date().getFullYear() - 18))
+    .toISOString()
+    .split('T')[0];
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-8">
       <div className="w-full max-w-md">
@@ -69,89 +82,62 @@ function RegisterPage() {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="input"
-              placeholder="Your name"
-              required
-            />
-          </div>
+          <FormField
+            label="Name"
+            name="name"
+            value={formData.name}
+            onChange={handleChange}
+            placeholder="Your name"
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="input"
-              placeholder="your@email.com"
-              required
-            />
-          </div>
+          <FormField
+            label="Email"
+            name="email"
+            type="email"
+            value={formData.email}
+            onChange={handleChange}
+            placeholder="your@email.com"
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="input"
-              placeholder="Min 6 characters"
-              minLength={6}
-              required
-            />
-          </div>
+          <FormField
+            label="Password"
+            name="password"
+            type="password"
+            value={formData.password}
+            onChange={handleChange}
+            placeholder="Min 6 characters"
+            minLength={6}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Birthdate</label>
-            <input
-              type="date"
-              name="birthdate"
-              value={formData.birthdate}
-              onChange={handleChange}
-              className="input"
-              max={
-                new Date(new Date().setFullYear(new Date().getFullYear() - 18))
-                  .toISOString()
-                  .split('T')[0]
-              }
-              required
-            />
-          </div>
+          <FormField
+            label="Birthdate"
+            name="birthdate"
+            type="date"
+            value={formData.birthdate}
+            onChange={handleChange}
+            max={maxBirthdate}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-            <select
-              name="gender"
-              value={formData.gender}
-              onChange={handleChange}
-              className="input"
-              required
-            >
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+          <SelectField
+            label="Gender"
+            name="gender"
+            value={formData.gender}
+            onChange={handleChange}
+            options={GENDER_OPTIONS}
+            required
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Bio (optional)</label>
-            <textarea
-              name="bio"
-              value={formData.bio}
-              onChange={handleChange}
-              className="input resize-none"
-              rows={3}
-              placeholder="Tell us about yourself..."
-            />
-          </div>
+          <TextareaField
+            label="Bio (optional)"
+            name="bio"
+            value={formData.bio}
+            onChange={handleChange}
+            placeholder="Tell us about yourself..."
+          />
 
           <button
             type="submit"

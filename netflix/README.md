@@ -4,13 +4,13 @@
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 6,168 |
-| Source Files | 55 |
-| .ts | 2,892 |
-| .tsx | 1,701 |
-| .md | 1,004 |
+| Total SLOC | 10,994 |
+| Source Files | 72 |
+| .ts | 6,418 |
+| .tsx | 2,077 |
+| .md | 1,888 |
 | .sql | 260 |
-| .json | 140 |
+| .json | 145 |
 
 ## Overview
 

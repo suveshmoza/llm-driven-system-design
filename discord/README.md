@@ -6,13 +6,13 @@ A simplified real-time chat server that demonstrates core distributed system con
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,309 |
-| Source Files | 45 |
-| .ts | 2,449 |
-| .md | 2,020 |
-| .tsx | 529 |
-| .json | 133 |
-| .sql | 54 |
+| Total SLOC | 9,360 |
+| Source Files | 50 |
+| .ts | 5,120 |
+| .md | 3,046 |
+| .tsx | 653 |
+| .sql | 271 |
+| .json | 146 |
 
 ## Features
 

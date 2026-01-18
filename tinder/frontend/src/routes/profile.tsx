@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useState } from 'react';
 import BottomNav from '../components/BottomNav';
 import ReignsAvatar from '../components/ReignsAvatar';
+import { EditableField } from '../components/forms';
 
 /**
  * Profile page component.
@@ -68,10 +69,7 @@ function ProfilePage() {
         <div className="card p-6 mb-4">
           <div className="flex items-center">
             <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-800">
-              <ReignsAvatar
-                seed={`${user.id}-${user.name}`}
-                size={80}
-              />
+              <ReignsAvatar seed={`${user.id}-${user.name}`} size={80} />
             </div>
             <div className="ml-4">
               <h2 className="text-xl font-semibold">{user.name}, {user.age}</h2>
@@ -112,80 +110,52 @@ function ProfilePage() {
           </div>
 
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Name</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="input"
-                />
-              ) : (
-                <p className="text-gray-900">{user.name}</p>
-              )}
-            </div>
+            <EditableField
+              label="Name"
+              name="name"
+              editValue={formData.name}
+              displayValue={user.name}
+              isEditing={isEditing}
+              onChange={handleChange}
+            />
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Bio</label>
-              {isEditing ? (
-                <textarea
-                  name="bio"
-                  value={formData.bio}
-                  onChange={handleChange}
-                  className="input resize-none"
-                  rows={3}
-                />
-              ) : (
-                <p className="text-gray-900">{user.bio || 'No bio yet'}</p>
-              )}
-            </div>
+            <EditableField
+              label="Bio"
+              name="bio"
+              editValue={formData.bio}
+              displayValue={user.bio || ''}
+              emptyPlaceholder="No bio yet"
+              isEditing={isEditing}
+              onChange={handleChange}
+              multiline
+            />
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Job Title</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  name="job_title"
-                  value={formData.job_title}
-                  onChange={handleChange}
-                  className="input"
-                />
-              ) : (
-                <p className="text-gray-900">{user.job_title || 'Not set'}</p>
-              )}
-            </div>
+            <EditableField
+              label="Job Title"
+              name="job_title"
+              editValue={formData.job_title}
+              displayValue={user.job_title || ''}
+              isEditing={isEditing}
+              onChange={handleChange}
+            />
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Company</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  name="company"
-                  value={formData.company}
-                  onChange={handleChange}
-                  className="input"
-                />
-              ) : (
-                <p className="text-gray-900">{user.company || 'Not set'}</p>
-              )}
-            </div>
+            <EditableField
+              label="Company"
+              name="company"
+              editValue={formData.company}
+              displayValue={user.company || ''}
+              isEditing={isEditing}
+              onChange={handleChange}
+            />
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">School</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  name="school"
-                  value={formData.school}
-                  onChange={handleChange}
-                  className="input"
-                />
-              ) : (
-                <p className="text-gray-900">{user.school || 'Not set'}</p>
-              )}
-            </div>
+            <EditableField
+              label="School"
+              name="school"
+              editValue={formData.school}
+              displayValue={user.school || ''}
+              isEditing={isEditing}
+              onChange={handleChange}
+            />
           </div>
         </div>
 

@@ -1,3 +1,12 @@
+/**
+ * Chat route - real-time messaging with matched users.
+ * Displays conversation history and provides message input for active matches.
+ * Features include:
+ * - Real-time message updates via WebSocket subscription
+ * - Auto-scroll to newest messages
+ * - Unmatch functionality with confirmation
+ * - ReignsAvatar display for the matched user
+ */
 import { createFileRoute, Navigate, Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 import { useMatchStore } from '../stores/matchStore';

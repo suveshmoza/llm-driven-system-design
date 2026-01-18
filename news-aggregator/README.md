@@ -6,13 +6,13 @@ A content aggregation and curation platform that crawls RSS feeds, deduplicates 
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,421 |
-| Source Files | 48 |
-| .ts | 2,605 |
-| .tsx | 1,293 |
-| .md | 1,147 |
+| Total SLOC | 9,081 |
+| Source Files | 54 |
+| .ts | 5,041 |
+| .md | 2,065 |
+| .tsx | 1,596 |
 | .sql | 127 |
-| .json | 120 |
+| .json | 124 |
 
 ## Key Features
 

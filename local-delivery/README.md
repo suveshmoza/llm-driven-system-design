@@ -6,13 +6,13 @@ A last-mile delivery platform for local goods and services, similar to DoorDash,
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 8,325 |
-| Source Files | 56 |
-| .ts | 4,356 |
-| .tsx | 2,196 |
-| .md | 1,248 |
-| .sql | 240 |
-| .json | 121 |
+| Total SLOC | 12,249 |
+| Source Files | 69 |
+| .ts | 7,173 |
+| .tsx | 2,378 |
+| .md | 2,094 |
+| .sql | 311 |
+| .json | 130 |
 
 ## Features
 

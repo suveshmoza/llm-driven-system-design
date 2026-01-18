@@ -17,6 +17,7 @@ import type {
 import { redis } from '../db/connection.js';
 import { LedgerService } from './ledger.service.js';
 import { FraudService } from './fraud.service.js';
+import { MerchantService } from './merchant.service.js';
 
 // Import shared modules for observability and resilience
 import {
@@ -33,6 +34,8 @@ import {
   auditPaymentCaptured,
   auditPaymentVoided,
   auditPaymentFailed,
+  publishWebhook,
+  publishFraudCheck,
 } from '../shared/index.js';
 
 /**
@@ -45,10 +48,13 @@ import {
  * - Circuit Breaker: Protects against payment processor outages
  * - Audit Logging: Required for PCI-DSS compliance
  * - Metrics: Enables fraud detection and SLO monitoring
+ * - Async Webhooks: Notifies merchants of payment events via RabbitMQ
+ * - Deep Fraud Scoring: Background analysis for risk assessment
  */
 export class PaymentService {
   private ledgerService: LedgerService;
   private fraudService: FraudService;
+  private merchantService: MerchantService;
 
   // Fee configuration (from env or defaults)
   /** Percentage fee charged on each transaction (e.g., 2.9 = 2.9%) */
@@ -59,6 +65,7 @@ export class PaymentService {
   constructor() {
     this.ledgerService = new LedgerService();
     this.fraudService = new FraudService();
+    this.merchantService = new MerchantService();
   }
 
   /**
@@ -228,7 +235,7 @@ export class PaymentService {
       clientInfo?.userAgent
     );
 
-    // Fraud check
+    // Fraud check (synchronous quick check)
     const riskScore = await this.fraudService.evaluate({
       amount,
       currency,
@@ -317,6 +324,10 @@ export class PaymentService {
     // Record authorization metric
     paymentTransactionsTotal.labels('authorized', currency).inc();
 
+    // Publish async fraud check for deep analysis (non-blocking)
+    // This performs more thorough analysis than the synchronous check above
+    this.publishAsyncFraudCheck(transactionId, merchantId, amount, currency, payment_method, customer_email, clientInfo?.ipAddress);
+
     // If capture is true, immediately capture
     if (capture) {
       await this.capturePayment(transactionId, merchantAccountId, clientInfo);
@@ -341,6 +352,95 @@ export class PaymentService {
       net_amount: netAmount,
       created_at: transaction.created_at,
     };
+  }
+
+  /**
+   * Publishes an async fraud check message to the fraud-scoring queue.
+   * This performs deep analysis including velocity checks, pattern matching,
+   * and historical fraud data that would be too slow for synchronous processing.
+   *
+   * @param transactionId - UUID of the transaction to analyze
+   * @param merchantId - UUID of the merchant
+   * @param amount - Transaction amount in cents
+   * @param currency - Transaction currency
+   * @param paymentMethod - Payment method details
+   * @param customerEmail - Customer email for velocity checks
+   * @param ipAddress - Client IP for geographic analysis
+   */
+  private publishAsyncFraudCheck(
+    transactionId: string,
+    merchantId: string,
+    amount: number,
+    currency: string,
+    paymentMethod: CreatePaymentRequest['payment_method'],
+    customerEmail?: string,
+    ipAddress?: string
+  ): void {
+    // Fire and forget - don't await to avoid blocking the payment flow
+    publishFraudCheck(transactionId, {
+      merchantId,
+      amount,
+      currency,
+      paymentMethod: {
+        type: paymentMethod.type,
+        last_four: paymentMethod.last_four,
+        card_brand: paymentMethod.card_brand,
+      },
+      customerEmail,
+      ipAddress,
+    }).catch((error) => {
+      // Log but don't fail the payment if queue publish fails
+      logger.error(
+        { error, transactionId, merchantId },
+        'Failed to publish fraud check to queue'
+      );
+    });
+  }
+
+  /**
+   * Publishes a webhook event to notify the merchant of a payment event.
+   * Uses RabbitMQ for reliable delivery with retries.
+   *
+   * @param merchantId - UUID of the merchant to notify
+   * @param eventType - Type of webhook event (e.g., 'payment.captured')
+   * @param data - Event payload data
+   */
+  private async publishMerchantWebhook(
+    merchantId: string,
+    eventType: string,
+    data: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      // Get merchant's webhook configuration
+      const merchant = await this.merchantService.getMerchant(merchantId);
+
+      if (!merchant?.webhook_url) {
+        logger.debug(
+          { merchantId, eventType },
+          'Merchant has no webhook URL configured, skipping webhook'
+        );
+        return;
+      }
+
+      await publishWebhook(
+        eventType,
+        merchantId,
+        data,
+        merchant.webhook_url,
+        merchant.webhook_secret
+      );
+
+      logger.debug(
+        { merchantId, eventType },
+        'Published webhook event to queue'
+      );
+    } catch (error) {
+      // Log but don't fail the operation if webhook publish fails
+      logger.error(
+        { error, merchantId, eventType },
+        'Failed to publish webhook to queue'
+      );
+    }
   }
 
   /**
@@ -377,6 +477,7 @@ export class PaymentService {
   /**
    * Captures funds from an authorized payment, making them available for settlement.
    * Records double-entry ledger entries for the captured amount and platform fee.
+   * Publishes a webhook event to notify the merchant of the capture.
    *
    * IDEMPOTENCY: Capture operations use transaction-level idempotency.
    * Capturing an already-captured transaction returns the existing state.
@@ -443,6 +544,20 @@ export class PaymentService {
     const duration = (Date.now() - startTime) / 1000;
     paymentProcessingDuration.labels('capture', 'captured').observe(duration);
     paymentTransactionsTotal.labels('captured', transaction.currency).inc();
+
+    // Publish webhook to notify merchant of successful capture
+    await this.publishMerchantWebhook(
+      transaction.merchant_id,
+      'payment.captured',
+      {
+        transaction_id: transactionId,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        fee_amount: transaction.fee_amount,
+        net_amount: transaction.net_amount,
+        captured_at: new Date().toISOString(),
+      }
+    );
 
     return (await this.getTransaction(transactionId))!;
   }

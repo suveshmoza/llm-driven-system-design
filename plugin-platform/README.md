@@ -2,6 +2,19 @@
 
 A minimalist text editor where **everything is a plugin**. The core application provides only a plugin host and slot system—even the text input area itself is provided by a plugin.
 
+## Codebase Stats
+
+| Metric | Value |
+|--------|-------|
+| Total SLOC | 7,330 |
+| Source Files | 102 |
+| .ts | 2,897 |
+| .tsx | 1,762 |
+| .md | 1,577 |
+| .json | 620 |
+| .sh | 146 |
+
+
 ## Overview
 
 This project demonstrates:

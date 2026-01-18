@@ -55,7 +55,8 @@ function hasImplementation(projectPath) {
   return (
     fs.existsSync(path.join(fullPath, 'docker-compose.yml')) ||
     fs.existsSync(path.join(fullPath, 'backend')) ||
-    fs.existsSync(path.join(fullPath, 'frontend'))
+    fs.existsSync(path.join(fullPath, 'frontend')) ||
+    fs.existsSync(path.join(fullPath, 'src'))
   );
 }
 

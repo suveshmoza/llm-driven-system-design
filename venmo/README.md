@@ -6,13 +6,13 @@ A simplified Venmo-like platform demonstrating peer-to-peer payments, social fee
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 5,570 |
-| Source Files | 46 |
-| .tsx | 1,969 |
-| .js | 1,888 |
-| .md | 1,115 |
-| .ts | 450 |
-| .json | 88 |
+| Total SLOC | 10,137 |
+| Source Files | 79 |
+| .js | 4,106 |
+| .tsx | 3,220 |
+| .md | 1,880 |
+| .ts | 665 |
+| .sql | 117 |
 
 ## Features
 

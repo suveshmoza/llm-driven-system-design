@@ -7,6 +7,12 @@ import { useAuthStore } from '../stores/authStore';
 import { useState, useEffect } from 'react';
 import { userApi } from '../services/api';
 import type { UserPreferences } from '../types';
+import {
+  InterestedInSection,
+  AgeRangeSection,
+  DistanceSection,
+  VisibilitySection,
+} from '../components/preferences';
 
 /**
  * Preferences page component.
@@ -52,15 +58,9 @@ function PreferencesPage() {
     }
   };
 
-  const toggleInterest = (gender: string) => {
+  const handleChange = (updates: Partial<UserPreferences>) => {
     if (!preferences) return;
-    const interested_in = preferences.interested_in.includes(gender)
-      ? preferences.interested_in.filter((g) => g !== gender)
-      : [...preferences.interested_in, gender];
-
-    if (interested_in.length === 0) return; // Must have at least one
-
-    setPreferences({ ...preferences, interested_in });
+    setPreferences({ ...preferences, ...updates });
   };
 
   if (!isAuthenticated) {
@@ -100,114 +100,10 @@ function PreferencesPage() {
 
       {/* Content */}
       <main className="p-4 space-y-4">
-        {/* Interested In */}
-        <div className="card p-4">
-          <h3 className="font-semibold mb-3">Show Me</h3>
-          <div className="flex gap-2">
-            {['male', 'female', 'other'].map((gender) => (
-              <button
-                key={gender}
-                onClick={() => toggleInterest(gender)}
-                className={`flex-1 py-2 rounded-full font-medium transition-colors ${
-                  preferences.interested_in.includes(gender)
-                    ? 'bg-tinder-gradient text-white'
-                    : 'bg-gray-200 text-gray-700'
-                }`}
-              >
-                {gender.charAt(0).toUpperCase() + gender.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Age Range */}
-        <div className="card p-4">
-          <h3 className="font-semibold mb-3">Age Range</h3>
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <label className="block text-sm text-gray-600 mb-1">Min Age</label>
-              <input
-                type="number"
-                min={18}
-                max={preferences.age_max}
-                value={preferences.age_min}
-                onChange={(e) =>
-                  setPreferences({
-                    ...preferences,
-                    age_min: Math.max(18, parseInt(e.target.value) || 18),
-                  })
-                }
-                className="input text-center"
-              />
-            </div>
-            <span className="text-gray-400 pt-6">-</span>
-            <div className="flex-1">
-              <label className="block text-sm text-gray-600 mb-1">Max Age</label>
-              <input
-                type="number"
-                min={preferences.age_min}
-                max={100}
-                value={preferences.age_max}
-                onChange={(e) =>
-                  setPreferences({
-                    ...preferences,
-                    age_max: Math.min(100, parseInt(e.target.value) || 100),
-                  })
-                }
-                className="input text-center"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Distance */}
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold">Maximum Distance</h3>
-            <span className="text-gradient-start font-medium">{preferences.distance_km} km</span>
-          </div>
-          <input
-            type="range"
-            min={1}
-            max={500}
-            value={preferences.distance_km}
-            onChange={(e) =>
-              setPreferences({
-                ...preferences,
-                distance_km: parseInt(e.target.value),
-              })
-            }
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gradient-start"
-          />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>1 km</span>
-            <span>500 km</span>
-          </div>
-        </div>
-
-        {/* Show Me Toggle */}
-        <div className="card p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold">Show Me in Discovery</h3>
-              <p className="text-sm text-gray-500">Turn off to hide your profile</p>
-            </div>
-            <button
-              onClick={() =>
-                setPreferences({ ...preferences, show_me: !preferences.show_me })
-              }
-              className={`w-12 h-6 rounded-full transition-colors ${
-                preferences.show_me ? 'bg-tinder-gradient' : 'bg-gray-300'
-              }`}
-            >
-              <div
-                className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                  preferences.show_me ? 'translate-x-6' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
+        <InterestedInSection preferences={preferences} onChange={handleChange} />
+        <AgeRangeSection preferences={preferences} onChange={handleChange} />
+        <DistanceSection preferences={preferences} onChange={handleChange} />
+        <VisibilitySection preferences={preferences} onChange={handleChange} />
       </main>
     </div>
   );

@@ -14,6 +14,17 @@ A terminal-based AI coding assistant similar to Claude Code, GeminiCLI, or openc
   Powered by Claude from Anthropic
 ```
 
+## Codebase Stats
+
+| Metric | Value |
+|--------|-------|
+| Total SLOC | 6,144 |
+| Source Files | 26 |
+| .ts | 3,513 |
+| .md | 2,558 |
+| .json | 73 |
+
+
 ## Overview
 
 evylcode CLI is a command-line interface that provides:

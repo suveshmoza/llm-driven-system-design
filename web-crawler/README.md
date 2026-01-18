@@ -6,13 +6,13 @@ A distributed web crawling system for indexing the internet with a focus on poli
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 4,938 |
-| Source Files | 48 |
-| .ts | 2,178 |
-| .md | 1,195 |
-| .tsx | 1,175 |
-| .yml | 180 |
-| .json | 145 |
+| Total SLOC | 10,239 |
+| Source Files | 55 |
+| .ts | 5,959 |
+| .md | 2,170 |
+| .tsx | 1,632 |
+| .yml | 179 |
+| .json | 152 |
 
 ## Features
 

@@ -6,13 +6,13 @@ A high-performance distributed caching layer with consistent hashing, LRU evicti
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 4,160 |
-| Source Files | 31 |
-| .js | 1,412 |
-| .md | 1,252 |
+| Total SLOC | 7,316 |
+| Source Files | 38 |
+| .js | 3,868 |
+| .md | 1,867 |
 | .tsx | 992 |
-| .ts | 259 |
-| .yml | 104 |
+| .ts | 340 |
+| .json | 106 |
 
 ## Features
 

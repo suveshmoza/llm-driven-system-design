@@ -1,5 +1,18 @@
 # Design Kindle Community Highlights - Social Reading Platform
 
+## Codebase Stats
+
+| Metric | Value |
+|--------|-------|
+| Total SLOC | 5,560 |
+| Source Files | 43 |
+| .ts | 2,154 |
+| .md | 1,926 |
+| .tsx | 1,140 |
+| .json | 127 |
+| .sql | 109 |
+
+
 ## Overview
 
 A social reading platform similar to Kindle's Popular Highlights feature, where users can highlight passages while reading books, see what others have highlighted, and discover popular quotes and insights from the community. This educational project focuses on real-time sync, aggregation at scale, and privacy-preserving social features.

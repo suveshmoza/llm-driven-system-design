@@ -6,13 +6,13 @@ A distributed rate limiting service implementing multiple algorithms for API abu
 
 | Metric | Value |
 |--------|-------|
-| Total SLOC | 3,407 |
-| Source Files | 40 |
-| .ts | 1,481 |
-| .md | 1,111 |
-| .tsx | 560 |
-| .json | 116 |
-| .yml | 53 |
+| Total SLOC | 6,156 |
+| Source Files | 45 |
+| .ts | 3,602 |
+| .md | 1,602 |
+| .tsx | 677 |
+| .json | 124 |
+| .yml | 65 |
 
 ## Overview
 
