@@ -7,6 +7,7 @@
  * - circuitBreaker: Resilience patterns for external dependencies
  * - audit: SEC-compliant audit logging
  * - idempotency: Prevention of duplicate trade executions
+ * - kafka: Event streaming for quotes, orders, and trades
  */
 
 export { logger, createChildLogger, withContext, type LogContext } from './logger.js';
@@ -55,3 +56,25 @@ export {
   type IdempotencyStatus,
   type IdempotencyRecord,
 } from './idempotency.js';
+
+export {
+  TOPICS,
+  initKafkaProducer,
+  disconnectKafkaProducer,
+  publishQuote,
+  publishQuotes,
+  publishOrder,
+  publishTrade,
+  createConsumer,
+  consumeQuotes,
+  consumeOrders,
+  consumeTrades,
+  isProducerConnected,
+  getKafkaClient,
+  type OrderEventType,
+  type OrderEvent,
+  type TradeEvent,
+  type QuoteHandler,
+  type OrderHandler,
+  type TradeHandler,
+} from './kafka.js';

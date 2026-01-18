@@ -121,3 +121,61 @@ The recommendation engine uses a two-phase approach:
 - [TikTok's Recommendation System](https://newsroom.tiktok.com/en-us/how-tiktok-recommends-videos-for-you)
 - [ByteDance AI Lab Publications](https://ailab.bytedance.com/publications)
 - [Two-Stage Recommendation Systems](https://research.google/pubs/pub45530/)
+
+### Phase 5: Vector Embeddings (Completed)
+- [x] pgvector integration for similarity search
+- [x] Video embeddings (384-dimensional vectors)
+- [x] User interest embeddings (aggregated from watch history)
+- [x] IVFFlat indexes for approximate nearest neighbor search
+- [x] Similar videos endpoint (`GET /api/videos/:id/similar`)
+
+---
+
+## pgvector Integration
+
+### Schema Changes
+
+Added vector columns to support embedding-based recommendations:
+
+```sql
+-- Videos table
+embedding vector(384)  -- Video content embedding
+
+-- Users table  
+interest_embedding vector(384)  -- User interest embedding
+
+-- Indexes using IVFFlat for approximate nearest neighbor search
+CREATE INDEX ON videos USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX ON users USING ivfflat (interest_embedding vector_cosine_ops) WITH (lists = 100);
+```
+
+### Embeddings Service
+
+Located at `backend/src/services/embeddings.js`:
+
+- `generateVideoEmbedding(videoId, description, hashtags)` - Generates and stores video embedding
+- `generateUserEmbedding(userId, watchHistory)` - Aggregates watched video embeddings
+- `findSimilarVideos(embedding, limit, options)` - Uses pgvector `<=>` cosine distance
+- `findVideosLikeThis(videoId, limit)` - Finds videos similar to a given video
+- `getEmbeddingBasedRecommendations(userId, limit)` - Personalized recommendations
+
+### Updated Recommendation Algorithm
+
+Candidate generation now includes embedding-based source:
+- 30% from followed creators
+- 20% from liked hashtags
+- **20% from embedding similarity** (NEW)
+- 30% from trending pool
+
+Ranking includes embedding similarity boost:
+- Followed: +5 score
+- Embedding match: +4 score + (similarity * 3)
+- Hashtag match: +2 score
+
+### Note on Production
+
+The current implementation uses random embeddings for simulation. In production:
+- Use sentence-transformers (e.g., `all-MiniLM-L6-v2`) for text embeddings
+- Use CLIP or similar for video frame embeddings
+- Consider audio embeddings for music/sound features
+- Run embedding generation as background job

@@ -1,6 +1,8 @@
 import { pool } from '../db.js';
 import { redisClient } from '../db.js';
 import { getPresignedUrl, AUDIO_BUCKET } from '../storage.js';
+import { publishPlaybackEvent } from '../shared/kafka.js';
+import { logger } from '../shared/logger.js';
 
 // Get stream URL for a track
 export async function getStreamUrl(trackId, userId) {
@@ -77,6 +79,14 @@ export async function recordPlaybackEvent(userId, trackId, eventType, positionMs
        )`,
       [userId, trackId, positionMs]
     );
+  }
+
+  // Publish to Kafka for analytics processing
+  try {
+    await publishPlaybackEvent(userId, trackId, eventType, positionMs, { deviceType });
+  } catch (error) {
+    // Log error but don't fail the request - Kafka is non-blocking
+    logger.error({ error: error.message, userId, trackId, eventType }, 'Failed to publish to Kafka');
   }
 
   return { recorded: true };

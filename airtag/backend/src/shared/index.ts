@@ -8,6 +8,7 @@
  * - idempotency: Duplicate request prevention
  * - rateLimit: Rate limiting middleware
  * - health: Health check endpoints
+ * - queue: RabbitMQ message queue for async processing
  */
 
 // Logging
@@ -69,3 +70,23 @@ export {
   checkPostgres,
   checkRedis,
 } from './health.js';
+
+// Message Queue
+export {
+  getChannel,
+  closeConnection,
+  publishLocationReport,
+  consumeLocationReports,
+  publishNotification,
+  consumeNotifications,
+  QUEUES,
+  queueMessagesPublished,
+  queueMessagesConsumed,
+  queueProcessingDuration,
+} from './queue.js';
+export type {
+  LocationReportMessage,
+  NotificationMessage,
+  LocationReportHandler,
+  NotificationHandler,
+} from './queue.js';

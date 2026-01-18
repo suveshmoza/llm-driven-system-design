@@ -2,12 +2,18 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { locationService } from '../services/locationService.js';
 import { SimulatedLocation } from '../types/index.js';
+import {
+  publishLocationReport,
+  createComponentLogger,
+  locationReportsTotal,
+} from '../shared/index.js';
 
 /**
  * Location routes for retrieving and simulating device location reports.
  * All routes require authentication and are prefixed with /api/locations.
  */
 const router = Router();
+const log = createComponentLogger('locations-route');
 
 // All routes require authentication
 router.use(requireAuth);
@@ -110,6 +116,11 @@ router.post('/:deviceId/simulate', async (req, res) => {
  * Submit an encrypted location report from a finder device.
  * This endpoint simulates the crowd-sourced Find My network where
  * any device can report sightings of nearby trackers.
+ *
+ * ASYNC PROCESSING:
+ * - Publishes the report to RabbitMQ for async processing
+ * - Returns immediately to minimize latency for the reporting device
+ * - Worker processes the report, stores it, and triggers notifications
  */
 router.post('/report', async (req, res) => {
   try {
@@ -119,19 +130,51 @@ router.post('/report', async (req, res) => {
       return res.status(400).json({ error: 'Identifier hash and encrypted payload are required' });
     }
 
-    const report = await locationService.submitReport({
+    // Publish to queue for async processing
+    const published = await publishLocationReport({
       identifier_hash,
       encrypted_payload,
       reporter_region,
+      received_at: Date.now(),
     });
 
-    res.status(201).json({
-      message: 'Report submitted successfully',
-      report_id: report.id,
+    if (!published) {
+      log.warn({ identifierHash: identifier_hash }, 'Queue backpressure, report buffered');
+    }
+
+    log.info(
+      { identifierHash: identifier_hash, region: reporter_region },
+      'Location report queued for processing'
+    );
+
+    // Return immediately - processing happens asynchronously
+    res.status(202).json({
+      message: 'Report accepted for processing',
+      status: 'queued',
     });
   } catch (error) {
-    console.error('Submit report error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    log.error({ error }, 'Failed to queue location report');
+
+    // Fallback to synchronous processing if queue is unavailable
+    try {
+      const { identifier_hash, encrypted_payload, reporter_region } = req.body;
+
+      log.warn('Queue unavailable, falling back to synchronous processing');
+
+      const report = await locationService.submitReport({
+        identifier_hash,
+        encrypted_payload,
+        reporter_region,
+      });
+
+      res.status(201).json({
+        message: 'Report submitted successfully',
+        report_id: report.id,
+      });
+    } catch (fallbackError) {
+      log.error({ error: fallbackError }, 'Fallback processing also failed');
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 });
 
