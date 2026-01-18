@@ -10,6 +10,8 @@ Venmo is a peer-to-peer payment platform with social features. Core challenges i
 - Implement social transaction feeds
 - Handle multi-source funding
 
+**Implementation Note:** This learning implementation uses PostgreSQL for all data storage (including feed items). In a production environment at scale, Cassandra would be a better choice for feed storage due to its superior write throughput and time-series access patterns. See the Trade-offs Summary section for details.
+
 ---
 
 ## Requirements
@@ -599,6 +601,7 @@ CREATE TABLE friendships (
 | Feed architecture | Fan-out on write | Fan-in on read | Read performance |
 | Transfer speed | Instant (in-app) | Batch processing | User experience |
 | Funding | Automatic waterfall | User selects each time | UX simplicity |
+| Feed storage | PostgreSQL | Cassandra | Simpler for learning; Cassandra better for production scale |
 
 ---
 

@@ -10,7 +10,7 @@ import { useAuthStore } from '../stores/auth.store';
 import type { Order } from '../types';
 
 /** Route configuration for orders list page */
-export const Route = createFileRoute('/orders')({
+export const Route = createFileRoute('/orders/')({
   component: OrdersPage,
 });
 

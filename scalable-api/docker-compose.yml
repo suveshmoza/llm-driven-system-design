@@ -22,7 +22,7 @@ services:
 
   # Redis Cache
   redis:
-    image: redis:7-alpine
+    image: valkey/valkey:7-alpine
     container_name: scalable-api-redis
     ports:
       - "6379:6379"
@@ -34,6 +34,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - scalable-api-network
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: scalable-api-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - scalable-api-network
 

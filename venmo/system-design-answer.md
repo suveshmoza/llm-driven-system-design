@@ -71,10 +71,10 @@ The consistency requirement is absolute. Unlike a social network where eventual 
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Data Layer                                 │
 ├─────────────────┬───────────────────┬───────────────────────────┤
-│   PostgreSQL    │    Cassandra      │      Redis                │
-│   - Wallets     │    - Feed items   │      - Balance cache      │
-│   - Transfers   │    - Activity     │      - Sessions           │
-│   - Users       │    - Social graph │      - Rate limits        │
+│          PostgreSQL           │      Redis                │
+│  - Wallets, Transfers, Users  │      - Balance cache      │
+│  - Feed items, Social graph   │      - Sessions           │
+│  - Activity history           │      - Rate limits        │
 └─────────────────┴───────────────────┴───────────────────────────┘
 ```
 
@@ -244,10 +244,10 @@ async function publishToFeed(transfer) {
 }
 
 async function addToFeed(userId, transfer) {
-  await cassandra.execute(`
+  await db.query(`
     INSERT INTO feed_items
-    (user_id, timestamp, transfer_id, sender_id, receiver_id, amount, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    (user_id, created_at, transfer_id, sender_id, receiver_id, amount, note)
+    VALUES ($1, NOW(), $2, $3, $4, $5, $6)
   `, [userId, Date.now(), transfer.id, transfer.sender_id,
       transfer.receiver_id, transfer.amount, transfer.note])
 }
@@ -270,26 +270,26 @@ The tradeoff is storage (duplicate data) and write amplification, but storage is
 async function getFeed(userId, limit = 20, before = null) {
   let query = `
     SELECT * FROM feed_items
-    WHERE user_id = ?
+    WHERE user_id = $1
   `
   const params = [userId]
 
   if (before) {
-    query += ` AND timestamp < ?`
+    query += ` AND created_at < $2`
     params.push(before)
   }
 
-  query += ` ORDER BY timestamp DESC LIMIT ?`
+  query += ` ORDER BY created_at DESC LIMIT $3`
   params.push(limit)
 
-  const result = await cassandra.execute(query, params)
+  const result = await db.query(query, params)
 
   // Hydrate with user details
   return hydrateWithUsers(result.rows)
 }
 ```
 
-Cassandra is perfect here:
+PostgreSQL works well for this learning implementation. At production scale, Cassandra would be ideal:
 - Time-series access pattern (latest items first)
 - High write throughput for fan-out
 - Easy horizontal scaling"
@@ -475,7 +475,7 @@ Things I'd explore with more time:
 
 1. **Atomic balance transfers** using PostgreSQL transactions with row-level locking
 2. **Funding waterfall** that automatically picks the best source (balance > bank > card)
-3. **Fan-out-on-write social feed** stored in Cassandra for fast reads
+3. **Fan-out-on-write social feed** stored in PostgreSQL (Cassandra at production scale)
 4. **Payment requests** with notifications and reminders
 5. **Instant and standard cashout** via push-to-card and ACH
 

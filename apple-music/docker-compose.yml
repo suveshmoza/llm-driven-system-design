@@ -1,4 +1,3 @@
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,7 +18,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: valkey/valkey:7-alpine
     container_name: apple-music-redis
     ports:
       - "6379:6379"
@@ -65,7 +64,25 @@ services:
       echo 'Buckets created successfully';
       "
 
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: apple-music-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: curl -s http://localhost:9200 >/dev/null || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  elasticsearch_data:

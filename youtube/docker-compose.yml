@@ -1,4 +1,3 @@
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -67,6 +66,21 @@ services:
       mc anonymous set download myminio/thumbnails;
       echo 'MinIO buckets created successfully';
       "
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: youtube-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:
