@@ -149,6 +149,34 @@ function isDockerRunning() {
 }
 
 /**
+ * Stop Docker containers in ALL configured projects
+ * This ensures clean port bindings when switching between projects
+ */
+async function stopAllProjectDocker(configs) {
+  if (!isDockerRunning()) {
+    return;
+  }
+
+  logStep('CLEANUP', 'Stopping Docker in all projects...');
+
+  for (const config of configs) {
+    const projectDir = path.join(repoRoot, config.name);
+    if (hasDockerCompose(projectDir)) {
+      try {
+        execSync('docker-compose down -v', {
+          cwd: projectDir,
+          stdio: 'pipe',
+        });
+      } catch {
+        // Ignore errors - project might not have running containers
+      }
+    }
+  }
+
+  logSuccess('All project Docker containers stopped');
+}
+
+/**
  * Kill any process using a specific port
  */
 function killProcessOnPort(port) {
@@ -831,6 +859,12 @@ async function main() {
   const results = [];
 
   for (const config of projectsToProcess) {
+    // When processing multiple projects, stop ALL Docker containers first
+    // This ensures no port conflicts between projects
+    if (shouldStart && projectsToProcess.length > 1) {
+      await stopAllProjectDocker(configs);
+    }
+
     const result = await processProject(config);
     results.push(result);
   }
