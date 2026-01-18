@@ -10,7 +10,7 @@ import type { Order, WSMessage } from '../types';
  * Orders list page route configuration.
  * Shows customer's order history.
  */
-export const Route = createFileRoute('/orders')({
+export const Route = createFileRoute('/orders/')({
   component: OrdersPage,
 });
 

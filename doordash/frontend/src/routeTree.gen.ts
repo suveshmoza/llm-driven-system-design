@@ -8,245 +8,224 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as RestaurantDashboardRouteImport } from './routes/restaurant-dashboard'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as DriverDashboardRouteImport } from './routes/driver-dashboard'
+import { Route as CartRouteImport } from './routes/cart'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as OrdersIndexRouteImport } from './routes/orders.index'
+import { Route as RestaurantRestaurantIdRouteImport } from './routes/restaurant.$restaurantId'
+import { Route as OrdersOrderIdRouteImport } from './routes/orders.$orderId'
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as RegisterImport } from './routes/register'
-import { Route as LoginImport } from './routes/login'
-import { Route as CartImport } from './routes/cart'
-import { Route as IndexImport } from './routes/index'
-import { Route as RestaurantDashboardImport } from './routes/restaurant-dashboard'
-import { Route as DriverDashboardImport } from './routes/driver-dashboard'
-import { Route as RestaurantRestaurantIdImport } from './routes/restaurant.$restaurantId'
-import { Route as OrdersIndexImport } from './routes/orders.index'
-import { Route as OrdersOrderIdImport } from './routes/orders.$orderId'
-
-// Create/Update Routes
-
-const RegisterRoute = RegisterImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const LoginRoute = LoginImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const CartRoute = CartImport.update({
-  id: '/cart',
-  path: '/cart',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const IndexRoute = IndexImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const RestaurantDashboardRoute = RestaurantDashboardImport.update({
+const RestaurantDashboardRoute = RestaurantDashboardRouteImport.update({
   id: '/restaurant-dashboard',
   path: '/restaurant-dashboard',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const DriverDashboardRoute = DriverDashboardImport.update({
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DriverDashboardRoute = DriverDashboardRouteImport.update({
   id: '/driver-dashboard',
   path: '/driver-dashboard',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const RestaurantRestaurantIdRoute = RestaurantRestaurantIdImport.update({
+const CartRoute = CartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersIndexRoute = OrdersIndexRouteImport.update({
+  id: '/orders/',
+  path: '/orders/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RestaurantRestaurantIdRoute = RestaurantRestaurantIdRouteImport.update({
   id: '/restaurant/$restaurantId',
   path: '/restaurant/$restaurantId',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const OrdersIndexRoute = OrdersIndexImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const OrdersOrderIdRoute = OrdersOrderIdImport.update({
+const OrdersOrderIdRoute = OrdersOrderIdRouteImport.update({
   id: '/orders/$orderId',
   path: '/orders/$orderId',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-// Populate the FileRoutesByPath interface
-
-declare module '@tanstack/react-router' {
-  interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/cart': {
-      id: '/cart'
-      path: '/cart'
-      fullPath: '/cart'
-      preLoaderRoute: typeof CartImport
-      parentRoute: typeof rootRoute
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginImport
-      parentRoute: typeof rootRoute
-    }
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterImport
-      parentRoute: typeof rootRoute
-    }
-    '/restaurant-dashboard': {
-      id: '/restaurant-dashboard'
-      path: '/restaurant-dashboard'
-      fullPath: '/restaurant-dashboard'
-      preLoaderRoute: typeof RestaurantDashboardImport
-      parentRoute: typeof rootRoute
-    }
-    '/driver-dashboard': {
-      id: '/driver-dashboard'
-      path: '/driver-dashboard'
-      fullPath: '/driver-dashboard'
-      preLoaderRoute: typeof DriverDashboardImport
-      parentRoute: typeof rootRoute
-    }
-    '/restaurant/$restaurantId': {
-      id: '/restaurant/$restaurantId'
-      path: '/restaurant/$restaurantId'
-      fullPath: '/restaurant/$restaurantId'
-      preLoaderRoute: typeof RestaurantRestaurantIdImport
-      parentRoute: typeof rootRoute
-    }
-    '/orders': {
-      id: '/orders'
-      path: '/orders'
-      fullPath: '/orders'
-      preLoaderRoute: typeof OrdersIndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/orders/$orderId': {
-      id: '/orders/$orderId'
-      path: '/orders/$orderId'
-      fullPath: '/orders/$orderId'
-      preLoaderRoute: typeof OrdersOrderIdImport
-      parentRoute: typeof rootRoute
-    }
-  }
-}
-
-// Create and export the route tree
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cart': typeof CartRoute
+  '/driver-dashboard': typeof DriverDashboardRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/restaurant-dashboard': typeof RestaurantDashboardRoute
-  '/driver-dashboard': typeof DriverDashboardRoute
+  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/restaurant/$restaurantId': typeof RestaurantRestaurantIdRoute
   '/orders': typeof OrdersIndexRoute
-  '/orders/$orderId': typeof OrdersOrderIdRoute
 }
-
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cart': typeof CartRoute
+  '/driver-dashboard': typeof DriverDashboardRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/restaurant-dashboard': typeof RestaurantDashboardRoute
-  '/driver-dashboard': typeof DriverDashboardRoute
+  '/orders/$orderId': typeof OrdersOrderIdRoute
   '/restaurant/$restaurantId': typeof RestaurantRestaurantIdRoute
   '/orders': typeof OrdersIndexRoute
-  '/orders/$orderId': typeof OrdersOrderIdRoute
 }
-
 export interface FileRoutesById {
-  __root__: typeof rootRoute
+  __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cart': typeof CartRoute
+  '/driver-dashboard': typeof DriverDashboardRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/restaurant-dashboard': typeof RestaurantDashboardRoute
-  '/driver-dashboard': typeof DriverDashboardRoute
-  '/restaurant/$restaurantId': typeof RestaurantRestaurantIdRoute
-  '/orders': typeof OrdersIndexRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/restaurant/$restaurantId': typeof RestaurantRestaurantIdRoute
+  '/orders/': typeof OrdersIndexRoute
 }
-
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/cart'
+    | '/driver-dashboard'
     | '/login'
     | '/register'
     | '/restaurant-dashboard'
-    | '/driver-dashboard'
+    | '/orders/$orderId'
     | '/restaurant/$restaurantId'
     | '/orders'
-    | '/orders/$orderId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/cart'
+    | '/driver-dashboard'
     | '/login'
     | '/register'
     | '/restaurant-dashboard'
-    | '/driver-dashboard'
+    | '/orders/$orderId'
     | '/restaurant/$restaurantId'
     | '/orders'
-    | '/orders/$orderId'
   id:
     | '__root__'
     | '/'
     | '/cart'
+    | '/driver-dashboard'
     | '/login'
     | '/register'
     | '/restaurant-dashboard'
-    | '/driver-dashboard'
-    | '/restaurant/$restaurantId'
-    | '/orders'
     | '/orders/$orderId'
+    | '/restaurant/$restaurantId'
+    | '/orders/'
   fileRoutesById: FileRoutesById
 }
-
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CartRoute: typeof CartRoute
+  DriverDashboardRoute: typeof DriverDashboardRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
   RestaurantDashboardRoute: typeof RestaurantDashboardRoute
-  DriverDashboardRoute: typeof DriverDashboardRoute
+  OrdersOrderIdRoute: typeof OrdersOrderIdRoute
   RestaurantRestaurantIdRoute: typeof RestaurantRestaurantIdRoute
   OrdersIndexRoute: typeof OrdersIndexRoute
-  OrdersOrderIdRoute: typeof OrdersOrderIdRoute
+}
+
+declare module '@tanstack/react-router' {
+  interface FileRoutesByPath {
+    '/restaurant-dashboard': {
+      id: '/restaurant-dashboard'
+      path: '/restaurant-dashboard'
+      fullPath: '/restaurant-dashboard'
+      preLoaderRoute: typeof RestaurantDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/driver-dashboard': {
+      id: '/driver-dashboard'
+      path: '/driver-dashboard'
+      fullPath: '/driver-dashboard'
+      preLoaderRoute: typeof DriverDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cart': {
+      id: '/cart'
+      path: '/cart'
+      fullPath: '/cart'
+      preLoaderRoute: typeof CartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders/': {
+      id: '/orders/'
+      path: '/orders'
+      fullPath: '/orders'
+      preLoaderRoute: typeof OrdersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/restaurant/$restaurantId': {
+      id: '/restaurant/$restaurantId'
+      path: '/restaurant/$restaurantId'
+      fullPath: '/restaurant/$restaurantId'
+      preLoaderRoute: typeof RestaurantRestaurantIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders/$orderId': {
+      id: '/orders/$orderId'
+      path: '/orders/$orderId'
+      fullPath: '/orders/$orderId'
+      preLoaderRoute: typeof OrdersOrderIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+  }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CartRoute: CartRoute,
+  DriverDashboardRoute: DriverDashboardRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
   RestaurantDashboardRoute: RestaurantDashboardRoute,
-  DriverDashboardRoute: DriverDashboardRoute,
+  OrdersOrderIdRoute: OrdersOrderIdRoute,
   RestaurantRestaurantIdRoute: RestaurantRestaurantIdRoute,
   OrdersIndexRoute: OrdersIndexRoute,
-  OrdersOrderIdRoute: OrdersOrderIdRoute,
 }
-
-export const routeTree = rootRoute
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()

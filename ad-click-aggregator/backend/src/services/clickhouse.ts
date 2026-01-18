@@ -14,9 +14,9 @@ let client: ClickHouseClient | null = null;
  */
 const CLICKHOUSE_CONFIG = {
   host: process.env.CLICKHOUSE_HOST || 'http://localhost:8123',
-  username: process.env.CLICKHOUSE_USER || 'default',
-  password: process.env.CLICKHOUSE_PASSWORD || '',
-  database: process.env.CLICKHOUSE_DATABASE || 'default',
+  username: process.env.CLICKHOUSE_USER || 'adclick',
+  password: process.env.CLICKHOUSE_PASSWORD || 'adclick123',
+  database: process.env.CLICKHOUSE_DATABASE || 'adclick',
 };
 
 /**
