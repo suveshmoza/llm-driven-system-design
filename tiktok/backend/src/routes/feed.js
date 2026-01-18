@@ -400,7 +400,20 @@ async function generateCandidates(userId, count) {
     }
   }
 
-  // Source 3: Trending videos for exploration (30%)
+  // Source 3: Embedding-based similar videos (20%)
+  const embeddingCount = Math.floor(count * 0.2);
+  try {
+    const embeddingVideos = await getEmbeddingBasedRecommendations(userId, embeddingCount);
+    for (const video of embeddingVideos) {
+      if (!candidateMap.has(video.id)) {
+        candidateMap.set(video.id, { ...video, source: 'embedding' });
+      }
+    }
+  } catch (error) {
+    logger.warn({ error: error.message, userId }, 'Embedding recommendations failed, skipping');
+  }
+
+  // Source 4: Trending videos for exploration (30%)
   const trendingCount = Math.floor(count * 0.3);
   const trendingResult = await query(
     `SELECT v.*, u.username as creator_username, u.display_name as creator_display_name,
@@ -452,6 +465,12 @@ async function rankVideos(userId, candidates) {
     // Source boost
     if (video.source === 'followed') {
       score += 5; // Strong boost for followed creators
+    } else if (video.source === 'embedding') {
+      score += 4; // Boost for embedding similarity match
+      // Add extra boost based on similarity score if available
+      if (video.similarity) {
+        score += video.similarity * 3;
+      }
     } else if (video.source === 'hashtag') {
       score += 2;
     }
