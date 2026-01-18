@@ -8,13 +8,11 @@
     "enabled": true,
     "loginUrl": "/",
     "credentials": {
-      "username": "alice",
-      "password": "password123"
+      "username": "alice"
     },
-    "usernameSelector": "input[name='username'], input[type='text']",
-    "passwordSelector": "input[name='password'], input[type='password']",
+    "usernameSelector": "input#nickname, input[type='text']",
     "submitSelector": "button[type='submit']",
-    "successIndicator": "[data-testid='chat'], .server-list, aside"
+    "successIndicator": "[data-testid='chat'], .server-list, aside, .bg-discord-channel"
   },
   "screens": [
     {
