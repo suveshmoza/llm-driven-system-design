@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Screenshot automation script for frontend projects.
- * Uses Puppeteer to capture screenshots of key screens.
+ * Uses Playwright to capture screenshots of key screens.
  *
  * Usage:
  *   node scripts/screenshots.mjs <project>                  # Screenshot (frontend must be running)
@@ -11,15 +11,16 @@
  *   node scripts/screenshots.mjs --list                     # List available configs
  *
  * Requirements:
- *   - Puppeteer installed: npm install puppeteer
+ *   - Playwright installed: npm install playwright
  *   - Frontend dev server must be running (or use --start flag)
+ *   - Projects run in Docker - only one at a time (stop previous before starting new)
  */
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
-import puppeteer from 'puppeteer';
+import { webkit } from 'playwright';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -275,55 +276,31 @@ process.on('exit', () => {
 });
 
 /**
- * Capture screenshots using Puppeteer
+ * Capture screenshots using Playwright
  */
-async function captureWithPuppeteer(config, outputDir) {
+async function captureWithPlaywright(config, outputDir) {
   const baseUrl = `http://localhost:${config.frontendPort}`;
 
-  logStep('BROWSER', 'Launching Chrome...');
+  logStep('BROWSER', 'Launching WebKit...');
 
   let browser;
-  let tempUserDataDir = null;
   try {
-    // Create temp user data directory to avoid profile issues
-    tempUserDataDir = fs.mkdtempSync(path.join('/tmp', 'puppeteer-'));
-
-    // Use Puppeteer's ARM Chrome for Testing
-    const armChromePath = '/Users/evgenyvinnik/.cache/puppeteer/chrome/mac_arm-143.0.7499.192/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
-
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath: fs.existsSync(armChromePath) ? armChromePath : undefined,
-      userDataDir: tempUserDataDir,
-      pipe: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-gpu',
-        '--disable-dev-shm-usage',
-        '--no-first-run',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-extensions',
-        '--disable-sync',
-        '--disable-translate',
-        '--mute-audio',
-      ],
-    });
+    browser = await webkit.launch({ headless: false });
   } catch (error) {
     logError(`Failed to launch browser: ${error.message}`);
-    if (tempUserDataDir) {
-      fs.rmSync(tempUserDataDir, { recursive: true, force: true });
-    }
+    logWarning('Run: npx playwright install webkit');
     return { success: false, captured: 0, failed: config.screens.length };
   }
 
-  const page = await browser.newPage();
-  await page.setViewport({
-    width: config.viewport?.width || 1280,
-    height: config.viewport?.height || 720,
+  const context = await browser.newContext({
+    viewport: {
+      width: config.viewport?.width || 1280,
+      height: config.viewport?.height || 720,
+    },
     deviceScaleFactor: 2,
   });
+
+  const page = await context.newPage();
 
   let successCount = 0;
   let failCount = 0;
@@ -337,16 +314,16 @@ async function captureWithPuppeteer(config, outputDir) {
     logStep('AUTH', 'Logging in...');
 
     try {
-      await page.goto(`${baseUrl}${auth.loginUrl}`, { waitUntil: 'networkidle0', timeout: 30000 });
+      await page.goto(`${baseUrl}${auth.loginUrl}`, { waitUntil: 'networkidle', timeout: 30000 });
 
       // Wait for and fill username/email field
       const usernameSelector = auth.usernameSelector || 'input[name="username"], input[name="email"], input[type="email"], input[type="text"]';
       await page.waitForSelector(usernameSelector, { timeout: 10000 });
-      await page.type(usernameSelector, auth.credentials.username || auth.credentials.email);
+      await page.fill(usernameSelector, auth.credentials.username || auth.credentials.email);
 
       // Fill password field
       const passwordSelector = auth.passwordSelector || 'input[name="password"], input[type="password"]';
-      await page.type(passwordSelector, auth.credentials.password);
+      await page.fill(passwordSelector, auth.credentials.password);
 
       // Click submit
       const submitSelector = auth.submitSelector || 'button[type="submit"]';
@@ -356,7 +333,7 @@ async function captureWithPuppeteer(config, outputDir) {
       if (auth.successIndicator) {
         await page.waitForSelector(auth.successIndicator, { timeout: 10000 });
       } else {
-        await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {});
+        await page.waitForLoadState('networkidle');
       }
 
       logSuccess('Login successful');
@@ -377,7 +354,7 @@ async function captureWithPuppeteer(config, outputDir) {
 
       logStep('CAPTURE', `${screen.name} (${screen.path})`);
 
-      await page.goto(`${baseUrl}${screen.path}`, { waitUntil: 'networkidle0', timeout: 30000 });
+      await page.goto(`${baseUrl}${screen.path}`, { waitUntil: 'networkidle', timeout: 30000 });
 
       // Wait for specific selector if specified
       if (screen.waitFor) {
@@ -404,7 +381,7 @@ async function captureWithPuppeteer(config, outputDir) {
 
       // Additional delay if specified
       if (screen.delay) {
-        await new Promise(resolve => setTimeout(resolve, screen.delay));
+        await page.waitForTimeout(screen.delay);
       }
 
       // Take screenshot
@@ -423,11 +400,6 @@ async function captureWithPuppeteer(config, outputDir) {
   }
 
   await browser.close();
-
-  // Clean up temp user data directory
-  if (tempUserDataDir) {
-    fs.rmSync(tempUserDataDir, { recursive: true, force: true });
-  }
 
   log(`Results: ${successCount} captured, ${failCount} failed`, 'cyan');
 
@@ -488,8 +460,8 @@ async function processProject(config) {
     return { project: config.name, success: true, captured: 0, failed: 0 };
   }
 
-  // Capture screenshots using Puppeteer
-  const result = await captureWithPuppeteer(config, outputDir);
+  // Capture screenshots using Playwright
+  const result = await captureWithPlaywright(config, outputDir);
 
   // Stop frontend if we started it
   if (frontendProcess && !frontendProcess.killed) {

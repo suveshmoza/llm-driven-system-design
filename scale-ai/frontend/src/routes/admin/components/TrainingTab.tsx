@@ -9,6 +9,23 @@ import { useState, useEffect, useCallback } from 'react'
 import { getTrainingJobs, cancelTrainingJob, type Model, type TrainingJob } from '../../../services/api'
 
 /**
+ * Training configuration options.
+ */
+export interface TrainingConfig {
+  epochs: number
+  batch_size: number
+  learning_rate: number
+}
+
+/**
+ * Per-shape drawing count.
+ */
+interface ShapeCount {
+  name: string
+  count: number
+}
+
+/**
  * Props for the TrainingTab component.
  */
 interface TrainingTabProps {
@@ -16,10 +33,12 @@ interface TrainingTabProps {
   models: Model[]
   /** Total number of drawings available for training */
   totalDrawings: number
+  /** Drawings per shape breakdown */
+  drawingsPerShape: ShapeCount[]
   /** Whether a training job is currently being started */
   trainingInProgress: boolean
-  /** Callback to start a new training job */
-  onStartTraining: () => void
+  /** Callback to start a new training job with config */
+  onStartTraining: (config: TrainingConfig) => void
   /** Callback to activate a specific model */
   onActivateModel: (modelId: string) => void
   /** Callback to refresh data after job completes */
@@ -32,6 +51,13 @@ const MIN_DRAWINGS_FOR_TRAINING = 10
 /** Auto-refresh interval for active jobs (in milliseconds) */
 const REFRESH_INTERVAL = 3000
 
+/** Default training configuration */
+const DEFAULT_CONFIG: TrainingConfig = {
+  epochs: 25,
+  batch_size: 32,
+  learning_rate: 0.001,
+}
+
 /**
  * Training management tab for the admin dashboard.
  * Provides controls to start training and manage trained models.
@@ -42,6 +68,7 @@ const REFRESH_INTERVAL = 3000
 export function TrainingTab({
   models,
   totalDrawings,
+  drawingsPerShape,
   trainingInProgress,
   onStartTraining,
   onActivateModel,
@@ -50,6 +77,11 @@ export function TrainingTab({
   const [jobs, setJobs] = useState<TrainingJob[]>([])
   const [jobsLoading, setJobsLoading] = useState(true)
   const [jobsError, setJobsError] = useState<string | null>(null)
+
+  // Training config state
+  const [epochs, setEpochs] = useState(DEFAULT_CONFIG.epochs)
+  const [batchSize, setBatchSize] = useState(DEFAULT_CONFIG.batch_size)
+  const [learningRate, setLearningRate] = useState(DEFAULT_CONFIG.learning_rate)
 
   const canTrain = totalDrawings >= MIN_DRAWINGS_FOR_TRAINING
 
@@ -114,29 +146,111 @@ export function TrainingTab({
     }
   }
 
+  /**
+   * Starts training with current config.
+   */
+  const handleStartTraining = () => {
+    onStartTraining({
+      epochs,
+      batch_size: batchSize,
+      learning_rate: learningRate,
+    })
+  }
+
   return (
     <div className="training-section">
       <div className="training-header">
         <h2>Model Training</h2>
-        <button
-          className="train-btn"
-          onClick={onStartTraining}
-          disabled={trainingInProgress || !canTrain || hasActiveJobs}
-        >
-          {trainingInProgress
-            ? 'Starting...'
-            : hasActiveJobs
-              ? 'Training in Progress...'
-              : 'Start Training'}
-        </button>
       </div>
 
-      {!canTrain && (
-        <TrainingWarning
-          currentCount={totalDrawings}
-          requiredCount={MIN_DRAWINGS_FOR_TRAINING}
-        />
-      )}
+      {/* Training Data Overview */}
+      <div className="training-data-overview card">
+        <h3>Available Training Data</h3>
+        <div className="data-stats">
+          <div className="total-stat">
+            <span className="stat-value">{totalDrawings}</span>
+            <span className="stat-label">Total Drawings</span>
+          </div>
+          <div className="shape-stats">
+            {drawingsPerShape.map((shape) => (
+              <div key={shape.name} className="shape-stat">
+                <span className="shape-name">{shape.name}</span>
+                <span className="shape-count">{shape.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {!canTrain && (
+          <TrainingWarning
+            currentCount={totalDrawings}
+            requiredCount={MIN_DRAWINGS_FOR_TRAINING}
+          />
+        )}
+      </div>
+
+      {/* Training Configuration */}
+      <div className="training-config card">
+        <h3>Training Configuration</h3>
+        <div className="config-form">
+          <div className="config-row">
+            <div className="config-field">
+              <label htmlFor="epochs">Epochs</label>
+              <input
+                id="epochs"
+                type="number"
+                min="1"
+                max="100"
+                value={epochs}
+                onChange={(e) => setEpochs(Math.max(1, parseInt(e.target.value) || 1))}
+                disabled={hasActiveJobs}
+              />
+              <span className="field-hint">More epochs = better accuracy, longer training</span>
+            </div>
+            <div className="config-field">
+              <label htmlFor="batchSize">Batch Size</label>
+              <input
+                id="batchSize"
+                type="number"
+                min="8"
+                max="128"
+                step="8"
+                value={batchSize}
+                onChange={(e) => setBatchSize(Math.max(8, parseInt(e.target.value) || 32))}
+                disabled={hasActiveJobs}
+              />
+              <span className="field-hint">Smaller = slower but more stable</span>
+            </div>
+            <div className="config-field">
+              <label htmlFor="learningRate">Learning Rate</label>
+              <select
+                id="learningRate"
+                value={learningRate}
+                onChange={(e) => setLearningRate(parseFloat(e.target.value))}
+                disabled={hasActiveJobs}
+              >
+                <option value="0.01">0.01 (Fast)</option>
+                <option value="0.001">0.001 (Default)</option>
+                <option value="0.0005">0.0005 (Slow)</option>
+                <option value="0.0001">0.0001 (Very Slow)</option>
+              </select>
+              <span className="field-hint">Lower = more precise but slower</span>
+            </div>
+          </div>
+          <div className="config-actions">
+            <button
+              className="train-btn"
+              onClick={handleStartTraining}
+              disabled={trainingInProgress || !canTrain || hasActiveJobs}
+            >
+              {trainingInProgress
+                ? 'Starting...'
+                : hasActiveJobs
+                  ? 'Training in Progress...'
+                  : `Start Training (${epochs} epochs)`}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <JobsSection
         jobs={jobs}
@@ -283,7 +397,9 @@ function JobCard({ job, onCancel }: JobCardProps) {
         {job.status === 'failed' && (
           <div className="job-error">
             <span className="error-label">Error:</span>
-            <span className="error-message">Training failed. Check worker logs.</span>
+            <span className="error-message">
+              {job.error_message || 'Training failed. Check worker logs.'}
+            </span>
           </div>
         )}
 

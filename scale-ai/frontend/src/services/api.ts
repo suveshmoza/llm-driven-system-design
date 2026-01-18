@@ -192,8 +192,10 @@ export interface TrainingJob {
   config: Record<string, unknown>
   started_at: string | null
   completed_at: string | null
+  created_at: string
   accuracy: string | null
   progress: TrainingProgress | null
+  error_message: string | null
 }
 
 /**

@@ -748,8 +748,8 @@ app.get('/api/admin/training/:id', requireAdmin, async (req, res) => {
 app.get('/api/admin/training', requireAdmin, async (_req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, status, config, started_at, completed_at, progress,
-             metrics->>'accuracy' as accuracy
+      SELECT id, status, config, started_at, completed_at, created_at, progress,
+             metrics->>'accuracy' as accuracy, error_message
       FROM training_jobs
       ORDER BY created_at DESC
       LIMIT 50

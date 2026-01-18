@@ -33,6 +33,7 @@ import {
   DrawingsTab,
   QualityTab,
   TrainingTab,
+  type TrainingConfig,
 } from './components'
 import './AdminDashboard.css'
 
@@ -128,10 +129,10 @@ export function AdminDashboard() {
    * Starts a new training job.
    * Refreshes data after a short delay to show the new job.
    */
-  const handleStartTraining = async () => {
+  const handleStartTraining = async (config: TrainingConfig) => {
     try {
       setTrainingInProgress(true)
-      await startTraining({ epochs: 10, batch_size: 32 })
+      await startTraining(config)
       // Refresh data after starting training
       setTimeout(loadData, 2000)
     } catch (err) {
@@ -267,6 +268,7 @@ export function AdminDashboard() {
           <TrainingTab
             models={models}
             totalDrawings={stats?.total_drawings || 0}
+            drawingsPerShape={stats?.drawings_per_shape || []}
             trainingInProgress={trainingInProgress}
             onStartTraining={handleStartTraining}
             onActivateModel={handleActivateModel}

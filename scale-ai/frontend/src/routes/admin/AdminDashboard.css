@@ -1340,3 +1340,168 @@
     gap: 1rem;
   }
 }
+
+/* Training Data Overview */
+.training-data-overview {
+  margin-bottom: 1.5rem;
+}
+
+.training-data-overview h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: #334155;
+}
+
+.data-stats {
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.total-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-radius: 12px;
+  color: white;
+}
+
+.total-stat .stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.total-stat .stat-label {
+  font-size: 0.75rem;
+  opacity: 0.9;
+  margin-top: 0.25rem;
+}
+
+.shape-stats {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.shape-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  min-width: 80px;
+}
+
+.shape-stat .shape-name {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: capitalize;
+  margin-bottom: 0.25rem;
+}
+
+.shape-stat .shape-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+/* Training Configuration */
+.training-config {
+  margin-bottom: 1.5rem;
+}
+
+.training-config h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: #334155;
+}
+
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.config-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 150px;
+}
+
+.config-field label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.config-field input,
+.config-field select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: white;
+}
+
+.config-field input:focus,
+.config-field select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.config-field input:disabled,
+.config-field select:disabled {
+  background: #f1f5f9;
+  cursor: not-allowed;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.config-actions {
+  margin-top: 0.5rem;
+}
+
+.config-actions .train-btn {
+  padding: 0.75rem 2rem;
+}
+
+@media (max-width: 640px) {
+  .data-stats {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .total-stat {
+    width: 100%;
+  }
+
+  .shape-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .config-row {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
