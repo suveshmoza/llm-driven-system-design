@@ -165,4 +165,4 @@ CREATE INDEX idx_audit_type ON audit_events(event_type);
 CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

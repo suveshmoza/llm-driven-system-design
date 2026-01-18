@@ -152,4 +152,4 @@ CREATE TRIGGER update_posts_updated_at BEFORE UPDATE ON posts
 CREATE TRIGGER update_comments_updated_at BEFORE UPDATE ON comments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

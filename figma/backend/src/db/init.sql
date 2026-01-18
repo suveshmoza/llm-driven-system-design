@@ -162,4 +162,4 @@ CREATE UNIQUE INDEX idx_operations_idempotency ON operations(idempotency_key)
 CREATE INDEX idx_operations_idempotency_lookup ON operations(file_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

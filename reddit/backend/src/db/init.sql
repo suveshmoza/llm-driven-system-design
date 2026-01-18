@@ -180,5 +180,5 @@ INSERT INTO schema_migrations (version) VALUES
   ('003_archival_support')
 ON CONFLICT (version) DO NOTHING;
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
 

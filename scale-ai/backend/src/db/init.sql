@@ -140,5 +140,5 @@ COMMENT ON COLUMN training_jobs.metrics IS 'Training metrics: accuracy, loss, co
 COMMENT ON COLUMN models.config IS 'Model architecture details';
 
 -- Note: Run `npm run db:seed-admin` after initialization to create default admin user
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
 

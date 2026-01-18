@@ -118,4 +118,4 @@ CREATE INDEX idx_stories_created ON stories(created_at DESC);
 CREATE INDEX idx_reading_history_user ON user_reading_history(user_id);
 CREATE INDEX idx_crawl_schedule_next ON crawl_schedule(next_crawl);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

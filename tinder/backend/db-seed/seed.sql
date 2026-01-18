@@ -57,13 +57,13 @@ VALUES
   ('ffffffff-ffff-ffff-ffff-ffffffffffff', '66666666-6666-6666-6666-666666666666', 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=600', 0, true),
 
   -- Grace's photos
-  ('gggggggg-gggg-gggg-gggg-gggggggggggg', '77777777-7777-7777-7777-777777777777', 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600', 0, true),
-  ('gggggggg-gggg-gggg-gggg-ggggggggggg1', '77777777-7777-7777-7777-777777777777', 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=600', 1, false),
-  ('gggggggg-gggg-gggg-gggg-ggggggggggg2', '77777777-7777-7777-7777-777777777777', 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600', 2, false),
+  ('99999990-9999-9999-9999-999999999990', '77777777-7777-7777-7777-777777777777', 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600', 0, true),
+  ('99999990-9999-9999-9999-999999999991', '77777777-7777-7777-7777-777777777777', 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=600', 1, false),
+  ('99999990-9999-9999-9999-999999999992', '77777777-7777-7777-7777-777777777777', 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600', 2, false),
 
   -- Henry's photos
-  ('hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh', '88888888-8888-8888-8888-888888888888', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=600', 0, true),
-  ('hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhh1', '88888888-8888-8888-8888-888888888888', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600', 1, false)
+  ('00000000-0000-0000-0000-000000000088', '88888888-8888-8888-8888-888888888888', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=600', 0, true),
+  ('00000000-0000-0000-0000-000000000089', '88888888-8888-8888-8888-888888888888', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600', 1, false)
 ON CONFLICT DO NOTHING;
 
 -- Sample swipes (some mutual likes to create matches)
@@ -100,30 +100,30 @@ ON CONFLICT DO NOTHING;
 -- Note: user1_id < user2_id to maintain ordering constraint
 INSERT INTO matches (id, user1_id, user2_id, matched_at, last_message_at)
 VALUES
-  ('match-1111-2222-0000-000000000000', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', NOW() - INTERVAL '5 days', NOW() - INTERVAL '1 hour'),
-  ('match-1111-3333-0000-000000000000', '11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', NOW() - INTERVAL '3 days', NOW() - INTERVAL '2 days'),
-  ('match-1111-8888-0000-000000000000', '11111111-1111-1111-1111-111111111111', '88888888-8888-8888-8888-888888888888', NOW() - INTERVAL '1 day', NOW() - INTERVAL '30 minutes'),
-  ('match-2222-4444-0000-000000000000', '22222222-2222-2222-2222-222222222222', '44444444-4444-4444-4444-444444444444', NOW() - INTERVAL '4 days', NOW() - INTERVAL '6 hours'),
-  ('match-4444-8888-0000-000000000000', '44444444-4444-4444-4444-444444444444', '88888888-8888-8888-8888-888888888888', NOW() - INTERVAL '2 days', NULL)
+  ('a0000001-1112-2220-0000-000000000000', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', NOW() - INTERVAL '5 days', NOW() - INTERVAL '1 hour'),
+  ('a0000001-1113-3330-0000-000000000000', '11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', NOW() - INTERVAL '3 days', NOW() - INTERVAL '2 days'),
+  ('a0000001-1118-8880-0000-000000000000', '11111111-1111-1111-1111-111111111111', '88888888-8888-8888-8888-888888888888', NOW() - INTERVAL '1 day', NOW() - INTERVAL '30 minutes'),
+  ('a0000002-2224-4440-0000-000000000000', '22222222-2222-2222-2222-222222222222', '44444444-4444-4444-4444-444444444444', NOW() - INTERVAL '4 days', NOW() - INTERVAL '6 hours'),
+  ('a0000004-4448-8880-0000-000000000000', '44444444-4444-4444-4444-444444444444', '88888888-8888-8888-8888-888888888888', NOW() - INTERVAL '2 days', NULL)
 ON CONFLICT DO NOTHING;
 
 -- Sample messages
 INSERT INTO messages (id, match_id, sender_id, content, sent_at, read_at)
 VALUES
   -- Alice & Bob conversation
-  ('msg-0001-0000-0000-000000000000', 'match-1111-2222-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Hey Alice! Love your hiking pics. Which trails do you recommend?', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
-  ('msg-0002-0000-0000-000000000000', 'match-1111-2222-0000-000000000000', '11111111-1111-1111-1111-111111111111', 'Hi Bob! Thanks! I love Lands End and the Dipsea Trail. Have you been?', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
-  ('msg-0003-0000-0000-000000000000', 'match-1111-2222-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Ive done Lands End but not Dipsea. Would you want to go together sometime?', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days'),
-  ('msg-0004-0000-0000-000000000000', 'match-1111-2222-0000-000000000000', '11111111-1111-1111-1111-111111111111', 'That sounds fun! How about this weekend?', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'),
-  ('msg-0005-0000-0000-000000000000', 'match-1111-2222-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Perfect! Saturday morning works for me. Ill bring coffee', NOW() - INTERVAL '1 hour', NOW()),
+  ('b0000001-0000-0000-0000-000000000001', 'a0000001-1112-2220-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Hey Alice! Love your hiking pics. Which trails do you recommend?', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
+  ('b0000001-0000-0000-0000-000000000002', 'a0000001-1112-2220-0000-000000000000', '11111111-1111-1111-1111-111111111111', 'Hi Bob! Thanks! I love Lands End and the Dipsea Trail. Have you been?', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
+  ('b0000001-0000-0000-0000-000000000003', 'a0000001-1112-2220-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Ive done Lands End but not Dipsea. Would you want to go together sometime?', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days'),
+  ('b0000001-0000-0000-0000-000000000004', 'a0000001-1112-2220-0000-000000000000', '11111111-1111-1111-1111-111111111111', 'That sounds fun! How about this weekend?', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days'),
+  ('b0000001-0000-0000-0000-000000000005', 'a0000001-1112-2220-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Perfect! Saturday morning works for me. Ill bring coffee', NOW() - INTERVAL '1 hour', NOW()),
 
   -- Alice & Henry conversation
-  ('msg-0006-0000-0000-000000000000', 'match-1111-8888-0000-000000000000', '88888888-8888-8888-8888-888888888888', 'Bonjour! I noticed you like good food. Any favorite spots in the city?', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'),
-  ('msg-0007-0000-0000-000000000000', 'match-1111-8888-0000-000000000000', '11111111-1111-1111-1111-111111111111', 'Hey! I love State Bird Provisions and Flour + Water. You must know all the best places being a chef!', NOW() - INTERVAL '23 hours', NOW() - INTERVAL '23 hours'),
-  ('msg-0008-0000-0000-000000000000', 'match-1111-8888-0000-000000000000', '88888888-8888-8888-8888-888888888888', 'Great taste! I could take you to a few hidden gems if youd like', NOW() - INTERVAL '30 minutes', NULL),
+  ('b0000001-0000-0000-0000-000000000006', 'a0000001-1118-8880-0000-000000000000', '88888888-8888-8888-8888-888888888888', 'Bonjour! I noticed you like good food. Any favorite spots in the city?', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'),
+  ('b0000001-0000-0000-0000-000000000007', 'a0000001-1118-8880-0000-000000000000', '11111111-1111-1111-1111-111111111111', 'Hey! I love State Bird Provisions and Flour + Water. You must know all the best places being a chef!', NOW() - INTERVAL '23 hours', NOW() - INTERVAL '23 hours'),
+  ('b0000001-0000-0000-0000-000000000008', 'a0000001-1118-8880-0000-000000000000', '88888888-8888-8888-8888-888888888888', 'Great taste! I could take you to a few hidden gems if youd like', NOW() - INTERVAL '30 minutes', NULL),
 
   -- Bob & Diana conversation
-  ('msg-0009-0000-0000-000000000000', 'match-2222-4444-0000-000000000000', '44444444-4444-4444-4444-444444444444', 'Hey! Your bio made me laugh. What kind of music do you play?', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days'),
-  ('msg-0010-0000-0000-000000000000', 'match-2222-4444-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Thanks! I play guitar and a bit of piano. Mostly indie and folk. Do you have a favorite genre?', NOW() - INTERVAL '4 days', NOW() - INTERVAL '3 days'),
-  ('msg-0011-0000-0000-000000000000', 'match-2222-4444-0000-000000000000', '44444444-4444-4444-4444-444444444444', 'I love anything I can flow to during yoga! Would love to hear you play sometime', NOW() - INTERVAL '6 hours', NOW())
+  ('b0000001-0000-0000-0000-000000000009', 'a0000002-2224-4440-0000-000000000000', '44444444-4444-4444-4444-444444444444', 'Hey! Your bio made me laugh. What kind of music do you play?', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days'),
+  ('b0000001-0000-0000-0000-000000000010', 'a0000002-2224-4440-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'Thanks! I play guitar and a bit of piano. Mostly indie and folk. Do you have a favorite genre?', NOW() - INTERVAL '4 days', NOW() - INTERVAL '3 days'),
+  ('b0000001-0000-0000-0000-000000000011', 'a0000002-2224-4440-0000-000000000000', '44444444-4444-4444-4444-444444444444', 'I love anything I can flow to during yoga! Would love to hear you play sometime', NOW() - INTERVAL '6 hours', NOW())
 ON CONFLICT DO NOTHING;

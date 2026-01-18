@@ -280,4 +280,4 @@ CREATE TRIGGER update_menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH
 CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_retention_policies_updated_at BEFORE UPDATE ON retention_policies FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

@@ -140,4 +140,4 @@ CREATE INDEX idx_webhook_deliveries_next_retry_at ON webhook_deliveries(next_ret
 
 CREATE INDEX idx_idempotency_keys_expires_at ON idempotency_keys(expires_at);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

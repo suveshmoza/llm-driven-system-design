@@ -158,4 +158,4 @@ CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_created ON audit_logs(created_at);
 CREATE INDEX idx_audit_actor ON audit_logs(actor_type, actor_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

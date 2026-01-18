@@ -346,4 +346,4 @@ GRANT USAGE, SELECT ON SEQUENCE idempotency_keys_id_seq TO shopify_app;
 GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO shopify_app;
 GRANT USAGE, SELECT ON SEQUENCE processed_webhooks_id_seq TO shopify_app;
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

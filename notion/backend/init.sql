@@ -181,4 +181,4 @@ CREATE TRIGGER update_database_views_updated_at BEFORE UPDATE ON database_views
 CREATE TRIGGER update_database_rows_updated_at BEFORE UPDATE ON database_rows
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

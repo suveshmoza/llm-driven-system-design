@@ -76,4 +76,4 @@ CREATE INDEX IF NOT EXISTS idx_streams_status ON streams(status);
 CREATE INDEX IF NOT EXISTS idx_streams_creator ON streams(creator_id);
 CREATE INDEX IF NOT EXISTS idx_user_bans_user ON user_bans(user_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

@@ -248,4 +248,4 @@ CREATE TRIGGER update_aggregates_updated_at
 -- Record applied migrations
 -- ============================================================================
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

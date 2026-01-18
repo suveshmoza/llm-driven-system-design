@@ -76,4 +76,4 @@ CREATE INDEX IF NOT EXISTS idx_call_participants_call ON call_participants(call_
 CREATE INDEX IF NOT EXISTS idx_call_participants_user ON call_participants(user_id);
 CREATE INDEX IF NOT EXISTS idx_call_history_user ON call_history(user_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

@@ -236,5 +236,5 @@ CREATE TRIGGER update_resources_updated_at
 -- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres;
 -- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres;
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
 

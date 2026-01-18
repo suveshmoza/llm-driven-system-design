@@ -126,4 +126,4 @@ SELECT add_continuous_aggregate_policy('daily_prices',
     if_not_exists => TRUE
 );
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

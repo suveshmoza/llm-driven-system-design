@@ -125,5 +125,5 @@ CREATE INDEX idx_price_alerts_symbol ON price_alerts(symbol);
 CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_sessions_user_id ON sessions(user_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
 

@@ -147,4 +147,4 @@ CREATE INDEX idx_chat_messages_created ON chat_messages(created_at DESC);
 CREATE INDEX idx_emotes_channel ON emotes(channel_id);
 CREATE INDEX idx_emotes_global ON emotes(is_global) WHERE is_global = TRUE;
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

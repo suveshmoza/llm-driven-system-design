@@ -171,4 +171,4 @@ CREATE INDEX idx_videos_popularity ON videos(popularity_score DESC);
 CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_sessions_account ON sessions(account_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

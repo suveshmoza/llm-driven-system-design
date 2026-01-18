@@ -217,5 +217,5 @@ CREATE TABLE IF NOT EXISTS user_achievements (
     PRIMARY KEY (user_id, achievement_id)
 );
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
 

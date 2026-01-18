@@ -149,4 +149,4 @@ CREATE TABLE upload_sessions (
 
 CREATE INDEX idx_upload_sessions_user_id ON upload_sessions(user_id);
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql

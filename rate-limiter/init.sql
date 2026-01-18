@@ -46,4 +46,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Seed data is in seed.sql
+-- Seed data is in db-seed/seed.sql
