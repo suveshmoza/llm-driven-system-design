@@ -200,11 +200,12 @@ async function stopDockerCompose(projectDir, projectName) {
   logStep('DOCKER', `Stopping infrastructure for ${projectName}...`);
 
   try {
-    execSync('docker-compose down', {
+    // Use -v flag to remove volumes (ensures clean database state)
+    execSync('docker-compose down -v', {
       cwd: projectDir,
       stdio: 'pipe',
     });
-    logSuccess('Docker services stopped');
+    logSuccess('Docker services stopped (volumes removed)');
     return true;
   } catch (error) {
     logWarning(`Docker-compose stop failed: ${error.message}`);
@@ -550,18 +551,36 @@ async function captureWithPlaywright(config, outputDir) {
       const passwordSelector = auth.passwordSelector || 'input[name="password"], input[type="password"]';
       await page.fill(passwordSelector, auth.credentials.password);
 
-      // Click submit
+      // Click submit and wait for navigation
       const submitSelector = auth.submitSelector || 'button[type="submit"]';
-      await page.click(submitSelector);
 
-      // Wait for success indicator or navigation
-      if (auth.successIndicator) {
-        await page.waitForSelector(auth.successIndicator, { timeout: 10000 });
-      } else {
-        await page.waitForLoadState('networkidle');
+      // Wait for navigation after clicking submit (login typically redirects)
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {}),
+        page.click(submitSelector)
+      ]);
+
+      // Additional wait for any client-side routing/state updates
+      await page.waitForTimeout(1500);
+
+      // Check for error messages on the page
+      const errorElement = await page.$('.text-red-600, .text-red-700, .bg-red-50');
+      if (errorElement) {
+        const errorText = await errorElement.textContent();
+        logError(`Login error message: ${errorText}`);
       }
 
-      logSuccess('Login successful');
+      // Verify we're no longer on the login page
+      const currentUrl = page.url();
+      if (currentUrl.includes(auth.loginUrl)) {
+        logWarning('Still on login page after submit - login may have failed');
+        // Take a debug screenshot
+        await page.screenshot({ path: path.join(outputDir, 'debug-login-failed.png') });
+        logWarning('Saved debug screenshot: debug-login-failed.png');
+      } else {
+        logSuccess(`Login successful - navigated to ${currentUrl}`);
+      }
+
       isLoggedIn = true;
     } catch (error) {
       logError(`Login failed: ${error.message}`);

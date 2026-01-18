@@ -4,12 +4,12 @@
 -- Create alice user (password: password123)
 -- Password hash generated with bcrypt, 10 rounds
 INSERT INTO users (email, password_hash, role)
-VALUES ('alice@example.com', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'user')
+VALUES ('alice@example.com', '$2b$10$KvyL.xiSRBiXVY1iP4L7B.vghE/SDLNJX2gHIOjaS707KBZnUcIom', 'user')
 ON CONFLICT (email) DO NOTHING;
 
 -- Create bob user (password: password123)
 INSERT INTO users (email, password_hash, role)
-VALUES ('bob@example.com', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'user')
+VALUES ('bob@example.com', '$2b$10$KvyL.xiSRBiXVY1iP4L7B.vghE/SDLNJX2gHIOjaS707KBZnUcIom', 'user')
 ON CONFLICT (email) DO NOTHING;
 
 -- Get alice's user ID
