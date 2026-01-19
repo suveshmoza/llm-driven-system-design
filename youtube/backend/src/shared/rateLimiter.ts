@@ -87,7 +87,7 @@ const rateLimiters = new Map<string, RateLimiter>();
  * Uses Redis if available, falls back to memory
  */
 function createRateLimiter(category: string): RateLimiter {
-  const config = RATE_LIMITS[category] || RATE_LIMITS.default;
+  const config = RATE_LIMITS[category] ?? RATE_LIMITS.default!;
 
   try {
     // Try Redis-based rate limiter
@@ -189,7 +189,7 @@ export function rateLimit(
 
       // Add rate limit headers
       res.set({
-        'X-RateLimit-Limit': String(RATE_LIMITS[limitCategory]?.points || RATE_LIMITS.default.points),
+        'X-RateLimit-Limit': String(RATE_LIMITS[limitCategory]?.points ?? RATE_LIMITS.default!.points),
         'X-RateLimit-Remaining': String(result.remainingPoints),
         'X-RateLimit-Reset': new Date(Date.now() + result.msBeforeNext).toISOString(),
       });
@@ -213,7 +213,7 @@ export function rateLimit(
 
       res.set({
         'Retry-After': String(retryAfter),
-        'X-RateLimit-Limit': String(RATE_LIMITS[limitCategory]?.points || RATE_LIMITS.default.points),
+        'X-RateLimit-Limit': String(RATE_LIMITS[limitCategory]?.points ?? RATE_LIMITS.default!.points),
         'X-RateLimit-Remaining': '0',
         'X-RateLimit-Reset': new Date(Date.now() + rejection.msBeforeNext).toISOString(),
       });
@@ -286,7 +286,7 @@ export async function getRateLimitStatus(
     const result = await limiter.get(key);
     if (!result) {
       return {
-        remainingPoints: RATE_LIMITS[category]?.points || RATE_LIMITS.default.points,
+        remainingPoints: RATE_LIMITS[category]?.points ?? RATE_LIMITS.default!.points,
         consumedPoints: 0,
         isBlocked: false,
       };

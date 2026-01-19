@@ -66,7 +66,13 @@ router.put(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const authReq = req as AuthenticatedRequest;
-      const { uploadId, chunkNumber } = req.params;
+      const uploadId = req.params.uploadId;
+      const chunkNumber = req.params.chunkNumber;
+
+      if (!uploadId || !chunkNumber) {
+        res.status(400).json({ error: 'Upload ID and chunk number are required' });
+        return;
+      }
 
       if (!authReq.file) {
         res.status(400).json({ error: 'No chunk data provided' });
@@ -86,7 +92,11 @@ router.put(
 router.post('/:uploadId/complete', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { uploadId } = req.params;
+    const uploadId = req.params.uploadId;
+    if (!uploadId) {
+      res.status(400).json({ error: 'Upload ID is required' });
+      return;
+    }
     const { title, description, categories, tags } = req.body as {
       title?: string;
       description?: string;
@@ -119,7 +129,11 @@ router.post('/:uploadId/complete', authenticate, async (req: Request, res: Respo
 router.delete('/:uploadId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { uploadId } = req.params;
+    const uploadId = req.params.uploadId;
+    if (!uploadId) {
+      res.status(400).json({ error: 'Upload ID is required' });
+      return;
+    }
     const result = await cancelUpload(uploadId, authReq.user.id);
     res.json(result);
   } catch (error) {
@@ -132,7 +146,11 @@ router.delete('/:uploadId', authenticate, async (req: Request, res: Response): P
 router.get('/:uploadId/status', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { uploadId } = req.params;
+    const uploadId = req.params.uploadId;
+    if (!uploadId) {
+      res.status(400).json({ error: 'Upload ID is required' });
+      return;
+    }
     const result = await getUploadStatus(uploadId, authReq.user.id);
     res.json(result);
   } catch (error) {
@@ -144,7 +162,11 @@ router.get('/:uploadId/status', authenticate, async (req: Request, res: Response
 // Get transcoding status
 router.get('/:videoId/transcoding', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const result = await getTranscodingStatus(videoId);
 
     if (!result) {

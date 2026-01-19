@@ -39,7 +39,11 @@ const router: Router = express.Router();
 router.get('/:identifier', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const optReq = req as OptionalAuthRequest;
-    const { identifier } = req.params;
+    const identifier = req.params.identifier;
+    if (!identifier) {
+      res.status(400).json({ error: 'Channel identifier is required' });
+      return;
+    }
     const channel = await getChannel(identifier);
 
     if (!channel) {
@@ -66,7 +70,11 @@ router.get('/:identifier', optionalAuth, async (req: Request, res: Response): Pr
 // Get channel videos
 router.get('/:identifier/videos', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { identifier } = req.params;
+    const identifier = req.params.identifier;
+    if (!identifier) {
+      res.status(400).json({ error: 'Channel identifier is required' });
+      return;
+    }
     const { page, limit, orderBy, order } = req.query as {
       page?: string;
       limit?: string;
@@ -128,7 +136,11 @@ router.patch('/me', authenticate, async (req: Request, res: Response): Promise<v
 router.post('/:channelId/subscribe', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { channelId } = req.params;
+    const channelId = req.params.channelId;
+    if (!channelId) {
+      res.status(400).json({ error: 'Channel ID is required' });
+      return;
+    }
     const result = await subscribe(authReq.user.id, channelId);
     res.json(result);
   } catch (error) {
@@ -141,7 +153,11 @@ router.post('/:channelId/subscribe', authenticate, async (req: Request, res: Res
 router.delete('/:channelId/subscribe', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { channelId } = req.params;
+    const channelId = req.params.channelId;
+    if (!channelId) {
+      res.status(400).json({ error: 'Channel ID is required' });
+      return;
+    }
     const result = await unsubscribe(authReq.user.id, channelId);
     res.json(result);
   } catch (error) {

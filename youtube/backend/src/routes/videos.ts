@@ -78,7 +78,11 @@ router.get('/', optionalAuth, async (req: Request, res: Response): Promise<void>
 router.get('/:videoId', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const optReq = req as OptionalAuthRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const video = await getVideo(videoId);
 
     if (!video) {
@@ -109,7 +113,11 @@ router.get('/:videoId', optionalAuth, async (req: Request, res: Response): Promi
 // Get streaming info for video
 router.get('/:videoId/stream', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const streamingInfo = await getStreamingInfo(videoId);
 
     if (!streamingInfo) {
@@ -128,7 +136,11 @@ router.get('/:videoId/stream', optionalAuth, async (req: Request, res: Response)
 router.post('/:videoId/view', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const optReq = req as OptionalAuthRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const { watchDuration, watchPercentage } = req.body as {
       watchDuration?: string | number;
       watchPercentage?: string | number;
@@ -152,7 +164,11 @@ router.post('/:videoId/view', optionalAuth, async (req: Request, res: Response):
 router.post('/:videoId/progress', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const { position, duration } = req.body as {
       position?: string | number;
       duration?: string | number;
@@ -176,7 +192,11 @@ router.post('/:videoId/progress', authenticate, async (req: Request, res: Respon
 router.patch('/:videoId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const { title, description, categories, tags, visibility } = req.body as {
       title?: string;
       description?: string;
@@ -209,7 +229,11 @@ router.patch('/:videoId', authenticate, async (req: Request, res: Response): Pro
 router.delete('/:videoId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const success = await deleteVideo(videoId, authReq.user.id);
 
     if (!success) {
@@ -228,7 +252,11 @@ router.delete('/:videoId', authenticate, async (req: Request, res: Response): Pr
 router.post('/:videoId/react', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const { reaction } = req.body as { reaction?: string };
 
     if (!reaction || !['like', 'dislike'].includes(reaction)) {
@@ -247,7 +275,11 @@ router.post('/:videoId/react', authenticate, async (req: Request, res: Response)
 // Get comments
 router.get('/:videoId/comments', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const { page, limit, parentId } = req.query as {
       page?: string;
       limit?: string;
@@ -272,7 +304,11 @@ router.get('/:videoId/comments', optionalAuth, async (req: Request, res: Respons
 router.post('/:videoId/comments', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { videoId } = req.params;
+    const videoId = req.params.videoId;
+    if (!videoId) {
+      res.status(400).json({ error: 'Video ID is required' });
+      return;
+    }
     const { text, parentId } = req.body as { text?: string; parentId?: string };
 
     if (!text || text.trim().length === 0) {
@@ -295,7 +331,11 @@ router.delete(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const authReq = req as AuthenticatedRequest;
-      const { commentId } = req.params;
+      const commentId = req.params.commentId;
+      if (!commentId) {
+        res.status(400).json({ error: 'Comment ID is required' });
+        return;
+      }
       const success = await deleteComment(commentId, authReq.user.id);
 
       if (!success) {
@@ -318,7 +358,11 @@ router.post(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const authReq = req as AuthenticatedRequest;
-      const { commentId } = req.params;
+      const commentId = req.params.commentId;
+      if (!commentId) {
+        res.status(400).json({ error: 'Comment ID is required' });
+        return;
+      }
       const result = await likeComment(authReq.user.id, commentId);
       res.json(result);
     } catch (error) {

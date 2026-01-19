@@ -42,7 +42,8 @@ interface StorageError extends Error {
   Code?: string;
 }
 
-type StorageOperationFunction<T> = (...args: unknown[]) => Promise<T>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StorageOperationFunction<T> = (...args: any[]) => Promise<T>;
 
 // Circuit breaker configuration for storage
 const STORAGE_CIRCUIT_OPTIONS: CircuitBreakerOptions = {
@@ -64,7 +65,8 @@ function wrapStorageOperation<T>(
   _retryPreset: string = 'storage'
 ): StorageOperationFunction<T> {
   // First wrap with retry
-  const withRetry = async (...args: unknown[]): Promise<T> => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const withRetry = async (...args: any[]): Promise<T> => {
     const start = Date.now();
     const bucket = args[0] as string;
 

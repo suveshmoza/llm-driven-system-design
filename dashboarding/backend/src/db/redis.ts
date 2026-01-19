@@ -22,17 +22,29 @@ const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
   maxRetriesPerRequest: 3,
+  lazyConnect: true, // Don't connect until first command
   retryStrategy(times) {
-    const delay = Math.min(times * 50, 2000);
+    // Stop retrying after 5 attempts to avoid log spam
+    if (times > 5) {
+      return null; // Stop retrying
+    }
+    const delay = Math.min(times * 100, 2000);
     return delay;
   },
 });
 
+// Track connection state for graceful degradation
+let redisConnected = false;
+
 redis.on('error', (err) => {
-  console.error('Redis error:', err);
+  if (redisConnected) {
+    console.error('Redis error:', err.message);
+  }
+  redisConnected = false;
 });
 
 redis.on('connect', () => {
+  redisConnected = true;
   console.log('Connected to Redis');
 });
 
