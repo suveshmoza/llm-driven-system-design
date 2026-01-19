@@ -11,7 +11,7 @@
     "dev:server3": "PORT=3003 tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "type-check": "tsc --noEmit",
     "db:cleanup": "tsx -e \"import { runAllCleanupJobs } from './src/shared/retention.js'; runAllCleanupJobs().then(() => process.exit(0));\"",
     "format": "prettier --write src/**/*.ts"

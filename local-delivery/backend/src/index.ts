@@ -28,7 +28,7 @@ import adminRoutes from './routes/admin.js';
 // Shared modules
 import logger from './shared/logger.js';
 import { registry, httpRequestDurationHistogram, httpRequestsTotal } from './shared/metrics.js';
-import { getDriverMatchingCircuitBreakerStatus } from './services/orderService.js';
+import { getDriverMatchingCircuitBreakerStatus } from './services/order/index.js';
 import { cleanupExpiredIdempotencyKeys } from './shared/idempotency.js';
 
 const app = express();

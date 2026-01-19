@@ -73,7 +73,7 @@ router.get('/:symbol', (req, res: Response) => {
  * Requires authentication. In production, would fetch from financial API.
  */
 router.get('/:symbol/details', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const symbol = req.params.symbol.toUpperCase();
+  const symbol = (req.params.symbol as string).toUpperCase();
   const quote = quoteService.getQuote(symbol);
   const stockInfo = quoteService.getStockInfo(symbol);
 

@@ -182,11 +182,11 @@ router.post('/upload', upload.single('photo'), async (req: Request, res: Respons
     ]);
 
     // Extract EXIF data
-    let takenAt: Date | null = null;
-    let locationLat: number | null = null;
-    let locationLng: number | null = null;
-    let cameraMake: string | null = null;
-    let cameraModel: string | null = null;
+    const takenAt: Date | null = null;
+    const locationLat: number | null = null;
+    const locationLng: number | null = null;
+    const cameraMake: string | null = null;
+    const cameraModel: string | null = null;
 
     // Try to parse EXIF from metadata
     if (metadata.exif) {

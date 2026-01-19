@@ -1,20 +1,20 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import config from '../config/index.js';
+import type { CacheStats, LocalCacheEntry, ICacheService } from '../types.js';
 
-let redisClient = null;
+let redisClient: Redis | null = null;
 
-export function getRedisClient() {
+export function getRedisClient(): Redis {
   if (!redisClient) {
     redisClient = new Redis({
       host: config.redis.host,
       port: config.redis.port,
-      retryDelayOnFailover: 100,
       maxRetriesPerRequest: 3,
       enableReadyCheck: true,
       lazyConnect: true,
     });
 
-    redisClient.on('error', (err) => {
+    redisClient.on('error', (err: Error) => {
       console.error('Redis connection error:', err.message);
     });
 
@@ -28,8 +28,18 @@ export function getRedisClient() {
 /**
  * Cache service with multi-level caching (local + Redis)
  */
-export class CacheService {
-  constructor(redis = null) {
+export class CacheService implements ICacheService {
+  public redis: Redis;
+  public localCache: Map<string, LocalCacheEntry>;
+  private localCacheTTL: number;
+  private defaultTTL: number;
+  private stats: {
+    localHits: number;
+    redisHits: number;
+    misses: number;
+  };
+
+  constructor(redis: Redis | null = null) {
     this.redis = redis || getRedisClient();
     this.localCache = new Map();
     this.localCacheTTL = config.cache.localTtl;
@@ -44,19 +54,19 @@ export class CacheService {
   /**
    * Get value from cache (local first, then Redis)
    */
-  async get(key) {
+  async get<T>(key: string): Promise<T | null> {
     // Level 1: Local in-memory cache
     const local = this.localCache.get(key);
     if (local && local.expiry > Date.now()) {
       this.stats.localHits++;
-      return local.value;
+      return local.value as T;
     }
 
     // Level 2: Redis cache
     try {
       const cached = await this.redis.get(key);
       if (cached) {
-        const parsed = JSON.parse(cached);
+        const parsed = JSON.parse(cached) as T;
         // Populate local cache
         this.localCache.set(key, {
           value: parsed,
@@ -66,7 +76,8 @@ export class CacheService {
         return parsed;
       }
     } catch (error) {
-      console.error('Redis get error:', error.message);
+      const err = error as Error;
+      console.error('Redis get error:', err.message);
     }
 
     this.stats.misses++;
@@ -76,14 +87,15 @@ export class CacheService {
   /**
    * Set value in cache
    */
-  async set(key, value, ttlSeconds = null) {
+  async set<T>(key: string, value: T, ttlSeconds: number | null = null): Promise<void> {
     const ttl = ttlSeconds || this.defaultTTL;
 
     try {
       // Set in Redis
       await this.redis.setex(key, ttl, JSON.stringify(value));
     } catch (error) {
-      console.error('Redis set error:', error.message);
+      const err = error as Error;
+      console.error('Redis set error:', err.message);
     }
 
     // Set in local cache
@@ -96,19 +108,20 @@ export class CacheService {
   /**
    * Delete key from cache
    */
-  async delete(key) {
+  async delete(key: string): Promise<void> {
     this.localCache.delete(key);
     try {
       await this.redis.del(key);
     } catch (error) {
-      console.error('Redis del error:', error.message);
+      const err = error as Error;
+      console.error('Redis del error:', err.message);
     }
   }
 
   /**
    * Invalidate keys matching pattern
    */
-  async invalidate(pattern) {
+  async invalidate(pattern: string): Promise<void> {
     // Clear local cache entries matching pattern
     const regex = new RegExp(pattern.replace(/\*/g, '.*'));
     for (const key of this.localCache.keys()) {
@@ -124,15 +137,16 @@ export class CacheService {
         await this.redis.del(...keys);
       }
     } catch (error) {
-      console.error('Redis invalidate error:', error.message);
+      const err = error as Error;
+      console.error('Redis invalidate error:', err.message);
     }
   }
 
   /**
    * Cache-aside pattern: get from cache or fetch and cache
    */
-  async getOrFetch(key, fetchFn, ttl = null) {
-    const cached = await this.get(key);
+  async getOrFetch<T>(key: string, fetchFn: () => Promise<T>, ttl: number | null = null): Promise<T> {
+    const cached = await this.get<T>(key);
     if (cached !== null) {
       return cached;
     }
@@ -145,7 +159,7 @@ export class CacheService {
   /**
    * Get cache statistics
    */
-  getStats() {
+  getStats(): CacheStats {
     return {
       ...this.stats,
       localCacheSize: this.localCache.size,
@@ -159,12 +173,13 @@ export class CacheService {
   /**
    * Clear all caches
    */
-  async clear() {
+  async clear(): Promise<void> {
     this.localCache.clear();
     try {
       await this.redis.flushdb();
     } catch (error) {
-      console.error('Redis clear error:', error.message);
+      const err = error as Error;
+      console.error('Redis clear error:', err.message);
     }
   }
 }

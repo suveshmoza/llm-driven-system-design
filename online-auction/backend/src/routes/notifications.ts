@@ -20,7 +20,7 @@ router.get(
       WHERE n.user_id = $1
     `;
       const params: unknown[] = [req.user?.id];
-      let paramIndex = 2;
+      const paramIndex = 2;
 
       if (unread_only === 'true') {
         queryText += ` AND n.is_read = false`;

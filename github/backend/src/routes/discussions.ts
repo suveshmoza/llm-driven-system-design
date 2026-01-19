@@ -51,7 +51,8 @@ async function getNextNumber(repoId: number): Promise<number> {
  * List discussions for a repo
  */
 router.get('/:owner/:repo/discussions', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const owner = req.params.owner as string;
+  const repo = req.params.repo as string;
   const { category, page = '1', limit = '20' } = req.query as { category?: string; page?: string; limit?: string };
 
   const repoResult = await query(
@@ -107,7 +108,9 @@ router.get('/:owner/:repo/discussions', async (req: Request, res: Response): Pro
  * Get single discussion
  */
 router.get('/:owner/:repo/discussions/:number', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const owner = req.params.owner as string;
+  const repo = req.params.repo as string;
+  const number = req.params.number as string;
 
   const result = await query(
     `SELECT d.*,
@@ -166,7 +169,8 @@ router.get('/:owner/:repo/discussions/:number', async (req: Request, res: Respon
  * Create discussion
  */
 router.post('/:owner/:repo/discussions', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const owner = req.params.owner as string;
+  const repo = req.params.repo as string;
   const { title, body, category } = req.body as { title?: string; body?: string; category?: string };
 
   if (!title || !body) {
@@ -203,7 +207,9 @@ router.post('/:owner/:repo/discussions', requireAuth, async (req: Request, res: 
  * Add comment to discussion
  */
 router.post('/:owner/:repo/discussions/:number/comments', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const owner = req.params.owner as string;
+  const repo = req.params.repo as string;
+  const number = req.params.number as string;
   const { body, parentId } = req.body as { body?: string; parentId?: number };
 
   if (!body) {
@@ -238,7 +244,9 @@ router.post('/:owner/:repo/discussions/:number/comments', requireAuth, async (re
  * Mark answer
  */
 router.post('/:owner/:repo/discussions/:number/answer', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const owner = req.params.owner as string;
+  const repo = req.params.repo as string;
+  const number = req.params.number as string;
   const { commentId } = req.body as { commentId?: number };
 
   const discussionResult = await query(
@@ -274,7 +282,7 @@ router.post('/:owner/:repo/discussions/:number/answer', requireAuth, async (req:
  * Upvote comment
  */
 router.post('/:owner/:repo/discussions/:number/comments/:commentId/upvote', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { commentId } = req.params;
+  const commentId = req.params.commentId as string;
 
   await query(
     'UPDATE discussion_comments SET upvotes = upvotes + 1 WHERE id = $1',

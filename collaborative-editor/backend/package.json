@@ -10,7 +10,7 @@
     "dev:server3": "PORT=3003 SERVER_ID=server3 tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "format": "prettier --write src/**/*.ts"
   },
   "dependencies": {

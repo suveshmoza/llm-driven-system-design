@@ -57,7 +57,7 @@ import {
   checkout,
   listCustomers,
   getCustomer,
-} from './routes/orders.js';
+} from './routes/orders/index.js';
 
 import {
   listCollections,

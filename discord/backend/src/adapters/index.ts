@@ -7,4 +7,4 @@
  */
 
 export { TCPServer } from './tcp-server.js';
-export { HTTPServer } from './http-server.js';
+export { HTTPServer } from './http/index.js';

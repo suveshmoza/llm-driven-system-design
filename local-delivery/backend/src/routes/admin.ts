@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
-import { getOrderStats, getRecentOrders } from '../services/orderService.js';
+import { getOrderStats, getRecentOrders } from '../services/order/index.js';
 import { query, queryOne } from '../utils/db.js';
 
 const router = Router();

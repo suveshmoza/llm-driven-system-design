@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { PaymentService } from '../services/payment.service.js';
+import { PaymentService } from '../services/payment/index.js';
 import { RefundService, ChargebackService } from '../services/refund.service.js';
 import { LedgerService } from '../services/ledger.service.js';
 import type { CreatePaymentRequest, RefundRequest, TransactionListParams } from '../types/index.js';

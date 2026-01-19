@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { bookingService } from '../services/bookingService.js';
+import { bookingService } from '../services/booking/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
   CreateBookingSchema,

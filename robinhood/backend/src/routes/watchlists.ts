@@ -58,7 +58,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
 router.delete('/:watchlistId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    await watchlistService.deleteWatchlist(userId, req.params.watchlistId);
+    await watchlistService.deleteWatchlist(userId, req.params.watchlistId as string);
     res.json({ message: 'Watchlist deleted' });
   } catch (error) {
     console.error('Delete watchlist error:', error);
@@ -82,7 +82,7 @@ router.post('/:watchlistId/items', async (req: AuthenticatedRequest, res: Respon
 
     const item = await watchlistService.addToWatchlist(
       userId,
-      req.params.watchlistId,
+      req.params.watchlistId as string,
       symbol
     );
     res.status(201).json(item);
@@ -101,8 +101,8 @@ router.delete('/:watchlistId/items/:symbol', async (req: AuthenticatedRequest, r
     const userId = req.user!.id;
     await watchlistService.removeFromWatchlist(
       userId,
-      req.params.watchlistId,
-      req.params.symbol
+      req.params.watchlistId as string,
+      req.params.symbol as string
     );
     res.json({ message: 'Symbol removed from watchlist' });
   } catch (error) {
@@ -168,7 +168,7 @@ router.post('/alerts', async (req: AuthenticatedRequest, res: Response) => {
 router.delete('/alerts/:alertId', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    await priceAlertService.deleteAlert(userId, req.params.alertId);
+    await priceAlertService.deleteAlert(userId, req.params.alertId as string);
     res.json({ message: 'Alert deleted' });
   } catch (error) {
     console.error('Delete alert error:', error);

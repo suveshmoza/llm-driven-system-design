@@ -120,7 +120,7 @@ router.get('/:orderId', async (req: AuthenticatedRequest, res: Response) => {
 
   try {
     const userId = req.user!.id;
-    const order = await orderService.getOrder(userId, req.params.orderId);
+    const order = await orderService.getOrder(userId, req.params.orderId as string);
 
     if (!order) {
       res.status(404).json({ error: 'Order not found', requestId });
@@ -145,7 +145,7 @@ router.get('/:orderId/executions', async (req: AuthenticatedRequest, res: Respon
 
   try {
     const userId = req.user!.id;
-    const order = await orderService.getOrder(userId, req.params.orderId);
+    const order = await orderService.getOrder(userId, req.params.orderId as string);
 
     if (!order) {
       res.status(404).json({ error: 'Order not found', requestId });
@@ -179,7 +179,7 @@ router.delete('/:orderId', async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
     routeLogger.info('Processing order cancellation request');
 
-    const order = await orderService.cancelOrder(userId, req.params.orderId, context);
+    const order = await orderService.cancelOrder(userId, req.params.orderId as string, context);
 
     res.setHeader('X-Request-ID', context.requestId!);
     res.json({ message: 'Order cancelled', order });

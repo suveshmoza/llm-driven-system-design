@@ -10,7 +10,7 @@ import { config } from './config.js';
 export const redis = new Redis({
   host: config.redis.host,
   port: config.redis.port,
-  retryStrategy(times) {
+  retryStrategy(times: number): number {
     const delay = Math.min(times * 50, 2000);
     return delay;
   },

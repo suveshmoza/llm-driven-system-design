@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import config from '../../shared/config/index.js';
@@ -12,9 +12,10 @@ import {
 import { authMiddleware, requireAuth, requireAdmin, login, logout } from '../../shared/middleware/auth.js';
 import { RateLimiter } from '../../shared/services/rate-limiter.js';
 import { metricsService } from '../../shared/services/metrics.js';
-import { circuitBreakerRegistry, CircuitBreaker } from '../../shared/services/circuit-breaker.js';
+import { circuitBreakerRegistry } from '../../shared/services/circuit-breaker.js';
 import { CacheService } from '../../shared/services/cache.js';
 import db from '../../shared/services/database.js';
+import type { AuthenticatedRequest, RateLimitResult } from '../../shared/types.js';
 
 const app = express();
 const rateLimiter = new RateLimiter();
@@ -35,15 +36,16 @@ app.use(requestIdMiddleware);
 app.use(requestLoggerMiddleware);
 
 // Health check endpoint (no auth, no rate limit)
-app.get('/health', async (req, res) => {
+app.get('/health', async (req: Request, res: Response) => {
   const dbStatus = await db.checkConnection();
-  let redisStatus = { connected: false };
+  let redisStatus: { connected: boolean; error?: string } = { connected: false };
 
   try {
     const ping = await cache.redis.ping();
     redisStatus = { connected: ping === 'PONG' };
   } catch (error) {
-    redisStatus = { connected: false, error: error.message };
+    const err = error as Error;
+    redisStatus = { connected: false, error: err.message };
   }
 
   const healthy = dbStatus.connected && redisStatus.connected;
@@ -63,7 +65,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Readiness check
-app.get('/ready', async (req, res) => {
+app.get('/ready', async (req: Request, res: Response) => {
   const dbStatus = await db.checkConnection();
 
   if (dbStatus.connected) {
@@ -74,7 +76,7 @@ app.get('/ready', async (req, res) => {
 });
 
 // Metrics endpoint (Prometheus format)
-app.get('/metrics', (req, res) => {
+app.get('/metrics', (req: Request, res: Response) => {
   res.set('Content-Type', 'text/plain');
   res.send(metricsService.getMetricsPrometheus());
 });
@@ -90,7 +92,7 @@ app.use('/api', authMiddleware);
 app.use('/api', rateLimiter.middleware());
 
 // API Info
-app.get('/api/v1/info', (req, res) => {
+app.get('/api/v1/info', (req: Request, res: Response) => {
   res.json({
     version: 'v1',
     instanceId,
@@ -100,26 +102,28 @@ app.get('/api/v1/info', (req, res) => {
 });
 
 // Status endpoint
-app.get('/api/v1/status', (req, res) => {
+app.get('/api/v1/status', (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   res.json({
     status: 'operational',
     version: 'v1',
     instanceId,
     timestamp: new Date().toISOString(),
-    user: req.user ? { id: req.user.id, email: req.user.email, tier: req.user.tier } : null,
+    user: authReq.user ? { id: authReq.user.id, email: authReq.user.email, tier: authReq.user.tier } : null,
   });
 });
 
 // User profile
-app.get('/api/v1/me', requireAuth, (req, res) => {
+app.get('/api/v1/me', requireAuth, (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   res.json({
     user: {
-      id: req.user.id,
-      email: req.user.email,
-      role: req.user.role,
-      tier: req.user.tier,
+      id: authReq.user!.id,
+      email: authReq.user!.email,
+      role: authReq.user!.role,
+      tier: authReq.user!.tier,
     },
-    rateLimit: req.rateLimit,
+    rateLimit: authReq.rateLimit,
     servedBy: instanceId,
   });
 });
@@ -127,8 +131,13 @@ app.get('/api/v1/me', requireAuth, (req, res) => {
 // ==================== Resource Endpoints ====================
 
 // List resources with caching
-app.get('/api/v1/resources', async (req, res) => {
-  const { page = 1, limit = 10, type } = req.query;
+app.get('/api/v1/resources', async (req: Request, res: Response) => {
+  const pageStr = typeof req.query['page'] === 'string' ? req.query['page'] : '1';
+  const limitStr = typeof req.query['limit'] === 'string' ? req.query['limit'] : '10';
+  const type = typeof req.query['type'] === 'string' ? req.query['type'] : undefined;
+
+  const page = parseInt(pageStr, 10) || 1;
+  const limit = parseInt(limitStr, 10) || 10;
   const offset = (page - 1) * limit;
   const cacheKey = `resources:list:${page}:${limit}:${type || 'all'}`;
 
@@ -147,8 +156,8 @@ app.get('/api/v1/resources', async (req, res) => {
       return {
         resources,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page,
+          limit,
           total: 100,
           totalPages: Math.ceil(100 / limit),
         },
@@ -167,7 +176,7 @@ app.get('/api/v1/resources', async (req, res) => {
 });
 
 // Get single resource with caching
-app.get('/api/v1/resources/:id', async (req, res) => {
+app.get('/api/v1/resources/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const cacheKey = `resources:${id}`;
 
@@ -195,7 +204,8 @@ app.get('/api/v1/resources/:id', async (req, res) => {
     }, 300);
 
     if (!data) {
-      return res.status(404).json({ error: 'Resource not found' });
+      res.status(404).json({ error: 'Resource not found' });
+      return;
     }
 
     res.json({
@@ -210,11 +220,13 @@ app.get('/api/v1/resources/:id', async (req, res) => {
 });
 
 // Create resource
-app.post('/api/v1/resources', requireAuth, async (req, res) => {
+app.post('/api/v1/resources', requireAuth, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   const { name, type, content } = req.body;
 
   if (!name || !type) {
-    return res.status(400).json({ error: 'Name and type are required' });
+    res.status(400).json({ error: 'Name and type are required' });
+    return;
   }
 
   const resource = {
@@ -222,7 +234,7 @@ app.post('/api/v1/resources', requireAuth, async (req, res) => {
     name,
     type,
     content: content || '',
-    createdBy: req.user.id,
+    createdBy: authReq.user!.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -237,7 +249,8 @@ app.post('/api/v1/resources', requireAuth, async (req, res) => {
 });
 
 // Update resource
-app.put('/api/v1/resources/:id', requireAuth, async (req, res) => {
+app.put('/api/v1/resources/:id', requireAuth, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   const { id } = req.params;
   const { name, type, content } = req.body;
 
@@ -246,7 +259,7 @@ app.put('/api/v1/resources/:id', requireAuth, async (req, res) => {
     name: name || `Resource ${id}`,
     type: type || 'document',
     content: content || '',
-    updatedBy: req.user.id,
+    updatedBy: authReq.user!.id,
     updatedAt: new Date().toISOString(),
   };
 
@@ -261,7 +274,7 @@ app.put('/api/v1/resources/:id', requireAuth, async (req, res) => {
 });
 
 // Delete resource
-app.delete('/api/v1/resources/:id', requireAuth, async (req, res) => {
+app.delete('/api/v1/resources/:id', requireAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
 
   // Invalidate caches
@@ -274,7 +287,7 @@ app.delete('/api/v1/resources/:id', requireAuth, async (req, res) => {
 // ==================== External Service Simulation ====================
 
 // Simulate calling external service with circuit breaker
-app.get('/api/v1/external', async (req, res) => {
+app.get('/api/v1/external', async (req: Request, res: Response) => {
   try {
     const result = await externalServiceBreaker.execute(async () => {
       // Simulate external API call with random failures
@@ -296,17 +309,19 @@ app.get('/api/v1/external', async (req, res) => {
       servedBy: instanceId,
     });
   } catch (error) {
-    if (error.message.includes('Circuit breaker')) {
-      return res.status(503).json({
+    const err = error as Error;
+    if (err.message.includes('Circuit breaker')) {
+      res.status(503).json({
         error: 'Service temporarily unavailable',
         message: 'External service is experiencing issues. Please try again later.',
         circuitState: externalServiceBreaker.state,
       });
+      return;
     }
 
     res.status(502).json({
       error: 'External service error',
-      message: error.message,
+      message: err.message,
     });
   }
 });
@@ -317,7 +332,7 @@ const adminRouter = express.Router();
 adminRouter.use(requireAdmin);
 
 // Admin dashboard data
-adminRouter.get('/dashboard', (req, res) => {
+adminRouter.get('/dashboard', (req: Request, res: Response) => {
   res.json({
     instanceId,
     metrics: metricsService.getMetricsJSON(),
@@ -327,43 +342,43 @@ adminRouter.get('/dashboard', (req, res) => {
 });
 
 // Admin: View all circuit breakers
-adminRouter.get('/circuit-breakers', (req, res) => {
+adminRouter.get('/circuit-breakers', (req: Request, res: Response) => {
   res.json(circuitBreakerRegistry.getAll());
 });
 
 // Admin: Reset a circuit breaker
-adminRouter.post('/circuit-breakers/:name/reset', (req, res) => {
-  const breaker = circuitBreakerRegistry.get(req.params.name);
+adminRouter.post('/circuit-breakers/:name/reset', (req: Request, res: Response) => {
+  const breaker = circuitBreakerRegistry.get(req.params['name']!);
   breaker.close();
   breaker.resetStats();
   res.json({ message: 'Circuit breaker reset', state: breaker.getState() });
 });
 
 // Admin: View metrics
-adminRouter.get('/metrics', (req, res) => {
+adminRouter.get('/metrics', (req: Request, res: Response) => {
   res.json(metricsService.getMetricsJSON());
 });
 
 // Admin: Reset metrics
-adminRouter.post('/metrics/reset', (req, res) => {
+adminRouter.post('/metrics/reset', (req: Request, res: Response) => {
   metricsService.reset();
   res.json({ message: 'Metrics reset' });
 });
 
 // Admin: View cache stats
-adminRouter.get('/cache', (req, res) => {
+adminRouter.get('/cache', (req: Request, res: Response) => {
   res.json(cache.getStats());
 });
 
 // Admin: Clear cache
-adminRouter.post('/cache/clear', async (req, res) => {
+adminRouter.post('/cache/clear', async (req: Request, res: Response) => {
   await cache.clear();
   res.json({ message: 'Cache cleared' });
 });
 
 // Admin: Rate limit status
-adminRouter.get('/rate-limits/:identifier', async (req, res) => {
-  const status = await rateLimiter.getStatus(req.params.identifier);
+adminRouter.get('/rate-limits/:identifier', async (req: Request, res: Response) => {
+  const status = await rateLimiter.getStatus(req.params['identifier']!);
   if (status) {
     res.json(status);
   } else {
@@ -372,7 +387,7 @@ adminRouter.get('/rate-limits/:identifier', async (req, res) => {
 });
 
 // Admin: Instance info
-adminRouter.get('/instance', (req, res) => {
+adminRouter.get('/instance', (req: Request, res: Response) => {
   const memUsage = process.memoryUsage();
   res.json({
     instanceId,

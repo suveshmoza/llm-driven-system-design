@@ -16,7 +16,7 @@ import dotenv from 'dotenv';
 
 import streamRoutes from './routes/streams.js';
 import userRoutes from './routes/users.js';
-import { WebSocketGateway } from './services/wsGateway.js';
+import { WebSocketGateway } from './services/wsGateway/index.js';
 import { isHealthy as isDbHealthy, close as closeDb } from './db/index.js';
 import { redis, redisSub, redisPub } from './utils/redis.js';
 import {

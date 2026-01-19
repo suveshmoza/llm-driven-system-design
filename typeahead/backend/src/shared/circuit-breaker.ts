@@ -45,7 +45,7 @@ const circuits = new Map<string, CircuitBreaker<any>>();
 /**
  * Create or get a circuit breaker for a named operation
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function createCircuitBreaker<T>(
   name: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,7 +166,7 @@ export function resetAllCircuits(): void {
  * Create a suggestion service circuit breaker
  * Used to wrap trie queries with circuit breaker protection
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function createSuggestionCircuitBreaker<T>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   suggestionFn: (...args: any[]) => Promise<T>,
@@ -191,7 +191,7 @@ export function createSuggestionCircuitBreaker<T>(
  * Create a database circuit breaker
  * Used to wrap PostgreSQL queries
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function createDatabaseCircuitBreaker<T>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbFn: (...args: any[]) => Promise<T>,
@@ -216,7 +216,7 @@ export function createDatabaseCircuitBreaker<T>(
  * Create a Redis circuit breaker
  * Used to wrap Redis cache operations
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function createRedisCircuitBreaker<T>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   redisFn: (...args: any[]) => Promise<T>,

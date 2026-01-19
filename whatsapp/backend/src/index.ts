@@ -24,7 +24,7 @@ import RedisStore from 'connect-redis';
 import { config } from './config.js';
 import { redis } from './redis.js';
 import { pool, testConnection } from './db.js';
-import { setupWebSocket, getConnectionCount } from './websocket.js';
+import { setupWebSocket, getConnectionCount } from './websocket/index.js';
 import authRoutes from './routes/auth.js';
 import conversationRoutes from './routes/conversations.js';
 import messageRoutes from './routes/messages.js';

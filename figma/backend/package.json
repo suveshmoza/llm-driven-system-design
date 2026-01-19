@@ -10,7 +10,7 @@
     "dev:server3": "PORT=3003 tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "type-check": "tsc --noEmit",
     "db:backup": "pg_dump -h localhost -U figma figma_db > ./backups/backup_$(date +%Y%m%d_%H%M%S).sql",
     "db:restore": "psql -h localhost -U figma figma_db < ",

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool.js';
 import { authenticateApiKey, AuthenticatedRequest } from '../middleware/auth.js';
-import { getWebhookEvents, retryWebhook, verifySignature, WebhookEvent } from '../services/webhooks.js';
+import { getWebhookEvents, retryWebhook, verifySignature, WebhookEventRow } from '../services/webhooks.js';
 import { generateWebhookSecret } from '../utils/helpers.js';
 
 const router = Router();
@@ -34,10 +34,10 @@ router.get('/events', authenticateApiKey, async (req: AuthenticatedRequest, res:
 
     res.json({
       object: 'list',
-      data: events.map((e: WebhookEvent): WebhookEventResponse => ({
+      data: events.map((e: WebhookEventRow): WebhookEventResponse => ({
         id: e.id,
         type: e.type,
-        data: e.data,
+        data: e.data as unknown as Record<string, unknown>,
         status: e.status,
         attempts: e.attempts,
         last_error: e.last_error,
@@ -78,7 +78,9 @@ router.post('/events/:id/retry', authenticateApiKey, async (req: AuthenticatedRe
       return;
     }
 
-    const result = await retryWebhook(req.params.id);
+    const signature = req.headers['stripe-signature'];
+    const signatureStr = Array.isArray(signature) ? signature[0] : signature;
+    const result = await retryWebhook(req.params.id as string);
     res.json(result);
   } catch (error) {
     console.error('Retry webhook error:', error);

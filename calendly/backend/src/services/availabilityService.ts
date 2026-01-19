@@ -5,7 +5,7 @@ import {
   type TimeSlot,
 } from '../types/index.js';
 import { meetingTypeService } from './meetingTypeService.js';
-import { bookingService } from './bookingService.js';
+import { bookingService } from './booking/index.js';
 import { logger } from '../shared/logger.js';
 import {
   availabilityChecksTotal,

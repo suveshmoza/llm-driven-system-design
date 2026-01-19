@@ -172,7 +172,7 @@ async function executeQuery(params: MetricQueryParams, table: string): Promise<Q
   const pgInterval = parseInterval(interval);
 
   // Get metric definitions that match
-  let queryParams: unknown[] = [metric_name];
+  const queryParams: unknown[] = [metric_name];
   let defQuery = `SELECT id, name, tags FROM metric_definitions WHERE name = $1`;
 
   if (Object.keys(tags).length > 0) {

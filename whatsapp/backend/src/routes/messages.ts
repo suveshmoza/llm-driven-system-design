@@ -13,7 +13,7 @@ import {
 } from '../services/reactionService.js';
 import { isUserInConversation } from '../services/conversationService.js';
 import { requireAuth } from '../middleware/auth.js';
-import { broadcastReactionUpdate } from '../websocket.js';
+import { broadcastReactionUpdate } from '../websocket/index.js';
 
 /**
  * Message routes.

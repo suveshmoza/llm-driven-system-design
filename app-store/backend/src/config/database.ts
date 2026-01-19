@@ -3,7 +3,7 @@
  * Provides connection pooling, query logging, and transaction support.
  */
 
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { config } from './index.js';
 
 /**
@@ -67,7 +67,7 @@ export async function getClient() {
  * @throws Re-throws any error after rolling back the transaction
  */
 export async function transaction<T>(
-  callback: (client: ReturnType<typeof pool.connect> extends Promise<infer C> ? C : never) => Promise<T>
+  callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await getClient();
   try {

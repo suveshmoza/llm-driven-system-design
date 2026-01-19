@@ -14,7 +14,7 @@ import {
   getCustomerOrders,
   updateOrderStatus,
   startDriverMatchingWithCircuitBreaker,
-} from '../services/orderService.js';
+} from '../services/order/index.js';
 import { createRating } from '../services/ratingService.js';
 import { withIdempotency } from '../shared/idempotency.js';
 import { orderLogger } from '../shared/logger.js';

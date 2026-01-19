@@ -34,28 +34,28 @@ export const POSTS_INDEX = config.elasticsearch.index;
 export const postsMapping = {
   mappings: {
     properties: {
-      post_id: { type: 'keyword' },
-      author_id: { type: 'keyword' },
-      author_name: { type: 'text' },
+      post_id: { type: 'keyword' as const },
+      author_id: { type: 'keyword' as const },
+      author_name: { type: 'text' as const },
       content: {
-        type: 'text',
+        type: 'text' as const,
         analyzer: 'standard',
         fields: {
-          keyword: { type: 'keyword', ignore_above: 256 },
+          keyword: { type: 'keyword' as const, ignore_above: 256 },
         },
       },
-      hashtags: { type: 'keyword' },
-      mentions: { type: 'keyword' },
-      created_at: { type: 'date' },
-      updated_at: { type: 'date' },
-      visibility: { type: 'keyword' }, // 'public', 'friends', 'friends_of_friends', 'private'
-      visibility_fingerprints: { type: 'keyword' }, // For privacy-aware filtering
-      post_type: { type: 'keyword' }, // 'text', 'photo', 'video', 'link'
-      engagement_score: { type: 'float' },
-      like_count: { type: 'integer' },
-      comment_count: { type: 'integer' },
-      share_count: { type: 'integer' },
-      language: { type: 'keyword' },
+      hashtags: { type: 'keyword' as const },
+      mentions: { type: 'keyword' as const },
+      created_at: { type: 'date' as const },
+      updated_at: { type: 'date' as const },
+      visibility: { type: 'keyword' as const }, // 'public', 'friends', 'friends_of_friends', 'private'
+      visibility_fingerprints: { type: 'keyword' as const }, // For privacy-aware filtering
+      post_type: { type: 'keyword' as const }, // 'text', 'photo', 'video', 'link'
+      engagement_score: { type: 'float' as const },
+      like_count: { type: 'integer' as const },
+      comment_count: { type: 'integer' as const },
+      share_count: { type: 'integer' as const },
+      language: { type: 'keyword' as const },
     },
   },
   settings: {
@@ -64,8 +64,8 @@ export const postsMapping = {
     analysis: {
       analyzer: {
         standard: {
-          type: 'standard',
-          stopwords: '_english_',
+          type: 'standard' as const,
+          stopwords: '_english_' as const,
         },
       },
     },

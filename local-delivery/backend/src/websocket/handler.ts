@@ -9,7 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { getSessionByToken } from '../services/authService.js';
-import { getOrderWithDetails } from '../services/orderService.js';
+import { getOrderWithDetails } from '../services/order/index.js';
 import { getDriverById } from '../services/driverService.js';
 import {
   createSubscriber,

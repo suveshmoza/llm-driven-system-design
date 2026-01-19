@@ -33,6 +33,20 @@ interface NormalizedStroke {
 }
 
 /**
+ * Drawing data structure as stored in MinIO.
+ * Contains stroke data with canvas dimensions for normalization.
+ */
+interface DrawingData {
+  id?: string
+  shape?: string
+  canvas?: { width: number; height: number }
+  strokes: Array<{ points: Array<{ x: number; y: number }>; color: string; width: number }>
+  duration_ms?: number
+  device?: string
+  user_agent?: string
+}
+
+/**
  * Prototype strokes for a single shape class.
  */
 export interface ShapePrototype {
@@ -372,7 +386,7 @@ export async function computePrototypes(samplesPerShape = 50): Promise<Prototype
 
       for (const drawing of drawings) {
         try {
-          const strokeData = await getDrawing(drawing.stroke_data_path)
+          const strokeData = (await getDrawing(drawing.stroke_data_path)) as DrawingData
           const canvas = strokeData.canvas || { width: 400, height: 400 }
           const normalized = normalizeStrokes(strokeData.strokes, canvas)
           allNormalizedStrokes.push(normalized)

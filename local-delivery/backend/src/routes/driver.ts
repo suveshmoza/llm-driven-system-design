@@ -23,7 +23,7 @@ import {
   updateOrderStatus,
   completeDelivery,
   getPendingOfferForDriver,
-} from '../services/orderService.js';
+} from '../services/order/index.js';
 import { publisher } from '../utils/redis.js';
 
 const router = Router();

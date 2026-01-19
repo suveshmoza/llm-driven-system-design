@@ -12,7 +12,7 @@ import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import pinoHttp from 'pino-http';
 import apiRoutes from './api/routes.js';
-import { setupWebSocket } from './websocket/server.js';
+import { setupWebSocket } from './websocket/index.js';
 import logger from './shared/logger.js';
 import { register, healthCheckStatus, dbPoolConnectionsActive } from './shared/metrics.js';
 import { pool } from './shared/db.js';

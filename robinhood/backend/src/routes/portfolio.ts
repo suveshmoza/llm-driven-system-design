@@ -49,7 +49,7 @@ router.get('/positions', async (req: AuthenticatedRequest, res: Response) => {
 router.get('/positions/:symbol', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const position = await portfolioService.getPosition(userId, req.params.symbol);
+    const position = await portfolioService.getPosition(userId, req.params.symbol as string);
 
     if (!position) {
       res.status(404).json({ error: `No position in ${req.params.symbol}` });

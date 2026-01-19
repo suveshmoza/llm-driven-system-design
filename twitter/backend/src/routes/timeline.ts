@@ -39,7 +39,7 @@ router.get('/home', async (req: Request, res: Response, next: NextFunction) => {
     // Get cached timeline from Redis
     const timelineKey = `timeline:${userId}`;
     const cachedIds = await redis.lrange(timelineKey, offset, offset + limit - 1);
-    let cacheHit = cachedIds.length > 0;
+    const cacheHit = cachedIds.length > 0;
 
     let tweets: TweetRow[] = [];
 

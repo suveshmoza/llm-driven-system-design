@@ -28,7 +28,7 @@ dotenv.config();
  * - Behavioral patterns: Timing and frequency analysis
  *
  * This worker performs more thorough analysis than the real-time
- * fraud check in payment.service.ts, which only does quick heuristics.
+ * fraud check in payment/authorize.ts, which only does quick heuristics.
  */
 
 /** Risk level thresholds */

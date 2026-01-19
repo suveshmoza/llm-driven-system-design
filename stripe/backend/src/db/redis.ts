@@ -5,7 +5,6 @@ dotenv.config();
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: 3,
-  retryDelayOnFailover: 100,
   enableReadyCheck: true,
   lazyConnect: true,
 });
@@ -52,7 +51,7 @@ export async function acquireIdempotencyLock(
   ttl: number = 60
 ): Promise<boolean> {
   const lockKey = `idempotency:${merchantId}:${key}:lock`;
-  const acquired = await redis.set(lockKey, '1', 'NX', 'EX', ttl);
+  const acquired = await redis.set(lockKey, '1', 'EX', ttl, 'NX');
   return acquired === 'OK';
 }
 
@@ -73,7 +72,7 @@ export async function incrementRateLimit(
   multi.incr(key);
   multi.expire(key, windowSeconds);
   const results = await multi.exec();
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+   
   return results![0]![1] as number;
 }
 

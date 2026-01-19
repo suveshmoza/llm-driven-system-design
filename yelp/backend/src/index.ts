@@ -20,7 +20,7 @@ import {
 import { getCircuitBreakerStatus } from './utils/circuitBreaker.js';
 
 import authRoutes from './routes/auth.js';
-import businessRoutes from './routes/businesses.js';
+import businessRoutes from './routes/businesses/index.js';
 import reviewRoutes from './routes/reviews.js';
 import searchRoutes from './routes/search.js';
 import categoryRoutes from './routes/categories.js';

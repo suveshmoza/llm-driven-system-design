@@ -3,7 +3,7 @@ import cors from 'cors';
 import http from 'http';
 import { authMiddleware, login, register, logout, getCurrentUser, requireAuth, requireAdmin } from './middleware/auth.js';
 import { initializeCodeIndex } from './db/elasticsearch.js';
-import reposRoutes from './routes/repos.js';
+import reposRoutes from './routes/repos/index.js';
 import pullsRoutes from './routes/pulls.js';
 import issuesRoutes from './routes/issues.js';
 import discussionsRoutes from './routes/discussions.js';

@@ -25,6 +25,7 @@ import type {
   SearchSuggestion,
   PostDocument,
 } from '../types/index.js';
+import type { estypes } from '@elastic/elasticsearch';
 
 /**
  * Builds an Elasticsearch query with privacy filtering and personalized ranking.
@@ -148,6 +149,12 @@ async function buildSearchQuery(
     });
   }
 
+  const sort: estypes.SortCombinations[] = [
+    { _score: { order: 'desc' as const } },
+    { engagement_score: { order: 'desc' as const } },
+    { created_at: { order: 'desc' as const } },
+  ];
+
   return {
     query: {
       bool: {
@@ -158,11 +165,7 @@ async function buildSearchQuery(
     },
     from,
     size,
-    sort: [
-      { _score: { order: 'desc' } },
-      { engagement_score: { order: 'desc' } },
-      { created_at: { order: 'desc' } },
-    ],
+    sort,
     highlight: {
       fields: {
         content: {

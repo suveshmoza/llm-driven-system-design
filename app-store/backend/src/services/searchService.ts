@@ -6,6 +6,7 @@
 import { esClient, APP_INDEX } from '../config/elasticsearch.js';
 import { cacheGet, cacheSet } from '../config/redis.js';
 import type { App, SearchParams, PaginatedResponse } from '../types/index.js';
+import type { estypes } from '@elastic/elasticsearch';
 
 /**
  * Elasticsearch document structure for indexed apps.
@@ -73,8 +74,8 @@ export class SearchService {
     if (cached) return cached;
 
     // Build Elasticsearch query
-    const must: unknown[] = [];
-    const filter: unknown[] = [];
+    const must: estypes.QueryDslQueryContainer[] = [];
+    const filter: estypes.QueryDslQueryContainer[] = [];
 
     // Text search
     if (q.trim()) {
@@ -108,19 +109,19 @@ export class SearchService {
     }
 
     // Build sort
-    let sort: unknown[];
+    let sort: estypes.SortCombinations[];
     switch (sortBy) {
       case 'rating':
-        sort = [{ averageRating: 'desc' }, { ratingCount: 'desc' }];
+        sort = [{ averageRating: 'desc' as const }, { ratingCount: 'desc' as const }];
         break;
       case 'downloads':
-        sort = [{ downloadCount: 'desc' }];
+        sort = [{ downloadCount: 'desc' as const }];
         break;
       case 'date':
-        sort = [{ lastUpdated: 'desc' }];
+        sort = [{ lastUpdated: 'desc' as const }];
         break;
       default:
-        sort = q.trim() ? [{ _score: 'desc' }, { qualityScore: 'desc' }] : [{ downloadCount: 'desc' }];
+        sort = q.trim() ? [{ _score: { order: 'desc' as const } }, { qualityScore: 'desc' as const }] : [{ downloadCount: 'desc' as const }];
     }
 
     const from = (page - 1) * limit;
@@ -220,8 +221,9 @@ export class SearchService {
         },
       });
 
-      const suggestions = response.suggest?.['app-suggest']?.[0]?.options || [];
-      return suggestions.map((s: { text: string }) => s.text);
+      const suggestResult = response.suggest?.['app-suggest']?.[0]?.options;
+      const suggestions = Array.isArray(suggestResult) ? suggestResult : [];
+      return suggestions.map((s) => (s as estypes.SearchCompletionSuggestOption<ESAppDocument>).text);
     } catch (error) {
       console.error('Elasticsearch suggest error:', error);
       return [];

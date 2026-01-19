@@ -136,7 +136,7 @@ developerRouter.post(
   async (req: Request, res: Response) => {
     try {
       const userId = req.session.userId;
-      const { pluginId } = req.params;
+      const pluginId = req.params.pluginId as string;
       const { version, changelog, minPlatformVersion } = req.body;
       const manifestJson = req.body.manifest;
 
@@ -237,7 +237,7 @@ developerRouter.post(
 developerRouter.patch('/plugins/:pluginId', async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId;
-    const { pluginId } = req.params;
+    const pluginId = req.params.pluginId as string;
     const { name, description, category, license, repositoryUrl, homepageUrl, tags } = req.body;
 
     // Verify ownership
@@ -304,7 +304,7 @@ developerRouter.patch('/plugins/:pluginId', async (req: Request, res: Response) 
 developerRouter.delete('/plugins/:pluginId', async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId;
-    const { pluginId } = req.params;
+    const pluginId = req.params.pluginId as string;
 
     // Verify ownership
     const plugin = await query<{ author_id: string; install_count: number }>(

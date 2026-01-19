@@ -169,7 +169,7 @@ export interface RefundRow {
   id: string;
   charge_id: string;
   amount: number;
-  reason?: string;
+  reason?: string | null;
   status: string;
 }
 
