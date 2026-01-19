@@ -7,7 +7,7 @@
  */
 
 import { WebSocket } from 'ws';
-import type { CommentWithUser, ReactionCount } from '../../types/index.js';
+import type { CommentWithUser, ReactionCount as _ReactionCount } from '../../types/index.js';
 
 /**
  * Extended WebSocket interface with stream session data.

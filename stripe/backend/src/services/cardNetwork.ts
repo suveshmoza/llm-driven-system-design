@@ -247,7 +247,7 @@ export async function authorize({
  * Simulate card capture (for manual capture flow)
  * Also protected by circuit breaker
  */
-export async function capture({ authCode, amount: _amount, currency }: CaptureParams): Promise<CaptureResult> {
+export async function capture({ authCode, amount: _amount, currency as _currency }: CaptureParams): Promise<CaptureResult> {
   const startTime = process.hrtime();
 
   try {
@@ -291,7 +291,7 @@ export async function capture({ authCode, amount: _amount, currency }: CapturePa
  * Simulate refund through card network
  * Also protected by circuit breaker
  */
-export async function refund({ authCode, amount, currency }: RefundParams): Promise<RefundResult> {
+export async function refund({ authCode as _authCode, amount, currency }: RefundParams): Promise<RefundResult> {
   const startTime = process.hrtime();
 
   try {

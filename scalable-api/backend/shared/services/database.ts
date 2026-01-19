@@ -1,14 +1,14 @@
-import pg from 'pg';
+import pg, { QueryResultRow, QueryResult, Pool as PgPool } from 'pg';
 import config from '../config/index.js';
 
 const { Pool } = pg;
 
-let pool = null;
+let pool: PgPool | null = null;
 
 /**
  * Get PostgreSQL connection pool
  */
-export function getPool() {
+export function getPool(): PgPool {
   if (!pool) {
     pool = new Pool({
       host: config.postgres.host,
@@ -35,7 +35,10 @@ export function getPool() {
 /**
  * Execute a query
  */
-export async function query(text, params = []) {
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params: unknown[] = []
+): Promise<QueryResult<T>> {
   const client = await getPool().connect();
   try {
     const start = Date.now();

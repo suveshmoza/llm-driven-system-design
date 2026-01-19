@@ -5,7 +5,7 @@ import { authenticate } from '../middleware/auth.js';
 import { idempotency } from '../middleware/idempotency.js';
 import { requireEdit, requireShare, requireDelete, getDocumentAccess as _getDocumentAccess } from '../shared/rbac.js';
 import logger from '../shared/logger.js';
-import type { DocumentListItem, DocumentWithPermission, PermissionLevel } from '../types/index.js';
+import type { DocumentListItem, DocumentWithPermission, PermissionLevel as _PermissionLevel } from '../types/index.js';
 
 /**
  * Documents router handling CRUD operations for collaborative documents.

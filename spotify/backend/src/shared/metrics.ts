@@ -117,8 +117,10 @@ export const dbPoolConnections = new client.Gauge({
   registers: [register],
 });
 
+import { Request, Response, NextFunction } from 'express';
+
 // Express middleware for metrics collection
-export function metricsMiddleware(req, res, next) {
+export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const start = Date.now();
 
   res.on('finish', () => {
@@ -145,7 +147,7 @@ export function metricsMiddleware(req, res, next) {
 }
 
 // Metrics endpoint handler
-export async function metricsHandler(req, res) {
+export async function metricsHandler(_req: Request, res: Response): Promise<void> {
   res.set('Content-Type', register.contentType);
   res.send(await register.metrics());
 }

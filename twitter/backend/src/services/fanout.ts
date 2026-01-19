@@ -1,7 +1,7 @@
 import pool from '../db/pool.js';
 import redis from '../db/redis.js';
-import type { Pool } from 'pg';
-import type Redis from 'ioredis';
+import type { Pool as _Pool } from 'pg';
+import type Redis as _Redis from 'ioredis';
 import dotenv from 'dotenv';
 import logger from '../shared/logger.js';
 import { createCircuitBreaker, FANOUT_CIRCUIT_OPTIONS } from '../shared/circuitBreaker.js';

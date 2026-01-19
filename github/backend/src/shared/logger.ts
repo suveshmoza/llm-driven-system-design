@@ -44,11 +44,17 @@ export function createServiceLogger(serviceName) {
   return logger.child({ service: serviceName });
 }
 
+import { Request, Response, NextFunction } from 'express';
+
 /**
  * Express middleware for request logging
  * Adds a unique request ID and logs request start/finish
  */
-export function requestLoggerMiddleware(req, res, next) {
+export function requestLoggerMiddleware(
+  req: Request & { log?: ReturnType<typeof logger.child> },
+  res: Response,
+  next: NextFunction
+): void {
   const requestId = req.headers['x-request-id'] || uuidv4();
   const startTime = Date.now();
 

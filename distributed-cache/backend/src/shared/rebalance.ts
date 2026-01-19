@@ -355,10 +355,10 @@ export class RebalanceManager {
       };
     } catch (error) {
       rebalanceLogger.error(
-        { removedNodeUrl, error: error.message },
+        { removedNodeUrl, error: (error as Error).message },
         'rebalance_failed'
       );
-      return { success: false, error: error.message };
+      return { success: false, error: (error as Error).message };
     } finally {
       this.isRebalancing = false;
       rebalanceInProgress.labels(removedNodeUrl).set(0);
@@ -383,7 +383,7 @@ export class RebalanceManager {
    * @param {string} newNodeUrl - Hypothetical new node
    * @returns {Promise<object>} Impact analysis
    */
-  async analyzeAddNodeImpact(newNodeUrl) {
+  async analyzeAddNodeImpact(newNodeUrl: string) {
     const existingNodes = this.ring.getAllNodes();
 
     if (existingNodes.length === 0) {

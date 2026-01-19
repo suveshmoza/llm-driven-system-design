@@ -96,7 +96,7 @@ router.get('/users', requireAuth, requireAdmin, async (req: Request, res: Respon
     const { users, total } = await userService.getAllUsers(limit, offset);
 
     // Don't expose password hashes
-    const safeUsers = users.map(({ password_hash, ...user }) => user);
+    const safeUsers = users.map(({ password_hash as _password_hash, ...user }) => user);
 
     res.json({
       users: safeUsers,
