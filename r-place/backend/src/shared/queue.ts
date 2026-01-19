@@ -11,7 +11,7 @@
  * - pixel-events: High-volume pixel placement events
  * - snapshot-jobs: Periodic snapshot generation triggers
  */
-import amqplib, { Connection, Channel, ConsumeMessage } from 'amqplib';
+import amqplib, { ChannelModel, Channel, ConsumeMessage } from 'amqplib';
 import { logger } from './logger.js';
 import { Counter, Histogram } from 'prom-client';
 import { metricsRegistry } from './metrics.js';
@@ -31,7 +31,7 @@ export const EXCHANGES = {
 } as const;
 
 /** Shared connection instance. */
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 
 /** Shared channel instance for publishing. */
 let publishChannel: Channel | null = null;

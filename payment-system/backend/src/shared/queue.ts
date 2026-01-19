@@ -1,4 +1,4 @@
-import amqplib, { Channel, Connection, ConsumeMessage } from 'amqplib';
+import amqplib, { Channel, ChannelModel, ConsumeMessage } from 'amqplib';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from './logger.js';
 import { metricsRegistry } from './metrics.js';
@@ -63,7 +63,7 @@ export const QUEUES = {
 const DLX_EXCHANGE = 'payment-dlx';
 
 /** Connection and channel state */
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 
 // ============================================================================

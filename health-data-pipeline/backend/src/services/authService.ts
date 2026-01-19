@@ -3,8 +3,21 @@ import { redis } from '../config/redis.js';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcrypt';
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: 'user' | 'admin';
+  created_at: Date;
+}
+
+interface Session {
+  token: string;
+  expiresAt: Date;
+}
+
 export class AuthService {
-  async register(email, password, name) {
+  async register(email: string, password: string, name: string): Promise<{ user: User; session: Session }> {
     // Check if user exists
     const existing = await db.query(
       'SELECT id FROM users WHERE email = $1',
@@ -24,13 +37,13 @@ export class AuthService {
       [email.toLowerCase(), passwordHash, name]
     );
 
-    const user = result.rows[0];
+    const user = result.rows[0] as User;
     const session = await this.createSession(user.id);
 
     return { user, session };
   }
 
-  async login(email, password) {
+  async login(email: string, password: string): Promise<{ user: User; session: Session }> {
     const result = await db.query(
       'SELECT id, email, name, role, password_hash FROM users WHERE email = $1',
       [email.toLowerCase()]
@@ -40,7 +53,7 @@ export class AuthService {
       throw new Error('Invalid email or password');
     }
 
-    const user = result.rows[0];
+    const user = result.rows[0] as User & { password_hash: string };
     const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
@@ -48,12 +61,12 @@ export class AuthService {
     }
 
     const session = await this.createSession(user.id);
-    delete user.password_hash;
+    const { password_hash: _, ...userWithoutPassword } = user;
 
-    return { user, session };
+    return { user: userWithoutPassword, session };
   }
 
-  async createSession(userId) {
+  async createSession(userId: string): Promise<Session> {
     const token = uuidv4();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
@@ -73,7 +86,7 @@ export class AuthService {
     return { token, expiresAt };
   }
 
-  async validateSession(token) {
+  async validateSession(token: string): Promise<string | null> {
     // Check Redis first
     const cached = await redis.get(`session:${token}`);
 
@@ -98,18 +111,18 @@ export class AuthService {
     return result.rows[0].user_id;
   }
 
-  async logout(token) {
+  async logout(token: string): Promise<void> {
     await db.query('DELETE FROM sessions WHERE token = $1', [token]);
     await redis.del(`session:${token}`);
   }
 
-  async getUser(userId) {
+  async getUser(userId: string): Promise<User | null> {
     const result = await db.query(
       'SELECT id, email, name, role, created_at FROM users WHERE id = $1',
       [userId]
     );
 
-    return result.rows[0] || null;
+    return (result.rows[0] as User) || null;
   }
 }
 

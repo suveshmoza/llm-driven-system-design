@@ -9,7 +9,7 @@
  * Includes connection management with automatic reconnection.
  */
 
-import amqp, { Connection, Channel, ConfirmChannel } from 'amqplib';
+import amqp, { ChannelModel, Channel, ConfirmChannel } from 'amqplib';
 import { logger } from './logger.js';
 import { prometheusMetrics } from './metrics.js';
 
@@ -23,7 +23,7 @@ export const QUEUES = {
 } as const;
 
 /** Singleton connection and channel instances */
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 let confirmChannel: ConfirmChannel | null = null;
 
@@ -268,7 +268,7 @@ export function getConsumerChannel(): Channel | null {
  *
  * @returns Connection instance, or null if not connected
  */
-export function getConnection(): Connection | null {
+export function getConnection(): ChannelModel | null {
   return connection;
 }
 

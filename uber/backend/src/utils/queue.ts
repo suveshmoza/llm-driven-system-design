@@ -1,4 +1,4 @@
-import amqp, { Connection, Channel, ConsumeMessage, Options } from 'amqplib';
+import amqp, { type ChannelModel, type Channel, type ConsumeMessage, type Options } from 'amqplib';
 import config from '../config/index.js';
 import { createLogger } from './logger.js';
 import { metrics } from './metrics.js';
@@ -7,14 +7,14 @@ import { withRetry } from './circuitBreaker.js';
 const logger = createLogger('rabbitmq');
 
 // Connection and channel state
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 let isConnecting = false;
 
 interface ConnectionPromise {
-  resolve: ((value: { connection: Connection; channel: Channel }) => void) | null;
+  resolve: ((value: { connection: ChannelModel; channel: Channel }) => void) | null;
   reject: ((reason: Error) => void) | null;
-  promise: Promise<{ connection: Connection; channel: Channel }> | null;
+  promise: Promise<{ connection: ChannelModel; channel: Channel }> | null;
 }
 
 const connectionPromise: ConnectionPromise = { resolve: null, reject: null, promise: null };
@@ -55,7 +55,7 @@ type MessageHandler<T = unknown> = (content: T, msg: ConsumeMessage) => Promise<
 /**
  * Connect to RabbitMQ with retry logic
  */
-export async function connectRabbitMQ(): Promise<{ connection: Connection; channel: Channel }> {
+export async function connectRabbitMQ(): Promise<{ connection: ChannelModel; channel: Channel }> {
   if (connection && channel) {
     return { connection, channel };
   }
@@ -118,9 +118,9 @@ export async function connectRabbitMQ(): Promise<{ connection: Connection; chann
     metrics.serviceHealthGauge.set({ service: 'rabbitmq' }, 1);
 
     isConnecting = false;
-    connectionPromise.resolve?.({ connection, channel });
+    connectionPromise.resolve?.({ connection: connection!, channel: channel! });
 
-    return { connection, channel };
+    return { connection: connection!, channel: channel! };
   } catch (error) {
     const err = error as Error;
     logger.error({ error: err.message }, 'Failed to connect to RabbitMQ');

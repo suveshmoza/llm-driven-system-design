@@ -1,26 +1,12 @@
 /**
  * @fileoverview TanStack Router configuration.
  *
- * Assembles the application route tree and creates the router instance.
+ * Uses the auto-generated route tree from TanStack Router Vite plugin.
  * Registers TypeScript types for router-aware components.
  */
 
 import { createRouter } from '@tanstack/react-router';
-import { Route as RootRoute } from './routes/__root';
-import { Route as IndexRoute } from './routes/index';
-import { Route as DashboardRoute } from './routes/dashboard.$dashboardId';
-import { Route as AlertsRoute } from './routes/alerts';
-import { Route as MetricsRoute } from './routes/metrics';
-
-/**
- * Application route tree with all page routes as children of the root layout.
- */
-const routeTree = RootRoute.addChildren([
-  IndexRoute,
-  DashboardRoute,
-  AlertsRoute,
-  MetricsRoute,
-]);
+import { routeTree } from './routeTree.gen';
 
 /**
  * The application router instance.

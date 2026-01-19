@@ -1,22 +1,60 @@
 import { db } from '../config/database.js';
 import { cache } from '../config/redis.js';
-import { HealthDataTypes, DevicePriority, getAggregationType } from '../models/healthTypes.js';
+import { HealthDataTypes, DevicePriority, getAggregationType, AggregationType, HealthDataTypeKey } from '../models/healthTypes.js';
+
+interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+interface HealthSample {
+  id: string;
+  user_id: string;
+  type: string;
+  value: number;
+  start_date: Date | string;
+  end_date: Date | string;
+  source_device: string;
+  source_device_id?: string;
+  device_priority?: number;
+}
+
+interface TimeRange {
+  start: number;
+  end: number;
+}
+
+interface Overlap {
+  full?: boolean;
+  partial?: boolean;
+  side?: 'start' | 'end';
+  range: TimeRange;
+}
+
+interface Aggregate {
+  periodStart: Date;
+  period: string;
+  value: number;
+  minValue: number;
+  maxValue: number;
+  sampleCount: number;
+}
 
 export class AggregationService {
   // Queue aggregation job (in production would use Redis queue/Bull)
-  async queueAggregation(userId, types, dateRange) {
+  async queueAggregation(userId: string, types: string[], dateRange: DateRange): Promise<void> {
     // For simplicity, process immediately
     // In production, would use a job queue
     await this.processAggregation(userId, types, dateRange);
   }
 
-  async processAggregation(userId, types, dateRange) {
+  async processAggregation(userId: string, types: string[], dateRange: DateRange): Promise<void> {
     for (const type of types) {
       await this.aggregateType(userId, type, dateRange);
     }
   }
 
-  async aggregateType(userId, type, dateRange) {
+  async aggregateType(userId: string, type: string, dateRange: DateRange): Promise<void> {
     const aggregationType = getAggregationType(type);
 
     // Get raw samples
@@ -35,7 +73,7 @@ export class AggregationService {
     if (samples.rows.length === 0) return;
 
     // Deduplicate samples
-    const deduped = this.deduplicateSamples(samples.rows);
+    const deduped = this.deduplicateSamples(samples.rows as HealthSample[]);
 
     // Generate hourly aggregates
     const hourlyAggregates = this.aggregateByPeriod(deduped, 'hour', aggregationType);
@@ -49,16 +87,16 @@ export class AggregationService {
     await cache.invalidateUser(userId);
   }
 
-  deduplicateSamples(samples) {
+  deduplicateSamples(samples: HealthSample[]): HealthSample[] {
     // Sort by device priority (higher priority first)
     const prioritized = [...samples].sort((a, b) => {
-      const priorityA = a.device_priority || DevicePriority[a.source_device] || 0;
-      const priorityB = b.device_priority || DevicePriority[b.source_device] || 0;
+      const priorityA = a.device_priority || DevicePriority[a.source_device as keyof typeof DevicePriority] || 0;
+      const priorityB = b.device_priority || DevicePriority[b.source_device as keyof typeof DevicePriority] || 0;
       return priorityB - priorityA;
     });
 
-    const result = [];
-    const coveredRanges = [];
+    const result: HealthSample[] = [];
+    const coveredRanges: TimeRange[] = [];
 
     for (const sample of prioritized) {
       const startTime = new Date(sample.start_date).getTime();
@@ -87,7 +125,7 @@ export class AggregationService {
     return result;
   }
 
-  findOverlap(start, end, coveredRanges) {
+  findOverlap(start: number, end: number, coveredRanges: TimeRange[]): Overlap | null {
     for (const range of coveredRanges) {
       // Full overlap
       if (start >= range.start && end <= range.end) {
@@ -105,9 +143,9 @@ export class AggregationService {
     return null;
   }
 
-  adjustForOverlap(sample, overlap) {
+  adjustForOverlap(sample: HealthSample, overlap: Overlap): HealthSample | null {
     // Calculate proportion of value to keep
-    const totalDuration = new Date(sample.end_date) - new Date(sample.start_date);
+    const totalDuration = new Date(sample.end_date).getTime() - new Date(sample.start_date).getTime();
     if (totalDuration === 0) return null;
 
     let newStart = new Date(sample.start_date);
@@ -119,7 +157,7 @@ export class AggregationService {
       newStart = new Date(overlap.range.end);
     }
 
-    const newDuration = newEnd - newStart;
+    const newDuration = newEnd.getTime() - newStart.getTime();
     if (newDuration <= 0) return null;
 
     const proportion = newDuration / totalDuration;
@@ -132,8 +170,8 @@ export class AggregationService {
     };
   }
 
-  aggregateByPeriod(samples, period, aggregationType) {
-    const buckets = new Map();
+  aggregateByPeriod(samples: HealthSample[], period: string, aggregationType: AggregationType): Aggregate[] {
+    const buckets = new Map<string, number[]>();
 
     for (const sample of samples) {
       const bucketKey = this.getBucketKey(new Date(sample.start_date), period);
@@ -141,10 +179,10 @@ export class AggregationService {
       if (!buckets.has(bucketKey)) {
         buckets.set(bucketKey, []);
       }
-      buckets.get(bucketKey).push(sample.value);
+      buckets.get(bucketKey)!.push(sample.value);
     }
 
-    const aggregates = [];
+    const aggregates: Aggregate[] = [];
     for (const [key, values] of buckets) {
       aggregates.push({
         periodStart: new Date(key),
@@ -159,7 +197,7 @@ export class AggregationService {
     return aggregates;
   }
 
-  getBucketKey(date, period) {
+  getBucketKey(date: Date, period: string): string {
     const d = new Date(date);
     switch (period) {
       case 'hour':
@@ -181,7 +219,7 @@ export class AggregationService {
     return d.toISOString();
   }
 
-  aggregate(values, type) {
+  aggregate(values: number[], type: AggregationType): number {
     if (values.length === 0) return 0;
 
     switch (type) {
@@ -200,7 +238,7 @@ export class AggregationService {
     }
   }
 
-  async storeAggregates(userId, type, aggregates, period) {
+  async storeAggregates(userId: string, type: string, aggregates: Aggregate[], period: string): Promise<void> {
     for (const agg of aggregates) {
       await db.query(
         `INSERT INTO health_aggregates
@@ -219,7 +257,7 @@ export class AggregationService {
   }
 
   // Manual re-aggregation for a user
-  async reaggregateUser(userId, startDate, endDate) {
+  async reaggregateUser(userId: string, startDate: Date, endDate: Date): Promise<void> {
     const types = Object.keys(HealthDataTypes);
     await this.processAggregation(userId, types, { start: startDate, end: endDate });
   }

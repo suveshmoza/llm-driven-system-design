@@ -1,9 +1,9 @@
-import amqp, { Connection, Channel, ConsumeMessage, Options } from 'amqplib';
+import amqp, { ChannelModel, Channel, ConsumeMessage, Options } from 'amqplib';
 import config from '../config/index.js';
 import logger from './logger.js';
 import { queueDepth, queueMessagesProcessed, queueProcessingTime } from './metrics.js';
 
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 
 // Queue configuration interface

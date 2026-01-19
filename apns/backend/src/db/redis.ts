@@ -1,4 +1,4 @@
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 /**
  * Redis client for caching, pub/sub, rate limiting, and session management.
@@ -6,7 +6,7 @@ import Redis from "ioredis";
  */
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
   maxRetriesPerRequest: 3,
-  retryDelayOnFailover: 100,
+  retryStrategy: (times) => Math.min(times * 100, 2000),
   lazyConnect: true,
 });
 

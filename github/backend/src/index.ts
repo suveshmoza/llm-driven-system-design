@@ -12,11 +12,11 @@ import searchRoutes from './routes/search.js';
 
 // Import shared modules
 import logger, { requestLoggerMiddleware } from './shared/logger.js';
-import { metricsMiddleware, metricsHandler, activeConnections } from './shared/metrics.js';
+import { metricsMiddleware, metricsHandler } from './shared/metrics.js';
 import { getCircuitBreakerStatus, resetCircuitBreaker } from './shared/circuitBreaker.js';
-import { queryAuditLogs, AUDITED_ACTIONS, auditLog } from './shared/audit.js';
+import { queryAuditLogs } from './shared/audit.js';
 import { cleanupExpiredKeys } from './shared/idempotency.js';
-import { pool } from './db/index.js';
+import pool from './db/index.js';
 import redisClient from './db/redis.js';
 
 const app = express();
@@ -64,7 +64,7 @@ app.get('/metrics', metricsHandler);
  * Enhanced health check endpoint
  * Checks database, Redis, and Elasticsearch connectivity
  */
-app.get('/health', async (req: Request, res: Response): Promise<void> => {
+app.get('/health', async (_req: Request, res: Response): Promise<void> => {
   const health: HealthCheck = {
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -107,12 +107,12 @@ app.get('/health', async (req: Request, res: Response): Promise<void> => {
 });
 
 // Liveness probe (for Kubernetes)
-app.get('/health/live', (req: Request, res: Response): void => {
+app.get('/health/live', (_req: Request, res: Response): void => {
   res.json({ status: 'ok' });
 });
 
 // Readiness probe (for Kubernetes)
-app.get('/health/ready', async (req: Request, res: Response): Promise<void> => {
+app.get('/health/ready', async (_req: Request, res: Response): Promise<void> => {
   try {
     await pool.query('SELECT 1');
     await redisClient.ping();
@@ -137,7 +137,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/search', searchRoutes);
 
 // Circuit breaker admin endpoints
-app.get('/api/admin/circuit-breakers', requireAuth, requireAdmin, (req: Request, res: Response): void => {
+app.get('/api/admin/circuit-breakers', requireAuth, requireAdmin, (_req: Request, res: Response): void => {
   res.json(getCircuitBreakerStatus());
 });
 
@@ -172,7 +172,7 @@ app.get('/api/admin/audit-logs', requireAuth, requireAdmin, async (req: Request,
 });
 
 // Error handler with structured logging
-const errorHandler: ErrorRequestHandler = (err: Error, req: Request, res: Response, next: NextFunction): void => {
+const errorHandler: ErrorRequestHandler = (err: Error, req: Request, res: Response, _next: NextFunction): void => {
   const log = req.log || logger;
   log.error({ err, stack: err.stack }, 'Unhandled server error');
   res.status(500).json({ error: 'Internal server error' });

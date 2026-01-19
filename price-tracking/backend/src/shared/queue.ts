@@ -4,7 +4,7 @@
  * Uses amqplib for connection management with automatic reconnection.
  * @module shared/queue
  */
-import amqp, { Connection, Channel, ConsumeMessage } from 'amqplib';
+import amqp, { ChannelModel, Channel, ConsumeMessage } from 'amqplib';
 import dotenv from 'dotenv';
 import logger from '../utils/logger.js';
 
@@ -19,7 +19,7 @@ export const QUEUE_PRICE_UPDATES = 'price-updates';
 export const QUEUE_ALERTS = 'alerts';
 
 /** Singleton connection and channel */
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 
 /** Reconnection state */

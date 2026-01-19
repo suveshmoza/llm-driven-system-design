@@ -12,6 +12,8 @@
     "dev:worker": "NODE_ENV=development tsx watch src/workers/image-worker.ts",
     "start": "NODE_ENV=production tsx src/index.ts",
     "start:worker": "NODE_ENV=production tsx src/workers/image-worker.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
     "db:seed": "tsx db/seed.ts",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts"

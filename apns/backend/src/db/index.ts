@@ -1,4 +1,4 @@
-import { Pool, PoolClient, QueryResult } from "pg";
+import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 /**
  * PostgreSQL connection pool for the APNs backend.
@@ -26,7 +26,7 @@ pool.on("error", (err) => {
  * @param params - Array of parameter values to substitute
  * @returns Query result with rows typed as T
  */
-export async function query<T = unknown>(
+export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
 ): Promise<QueryResult<T>> {
