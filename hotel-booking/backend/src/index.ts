@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import config from './config/index.js';
 import * as elasticsearch from './models/elasticsearch.js';
-import bookingService from './services/bookingService.js';
+import bookingService from './services/booking/index.js';
 
 // Import shared modules
 import {

@@ -7,7 +7,7 @@ import config from './config/index.js';
 import authRoutes from './routes/auth.js';
 import rideRoutes from './routes/rides.js';
 import driverRoutes from './routes/driver.js';
-import matchingService from './services/matchingService.js';
+import matchingService from './services/matching/index.js';
 import authService from './services/authService.js';
 import { connectRabbitMQ, closeRabbitMQ } from './utils/queue.js';
 import { healthRouter } from './utils/health.js';

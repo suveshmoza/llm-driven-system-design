@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import bookingService from '../services/bookingService.js';
+import bookingService from '../services/booking/index.js';
 import reviewService from '../services/reviewService.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 

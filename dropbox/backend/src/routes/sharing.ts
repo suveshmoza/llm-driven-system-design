@@ -17,7 +17,7 @@ import {
   getFolderShares,
   removeFolderShare,
 } from '../services/sharingService.js';
-import { downloadFile, getFileChunks } from '../services/fileService.js';
+import { downloadFile, getFileChunks } from '../services/file/index.js';
 import { authMiddleware, optionalAuthMiddleware, AuthRequest } from '../middleware/auth.js';
 import { getDownloadPresignedUrl } from '../utils/storage.js';
 import { queryOne } from '../utils/database.js';

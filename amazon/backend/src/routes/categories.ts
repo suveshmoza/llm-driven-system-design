@@ -119,11 +119,11 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction): Pr
     while (current) {
       breadcrumbs.unshift({ name: current.name, slug: current.slug });
       if (current.parent_id) {
-        const parent = await query<CategoryRow>(
+        const parentResult = await query<CategoryRow>(
           'SELECT id, name, slug, parent_id FROM categories WHERE id = $1',
           [current.parent_id]
         );
-        current = parent.rows[0] ?? null;
+        current = parentResult.rows[0] ?? null;
       } else {
         current = null;
       }

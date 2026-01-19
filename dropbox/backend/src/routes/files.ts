@@ -21,7 +21,7 @@ import {
   getFileVersions,
   restoreFileVersion,
   getFileChunks,
-} from '../services/fileService.js';
+} from '../services/file/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { calculateHash, CHUNK_SIZE } from '../utils/chunking.js';
 import { getDownloadPresignedUrl } from '../utils/storage.js';

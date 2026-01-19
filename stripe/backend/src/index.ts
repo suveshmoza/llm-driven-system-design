@@ -19,7 +19,7 @@ import {
 } from './shared/metrics.js';
 
 // Import routes
-import paymentIntentsRouter from './routes/paymentIntents.js';
+import paymentIntentsRouter from './routes/paymentIntents/index.js';
 import customersRouter from './routes/customers.js';
 import paymentMethodsRouter from './routes/paymentMethods.js';
 import refundsRouter from './routes/refunds.js';

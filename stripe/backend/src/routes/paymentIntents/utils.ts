@@ -15,7 +15,7 @@ export function formatPaymentIntent(row: PaymentIntentRow): PaymentIntentRespons
     currency: row.currency,
     status: row.status,
     customer: row.customer_id,
-    payment_method: row.payment_method_id,
+    payment_method: row.payment_method_id ?? null,
     capture_method: row.capture_method,
     description: row.description,
     metadata: row.metadata || {},

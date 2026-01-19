@@ -10,7 +10,7 @@
     "dev:server2": "PORT=3002 NODE_ID=node-2 tsx watch src/server.ts",
     "dev:server3": "PORT=3003 NODE_ID=node-3 tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "coordinator": "PORT=3000 tsx watch src/coordinator.ts",
+    "coordinator": "PORT=3000 tsx watch src/coordinator/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/",

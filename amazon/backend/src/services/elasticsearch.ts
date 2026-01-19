@@ -1,10 +1,9 @@
-import { Client } from '@elastic/elasticsearch';
-import type {
-  SearchResponse,
-  ClusterHealthResponse,
-  IndicesExistsResponse,
-  BulkResponse
-} from '@elastic/elasticsearch/lib/api/types.js';
+import { Client, estypes } from '@elastic/elasticsearch';
+
+type SearchResponse<T> = estypes.SearchResponse<T>;
+type ClusterHealthResponse = estypes.ClusterHealthResponse;
+type IndicesExistsResponse = boolean;
+type BulkResponse = estypes.BulkResponse;
 
 let client: Client | null = null;
 
@@ -240,7 +239,7 @@ export async function searchProducts(
   }
 
   try {
-    const result: SearchResponse = await client.search({
+    const result: SearchResponse<Product> = await client.search({
       index: INDEX_NAME,
       body: {
         query: {

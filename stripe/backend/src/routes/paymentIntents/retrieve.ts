@@ -41,7 +41,7 @@ export async function getPaymentIntent(
     const paymentIntent = formatPaymentIntent(result.rows[0]);
 
     // Include risk assessment if exists
-    const riskAssessment = await getRiskAssessment(req.params.id);
+    const riskAssessment = await getRiskAssessment(req.params.id as string);
     if (riskAssessment) {
       paymentIntent.risk_assessment = {
         risk_score: parseFloat(riskAssessment.risk_score),

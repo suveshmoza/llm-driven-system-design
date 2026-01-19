@@ -50,11 +50,11 @@ const DEFAULT_OPTIONS: CircuitBreakerOptions = {
 const breakers = new Map<string, CircuitBreaker<unknown[], unknown>>();
 
 // Map opossum state to metric value
-const stateToMetricValue: Record<string, number> = {
+const stateToMetricValue = {
   closed: 0,
   halfOpen: 1,
   open: 2
-};
+} as const;
 
 /**
  * Create or get a circuit breaker for a service
@@ -123,14 +123,19 @@ export function getCircuitBreakerStats(name: string): CircuitBreakerStats | null
     return null;
   }
 
+  // Access options via type assertion since the types don't expose it
+  const breakerWithOptions = breaker as typeof breaker & {
+    options: { timeout?: number; errorThresholdPercentage?: number; resetTimeout?: number };
+  };
+
   return {
     name,
     state: breaker.opened ? 'open' : (breaker.halfOpen ? 'halfOpen' : 'closed'),
     stats: breaker.stats,
     options: {
-      timeout: breaker.options.timeout,
-      errorThresholdPercentage: breaker.options.errorThresholdPercentage,
-      resetTimeout: breaker.options.resetTimeout
+      timeout: breakerWithOptions.options?.timeout ?? 10000,
+      errorThresholdPercentage: breakerWithOptions.options?.errorThresholdPercentage ?? 50,
+      resetTimeout: breakerWithOptions.options?.resetTimeout ?? 30000
     }
   };
 }

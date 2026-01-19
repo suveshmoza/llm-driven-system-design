@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
-import { orderService, PlaceOrderRequest, OrderContext } from '../services/orderService.js';
+import { orderService, PlaceOrderRequest, OrderContext } from '../services/order/index.js';
 import { logger } from '../shared/logger.js';
 
 /**

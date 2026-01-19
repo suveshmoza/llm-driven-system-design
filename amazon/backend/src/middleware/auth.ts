@@ -48,6 +48,10 @@ export async function authMiddleware(
     }
 
     const row = result.rows[0];
+    if (!row) {
+      req.user = null;
+      return next();
+    }
     req.user = {
       id: row.id as number,
       email: row.email as string,

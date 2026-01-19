@@ -11,7 +11,7 @@ import {
   getComments,
   deleteComment,
   likeComment,
-} from '../services/metadata.js';
+} from '../services/metadata/index.js';
 import {
   getStreamingInfo,
   recordView,

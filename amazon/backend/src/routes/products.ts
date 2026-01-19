@@ -140,11 +140,12 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
         return;
       }
 
-      product = result.rows[0];
-      if (!product) {
+      const fetchedProduct = result.rows[0];
+      if (!fetchedProduct) {
         res.status(404).json({ error: 'Product not found' });
         return;
       }
+      product = fetchedProduct;
       await cacheSet(cacheKey, product, 300); // Cache for 5 minutes
     }
 
@@ -157,7 +158,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
 // Get product recommendations
 router.get('/:id/recommendations', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     // Try Redis cache first
     let recommendations = await getRecommendations(id);

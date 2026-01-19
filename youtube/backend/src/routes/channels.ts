@@ -7,8 +7,8 @@ import {
   unsubscribe,
   isSubscribed,
   getSubscriptions,
-} from '../services/metadata.js';
-import { getVideos } from '../services/metadata.js';
+  getVideos,
+} from '../services/metadata/index.js';
 
 // Extend Express Request to include user
 interface AuthenticatedRequest extends Request {

@@ -22,7 +22,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { testConnection } from './db/index.js';
 import { getRedisClient } from './services/redis.js';
-import { setupWebSocketServer, getOnlineUsers, getClientCount } from './services/signaling.js';
+import { setupWebSocketServer, getOnlineUsers, getClientCount } from './services/signaling/index.js';
 import usersRouter from './routes/users.js';
 import callsRouter from './routes/calls.js';
 

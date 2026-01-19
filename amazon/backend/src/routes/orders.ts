@@ -502,7 +502,7 @@ router.put('/:id/status', requireAdmin, async (req: ExtendedRequest, res: Respon
   const log = req.log || logger;
 
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const status = req.body.status as string;
 
     const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'];

@@ -8,7 +8,7 @@ import { authMiddleware } from './middleware/auth.js';
 
 import authRoutes from './routes/auth.js';
 import restaurantRoutes from './routes/restaurants.js';
-import orderRoutes from './routes/orders.js';
+import orderRoutes from './routes/orders/index.js';
 import driverRoutes from './routes/drivers.js';
 
 // Shared modules

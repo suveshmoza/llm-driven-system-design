@@ -8,7 +8,7 @@
  */
 
 import { searchHotels as esSearchHotels, SearchHotelsParams, HotelDocument } from '../models/elasticsearch.js';
-import bookingService, { AvailabilityCheck } from './bookingService.js';
+import bookingService, { AvailabilityCheck } from './booking/index.js';
 import { query } from '../models/db.js';
 
 // Import shared modules

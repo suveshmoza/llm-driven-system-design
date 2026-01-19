@@ -9,12 +9,12 @@ export interface PaymentIntentRow {
   amount: number;
   currency: string;
   status: string;
-  payment_method_id: string | null;
+  payment_method_id: string | null | undefined;
   capture_method: string;
   description: string | null;
   metadata: Record<string, unknown> | null;
   idempotency_key: string | null;
-  auth_code: string | null;
+  auth_code: string | null | undefined;
   decline_code: string | null;
   error_message: string | null;
   created_at: Date;

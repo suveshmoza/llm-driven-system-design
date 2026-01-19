@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, requireDriver } from '../middleware/auth.js';
 import locationService from '../services/locationService.js';
-import matchingService from '../services/matchingService.js';
+import matchingService from '../services/matching/index.js';
 import { query } from '../utils/db.js';
 import type { AuthenticatedRequest, RideRow } from '../types/index.js';
 

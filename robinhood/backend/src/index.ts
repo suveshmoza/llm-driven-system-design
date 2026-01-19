@@ -27,7 +27,7 @@ import { config } from './config.js';
 import { pool, testDatabaseConnection } from './database.js';
 import { redis, testRedisConnection } from './redis.js';
 import { quoteService } from './services/quoteService.js';
-import { orderService } from './services/orderService.js';
+import { orderService } from './services/order/index.js';
 import { priceAlertService } from './services/watchlistService.js';
 import { WebSocketHandler } from './websocket.js';
 import { logger } from './shared/logger.js';

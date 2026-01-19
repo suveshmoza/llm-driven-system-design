@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, requireRider } from '../middleware/auth.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.js';
-import matchingService from '../services/matchingService.js';
+import matchingService from '../services/matching/index.js';
 import pricingService from '../services/pricingService.js';
 import locationService from '../services/locationService.js';
 import { query } from '../utils/db.js';
