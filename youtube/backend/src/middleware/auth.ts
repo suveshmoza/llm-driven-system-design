@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { sessionGet, sessionSet, sessionDelete } from '../utils/redis.js';
+import { Request, Response, NextFunction } from 'express';
+import { sessionGet, sessionSet, sessionDelete, SessionData } from '../utils/redis.js';
 import { query } from '../utils/db.js';
 import logger, { logEvent } from '../shared/logger.js';
 
@@ -18,10 +19,12 @@ export const ROLES = {
   VIEWER: 'viewer',
   CREATOR: 'creator',
   ADMIN: 'admin',
-};
+} as const;
+
+type Role = typeof ROLES[keyof typeof ROLES];
 
 // Role hierarchy for permission checks
-const ROLE_HIERARCHY = {
+const ROLE_HIERARCHY: Record<string, number> = {
   [ROLES.VIEWER]: 1,
   [ROLES.CREATOR]: 2,
   [ROLES.ADMIN]: 3,
@@ -53,10 +56,12 @@ export const PERMISSIONS = {
   // Admin permissions
   ADMIN_DASHBOARD: 'admin:dashboard',
   ADMIN_TRANSCODE: 'admin:transcode',
-};
+} as const;
+
+type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 
 // Role to permissions mapping
-const ROLE_PERMISSIONS = {
+const ROLE_PERMISSIONS: Record<string, string[]> = {
   [ROLES.VIEWER]: [
     PERMISSIONS.VIDEO_VIEW,
     PERMISSIONS.CHANNEL_VIEW,
@@ -65,8 +70,11 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.USER_SUBSCRIBE,
   ],
   [ROLES.CREATOR]: [
-    // Inherits viewer permissions
-    ...ROLE_PERMISSIONS?.[ROLES.VIEWER] || [],
+    PERMISSIONS.VIDEO_VIEW,
+    PERMISSIONS.CHANNEL_VIEW,
+    PERMISSIONS.COMMENT_CREATE,
+    PERMISSIONS.COMMENT_DELETE_OWN,
+    PERMISSIONS.USER_SUBSCRIBE,
     PERMISSIONS.VIDEO_UPLOAD,
     PERMISSIONS.VIDEO_EDIT_OWN,
     PERMISSIONS.VIDEO_DELETE_OWN,
@@ -78,23 +86,26 @@ const ROLE_PERMISSIONS = {
   ],
 };
 
-// Fix circular reference for creator permissions
-ROLE_PERMISSIONS[ROLES.CREATOR] = [
-  PERMISSIONS.VIDEO_VIEW,
-  PERMISSIONS.CHANNEL_VIEW,
-  PERMISSIONS.COMMENT_CREATE,
-  PERMISSIONS.COMMENT_DELETE_OWN,
-  PERMISSIONS.USER_SUBSCRIBE,
-  PERMISSIONS.VIDEO_UPLOAD,
-  PERMISSIONS.VIDEO_EDIT_OWN,
-  PERMISSIONS.VIDEO_DELETE_OWN,
-  PERMISSIONS.CHANNEL_EDIT_OWN,
-];
+// Extended Request interface
+interface AuthRequest extends Request {
+  user?: SessionData;
+  sessionId?: string;
+  log?: typeof logger;
+}
+
+interface UserRow {
+  id: string;
+  username: string;
+  email: string;
+  channel_name: string;
+  role: string;
+  avatar_url?: string;
+}
 
 /**
  * Check if a role has a specific permission
  */
-export function hasPermission(role, permission) {
+export function hasPermission(role: string, permission: string): boolean {
   const permissions = ROLE_PERMISSIONS[role] || [];
   return permissions.includes(permission);
 }
@@ -102,7 +113,7 @@ export function hasPermission(role, permission) {
 /**
  * Check if role1 is at least as high as role2 in hierarchy
  */
-export function isRoleAtLeast(userRole, requiredRole) {
+export function isRoleAtLeast(userRole: string, requiredRole: string): boolean {
   const userLevel = ROLE_HIERARCHY[userRole] || 0;
   const requiredLevel = ROLE_HIERARCHY[requiredRole] || 0;
   return userLevel >= requiredLevel;
@@ -113,19 +124,21 @@ export function isRoleAtLeast(userRole, requiredRole) {
 /**
  * Authentication middleware - checks for valid session
  */
-export const authenticate = async (req, res, next) => {
+export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const sessionId = req.cookies?.sessionId;
 
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const session = await sessionGet(sessionId);
 
     if (!session) {
       res.clearCookie('sessionId');
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     // Attach user to request
@@ -139,7 +152,7 @@ export const authenticate = async (req, res, next) => {
 
     next();
   } catch (error) {
-    (req.log || logger).error({ error: error.message }, 'Auth middleware error');
+    (req.log || logger).error({ error: (error as Error).message }, 'Auth middleware error');
     res.status(500).json({ error: 'Authentication error' });
   }
 };
@@ -147,7 +160,7 @@ export const authenticate = async (req, res, next) => {
 /**
  * Optional auth - attaches user if logged in, but doesn't require it
  */
-export const optionalAuth = async (req, res, next) => {
+export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const sessionId = req.cookies?.sessionId;
 
@@ -183,12 +196,13 @@ export const optionalAuth = async (req, res, next) => {
  * router.post('/videos', authenticate, requireRole('creator'), createVideo);
  * router.delete('/admin/users/:id', authenticate, requireRole(['admin']), deleteUser);
  */
-export const requireRole = (roles) => {
+export const requireRole = (roles: string | string[]) => {
   const allowedRoles = Array.isArray(roles) ? roles : [roles];
 
-  return (req, res, next) => {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ error: 'Authentication required' });
+      return;
     }
 
     const userRole = req.user.role || ROLES.VIEWER;
@@ -205,10 +219,11 @@ export const requireRole = (roles) => {
           requiredRoles: allowedRoles,
         }, 'Access denied: insufficient role');
 
-        return res.status(403).json({
+        res.status(403).json({
           error: 'Access denied',
           message: `Required role: ${allowedRoles.join(' or ')}`,
         });
+        return;
       }
     }
 
@@ -222,10 +237,11 @@ export const requireRole = (roles) => {
  * @param {string} permission - Required permission
  * @returns {Function} Express middleware
  */
-export const requirePermission = (permission) => {
-  return (req, res, next) => {
+export const requirePermission = (permission: string) => {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ error: 'Authentication required' });
+      return;
     }
 
     const userRole = req.user.role || ROLES.VIEWER;
@@ -237,10 +253,11 @@ export const requirePermission = (permission) => {
         requiredPermission: permission,
       }, 'Access denied: insufficient permission');
 
-      return res.status(403).json({
+      res.status(403).json({
         error: 'Access denied',
         message: `Required permission: ${permission}`,
       });
+      return;
     }
 
     next();
@@ -263,21 +280,24 @@ export const requireCreator = requireRole([ROLES.CREATOR, ROLES.ADMIN]);
  * @param {string} resourceType - Type of resource ('video', 'comment', 'channel')
  * @returns {Function} Express middleware
  */
-export const requireOwnership = (resourceType) => {
-  return async (req, res, next) => {
+export const requireOwnership = (resourceType: string) => {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ error: 'Authentication required' });
+      return;
     }
 
     // Admins bypass ownership check
     if (req.user.role === ROLES.ADMIN) {
-      return next();
+      next();
+      return;
     }
 
     const resourceId = req.params.videoId || req.params.channelId || req.params.commentId || req.params.id;
 
     if (!resourceId) {
-      return res.status(400).json({ error: 'Resource ID required' });
+      res.status(400).json({ error: 'Resource ID required' });
+      return;
     }
 
     try {
@@ -290,7 +310,7 @@ export const requireOwnership = (resourceType) => {
             [resourceId]
           );
           if (result.rows.length > 0) {
-            isOwner = result.rows[0].channel_id === req.user.id;
+            isOwner = result.rows[0].channel_id === req.user!.id;
           }
           break;
         }
@@ -301,7 +321,7 @@ export const requireOwnership = (resourceType) => {
             [resourceId]
           );
           if (result.rows.length > 0) {
-            isOwner = result.rows[0].user_id === req.user.id;
+            isOwner = result.rows[0].user_id === req.user!.id;
           }
           break;
         }
@@ -309,14 +329,15 @@ export const requireOwnership = (resourceType) => {
         case 'channel': {
           const result = await query(
             'SELECT id FROM channels WHERE id = $1 AND user_id = $2',
-            [resourceId, req.user.id]
+            [resourceId, req.user!.id]
           );
           isOwner = result.rows.length > 0;
           break;
         }
 
         default:
-          return res.status(400).json({ error: 'Invalid resource type' });
+          res.status(400).json({ error: 'Invalid resource type' });
+          return;
       }
 
       if (!isOwner) {
@@ -324,18 +345,19 @@ export const requireOwnership = (resourceType) => {
           event: 'ownership_denied',
           resourceType,
           resourceId,
-          userId: req.user.id,
+          userId: req.user!.id,
         }, 'Access denied: not resource owner');
 
-        return res.status(403).json({
+        res.status(403).json({
           error: 'Access denied',
           message: 'You do not own this resource',
         });
+        return;
       }
 
       next();
     } catch (error) {
-      (req.log || logger).error({ error: error.message }, 'Ownership check error');
+      (req.log || logger).error({ error: (error as Error).message }, 'Ownership check error');
       res.status(500).json({ error: 'Authorization error' });
     }
   };

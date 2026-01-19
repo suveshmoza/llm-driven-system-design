@@ -244,7 +244,7 @@ router.post('/conversations/:conversationId/typing', requireAuth, requireCassand
  */
 router.get('/conversations/:conversationId/typing', requireAuth, requireCassandra, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { conversationId } = req.params;
+    const conversationId = req.params.conversationId as string;
 
     const typingUsers = await getTypingIndicators(conversationId);
 
@@ -271,7 +271,8 @@ router.post(
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.session.userId!;
-      const { conversationId, messageId } = req.params;
+      const conversationId = req.params.conversationId as string;
+      const messageId = req.params.messageId as string;
       const { reaction } = req.body as AddReactionBody;
 
       if (!reaction) {
@@ -306,7 +307,8 @@ router.delete(
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.session.userId!;
-      const { conversationId, messageId } = req.params;
+      const conversationId = req.params.conversationId as string;
+      const messageId = req.params.messageId as string;
 
       await removeReaction(conversationId, messageId, userId);
 

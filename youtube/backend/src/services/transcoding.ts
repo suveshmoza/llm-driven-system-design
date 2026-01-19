@@ -75,3 +75,22 @@ export const getQueueStatus = async () => {
     queue: stats?.queue || config.rabbitmq.queues.transcode,
   };
 };
+
+/**
+ * Get current queue length (synchronous, returns cached value or 0)
+ */
+let cachedQueueLength = 0;
+
+// Update queue length periodically
+setInterval(async () => {
+  try {
+    const stats = await getQueueStats();
+    cachedQueueLength = stats?.messageCount || 0;
+  } catch {
+    // Keep previous value on error
+  }
+}, 5000);
+
+export const getQueueLength = (): number => {
+  return cachedQueueLength;
+};

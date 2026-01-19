@@ -131,7 +131,7 @@ export const server = {
   tcpPort: parseInt(process.env.TCP_PORT || '9001', 10),
 
   /** HTTP server port */
-  httpPort: parseInt(process.env.HTTP_PORT || '3000', 10),
+  httpPort: parseInt(process.env.HTTP_PORT || '3001', 10),
 
   /** Log level: debug, info, warn, error */
   logLevel: process.env.LOG_LEVEL || 'info',

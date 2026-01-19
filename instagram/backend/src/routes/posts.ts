@@ -326,9 +326,9 @@ router.delete('/:postId', requireAuth as RequestHandler, async (req: Request, re
     // Remove from timelines
     const followers = await query<FollowerRow>('SELECT follower_id FROM follows WHERE following_id = $1', [userId]);
     for (const follower of followers.rows) {
-      await timelineRemove(follower.follower_id, postId);
+      await timelineRemove(follower.follower_id, postId as string);
     }
-    await timelineRemove(userId, postId);
+    await timelineRemove(userId, postId as string);
 
     // Clear cache
     await cacheDel(`post:${postId}`);

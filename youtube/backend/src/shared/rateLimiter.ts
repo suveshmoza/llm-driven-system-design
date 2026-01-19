@@ -141,10 +141,10 @@ function classifyEndpoint(method, path) {
 /**
  * Rate limiting middleware factory
  *
- * @param {string} category - Optional category override
+ * @param {string | null} category - Optional category override
  * @returns {Function} Express middleware
  */
-export function rateLimit(category = null) {
+export function rateLimit(category: string | null = null) {
   return async (req, res, next) => {
     const limitCategory = category || classifyEndpoint(req.method, req.path);
     const limiter = getRateLimiter(limitCategory);

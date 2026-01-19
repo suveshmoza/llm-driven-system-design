@@ -2,7 +2,7 @@ import { Router, Response, NextFunction, Request } from 'express';
 import multer from 'multer';
 import { query } from '../services/db.js';
 import { processAndUploadImage } from '../services/storage.js';
-import { storyTrayGet, storyTraySet } from '../services/redis.js';
+import { storyTrayGet, storyTraySet, StoryTrayUser } from '../services/redis.js';
 import { requireAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth.js';
 import { storyRateLimiter } from '../services/rateLimiter.js';
 import { createCircuitBreaker, fallbackWithError } from '../services/circuitBreaker.js';
@@ -49,17 +49,6 @@ interface ViewerRow {
   display_name: string;
   profile_picture_url: string | null;
   viewed_at: Date;
-}
-
-// Response types
-interface StoryTrayUser {
-  id: string;
-  username: string;
-  displayName: string;
-  profilePictureUrl: string | null;
-  storyCount: number;
-  hasSeen: boolean;
-  latestStoryTime: Date;
 }
 
 interface StoryResponse {
@@ -208,7 +197,7 @@ router.get('/tray', requireAuth, async (req: AuthenticatedRequest, res: Response
       profilePictureUrl: u.profile_picture_url,
       storyCount: parseInt(u.story_count),
       hasSeen: u.has_seen,
-      latestStoryTime: u.latest_story_time,
+      latestStoryTime: u.latest_story_time.toISOString(),
     }));
 
     // Cache for 5 minutes
@@ -340,10 +329,12 @@ router.post('/:storyId/view', requireAuth, async (req: AuthenticatedRequest, res
 // Get story viewers (only for story owner)
 router.get('/:storyId/viewers', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { storyId } = req.params;
-    const userId = req.session.userId;
-    const { cursor, limit = '20' } = req.query as { cursor?: string; limit?: string };
-    const parsedLimit = parseInt(limit);
+    const storyId = req.params.storyId as string;
+    const userId = req.session.userId!;
+    const cursorParam = req.query.cursor;
+    const cursor = typeof cursorParam === 'string' ? cursorParam : undefined;
+    const limitParam = req.query.limit;
+    const parsedLimit = parseInt(typeof limitParam === 'string' ? limitParam : '20');
 
     // Check ownership
     const storyCheck = await query<{ user_id: string }>('SELECT user_id FROM stories WHERE id = $1', [storyId]);
