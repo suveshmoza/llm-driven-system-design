@@ -256,8 +256,9 @@ export const selectResolution = (
   const safeBandwidth = bandwidthBps * 0.8;
 
   for (let i = sorted.length - 1; i >= 0; i--) {
-    if (sorted[i].bitrate <= safeBandwidth) {
-      return sorted[i];
+    const resolution = sorted[i];
+    if (resolution && resolution.bitrate <= safeBandwidth) {
+      return resolution;
     }
   }
 

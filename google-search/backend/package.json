@@ -16,6 +16,8 @@
     "calculate-pagerank": "tsx src/scripts/calculatePageRank.ts",
     "seed": "tsx scripts/seed.ts",
     "db:migrate": "tsx src/db/migrate.ts",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -46,6 +48,7 @@
     "@types/pg": "^8.10.9",
     "@types/uuid": "^9.0.7",
     "eslint": "^8.55.0",
+    "prettier": "^3.4.2",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

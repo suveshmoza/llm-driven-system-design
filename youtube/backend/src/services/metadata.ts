@@ -511,7 +511,7 @@ export const reactToVideo = async (
     throw new Error('Invalid reaction type');
   }
 
-  await transaction(async (client: PoolClient) => {
+  await transaction(async (client: PoolClient): Promise<void> => {
     // Check existing reaction
     const existing = await client.query<{ reaction_type: string }>(
       'SELECT reaction_type FROM video_reactions WHERE user_id = $1 AND video_id = $2',
@@ -533,8 +533,6 @@ export const reactToVideo = async (
         await client.query(`UPDATE videos SET ${countColumn} = ${countColumn} - 1 WHERE id = $1`, [
           videoId,
         ]);
-
-        return { reaction: null };
       } else {
         // Change reaction
         await client.query(
@@ -587,7 +585,8 @@ export const getUserReaction = async (
     [userId, videoId]
   );
 
-  return result.rows.length > 0 ? result.rows[0].reaction_type : null;
+  const row = result.rows[0];
+  return row ? row.reaction_type : null;
 };
 
 // ============ Comment Operations ============
@@ -612,7 +611,11 @@ export const addComment = async (
       videoId,
     ]);
 
-    return commentResult.rows[0];
+    const row = commentResult.rows[0];
+    if (!row) {
+      throw new Error('Failed to create comment');
+    }
+    return row;
   });
 
   // Get user info for response
@@ -620,6 +623,11 @@ export const addComment = async (
     'SELECT username, avatar_url FROM users WHERE id = $1',
     [userId]
   );
+
+  const userRow = userResult.rows[0];
+  if (!userRow) {
+    throw new Error('User not found');
+  }
 
   // Invalidate video cache
   await cacheDelete(`video:${videoId}`);
@@ -632,8 +640,8 @@ export const addComment = async (
     createdAt: result.created_at,
     user: {
       id: userId,
-      username: userResult.rows[0].username,
-      avatarUrl: userResult.rows[0].avatar_url,
+      username: userRow.username,
+      avatarUrl: userRow.avatar_url,
     },
     parentId: result.parent_id,
   };
@@ -707,11 +715,12 @@ export const deleteComment = async (commentId: string, userId: string): Promise<
       [commentId, userId]
     );
 
-    if (comment.rows.length === 0) {
+    const commentRow = comment.rows[0];
+    if (!commentRow) {
       return null;
     }
 
-    const videoId = comment.rows[0].video_id;
+    const videoId = commentRow.video_id;
 
     await client.query('DELETE FROM comments WHERE id = $1', [commentId]);
 

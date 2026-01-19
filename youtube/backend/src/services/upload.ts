@@ -195,6 +195,9 @@ export const completeUpload = async (
   }
 
   const session = sessionResult.rows[0];
+  if (!session) {
+    throw new Error('Upload session not found');
+  }
 
   // Verify all chunks uploaded
   const chunkTracking = await cacheGet<ChunkTracking>(`upload:${uploadId}:chunks`);
@@ -259,6 +262,10 @@ export const cancelUpload = async (
   }
 
   const session = sessionResult.rows[0];
+  if (!session) {
+    throw new Error('Upload session not found');
+  }
+
   const rawVideoKey = `uploads/${userId}/${uploadId}/${session.filename}`;
 
   // Abort multipart upload in MinIO

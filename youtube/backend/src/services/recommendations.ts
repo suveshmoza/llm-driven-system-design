@@ -368,7 +368,8 @@ export const searchVideos = async (
     [fuzzyMatch, searchQuery.toLowerCase()]
   );
 
-  const total = parseInt(countResult.rows[0].count, 10);
+  const countRow = countResult.rows[0];
+  const total = countRow ? parseInt(countRow.count, 10) : 0;
 
   const result = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
@@ -428,7 +429,8 @@ export const getSubscriptionFeed = async (
     [channelIds]
   );
 
-  const total = parseInt(countResult.rows[0].count, 10);
+  const countRow = countResult.rows[0];
+  const total = countRow ? parseInt(countRow.count, 10) : 0;
 
   const result = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
@@ -468,7 +470,8 @@ export const getWatchHistory = async (
     [userId]
   );
 
-  const total = parseInt(countResult.rows[0].count, 10);
+  const countRow = countResult.rows[0];
+  const total = countRow ? parseInt(countRow.count, 10) : 0;
 
   const result = await query<WatchHistoryRow>(
     `SELECT DISTINCT ON (wh.video_id)
@@ -528,7 +531,12 @@ const deduplicateAndShuffle = <T extends { id: string }>(
   // Fisher-Yates shuffle
   for (let i = unique.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [unique[i], unique[j]] = [unique[j], unique[i]];
+    const temp = unique[i];
+    const swapVal = unique[j];
+    if (temp !== undefined && swapVal !== undefined) {
+      unique[i] = swapVal;
+      unique[j] = temp;
+    }
   }
 
   return unique.slice(0, limit);
