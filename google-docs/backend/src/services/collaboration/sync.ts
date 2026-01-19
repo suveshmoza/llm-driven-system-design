@@ -70,7 +70,7 @@ export async function handleSubscribe(
   const docState = ensureDocumentState(documentId, permResult.currentVersion!);
 
   // Add user to presence
-  const presence = addUserToDocument(documentId, docState, client.user);
+  const _presence = addUserToDocument(documentId, docState, client.user);
 
   opLogger.info({
     version: docState.version,

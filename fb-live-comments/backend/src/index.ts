@@ -113,7 +113,7 @@ app.get('/health/ready', async (_req, res) => {
       latency: Date.now() - dbStart,
     };
     if (!dbHealthy) allHealthy = false;
-  } catch (error) {
+  } catch (_error) {
     checks.database = { status: 'unhealthy', latency: Date.now() - dbStart };
     allHealthy = false;
   }
@@ -126,7 +126,7 @@ app.get('/health/ready', async (_req, res) => {
       status: 'healthy',
       latency: Date.now() - redisStart,
     };
-  } catch (error) {
+  } catch (_error) {
     checks.redis = { status: 'unhealthy', latency: Date.now() - redisStart };
     allHealthy = false;
   }

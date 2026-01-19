@@ -58,7 +58,7 @@ interface Token {
 }
 
 /** Map of operator strings to canonical JQLOperator values */
-const OPERATORS: Record<string, JQLOperator> = {
+const _OPERATORS: Record<string, JQLOperator> = {
   '=': '=',
   '!=': '!=',
   '~': '~',

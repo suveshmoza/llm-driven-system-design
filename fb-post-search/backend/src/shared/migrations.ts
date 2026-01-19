@@ -131,7 +131,7 @@ export function discoverMigrations(migrationsDir: string): MigrationFile[] {
     }
 
     const version = parseInt(match[1], 10);
-    const name = match[2];
+    const _name = match[2];
     const filePath = path.join(migrationsDir, filename);
     const content = fs.readFileSync(filePath, 'utf-8');
     const { upSql, downSql } = parseMigrationFile(content);

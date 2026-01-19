@@ -105,7 +105,7 @@ app.get('/metrics', async (_req, res) => {
   try {
     res.set('Content-Type', metricsRegistry.contentType);
     res.end(await metricsRegistry.metrics());
-  } catch (error) {
+  } catch (_error) {
     res.status(500).end('Error collecting metrics');
   }
 });

@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as _uuidv4 } from 'uuid';
 import pool from '../utils/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { idempotency } from '../middleware/idempotency.js';
-import { requireEdit, requireShare, requireDelete, getDocumentAccess } from '../shared/rbac.js';
+import { requireEdit, requireShare, requireDelete, _getDocumentAccess } from '../shared/rbac.js';
 import logger from '../shared/logger.js';
-import type { DocumentListItem, DocumentWithPermission, PermissionLevel } from '../types/index.js';
+import type { DocumentListItem, DocumentWithPermission, _PermissionLevel } from '../types/index.js';
 
 /**
  * Documents router handling CRUD operations for collaborative documents.

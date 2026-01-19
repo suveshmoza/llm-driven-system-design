@@ -13,7 +13,7 @@ import { ExtendedWebSocket, ICommentBatcher, IReactionAggregator } from './types
 import { CommentWithUser, ReactionCount, WSMessage } from '../../types/index.js';
 import { logger } from '../../shared/index.js';
 
-const wsLogger = logger.child({ module: 'broadcast' });
+const _wsLogger = logger.child({ module: 'broadcast' });
 
 /**
  * Broadcasts a message to all clients in a stream.

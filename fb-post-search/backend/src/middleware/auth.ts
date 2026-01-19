@@ -37,7 +37,7 @@ export async function optionalAuth(
         req.userId = session.userId;
         req.userRole = session.role;
       }
-    } catch (error) {
+    } catch (_error) {
       // Token invalid, continue as anonymous
     }
   }
@@ -75,7 +75,7 @@ export async function requireAuth(
     req.userId = session.userId;
     req.userRole = session.role;
     next();
-  } catch (error) {
+  } catch (_error) {
     res.status(401).json({ error: 'Authentication failed' });
   }
 }
@@ -115,7 +115,7 @@ export async function requireAdmin(
     req.userId = session.userId;
     req.userRole = session.role;
     next();
-  } catch (error) {
+  } catch (_error) {
     res.status(401).json({ error: 'Authentication failed' });
   }
 }

@@ -36,7 +36,7 @@ export class PresenceService {
    * Routes incoming presence changes to registered callbacks.
    */
   private setupSubscriber() {
-    redisSub.on('message', async (channel, message) => {
+    redisSub.on('message', async (channel, _message) => {
       if (channel.startsWith('presence:')) {
         const fileId = channel.replace('presence:', '');
         const callbacks = this.subscribers.get(fileId);

@@ -325,7 +325,7 @@ export function transformAnchor(
         // Entire anchor deleted
         return { start: op.position, end: op.position };
       } else if (op.position <= start) {
-        const overlap = deleteEnd - start;
+        const _overlap = deleteEnd - start;
         return {
           start: op.position,
           end: end - op.length,

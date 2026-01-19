@@ -26,7 +26,7 @@ const SPREADSHEET_CACHE_TTL = 1800;
 const CELL_CACHE_TTL = 900;
 
 /** Default TTL for session cache entries (24 hours) */
-const SESSION_CACHE_TTL = 86400;
+const _SESSION_CACHE_TTL = 86400;
 
 /**
  * Cache key prefixes for namespacing

@@ -193,7 +193,7 @@ router.post('/upload', upload.single('photo'), async (req: Request, res: Respons
       try {
         // Sharp provides basic EXIF info
         // For full EXIF, you would use a dedicated library
-      } catch (e) {
+      } catch (_e) {
         console.log('EXIF parsing skipped');
       }
     }

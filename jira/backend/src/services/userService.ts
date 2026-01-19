@@ -150,7 +150,7 @@ export async function verifyPassword(email: string, password: string): Promise<U
   if (!isValid) return null;
 
   // Return user without password hash
-  const { password_hash, ...userWithoutPassword } = user;
+  const { _password_hash, ...userWithoutPassword } = user;
   return userWithoutPassword;
 }
 

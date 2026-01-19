@@ -7,7 +7,7 @@
  * @module services/wsGateway/connection-manager
  */
 
-import { WebSocket, WebSocketServer } from 'ws';
+import { _WebSocket, WebSocketServer } from 'ws';
 import { IncomingMessage } from 'http';
 import { ExtendedWebSocket, getCloseReason } from './types.js';
 import {

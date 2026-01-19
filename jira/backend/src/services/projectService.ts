@@ -9,7 +9,7 @@ const PROJECT_CACHE_TTL = 900;
 /** Cache TTL for board data in seconds (5 minutes) */
 const BOARD_CACHE_TTL = 300;
 /** Cache TTL for workflow data in seconds (30 minutes, rarely changes) */
-const WORKFLOW_CACHE_TTL = 1800;
+const _WORKFLOW_CACHE_TTL = 1800;
 
 /**
  * Retrieves a project by its UUID with caching.
