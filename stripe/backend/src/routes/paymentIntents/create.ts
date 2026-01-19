@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query } from '../../db/pool.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import logger from '../../shared/logger.js';
-import { auditLogger } from '../../shared/audit.js';
+import { auditLogger, PaymentIntentRow as AuditPaymentIntentRow } from '../../shared/audit.js';
 import { paymentAmountCents, activePaymentIntents } from '../../shared/metrics.js';
 import type { PaymentIntentRow, CreatePaymentIntentBody, DatabaseError } from './types.js';
 import { formatPaymentIntent, VALID_CURRENCIES } from './utils.js';
@@ -94,7 +94,7 @@ export async function createPaymentIntent(
     activePaymentIntents.inc({ status });
 
     // Audit log: Payment intent created
-    await auditLogger.logPaymentIntentCreated(result.rows[0], {
+    await auditLogger.logPaymentIntentCreated(result.rows[0] as AuditPaymentIntentRow, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'] as string,
       traceId: req.headers['x-trace-id'] as string,

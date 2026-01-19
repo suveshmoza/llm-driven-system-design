@@ -12,11 +12,11 @@
 import promClient, { Registry, Counter, Histogram, Gauge } from 'prom-client';
 import { Request, Response, NextFunction, Router } from 'express';
 
-interface ExtendedRoute extends Router {
+interface ExtendedRoute {
   path?: string;
 }
 
-interface ExtendedRequest extends Request {
+interface ExtendedRequest extends Omit<Request, 'route'> {
   route?: ExtendedRoute;
 }
 

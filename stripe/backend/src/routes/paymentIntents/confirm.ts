@@ -12,7 +12,7 @@ import { createChargeEntries, calculateFee } from '../../services/ledger.js';
 import { authorize, AuthorizeParams } from '../../services/cardNetwork.js';
 import { sendWebhook } from '../../services/webhooks.js';
 import logger from '../../shared/logger.js';
-import { auditLogger } from '../../shared/audit.js';
+import { auditLogger, PaymentIntentRow as AuditPaymentIntentRow } from '../../shared/audit.js';
 import { activePaymentIntents, fraudBlockedTotal, recordFraudCheck } from '../../shared/metrics.js';
 import type { PoolClient } from 'pg';
 import type {
@@ -222,7 +222,7 @@ async function handleBlockedPayment(
   fraudBlockedTotal.inc({ rule: 'aggregate', risk_level: 'high' });
 
   // Audit log: Payment blocked
-  await auditLogger.logPaymentIntentFailed(intent, 'fraudulent', {
+  await auditLogger.logPaymentIntentFailed(intent as AuditPaymentIntentRow, 'fraudulent', {
     ipAddress: req.ip,
     traceId: req.headers['x-trace-id'] as string,
     metadata: { fraud_score: riskResult.riskScore },
@@ -305,7 +305,7 @@ async function handleDeclinedPayment(
   activePaymentIntents.inc({ status: 'failed' });
 
   // Audit log: Payment failed
-  await auditLogger.logPaymentIntentFailed(intent, authResult.declineCode || 'card_declined', {
+  await auditLogger.logPaymentIntentFailed(intent as AuditPaymentIntentRow, authResult.declineCode || 'card_declined', {
     ipAddress: req.ip,
     traceId: req.headers['x-trace-id'] as string,
   });
@@ -397,7 +397,7 @@ async function handleAutomaticCapture(
       status: 'succeeded',
       auth_code: authResult.authCode,
       payment_method_id: paymentMethodId,
-    },
+    } as AuditPaymentIntentRow,
     previousStatus,
     {
       ipAddress: req.ip,

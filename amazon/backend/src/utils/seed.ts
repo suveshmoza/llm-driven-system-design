@@ -154,8 +154,9 @@ async function seed(): Promise<void> {
     );
 
     let sellerId: number | null = null;
-    if (sellerResult.rows.length > 0) {
-      sellerId = sellerResult.rows[0].id;
+    const sellerRow = sellerResult.rows[0];
+    if (sellerRow) {
+      sellerId = sellerRow.id;
     }
 
     // Get category map
@@ -203,7 +204,11 @@ async function seed(): Promise<void> {
           ]
         );
 
-        const productId = productResult.rows[0].id;
+        const productRow = productResult.rows[0];
+        if (!productRow) {
+          throw new Error('Failed to create product');
+        }
+        const productId = productRow.id;
 
         // Add inventory
         await client.query(

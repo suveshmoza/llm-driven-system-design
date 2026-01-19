@@ -97,6 +97,9 @@ export async function getIdempotencyRecord(key: string): Promise<IdempotencyReco
 
     if (result.rows.length > 0) {
       const dbRecord = result.rows[0];
+      if (!dbRecord) {
+        return null;
+      }
       const record: IdempotencyRecord = {
         key: dbRecord.key,
         status: dbRecord.status as IdempotencyRecord['status'],

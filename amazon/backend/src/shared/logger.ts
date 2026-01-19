@@ -7,12 +7,10 @@
 import pino, { Logger } from 'pino';
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
-import { Socket } from 'net';
 
 interface ExtendedRequest extends Request {
   correlationId?: string;
   log?: Logger;
-  connection?: Socket & { remoteAddress?: string };
 }
 
 // Configure logger based on environment
