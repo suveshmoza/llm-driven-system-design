@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import { query } from '../services/db.js';
 import { requireAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth.js';
 import { commentRateLimiter } from '../services/rateLimiter.js';
@@ -81,7 +81,7 @@ router.get('/posts/:postId/comments', async (req: Request, res: Response): Promi
 // Add comment to post - with rate limiting
 router.post(
   '/posts/:postId/comments',
-  requireAuth as express.RequestHandler,
+  requireAuth as RequestHandler,
   commentRateLimiter,
   async (req: Request, res: Response): Promise<void> => {
     try {

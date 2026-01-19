@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -10,10 +10,71 @@ import { issuesCreated, issuesClosed } from '../shared/metrics.js';
 
 const router = Router();
 
+interface Issue {
+  id: number;
+  repo_id: number;
+  number: number;
+  title: string;
+  body: string | null;
+  state: 'open' | 'closed';
+  author_id: number;
+  assignee_id: number | null;
+  closed_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+  author_name?: string;
+  author_avatar?: string;
+  author_display_name?: string;
+  assignee_name?: string;
+  assignee_avatar?: string;
+  labels?: Label[];
+}
+
+interface Label {
+  id: number;
+  repo_id: number;
+  name: string;
+  color: string;
+  description: string | null;
+}
+
+interface ListIssuesQuery {
+  state?: string;
+  label?: string;
+  assignee?: string;
+  page?: string;
+  limit?: string;
+}
+
+interface CreateIssueBody {
+  title?: string;
+  body?: string;
+  labels?: string[];
+  assignee?: string;
+}
+
+interface UpdateIssueBody {
+  title?: string;
+  body?: string;
+  state?: string;
+  assignee?: string | null;
+  labels?: string[];
+}
+
+interface CommentBody {
+  body?: string;
+}
+
+interface CreateLabelBody {
+  name?: string;
+  color?: string;
+  description?: string;
+}
+
 /**
  * Get next issue number for a repo
  */
-async function getNextNumber(repoId) {
+async function getNextNumber(repoId: number): Promise<number> {
   const prResult = await query(
     'SELECT COALESCE(MAX(number), 0) as max_num FROM pull_requests WHERE repo_id = $1',
     [repoId]
@@ -23,15 +84,15 @@ async function getNextNumber(repoId) {
     [repoId]
   );
 
-  return Math.max(parseInt(prResult.rows[0].max_num), parseInt(issueResult.rows[0].max_num)) + 1;
+  return Math.max(parseInt(prResult.rows[0].max_num as string), parseInt(issueResult.rows[0].max_num as string)) + 1;
 }
 
 /**
  * List issues for a repo
  */
-router.get('/:owner/:repo/issues', async (req, res) => {
+router.get('/:owner/:repo/issues', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { state = 'open', label, assignee, page = 1, limit = 20 } = req.query;
+  const { state = 'open', label, assignee, page = '1', limit = '20' } = req.query as ListIssuesQuery;
 
   const repoResult = await query(
     `SELECT r.id FROM repositories r
@@ -41,12 +102,13 @@ router.get('/:owner/:repo/issues', async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  const params = [repoId];
+  const params: unknown[] = [repoId];
 
   let whereClause = 'WHERE i.repo_id = $1';
 
@@ -85,14 +147,14 @@ router.get('/:owner/:repo/issues', async (req, res) => {
   );
 
   // Get labels for each issue
-  for (const issue of result.rows) {
+  for (const issue of result.rows as Issue[]) {
     const labels = await query(
       `SELECT l.* FROM labels l
        JOIN issue_labels il ON l.id = il.label_id
        WHERE il.issue_id = $1`,
       [issue.id]
     );
-    issue.labels = labels.rows;
+    issue.labels = labels.rows as Label[];
   }
 
   const countResult = await query(
@@ -105,7 +167,7 @@ router.get('/:owner/:repo/issues', async (req, res) => {
 
   res.json({
     issues: result.rows,
-    total: parseInt(countResult.rows[0].count),
+    total: parseInt(countResult.rows[0].count as string),
     page: parseInt(page),
     limit: parseInt(limit),
   });
@@ -114,7 +176,7 @@ router.get('/:owner/:repo/issues', async (req, res) => {
 /**
  * Get single issue
  */
-router.get('/:owner/:repo/issues/:number', async (req, res) => {
+router.get('/:owner/:repo/issues/:number', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
 
   const result = await query(
@@ -134,10 +196,11 @@ router.get('/:owner/:repo/issues/:number', async (req, res) => {
   );
 
   if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Issue not found' });
+    res.status(404).json({ error: 'Issue not found' });
+    return;
   }
 
-  const issue = result.rows[0];
+  const issue = result.rows[0] as Issue;
 
   // Get labels
   const labels = await query(
@@ -167,13 +230,14 @@ router.get('/:owner/:repo/issues/:number', async (req, res) => {
 /**
  * Create issue (with idempotency)
  */
-router.post('/:owner/:repo/issues', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/issues', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { title, body, labels, assignee } = req.body;
+  const { title, body, labels, assignee } = req.body as CreateIssueBody;
   const idempotencyKey = getIdempotencyKey(req);
 
   if (!title) {
-    return res.status(400).json({ error: 'Title required' });
+    res.status(400).json({ error: 'Title required' });
+    return;
   }
 
   const repoResult = await query(
@@ -184,24 +248,25 @@ router.post('/:owner/:repo/issues', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
 
   // Get assignee ID if provided
-  let assigneeId = null;
+  let assigneeId: number | null = null;
   if (assignee) {
     const assigneeResult = await query('SELECT id FROM users WHERE username = $1', [assignee]);
     if (assigneeResult.rows.length > 0) {
-      assigneeId = assigneeResult.rows[0].id;
+      assigneeId = assigneeResult.rows[0].id as number;
     }
   }
 
   try {
     // Use idempotency transaction
     const { cached, response } = await withIdempotencyTransaction(
-      idempotencyKey,
+      idempotencyKey || '',
       'issue_create',
       async (tx) => {
         // Get next number (use transaction client)
@@ -213,20 +278,20 @@ router.post('/:owner/:repo/issues', requireAuth, async (req, res) => {
           'SELECT COALESCE(MAX(number), 0) as max_num FROM issues WHERE repo_id = $1',
           [repoId]
         );
-        const number = Math.max(
-          parseInt(prMax.rows[0].max_num),
-          parseInt(issueMax.rows[0].max_num)
+        const issueNumber = Math.max(
+          parseInt(prMax.rows[0].max_num as string),
+          parseInt(issueMax.rows[0].max_num as string)
         ) + 1;
 
         // Insert issue
-        const result = await tx.query(
+        const insertResult = await tx.query(
           `INSERT INTO issues (repo_id, number, title, body, author_id, assignee_id)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING *`,
-          [repoId, number, title, body || null, req.user.id, assigneeId]
+          [repoId, issueNumber, title, body || null, req.user!.id, assigneeId]
         );
 
-        const issue = result.rows[0];
+        const issue = insertResult.rows[0] as Issue;
 
         // Add labels within the same transaction
         if (labels && labels.length > 0) {
@@ -252,7 +317,8 @@ router.post('/:owner/:repo/issues', requireAuth, async (req, res) => {
       // Return cached response for duplicate request
       issuesCreated.inc({ status: 'duplicate' });
       req.log?.info({ idempotencyKey }, 'Issue creation request deduplicated');
-      return res.status(200).json(response);
+      res.status(200).json(response);
+      return;
     }
 
     // Audit log
@@ -276,9 +342,9 @@ router.post('/:owner/:repo/issues', requireAuth, async (req, res) => {
 /**
  * Update issue
  */
-router.patch('/:owner/:repo/issues/:number', requireAuth, async (req, res) => {
+router.patch('/:owner/:repo/issues/:number', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
-  const { title, body, state, assignee, labels } = req.body;
+  const { title, body, state, assignee, labels } = req.body as UpdateIssueBody;
 
   const issueResult = await query(
     `SELECT i.*, r.id as repo_id FROM issues i
@@ -289,13 +355,14 @@ router.patch('/:owner/:repo/issues/:number', requireAuth, async (req, res) => {
   );
 
   if (issueResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Issue not found' });
+    res.status(404).json({ error: 'Issue not found' });
+    return;
   }
 
-  const issue = issueResult.rows[0];
+  const issue = issueResult.rows[0] as Issue;
 
-  const updates = [];
-  const params = [];
+  const updates: string[] = [];
+  const params: unknown[] = [];
 
   if (title !== undefined) {
     params.push(title);
@@ -322,7 +389,7 @@ router.patch('/:owner/:repo/issues/:number', requireAuth, async (req, res) => {
       params.push(null);
     } else {
       const assigneeResult = await query('SELECT id FROM users WHERE username = $1', [assignee]);
-      params.push(assigneeResult.rows.length > 0 ? assigneeResult.rows[0].id : null);
+      params.push(assigneeResult.rows.length > 0 ? (assigneeResult.rows[0].id as number) : null);
     }
     updates.push(`assignee_id = $${params.length}`);
   }
@@ -364,12 +431,13 @@ router.patch('/:owner/:repo/issues/:number', requireAuth, async (req, res) => {
 /**
  * Add comment to issue
  */
-router.post('/:owner/:repo/issues/:number/comments', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/issues/:number/comments', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
-  const { body } = req.body;
+  const { body } = req.body as CommentBody;
 
   if (!body) {
-    return res.status(400).json({ error: 'Comment body required' });
+    res.status(400).json({ error: 'Comment body required' });
+    return;
   }
 
   const issueResult = await query(
@@ -381,14 +449,15 @@ router.post('/:owner/:repo/issues/:number/comments', requireAuth, async (req, re
   );
 
   if (issueResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Issue not found' });
+    res.status(404).json({ error: 'Issue not found' });
+    return;
   }
 
   const result = await query(
     `INSERT INTO comments (issue_id, user_id, body)
      VALUES ($1, $2, $3)
      RETURNING *`,
-    [issueResult.rows[0].id, req.user.id, body]
+    [issueResult.rows[0].id, req.user!.id, body]
   );
 
   res.status(201).json(result.rows[0]);
@@ -397,7 +466,7 @@ router.post('/:owner/:repo/issues/:number/comments', requireAuth, async (req, re
 /**
  * Get labels for a repo
  */
-router.get('/:owner/:repo/labels', async (req, res) => {
+router.get('/:owner/:repo/labels', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   const repoResult = await query(
@@ -408,7 +477,8 @@ router.get('/:owner/:repo/labels', async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
   const result = await query('SELECT * FROM labels WHERE repo_id = $1 ORDER BY name', [
@@ -421,12 +491,13 @@ router.get('/:owner/:repo/labels', async (req, res) => {
 /**
  * Create label
  */
-router.post('/:owner/:repo/labels', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/labels', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { name, color, description } = req.body;
+  const { name, color, description } = req.body as CreateLabelBody;
 
   if (!name) {
-    return res.status(400).json({ error: 'Label name required' });
+    res.status(400).json({ error: 'Label name required' });
+    return;
   }
 
   const repoResult = await query(
@@ -437,11 +508,13 @@ router.post('/:owner/:repo/labels', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  if (repoResult.rows[0].owner_id !== req.user.id) {
-    return res.status(403).json({ error: 'Not authorized' });
+  if ((repoResult.rows[0].owner_id as number) !== req.user!.id) {
+    res.status(403).json({ error: 'Not authorized' });
+    return;
   }
 
   const result = await query(

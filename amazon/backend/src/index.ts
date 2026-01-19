@@ -1,6 +1,7 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
+import { Pool } from 'pg';
 import { initializeDb, getDb } from './services/database.js';
 import { initializeRedis, getRedis } from './services/redis.js';
 import { initializeElasticsearch, getElasticsearch } from './services/elasticsearch.js';
@@ -20,9 +21,41 @@ import { startBackgroundJobs } from './services/backgroundJobs.js';
 import logger, { requestLoggingMiddleware } from './shared/logger.js';
 import { metricsHandler, metricsMiddleware, dbConnectionPoolSize } from './shared/metrics.js';
 import { idempotencyMiddleware } from './shared/idempotency.js';
-import { getAllCircuitBreakerStats } from './shared/circuitBreaker.js';
-import { getRetentionStats, runArchivalJobs } from './shared/archival.js';
+import { getAllCircuitBreakerStats, CircuitBreakerStats } from './shared/circuitBreaker.js';
+import { getRetentionStats, RetentionStats } from './shared/archival.js';
 import { cleanupExpiredIdempotencyKeys } from './shared/idempotency.js';
+
+// Type definitions
+interface ServiceStatus {
+  status: 'ok' | 'error' | 'unavailable';
+  latencyMs?: number;
+  error?: string;
+  pool?: {
+    total: number | undefined;
+    idle: number | undefined;
+    waiting: number | undefined;
+  };
+  clusterStatus?: string;
+  note?: string;
+}
+
+interface HealthStatus {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  services: {
+    postgresql?: ServiceStatus;
+    redis?: ServiceStatus;
+    elasticsearch?: ServiceStatus;
+  };
+  circuitBreakers?: CircuitBreakerStats[];
+  memory?: {
+    heapUsedMB: number;
+    heapTotalMB: number;
+    rssMB: number;
+  };
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,13 +95,13 @@ app.get('/metrics', metricsHandler);
 // ============================================================
 
 // Simple health check (for load balancers)
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req: Request, res: Response): void => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Detailed health check (for monitoring)
-app.get('/api/health/detailed', async (req, res) => {
-  const healthStatus = {
+app.get('/api/health/detailed', async (_req: Request, res: Response): Promise<void> => {
+  const healthStatus: HealthStatus = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -78,7 +111,7 @@ app.get('/api/health/detailed', async (req, res) => {
 
   // Check PostgreSQL
   try {
-    const db = getDb();
+    const db: Pool = getDb();
     const start = Date.now();
     await db.query('SELECT 1');
     const latency = Date.now() - start;
@@ -101,9 +134,10 @@ app.get('/api/health/detailed', async (req, res) => {
       }
     };
   } catch (error) {
+    const err = error as Error;
     healthStatus.services.postgresql = {
       status: 'error',
-      error: error.message
+      error: err.message
     };
     healthStatus.status = 'degraded';
   }
@@ -120,9 +154,10 @@ app.get('/api/health/detailed', async (req, res) => {
       latencyMs: latency
     };
   } catch (error) {
+    const err = error as Error;
     healthStatus.services.redis = {
       status: 'error',
-      error: error.message
+      error: err.message
     };
     healthStatus.status = 'degraded';
   }
@@ -151,9 +186,10 @@ app.get('/api/health/detailed', async (req, res) => {
       };
     }
   } catch (error) {
+    const err = error as Error;
     healthStatus.services.elasticsearch = {
       status: 'error',
-      error: error.message
+      error: err.message
     };
     // Elasticsearch is optional, don't degrade overall status
   }
@@ -174,15 +210,15 @@ app.get('/api/health/detailed', async (req, res) => {
 });
 
 // Liveness probe (Kubernetes)
-app.get('/api/health/live', (req, res) => {
+app.get('/api/health/live', (_req: Request, res: Response): void => {
   res.json({ status: 'live' });
 });
 
 // Readiness probe (Kubernetes)
-app.get('/api/health/ready', async (req, res) => {
+app.get('/api/health/ready', async (_req: Request, res: Response): Promise<void> => {
   try {
     // Check essential services
-    const db = getDb();
+    const db: Pool = getDb();
     await db.query('SELECT 1');
 
     const redis = getRedis();
@@ -190,19 +226,21 @@ app.get('/api/health/ready', async (req, res) => {
 
     res.json({ status: 'ready' });
   } catch (error) {
-    res.status(503).json({ status: 'not_ready', error: error.message });
+    const err = error as Error;
+    res.status(503).json({ status: 'not_ready', error: err.message });
   }
 });
 
 // ============================================================
 // Data Retention Stats (Admin)
 // ============================================================
-app.get('/api/admin/retention-stats', async (req, res) => {
+app.get('/api/admin/retention-stats', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const stats = await getRetentionStats();
+    const stats: RetentionStats = await getRetentionStats();
     res.json(stats);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -226,7 +264,7 @@ app.use(errorHandler);
 // ============================================================
 // Background Jobs
 // ============================================================
-function startAllBackgroundJobs() {
+function startAllBackgroundJobs(): void {
   // Start existing background jobs
   startBackgroundJobs();
 
@@ -235,10 +273,14 @@ function startAllBackgroundJobs() {
   setInterval(cleanupExpiredIdempotencyKeys, 60 * 60 * 1000);
 
   // Run archival jobs daily at 3 AM (or every 24 hours from startup)
-  setInterval(runArchivalJobs, 24 * 60 * 60 * 1000);
+  setInterval(() => {
+    void import('./shared/archival.js').then(({ runArchivalJobs }) => runArchivalJobs());
+  }, 24 * 60 * 60 * 1000);
 
   // Run initial cleanup after startup
-  setTimeout(cleanupExpiredIdempotencyKeys, 5000);
+  setTimeout(() => {
+    void cleanupExpiredIdempotencyKeys();
+  }, 5000);
 
   logger.info('All background jobs started');
 }
@@ -246,7 +288,7 @@ function startAllBackgroundJobs() {
 // ============================================================
 // Server Startup
 // ============================================================
-async function start() {
+async function start(): Promise<void> {
   try {
     logger.info('Starting Amazon API server...');
 
@@ -269,19 +311,20 @@ async function start() {
       console.log(`  - Metrics: http://localhost:${PORT}/metrics`);
     });
   } catch (error) {
-    logger.error({ error: error.message }, 'Failed to start server');
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Failed to start server');
     console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
+process.on('SIGTERM', (): void => {
   logger.info('SIGTERM received, shutting down gracefully');
   process.exit(0);
 });
 
-process.on('SIGINT', async () => {
+process.on('SIGINT', (): void => {
   logger.info('SIGINT received, shutting down gracefully');
   process.exit(0);
 });

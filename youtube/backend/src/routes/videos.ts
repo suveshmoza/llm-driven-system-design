@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Router, Request, Response } from 'express';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import {
   getVideo,
@@ -12,18 +12,54 @@ import {
   deleteComment,
   likeComment,
 } from '../services/metadata.js';
-import { getStreamingInfo, recordView, updateWatchProgress, getWatchProgress } from '../services/streaming.js';
+import {
+  getStreamingInfo,
+  recordView,
+  updateWatchProgress,
+  getWatchProgress,
+} from '../services/streaming.js';
 
-const router = express.Router();
+// Extend Express Request to include user
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    channelName: string;
+    role: string;
+    avatarUrl?: string;
+  };
+}
+
+interface OptionalAuthRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+    email: string;
+    channelName: string;
+    role: string;
+    avatarUrl?: string;
+  };
+}
+
+const router: Router = express.Router();
 
 // Get videos (with optional filters)
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page, limit, channelId, search, category, orderBy, order } = req.query;
+    const { page, limit, channelId, search, category, orderBy, order } = req.query as {
+      page?: string;
+      limit?: string;
+      channelId?: string;
+      search?: string;
+      category?: string;
+      orderBy?: string;
+      order?: string;
+    };
 
     const result = await getVideos({
-      page: parseInt(page, 10) || 1,
-      limit: Math.min(parseInt(limit, 10) || 20, 50),
+      page: parseInt(page || '1', 10),
+      limit: Math.min(parseInt(limit || '20', 10), 50),
       channelId,
       search,
       category,
@@ -39,22 +75,24 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // Get video by ID
-router.get('/:videoId', optionalAuth, async (req, res) => {
+router.get('/:videoId', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
+    const optReq = req as OptionalAuthRequest;
     const { videoId } = req.params;
     const video = await getVideo(videoId);
 
     if (!video) {
-      return res.status(404).json({ error: 'Video not found' });
+      res.status(404).json({ error: 'Video not found' });
+      return;
     }
 
     // Get user's reaction if logged in
-    let userReaction = null;
-    let watchProgress = null;
+    let userReaction: string | null = null;
+    let watchProgress: { position: number; percentage: number } | null = null;
 
-    if (req.user) {
-      userReaction = await getUserReaction(req.user.id, videoId);
-      watchProgress = await getWatchProgress(req.user.id, videoId);
+    if (optReq.user) {
+      userReaction = await getUserReaction(optReq.user.id, videoId);
+      watchProgress = await getWatchProgress(optReq.user.id, videoId);
     }
 
     res.json({
@@ -69,13 +107,14 @@ router.get('/:videoId', optionalAuth, async (req, res) => {
 });
 
 // Get streaming info for video
-router.get('/:videoId/stream', optionalAuth, async (req, res) => {
+router.get('/:videoId/stream', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { videoId } = req.params;
     const streamingInfo = await getStreamingInfo(videoId);
 
     if (!streamingInfo) {
-      return res.status(404).json({ error: 'Video not found or not ready' });
+      res.status(404).json({ error: 'Video not found or not ready' });
+      return;
     }
 
     res.json(streamingInfo);
@@ -86,16 +125,20 @@ router.get('/:videoId/stream', optionalAuth, async (req, res) => {
 });
 
 // Record video view
-router.post('/:videoId/view', optionalAuth, async (req, res) => {
+router.post('/:videoId/view', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
+    const optReq = req as OptionalAuthRequest;
     const { videoId } = req.params;
-    const { watchDuration, watchPercentage } = req.body;
+    const { watchDuration, watchPercentage } = req.body as {
+      watchDuration?: string | number;
+      watchPercentage?: string | number;
+    };
 
     await recordView(
       videoId,
-      req.user?.id,
-      parseInt(watchDuration, 10) || 0,
-      parseFloat(watchPercentage) || 0
+      optReq.user?.id || null,
+      parseInt(String(watchDuration || 0), 10),
+      parseFloat(String(watchPercentage || 0))
     );
 
     res.json({ success: true });
@@ -106,16 +149,20 @@ router.post('/:videoId/view', optionalAuth, async (req, res) => {
 });
 
 // Update watch progress
-router.post('/:videoId/progress', authenticate, async (req, res) => {
+router.post('/:videoId/progress', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { videoId } = req.params;
-    const { position, duration } = req.body;
+    const { position, duration } = req.body as {
+      position?: string | number;
+      duration?: string | number;
+    };
 
     await updateWatchProgress(
-      req.user.id,
+      authReq.user.id,
       videoId,
-      parseInt(position, 10) || 0,
-      parseInt(duration, 10) || 0
+      parseInt(String(position || 0), 10),
+      parseInt(String(duration || 0), 10)
     );
 
     res.json({ success: true });
@@ -126,12 +173,19 @@ router.post('/:videoId/progress', authenticate, async (req, res) => {
 });
 
 // Update video
-router.patch('/:videoId', authenticate, async (req, res) => {
+router.patch('/:videoId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { videoId } = req.params;
-    const { title, description, categories, tags, visibility } = req.body;
+    const { title, description, categories, tags, visibility } = req.body as {
+      title?: string;
+      description?: string;
+      categories?: string[];
+      tags?: string[];
+      visibility?: string;
+    };
 
-    const video = await updateVideo(videoId, req.user.id, {
+    const video = await updateVideo(videoId, authReq.user.id, {
       title,
       description,
       categories,
@@ -140,7 +194,8 @@ router.patch('/:videoId', authenticate, async (req, res) => {
     });
 
     if (!video) {
-      return res.status(404).json({ error: 'Video not found or unauthorized' });
+      res.status(404).json({ error: 'Video not found or unauthorized' });
+      return;
     }
 
     res.json(video);
@@ -151,13 +206,15 @@ router.patch('/:videoId', authenticate, async (req, res) => {
 });
 
 // Delete video
-router.delete('/:videoId', authenticate, async (req, res) => {
+router.delete('/:videoId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { videoId } = req.params;
-    const success = await deleteVideo(videoId, req.user.id);
+    const success = await deleteVideo(videoId, authReq.user.id);
 
     if (!success) {
-      return res.status(404).json({ error: 'Video not found or unauthorized' });
+      res.status(404).json({ error: 'Video not found or unauthorized' });
+      return;
     }
 
     res.json({ message: 'Video deleted' });
@@ -168,16 +225,18 @@ router.delete('/:videoId', authenticate, async (req, res) => {
 });
 
 // Like/dislike video
-router.post('/:videoId/react', authenticate, async (req, res) => {
+router.post('/:videoId/react', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { videoId } = req.params;
-    const { reaction } = req.body;
+    const { reaction } = req.body as { reaction?: string };
 
-    if (!['like', 'dislike'].includes(reaction)) {
-      return res.status(400).json({ error: 'Invalid reaction type' });
+    if (!reaction || !['like', 'dislike'].includes(reaction)) {
+      res.status(400).json({ error: 'Invalid reaction type' });
+      return;
     }
 
-    const result = await reactToVideo(req.user.id, videoId, reaction);
+    const result = await reactToVideo(authReq.user.id, videoId, reaction as 'like' | 'dislike');
     res.json(result);
   } catch (error) {
     console.error('React to video error:', error);
@@ -186,15 +245,19 @@ router.post('/:videoId/react', authenticate, async (req, res) => {
 });
 
 // Get comments
-router.get('/:videoId/comments', optionalAuth, async (req, res) => {
+router.get('/:videoId/comments', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { videoId } = req.params;
-    const { page, limit, parentId } = req.query;
+    const { page, limit, parentId } = req.query as {
+      page?: string;
+      limit?: string;
+      parentId?: string;
+    };
 
     const result = await getComments(
       videoId,
-      parseInt(page, 10) || 1,
-      Math.min(parseInt(limit, 10) || 20, 50),
+      parseInt(page || '1', 10),
+      Math.min(parseInt(limit || '20', 10), 50),
       parentId || null
     );
 
@@ -206,16 +269,18 @@ router.get('/:videoId/comments', optionalAuth, async (req, res) => {
 });
 
 // Add comment
-router.post('/:videoId/comments', authenticate, async (req, res) => {
+router.post('/:videoId/comments', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { videoId } = req.params;
-    const { text, parentId } = req.body;
+    const { text, parentId } = req.body as { text?: string; parentId?: string };
 
     if (!text || text.trim().length === 0) {
-      return res.status(400).json({ error: 'Comment text is required' });
+      res.status(400).json({ error: 'Comment text is required' });
+      return;
     }
 
-    const comment = await addComment(req.user.id, videoId, text.trim(), parentId || null);
+    const comment = await addComment(authReq.user.id, videoId, text.trim(), parentId || null);
     res.status(201).json(comment);
   } catch (error) {
     console.error('Add comment error:', error);
@@ -224,32 +289,43 @@ router.post('/:videoId/comments', authenticate, async (req, res) => {
 });
 
 // Delete comment
-router.delete('/:videoId/comments/:commentId', authenticate, async (req, res) => {
-  try {
-    const { commentId } = req.params;
-    const success = await deleteComment(commentId, req.user.id);
+router.delete(
+  '/:videoId/comments/:commentId',
+  authenticate,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { commentId } = req.params;
+      const success = await deleteComment(commentId, authReq.user.id);
 
-    if (!success) {
-      return res.status(404).json({ error: 'Comment not found or unauthorized' });
+      if (!success) {
+        res.status(404).json({ error: 'Comment not found or unauthorized' });
+        return;
+      }
+
+      res.json({ message: 'Comment deleted' });
+    } catch (error) {
+      console.error('Delete comment error:', error);
+      res.status(500).json({ error: 'Failed to delete comment' });
     }
-
-    res.json({ message: 'Comment deleted' });
-  } catch (error) {
-    console.error('Delete comment error:', error);
-    res.status(500).json({ error: 'Failed to delete comment' });
   }
-});
+);
 
 // Like comment
-router.post('/:videoId/comments/:commentId/like', authenticate, async (req, res) => {
-  try {
-    const { commentId } = req.params;
-    const result = await likeComment(req.user.id, commentId);
-    res.json(result);
-  } catch (error) {
-    console.error('Like comment error:', error);
-    res.status(500).json({ error: 'Failed to like comment' });
+router.post(
+  '/:videoId/comments/:commentId/like',
+  authenticate,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const authReq = req as AuthenticatedRequest;
+      const { commentId } = req.params;
+      const result = await likeComment(authReq.user.id, commentId);
+      res.json(result);
+    } catch (error) {
+      console.error('Like comment error:', error);
+      res.status(500).json({ error: 'Failed to like comment' });
+    }
   }
-});
+);
 
 export default router;

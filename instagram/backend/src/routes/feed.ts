@@ -134,7 +134,7 @@ const feedGenerationBreaker = createCircuitBreaker(
 
       // Get media for each post
       const postsWithMedia: FeedPost[] = await Promise.all(
-        posts.map(async (post) => {
+        posts.map(async (post: PostRow) => {
           const mediaResult = await query<MediaRow>(
             'SELECT * FROM post_media WHERE post_id = $1 ORDER BY order_index',
             [post.id]
@@ -163,7 +163,7 @@ const feedGenerationBreaker = createCircuitBreaker(
             createdAt: post.created_at,
             isLiked: likeCheck.rows.length > 0,
             isSaved: savedCheck.rows.length > 0,
-            media: mediaResult.rows.map((m) => ({
+            media: mediaResult.rows.map((m: MediaRow) => ({
               id: m.id,
               mediaType: m.media_type,
               mediaUrl: m.media_url,
@@ -190,12 +190,12 @@ const feedGenerationBreaker = createCircuitBreaker(
     );
 
     // Order by the timeline order
-    const postsMap = new Map(postResult.rows.map((p) => [p.id, p]));
+    const postsMap = new Map(postResult.rows.map((p: PostRow) => [p.id, p]));
     const orderedPosts = postIds.map((id) => postsMap.get(id)).filter((p): p is PostRow => p !== undefined);
 
     // Get media and user-specific data for each post
     const postsWithMedia: FeedPost[] = await Promise.all(
-      orderedPosts.map(async (post) => {
+      orderedPosts.map(async (post: PostRow) => {
         const mediaResult = await query<MediaRow>(
           'SELECT * FROM post_media WHERE post_id = $1 ORDER BY order_index',
           [post.id]
@@ -393,7 +393,7 @@ router.get('/explore', optionalAuth, async (req: AuthenticatedRequest, res: Resp
     const posts = result.rows.slice(0, parsedLimit);
 
     res.json({
-      posts: posts.map((p) => ({
+      posts: posts.map((p: ExplorePostRow) => ({
         id: p.id,
         thumbnail: p.thumbnail,
         likeCount: p.like_count,

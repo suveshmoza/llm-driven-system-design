@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Router, Request, Response } from 'express';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import {
   getChannel,
@@ -10,22 +10,47 @@ import {
 } from '../services/metadata.js';
 import { getVideos } from '../services/metadata.js';
 
-const router = express.Router();
+// Extend Express Request to include user
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    channelName: string;
+    role: string;
+    avatarUrl?: string;
+  };
+}
+
+interface OptionalAuthRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+    email: string;
+    channelName: string;
+    role: string;
+    avatarUrl?: string;
+  };
+}
+
+const router: Router = express.Router();
 
 // Get channel by ID or username
-router.get('/:identifier', optionalAuth, async (req, res) => {
+router.get('/:identifier', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
+    const optReq = req as OptionalAuthRequest;
     const { identifier } = req.params;
     const channel = await getChannel(identifier);
 
     if (!channel) {
-      return res.status(404).json({ error: 'Channel not found' });
+      res.status(404).json({ error: 'Channel not found' });
+      return;
     }
 
     // Check if current user is subscribed
     let subscribed = false;
-    if (req.user) {
-      subscribed = await isSubscribed(req.user.id, channel.id);
+    if (optReq.user) {
+      subscribed = await isSubscribed(optReq.user.id, channel.id);
     }
 
     res.json({
@@ -39,21 +64,27 @@ router.get('/:identifier', optionalAuth, async (req, res) => {
 });
 
 // Get channel videos
-router.get('/:identifier/videos', optionalAuth, async (req, res) => {
+router.get('/:identifier/videos', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { identifier } = req.params;
-    const { page, limit, orderBy, order } = req.query;
+    const { page, limit, orderBy, order } = req.query as {
+      page?: string;
+      limit?: string;
+      orderBy?: string;
+      order?: string;
+    };
 
     const channel = await getChannel(identifier);
 
     if (!channel) {
-      return res.status(404).json({ error: 'Channel not found' });
+      res.status(404).json({ error: 'Channel not found' });
+      return;
     }
 
     const result = await getVideos({
       channelId: channel.id,
-      page: parseInt(page, 10) || 1,
-      limit: Math.min(parseInt(limit, 10) || 20, 50),
+      page: parseInt(page || '1', 10),
+      limit: Math.min(parseInt(limit || '20', 10), 50),
       orderBy,
       order,
     });
@@ -66,18 +97,24 @@ router.get('/:identifier/videos', optionalAuth, async (req, res) => {
 });
 
 // Update own channel
-router.patch('/me', authenticate, async (req, res) => {
+router.patch('/me', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { channelName, channelDescription, avatarUrl } = req.body;
+    const authReq = req as AuthenticatedRequest;
+    const { channelName, channelDescription, avatarUrl } = req.body as {
+      channelName?: string;
+      channelDescription?: string;
+      avatarUrl?: string;
+    };
 
-    const channel = await updateChannel(req.user.id, {
+    const channel = await updateChannel(authReq.user.id, {
       channelName,
       channelDescription,
       avatarUrl,
     });
 
     if (!channel) {
-      return res.status(404).json({ error: 'Channel not found' });
+      res.status(404).json({ error: 'Channel not found' });
+      return;
     }
 
     res.json(channel);
@@ -88,22 +125,24 @@ router.patch('/me', authenticate, async (req, res) => {
 });
 
 // Subscribe to channel
-router.post('/:channelId/subscribe', authenticate, async (req, res) => {
+router.post('/:channelId/subscribe', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { channelId } = req.params;
-    const result = await subscribe(req.user.id, channelId);
+    const result = await subscribe(authReq.user.id, channelId);
     res.json(result);
   } catch (error) {
     console.error('Subscribe error:', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: (error as Error).message });
   }
 });
 
 // Unsubscribe from channel
-router.delete('/:channelId/subscribe', authenticate, async (req, res) => {
+router.delete('/:channelId/subscribe', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { channelId } = req.params;
-    const result = await unsubscribe(req.user.id, channelId);
+    const result = await unsubscribe(authReq.user.id, channelId);
     res.json(result);
   } catch (error) {
     console.error('Unsubscribe error:', error);
@@ -112,14 +151,18 @@ router.delete('/:channelId/subscribe', authenticate, async (req, res) => {
 });
 
 // Get user's subscriptions
-router.get('/me/subscriptions', authenticate, async (req, res) => {
+router.get('/me/subscriptions', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page, limit } = req.query;
+    const authReq = req as AuthenticatedRequest;
+    const { page, limit } = req.query as {
+      page?: string;
+      limit?: string;
+    };
 
     const result = await getSubscriptions(
-      req.user.id,
-      parseInt(page, 10) || 1,
-      Math.min(parseInt(limit, 10) || 20, 50)
+      authReq.user.id,
+      parseInt(page || '1', 10),
+      Math.min(parseInt(limit || '20', 10), 50)
     );
 
     res.json(result);

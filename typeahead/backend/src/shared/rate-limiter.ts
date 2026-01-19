@@ -7,9 +7,9 @@
  * - Ensures fair resource allocation across users
  * - Maintains low latency for legitimate users
  */
-import rateLimit from 'express-rate-limit';
+import rateLimit, { type Options } from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import logger, { auditLogger } from './logger.js';
 import { rateLimitMetrics } from './metrics.js';
 
@@ -17,12 +17,6 @@ interface RateLimiterOptions {
   windowMs?: number;
   max?: number;
   keyPrefix?: string;
-}
-
-interface RateLimitInfo {
-  current: number;
-  max: number;
-  windowMs: number;
 }
 
 /**
@@ -48,17 +42,17 @@ export const suggestionRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: Options) => {
     const clientId = getClientIdentifier(req);
 
     // Log rate limit hit
-    auditLogger.logRateLimitViolation(clientId, 'suggestions', options.current, options.max);
+    auditLogger.logRateLimitViolation(clientId, 'suggestions', options.max as number, options.max as number);
     rateLimitMetrics.hits.inc({ endpoint: 'suggestions' });
 
     res.status(429).json({
       error: 'Too Many Requests',
       message: 'Rate limit exceeded. Please slow down.',
-      retryAfter: Math.ceil(options.windowMs / 1000),
+      retryAfter: Math.ceil((options.windowMs as number) / 1000),
     });
   },
   skip: () => {
@@ -78,16 +72,16 @@ export const logRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: Options) => {
     const clientId = getClientIdentifier(req);
 
-    auditLogger.logRateLimitViolation(clientId, 'log', options.current, options.max);
+    auditLogger.logRateLimitViolation(clientId, 'log', options.max as number, options.max as number);
     rateLimitMetrics.hits.inc({ endpoint: 'log' });
 
     res.status(429).json({
       error: 'Too Many Requests',
       message: 'Rate limit exceeded for logging.',
-      retryAfter: Math.ceil(options.windowMs / 1000),
+      retryAfter: Math.ceil((options.windowMs as number) / 1000),
     });
   },
   skip: () => {
@@ -106,16 +100,16 @@ export const adminRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: Options) => {
     const clientId = getClientIdentifier(req);
 
-    auditLogger.logRateLimitViolation(clientId, 'admin', options.current, options.max);
+    auditLogger.logRateLimitViolation(clientId, 'admin', options.max as number, options.max as number);
     rateLimitMetrics.hits.inc({ endpoint: 'admin' });
 
     res.status(429).json({
       error: 'Too Many Requests',
       message: 'Admin rate limit exceeded.',
-      retryAfter: Math.ceil(options.windowMs / 1000),
+      retryAfter: Math.ceil((options.windowMs as number) / 1000),
     });
   },
   skip: () => {
@@ -134,16 +128,16 @@ export const globalRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: Options) => {
     const clientId = getClientIdentifier(req);
 
-    auditLogger.logRateLimitViolation(clientId, 'global', options.current, options.max);
+    auditLogger.logRateLimitViolation(clientId, 'global', options.max as number, options.max as number);
     rateLimitMetrics.hits.inc({ endpoint: 'global' });
 
     res.status(429).json({
       error: 'Too Many Requests',
       message: 'Global rate limit exceeded.',
-      retryAfter: Math.ceil(options.windowMs / 1000),
+      retryAfter: Math.ceil((options.windowMs as number) / 1000),
     });
   },
   skip: (req: Request) => {

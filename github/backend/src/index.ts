@@ -1,6 +1,7 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import cors from 'cors';
-import { authMiddleware, login, register, logout, getCurrentUser } from './middleware/auth.js';
+import http from 'http';
+import { authMiddleware, login, register, logout, getCurrentUser, requireAuth, requireAdmin } from './middleware/auth.js';
 import { initializeCodeIndex } from './db/elasticsearch.js';
 import reposRoutes from './routes/repos.js';
 import pullsRoutes from './routes/pulls.js';
@@ -15,11 +16,34 @@ import { metricsMiddleware, metricsHandler, activeConnections } from './shared/m
 import { getCircuitBreakerStatus, resetCircuitBreaker } from './shared/circuitBreaker.js';
 import { queryAuditLogs, AUDITED_ACTIONS, auditLog } from './shared/audit.js';
 import { cleanupExpiredKeys } from './shared/idempotency.js';
-import pool from './db/index.js';
+import { pool } from './db/index.js';
 import redisClient from './db/redis.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+interface HealthCheck {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  checks: {
+    postgres?: { status: 'ok' | 'error'; latencyMs?: number; error?: string };
+    redis?: { status: 'ok' | 'error'; latencyMs?: number; error?: string };
+  };
+  circuitBreakers?: Record<string, unknown>;
+}
+
+interface AuditLogQuery {
+  userId?: string;
+  action?: string;
+  resourceType?: string;
+  resourceId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: string;
+  offset?: string;
+}
 
 // Middleware
 app.use(cors({
@@ -40,8 +64,8 @@ app.get('/metrics', metricsHandler);
  * Enhanced health check endpoint
  * Checks database, Redis, and Elasticsearch connectivity
  */
-app.get('/health', async (req, res) => {
-  const health = {
+app.get('/health', async (req: Request, res: Response): Promise<void> => {
+  const health: HealthCheck = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -58,7 +82,7 @@ app.get('/health', async (req, res) => {
       latencyMs: Date.now() - dbStart,
     };
   } catch (err) {
-    health.checks.postgres = { status: 'error', error: err.message };
+    health.checks.postgres = { status: 'error', error: (err as Error).message };
     health.status = 'degraded';
   }
 
@@ -71,7 +95,7 @@ app.get('/health', async (req, res) => {
       latencyMs: Date.now() - redisStart,
     };
   } catch (err) {
-    health.checks.redis = { status: 'error', error: err.message };
+    health.checks.redis = { status: 'error', error: (err as Error).message };
     health.status = 'degraded';
   }
 
@@ -83,18 +107,18 @@ app.get('/health', async (req, res) => {
 });
 
 // Liveness probe (for Kubernetes)
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (req: Request, res: Response): void => {
   res.json({ status: 'ok' });
 });
 
 // Readiness probe (for Kubernetes)
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', async (req: Request, res: Response): Promise<void> => {
   try {
     await pool.query('SELECT 1');
     await redisClient.ping();
     res.json({ status: 'ready' });
   } catch (err) {
-    res.status(503).json({ status: 'not ready', error: err.message });
+    res.status(503).json({ status: 'not ready', error: (err as Error).message });
   }
 });
 
@@ -112,15 +136,12 @@ app.use('/api', discussionsRoutes); // Routes include /:owner/:repo/discussions
 app.use('/api/users', usersRoutes);
 app.use('/api/search', searchRoutes);
 
-// Admin routes
-import { requireAdmin, requireAuth } from './middleware/auth.js';
-
 // Circuit breaker admin endpoints
-app.get('/api/admin/circuit-breakers', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/circuit-breakers', requireAuth, requireAdmin, (req: Request, res: Response): void => {
   res.json(getCircuitBreakerStatus());
 });
 
-app.post('/api/admin/circuit-breakers/:name/reset', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/circuit-breakers/:name/reset', requireAuth, requireAdmin, (req: Request, res: Response): void => {
   const success = resetCircuitBreaker(req.params.name);
   if (success) {
     res.json({ success: true, message: `Circuit breaker ${req.params.name} reset` });
@@ -130,9 +151,9 @@ app.post('/api/admin/circuit-breakers/:name/reset', requireAuth, requireAdmin, (
 });
 
 // Audit log admin endpoints
-app.get('/api/admin/audit-logs', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/admin/audit-logs', requireAuth, requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, action, resourceType, resourceId, startDate, endDate, limit = 100, offset = 0 } = req.query;
+    const { userId, action, resourceType, resourceId, startDate, endDate, limit = '100', offset = '0' } = req.query as AuditLogQuery;
 
     const logs = await queryAuditLogs({
       userId: userId ? parseInt(userId) : undefined,
@@ -151,14 +172,18 @@ app.get('/api/admin/audit-logs', requireAuth, requireAdmin, async (req, res) => 
 });
 
 // Error handler with structured logging
-app.use((err, req, res, next) => {
+const errorHandler: ErrorRequestHandler = (err: Error, req: Request, res: Response, next: NextFunction): void => {
   const log = req.log || logger;
   log.error({ err, stack: err.stack }, 'Unhandled server error');
   res.status(500).json({ error: 'Internal server error' });
-});
+};
+
+app.use(errorHandler);
 
 // Graceful shutdown handler
-async function shutdown(signal) {
+let server: http.Server;
+
+async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Received shutdown signal');
 
   // Stop accepting new requests
@@ -185,15 +210,13 @@ async function shutdown(signal) {
 }
 
 // Start server
-let server;
-
-async function start() {
+async function start(): Promise<void> {
   try {
     // Initialize Elasticsearch index
     await initializeCodeIndex();
     logger.info('Elasticsearch index initialized');
   } catch (err) {
-    logger.warn({ err: err.message }, 'Elasticsearch not available');
+    logger.warn({ err: (err as Error).message }, 'Elasticsearch not available');
   }
 
   // Run idempotency key cleanup periodically (every hour)

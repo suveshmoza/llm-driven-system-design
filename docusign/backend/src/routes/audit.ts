@@ -1,29 +1,65 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../utils/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { auditService } from '../services/auditService.js';
 
 const router = Router();
 
+interface EnvelopeRow {
+  id: string;
+  sender_id: string;
+  name: string;
+  status: string;
+  completed_at: string | null;
+}
+
+interface SignerRow {
+  name: string;
+  email: string;
+  completed_at: string | null;
+}
+
+interface FormattedEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  actor: string | null;
+  details: string;
+  data: Record<string, unknown>;
+  hash: string;
+}
+
+interface FormattedSigner {
+  name: string;
+  email: string;
+  signedAt: string | null;
+}
+
 // Get audit events for envelope
-router.get('/envelope/:envelopeId', authenticate, async (req, res) => {
+router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
     // Verify envelope ownership
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow>(
       'SELECT * FROM envelopes WHERE id = $1 AND sender_id = $2',
       [envelopeId, req.user.id]
     );
 
     if (envelopeResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Envelope not found' });
+      res.status(404).json({ error: 'Envelope not found' });
+      return;
     }
 
     const events = await auditService.getEvents(envelopeId);
 
     // Format events for display
-    const formattedEvents = events.map(e => ({
+    const formattedEvents: FormattedEvent[] = events.map(e => ({
       id: e.id,
       type: e.event_type,
       timestamp: e.timestamp,
@@ -41,18 +77,24 @@ router.get('/envelope/:envelopeId', authenticate, async (req, res) => {
 });
 
 // Verify audit chain integrity
-router.get('/verify/:envelopeId', authenticate, async (req, res) => {
+router.get('/verify/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
     // Verify envelope ownership
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow>(
       'SELECT * FROM envelopes WHERE id = $1 AND sender_id = $2',
       [envelopeId, req.user.id]
     );
 
     if (envelopeResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Envelope not found' });
+      res.status(404).json({ error: 'Envelope not found' });
+      return;
     }
 
     const verification = await auditService.verifyChain(envelopeId);
@@ -65,24 +107,31 @@ router.get('/verify/:envelopeId', authenticate, async (req, res) => {
 });
 
 // Get certificate of completion data
-router.get('/certificate/:envelopeId', authenticate, async (req, res) => {
+router.get('/certificate/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
 
+    if (!req.user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
     // Verify envelope ownership
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow>(
       'SELECT * FROM envelopes WHERE id = $1 AND sender_id = $2',
       [envelopeId, req.user.id]
     );
 
     if (envelopeResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Envelope not found' });
+      res.status(404).json({ error: 'Envelope not found' });
+      return;
     }
 
     const envelope = envelopeResult.rows[0];
 
     if (envelope.status !== 'completed') {
-      return res.status(400).json({ error: 'Certificate only available for completed envelopes' });
+      res.status(400).json({ error: 'Certificate only available for completed envelopes' });
+      return;
     }
 
     const certificate = await auditService.generateCertificateData(envelopeId);
@@ -95,30 +144,32 @@ router.get('/certificate/:envelopeId', authenticate, async (req, res) => {
 });
 
 // Public endpoint to verify document signature (by envelope ID or hash)
-router.get('/public/verify', async (req, res) => {
+router.get('/public/verify', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { envelopeId, hash } = req.query;
+    const { envelopeId, hash } = req.query as { envelopeId?: string; hash?: string };
 
     if (!envelopeId && !hash) {
-      return res.status(400).json({ error: 'envelopeId or hash is required' });
+      res.status(400).json({ error: 'envelopeId or hash is required' });
+      return;
     }
 
-    let envelope;
+    let envelope: EnvelopeRow | undefined;
 
     if (envelopeId) {
-      const result = await query(
+      const result = await query<EnvelopeRow>(
         'SELECT id, name, status, completed_at FROM envelopes WHERE id = $1',
         [envelopeId]
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Envelope not found' });
+        res.status(404).json({ error: 'Envelope not found' });
+        return;
       }
 
       envelope = result.rows[0];
     } else {
       // Find envelope by any audit event hash
-      const result = await query(
+      const result = await query<EnvelopeRow>(
         `SELECT e.id, e.name, e.status, e.completed_at
          FROM audit_events ae
          JOIN envelopes e ON ae.envelope_id = e.id
@@ -128,7 +179,8 @@ router.get('/public/verify', async (req, res) => {
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'No document found with this hash' });
+        res.status(404).json({ error: 'No document found with this hash' });
+        return;
       }
 
       envelope = result.rows[0];
@@ -138,13 +190,19 @@ router.get('/public/verify', async (req, res) => {
     const verification = await auditService.verifyChain(envelope.id);
 
     // Get signer summary
-    const signersResult = await query(
+    const signersResult = await query<SignerRow>(
       `SELECT name, email, completed_at
        FROM recipients
        WHERE envelope_id = $1 AND status = 'completed'
        ORDER BY completed_at ASC`,
       [envelope.id]
     );
+
+    const formattedSigners: FormattedSigner[] = signersResult.rows.map(s => ({
+      name: s.name,
+      email: s.email.replace(/(.{2}).*@/, '$1***@'), // Partially mask email
+      signedAt: s.completed_at
+    }));
 
     res.json({
       envelope: {
@@ -154,11 +212,7 @@ router.get('/public/verify', async (req, res) => {
         completedAt: envelope.completed_at
       },
       verification,
-      signers: signersResult.rows.map(s => ({
-        name: s.name,
-        email: s.email.replace(/(.{2}).*@/, '$1***@'), // Partially mask email
-        signedAt: s.completed_at
-      }))
+      signers: formattedSigners
     });
   } catch (error) {
     console.error('Public verify error:', error);

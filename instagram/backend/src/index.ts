@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import session from 'express-session';
-import RedisStore from 'connect-redis';
+import { RedisStore } from 'connect-redis';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config/index.js';

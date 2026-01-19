@@ -59,7 +59,7 @@ interface ArchiveResult {
   errors: Array<{ orderId: number; error: string }>;
 }
 
-interface RetentionStats {
+export interface RetentionStats {
   orders: {
     active_orders: string;
     archived_orders: string;

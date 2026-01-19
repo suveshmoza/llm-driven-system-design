@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Router, Request, Response } from 'express';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import {
   getRecommendations,
@@ -8,16 +8,40 @@ import {
   getWatchHistory,
 } from '../services/recommendations.js';
 
-const router = express.Router();
+// Extend Express Request to include user
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    channelName: string;
+    role: string;
+    avatarUrl?: string;
+  };
+}
+
+interface OptionalAuthRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+    email: string;
+    channelName: string;
+    role: string;
+    avatarUrl?: string;
+  };
+}
+
+const router: Router = express.Router();
 
 // Get personalized recommendations (home feed)
-router.get('/recommendations', optionalAuth, async (req, res) => {
+router.get('/recommendations', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit } = req.query;
+    const optReq = req as OptionalAuthRequest;
+    const { limit } = req.query as { limit?: string };
 
     const recommendations = await getRecommendations(
-      req.user?.id,
-      Math.min(parseInt(limit, 10) || 20, 50)
+      optReq.user?.id,
+      Math.min(parseInt(limit || '20', 10), 50)
     );
 
     res.json({ videos: recommendations });
@@ -28,12 +52,12 @@ router.get('/recommendations', optionalAuth, async (req, res) => {
 });
 
 // Get trending videos
-router.get('/trending', optionalAuth, async (req, res) => {
+router.get('/trending', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit, category } = req.query;
+    const { limit, category } = req.query as { limit?: string; category?: string };
 
     const trending = await getTrending(
-      Math.min(parseInt(limit, 10) || 50, 100),
+      Math.min(parseInt(limit || '50', 10), 100),
       category || null
     );
 
@@ -45,18 +69,24 @@ router.get('/trending', optionalAuth, async (req, res) => {
 });
 
 // Search videos
-router.get('/search', optionalAuth, async (req, res) => {
+router.get('/search', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { q, page, limit, sortBy } = req.query;
+    const { q, page, limit, sortBy } = req.query as {
+      q?: string;
+      page?: string;
+      limit?: string;
+      sortBy?: string;
+    };
 
     if (!q || q.trim().length === 0) {
-      return res.status(400).json({ error: 'Search query is required' });
+      res.status(400).json({ error: 'Search query is required' });
+      return;
     }
 
     const result = await searchVideos(q.trim(), {
-      page: parseInt(page, 10) || 1,
-      limit: Math.min(parseInt(limit, 10) || 20, 50),
-      sortBy,
+      page: parseInt(page || '1', 10),
+      limit: Math.min(parseInt(limit || '20', 10), 50),
+      sortBy: sortBy as 'relevance' | 'date' | 'views' | 'rating' | undefined,
     });
 
     res.json(result);
@@ -67,14 +97,15 @@ router.get('/search', optionalAuth, async (req, res) => {
 });
 
 // Get subscription feed
-router.get('/subscriptions', authenticate, async (req, res) => {
+router.get('/subscriptions', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page, limit } = req.query;
+    const authReq = req as AuthenticatedRequest;
+    const { page, limit } = req.query as { page?: string; limit?: string };
 
     const result = await getSubscriptionFeed(
-      req.user.id,
-      parseInt(page, 10) || 1,
-      Math.min(parseInt(limit, 10) || 20, 50)
+      authReq.user.id,
+      parseInt(page || '1', 10),
+      Math.min(parseInt(limit || '20', 10), 50)
     );
 
     res.json(result);
@@ -85,14 +116,15 @@ router.get('/subscriptions', authenticate, async (req, res) => {
 });
 
 // Get watch history
-router.get('/history', authenticate, async (req, res) => {
+router.get('/history', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page, limit } = req.query;
+    const authReq = req as AuthenticatedRequest;
+    const { page, limit } = req.query as { page?: string; limit?: string };
 
     const result = await getWatchHistory(
-      req.user.id,
-      parseInt(page, 10) || 1,
-      Math.min(parseInt(limit, 10) || 20, 50)
+      authReq.user.id,
+      parseInt(page || '1', 10),
+      Math.min(parseInt(limit || '20', 10), 50)
     );
 
     res.json(result);

@@ -23,7 +23,7 @@ interface CircuitBreakerOptions {
   name?: string;
 }
 
-interface CircuitBreakerStats {
+export interface CircuitBreakerStats {
   name: string;
   state: 'open' | 'halfOpen' | 'closed';
   stats: unknown;

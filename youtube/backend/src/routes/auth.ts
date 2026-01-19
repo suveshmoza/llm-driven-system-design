@@ -1,13 +1,8 @@
-import express from 'express';
+import express, { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import {
-  login,
-  register,
-  logout,
-  getCurrentUser,
-} from '../middleware/auth.js';
+import { login, register, logout, getCurrentUser } from '../middleware/auth.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // Register new user
 router.post('/register', register);

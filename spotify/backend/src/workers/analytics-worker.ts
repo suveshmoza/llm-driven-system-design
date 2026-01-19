@@ -12,16 +12,42 @@ import { consumePlaybackEvents, disconnectConsumer } from '../shared/kafka.js';
 import { pool } from '../db.js';
 import { redisClient, initializeDatabase } from '../db.js';
 import { logger } from '../shared/logger.js';
+import type { KafkaPlaybackMessage, PlaybackEventType } from '../types.js';
 
 // Cache TTLs
 const USER_STATS_TTL = 3600; // 1 hour
 const ARTIST_STATS_TTL = 1800; // 30 minutes
 
+interface PlaybackEvent {
+  userId: string;
+  trackId: string;
+  eventType: PlaybackEventType;
+  position: number;
+  timestamp: number;
+  deviceType: string;
+}
+
+interface PlaySession {
+  startTime?: string;
+  deviceType?: string;
+  pauseTime?: string;
+  lastPosition?: string;
+}
+
+interface TrackWithAudioFeatures {
+  id: string;
+  audio_features: {
+    genres?: string[];
+  } | null;
+  artist_id: string;
+  artist_name: string;
+}
+
 /**
  * Process a playback event from Kafka
  */
-async function processPlaybackEvent(event) {
-  const { userId, trackId, eventType, position, timestamp, deviceType } = event;
+async function processPlaybackEvent(event: KafkaPlaybackMessage): Promise<void> {
+  const { userId, trackId, eventType, position, timestamp, deviceType } = event as PlaybackEvent;
 
   logger.debug({ userId, trackId, eventType, position }, 'Processing playback event');
 
@@ -44,7 +70,7 @@ async function processPlaybackEvent(event) {
         break;
 
       case 'stream_counted':
-        await handleStreamCounted(userId, trackId, timestamp);
+        await handleStreamCounted(userId, trackId);
         break;
 
       case 'skipped':
@@ -52,21 +78,22 @@ async function processPlaybackEvent(event) {
         break;
 
       case 'seeked':
-        await handleSeeked(userId, trackId, position, timestamp);
+        await handleSeeked(userId, trackId, position);
         break;
 
       default:
         logger.warn({ eventType }, 'Unknown event type');
     }
   } catch (error) {
-    logger.error({ error: error.message, event }, 'Error processing playback event');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error: errorMessage, event }, 'Error processing playback event');
   }
 }
 
 /**
  * Handle play_started event
  */
-async function handlePlayStarted(userId, trackId, timestamp, deviceType) {
+async function handlePlayStarted(userId: string, trackId: string, timestamp: number, deviceType: string): Promise<void> {
   // Store session start time in Redis
   const sessionKey = `play_session:${userId}:${trackId}`;
   await redisClient.hSet(sessionKey, {
@@ -84,9 +111,9 @@ async function handlePlayStarted(userId, trackId, timestamp, deviceType) {
 /**
  * Handle play_paused event
  */
-async function handlePlayPaused(userId, trackId, position, timestamp) {
+async function handlePlayPaused(userId: string, trackId: string, position: number, timestamp: number): Promise<void> {
   const sessionKey = `play_session:${userId}:${trackId}`;
-  const session = await redisClient.hGetAll(sessionKey);
+  const session = await redisClient.hGetAll(sessionKey) as PlaySession;
 
   if (session.startTime) {
     const listenDuration = timestamp - parseInt(session.startTime);
@@ -105,7 +132,7 @@ async function handlePlayPaused(userId, trackId, position, timestamp) {
 /**
  * Handle play_resumed event
  */
-async function handlePlayResumed(userId, trackId, timestamp) {
+async function handlePlayResumed(userId: string, trackId: string, timestamp: number): Promise<void> {
   const sessionKey = `play_session:${userId}:${trackId}`;
 
   // Reset start time for duration calculation
@@ -119,9 +146,9 @@ async function handlePlayResumed(userId, trackId, timestamp) {
 /**
  * Handle play_completed event
  */
-async function handlePlayCompleted(userId, trackId, position, timestamp) {
+async function handlePlayCompleted(userId: string, trackId: string, position: number, timestamp: number): Promise<void> {
   const sessionKey = `play_session:${userId}:${trackId}`;
-  const session = await redisClient.hGetAll(sessionKey);
+  const session = await redisClient.hGetAll(sessionKey) as PlaySession;
 
   if (session.startTime) {
     const listenDuration = timestamp - parseInt(session.startTime);
@@ -143,7 +170,7 @@ async function handlePlayCompleted(userId, trackId, position, timestamp) {
 /**
  * Handle stream_counted event (30 seconds threshold)
  */
-async function handleStreamCounted(userId, trackId, timestamp) {
+async function handleStreamCounted(userId: string, trackId: string): Promise<void> {
   // Update taste profile with partial listen
   await updateUserTasteProfile(userId, trackId, false);
 
@@ -156,9 +183,9 @@ async function handleStreamCounted(userId, trackId, timestamp) {
 /**
  * Handle skipped event
  */
-async function handleSkipped(userId, trackId, position, timestamp) {
+async function handleSkipped(userId: string, trackId: string, position: number, timestamp: number): Promise<void> {
   const sessionKey = `play_session:${userId}:${trackId}`;
-  const session = await redisClient.hGetAll(sessionKey);
+  const session = await redisClient.hGetAll(sessionKey) as PlaySession;
 
   if (session.startTime) {
     const listenDuration = timestamp - parseInt(session.startTime);
@@ -180,7 +207,7 @@ async function handleSkipped(userId, trackId, position, timestamp) {
 /**
  * Handle seeked event
  */
-async function handleSeeked(userId, trackId, position, timestamp) {
+async function handleSeeked(userId: string, trackId: string, position: number): Promise<void> {
   // Just log for now, could be used for content engagement analysis
   logger.debug({ userId, trackId, position }, 'Track seeked');
 }
@@ -188,7 +215,7 @@ async function handleSeeked(userId, trackId, position, timestamp) {
 /**
  * Update total listening time for user and track
  */
-async function updateListeningTime(userId, trackId, durationMs) {
+async function updateListeningTime(userId: string, trackId: string, durationMs: number): Promise<void> {
   if (durationMs <= 0) return;
 
   // Update user's total listening time in Redis (daily aggregate)
@@ -206,10 +233,10 @@ async function updateListeningTime(userId, trackId, durationMs) {
 /**
  * Update user taste profile based on track listened
  */
-async function updateUserTasteProfile(userId, trackId, completed) {
+async function updateUserTasteProfile(userId: string, trackId: string, completed: boolean): Promise<void> {
   try {
     // Get track details with artist and genres
-    const result = await pool.query(
+    const result = await pool.query<TrackWithAudioFeatures>(
       `SELECT t.id, t.audio_features, a.artist_id, ar.name as artist_name
        FROM tracks t
        JOIN albums a ON t.album_id = a.id
@@ -239,14 +266,15 @@ async function updateUserTasteProfile(userId, trackId, completed) {
 
     logger.debug({ userId, trackId, artistId: track.artist_id }, 'Updated user taste profile');
   } catch (error) {
-    logger.error({ error: error.message, userId, trackId }, 'Failed to update taste profile');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error: errorMessage, userId, trackId }, 'Failed to update taste profile');
   }
 }
 
 /**
  * Update artist monthly listeners and stream count
  */
-async function updateArtistStreamCount(trackId) {
+async function updateArtistStreamCount(trackId: string): Promise<void> {
   try {
     await pool.query(
       `UPDATE artists
@@ -259,14 +287,15 @@ async function updateArtistStreamCount(trackId) {
       [trackId]
     );
   } catch (error) {
-    logger.error({ error: error.message, trackId }, 'Failed to update artist stream count');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error: errorMessage, trackId }, 'Failed to update artist stream count');
   }
 }
 
 /**
  * Increment daily listening statistics
  */
-async function incrementDailyListeningStats(userId, statType) {
+async function incrementDailyListeningStats(userId: string, statType: string): Promise<void> {
   const dateKey = new Date().toISOString().split('T')[0];
   const statsKey = `daily_stats:${userId}:${dateKey}`;
 
@@ -277,7 +306,7 @@ async function incrementDailyListeningStats(userId, statType) {
 /**
  * Record skip position for track analytics
  */
-async function recordSkipPosition(trackId, position) {
+async function recordSkipPosition(trackId: string, position: number): Promise<void> {
   // Store in a Redis sorted set for percentile analysis
   const skipKey = `track_skips:${trackId}`;
   await redisClient.zAdd(skipKey, { score: position, value: Date.now().toString() });
@@ -290,7 +319,7 @@ async function recordSkipPosition(trackId, position) {
 /**
  * Graceful shutdown handler
  */
-async function shutdown() {
+async function shutdown(): Promise<void> {
   logger.info('Shutting down analytics worker...');
 
   try {
@@ -299,7 +328,8 @@ async function shutdown() {
     await pool.end();
     logger.info('Analytics worker shutdown complete');
   } catch (error) {
-    logger.error({ error: error.message }, 'Error during shutdown');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error: errorMessage }, 'Error during shutdown');
   }
 
   process.exit(0);
@@ -308,7 +338,7 @@ async function shutdown() {
 /**
  * Main entry point
  */
-async function main() {
+async function main(): Promise<void> {
   logger.info('Starting analytics worker...');
 
   try {
@@ -324,7 +354,8 @@ async function main() {
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (error) {
-    logger.error({ error: error.message }, 'Failed to start analytics worker');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error: errorMessage }, 'Failed to start analytics worker');
     process.exit(1);
   }
 }
