@@ -6,7 +6,22 @@ import { initializeDatabase, query, getPool } from './models/database.js';
 
 const CATEGORIES = ['music', 'gaming', 'sports', 'news', 'entertainment', 'education'];
 
-const VIDEO_TEMPLATES = [
+interface VideoTemplate {
+  category: string;
+  titles: string[];
+}
+
+interface Video {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string;
+  channel_name: string;
+  category: string;
+  duration_seconds: number;
+}
+
+const VIDEO_TEMPLATES: VideoTemplate[] = [
   // Music
   { category: 'music', titles: ['Amazing Piano Cover', 'Epic Guitar Solo', 'Chill Lofi Beats', 'Viral Dance Song', 'Acoustic Session'] },
   // Gaming
@@ -34,8 +49,8 @@ const CHANNEL_NAMES = [
   'ChillVibes',
 ];
 
-function generateVideos(count = 50) {
-  const videos = [];
+function generateVideos(count = 50): Video[] {
+  const videos: Video[] = [];
 
   for (let i = 0; i < count; i++) {
     const categoryTemplate = VIDEO_TEMPLATES[i % VIDEO_TEMPLATES.length];
@@ -57,7 +72,7 @@ function generateVideos(count = 50) {
   return videos;
 }
 
-async function seed() {
+async function seed(): Promise<void> {
   console.log('Initializing database...');
   await initializeDatabase();
 
@@ -86,7 +101,7 @@ async function seed() {
   await pool.end();
 }
 
-seed().catch((error) => {
+seed().catch((error: Error) => {
   console.error('Seed failed:', error);
   process.exit(1);
 });

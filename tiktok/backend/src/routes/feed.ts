@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, Router } from 'express';
 import { query } from '../db.js';
 import { getRedis } from '../redis.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
@@ -12,8 +12,31 @@ import {
 import { createCircuitBreaker, withCircuitBreaker } from '../shared/circuitBreaker.js';
 import { getEmbeddingBasedRecommendations, generateUserEmbedding } from '../services/embeddings.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 const logger = createLogger('feed');
+
+// Video row type
+interface VideoRow {
+  id: number;
+  creator_id: number;
+  creator_username: string;
+  creator_display_name: string;
+  creator_avatar_url: string | null;
+  video_url: string;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  description: string | null;
+  hashtags: string[] | null;
+  view_count: number;
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+  status: string;
+  created_at: string;
+  source?: string;
+  score?: number;
+  similarity?: number;
+}
 
 // Helper to get rate limiters
 const getLimiters = () => getRateLimiters();
@@ -22,7 +45,11 @@ const getLimiters = () => getRateLimiters();
 const EXPLORE_RATE = 0.2; // 20% exploration
 
 // Helper to format video response
-const formatVideo = (video, userId = null, likedVideoIds = []) => ({
+const formatVideo = (
+  video: VideoRow,
+  userId: number | null = null,
+  likedVideoIds: number[] = []
+): Record<string, unknown> => ({
   id: video.id,
   creatorId: video.creator_id,
   creatorUsername: video.creator_username,
@@ -45,11 +72,11 @@ const formatVideo = (video, userId = null, likedVideoIds = []) => ({
 // Circuit breaker for recommendation service
 const recommendationBreaker = createCircuitBreaker(
   'recommendation',
-  async (userId, limit, offset) => {
+  async (userId: number, limit: number, offset: number): Promise<VideoRow[]> => {
     return await getPersonalizedFeedInternal(userId, limit, offset);
   },
   {
-    timeout: 5000,                    // 5 seconds max
+    timeout: 5000, // 5 seconds max
     errorThresholdPercentage: 50,
     resetTimeout: 15000,
     volumeThreshold: 20,
@@ -57,25 +84,26 @@ const recommendationBreaker = createCircuitBreaker(
 );
 
 // For You Page - personalized feed
-router.get('/fyp', optionalAuth, async (req, res, next) => {
+router.get('/fyp', optionalAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // Apply rate limiting
   const limiters = getLimiters();
   if (limiters?.feed) {
-    return limiters.feed(req, res, async () => {
+    limiters.feed(req, res, async () => {
       await handleFYP(req, res, next);
     });
+    return;
   }
   await handleFYP(req, res, next);
 });
 
-async function handleFYP(req, res, next) {
+async function handleFYP(req: Request, res: Response, _next: NextFunction): Promise<void> {
   const startTime = Date.now();
 
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const offset = parseInt(req.query.offset as string) || 0;
 
-    let videos;
+    let videos: VideoRow[];
     const userId = req.session?.userId;
     const userType = userId ? 'authenticated' : 'anonymous';
 
@@ -84,7 +112,7 @@ async function handleFYP(req, res, next) {
       try {
         videos = await recommendationBreaker.fire(userId, limit, offset);
       } catch (error) {
-        if (error.message === 'Breaker is open') {
+        if ((error as Error).message === 'Breaker is open') {
           logger.warn({ userId }, 'Recommendation circuit open, falling back to trending');
           // Fallback to trending when recommendation service is down
           videos = await getTrendingFeed(limit, offset);
@@ -98,15 +126,15 @@ async function handleFYP(req, res, next) {
     }
 
     // Get liked video IDs if user is logged in
-    let likedVideoIds = [];
+    let likedVideoIds: number[] = [];
     if (userId) {
-      const videoIds = videos.map(v => v.id);
+      const videoIds = videos.map((v) => v.id);
       if (videoIds.length > 0) {
         const likeResult = await query(
           'SELECT video_id FROM likes WHERE user_id = $1 AND video_id = ANY($2)',
           [userId, videoIds]
         );
-        likedVideoIds = likeResult.rows.map(r => r.video_id);
+        likedVideoIds = likeResult.rows.map((r: { video_id: number }) => r.video_id);
       }
     }
 
@@ -115,31 +143,32 @@ async function handleFYP(req, res, next) {
     fypLatencyHistogram.labels(userType).observe(durationSeconds);
 
     res.json({
-      videos: videos.map(v => formatVideo(v, userId, likedVideoIds)),
+      videos: videos.map((v) => formatVideo(v, userId, likedVideoIds)),
       hasMore: videos.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, userId: req.session?.userId }, 'Get FYP error');
+    logger.error({ error: (error as Error).message, userId: req.session?.userId }, 'Get FYP error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Following feed - videos from followed users
-router.get('/following', requireAuth, async (req, res, next) => {
+router.get('/following', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const limiters = getLimiters();
   if (limiters?.feed) {
-    return limiters.feed(req, res, async () => {
+    limiters.feed(req, res, async () => {
       await handleFollowing(req, res, next);
     });
+    return;
   }
   await handleFollowing(req, res, next);
 });
 
-async function handleFollowing(req, res, next) {
+async function handleFollowing(req: Request, res: Response, _next: NextFunction): Promise<void> {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const offset = parseInt(req.query.offset) || 0;
-    const userId = req.session.userId;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const userId = req.session.userId as number;
 
     const result = await query(
       `SELECT v.*, u.username as creator_username, u.display_name as creator_display_name,
@@ -154,74 +183,75 @@ async function handleFollowing(req, res, next) {
     );
 
     // Get liked video IDs
-    const videoIds = result.rows.map(v => v.id);
-    let likedVideoIds = [];
+    const videoIds = result.rows.map((v: VideoRow) => v.id);
+    let likedVideoIds: number[] = [];
     if (videoIds.length > 0) {
       const likeResult = await query(
         'SELECT video_id FROM likes WHERE user_id = $1 AND video_id = ANY($2)',
         [userId, videoIds]
       );
-      likedVideoIds = likeResult.rows.map(r => r.video_id);
+      likedVideoIds = likeResult.rows.map((r: { video_id: number }) => r.video_id);
     }
 
     res.json({
-      videos: result.rows.map(v => formatVideo(v, userId, likedVideoIds)),
+      videos: result.rows.map((v: VideoRow) => formatVideo(v, userId, likedVideoIds)),
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, userId: req.session.userId }, 'Get following feed error');
+    logger.error({ error: (error as Error).message, userId: req.session.userId }, 'Get following feed error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Trending feed
-router.get('/trending', optionalAuth, async (req, res, next) => {
+router.get('/trending', optionalAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const limiters = getLimiters();
   if (limiters?.feed) {
-    return limiters.feed(req, res, async () => {
+    limiters.feed(req, res, async () => {
       await handleTrending(req, res, next);
     });
+    return;
   }
   await handleTrending(req, res, next);
 });
 
-async function handleTrending(req, res, next) {
+async function handleTrending(req: Request, res: Response, _next: NextFunction): Promise<void> {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const offset = parseInt(req.query.offset as string) || 0;
     const userId = req.session?.userId;
 
     const videos = await getTrendingFeed(limit, offset);
 
     // Get liked video IDs if user is logged in
-    let likedVideoIds = [];
+    let likedVideoIds: number[] = [];
     if (userId) {
-      const videoIds = videos.map(v => v.id);
+      const videoIds = videos.map((v) => v.id);
       if (videoIds.length > 0) {
         const likeResult = await query(
           'SELECT video_id FROM likes WHERE user_id = $1 AND video_id = ANY($2)',
           [userId, videoIds]
         );
-        likedVideoIds = likeResult.rows.map(r => r.video_id);
+        likedVideoIds = likeResult.rows.map((r: { video_id: number }) => r.video_id);
       }
     }
 
     res.json({
-      videos: videos.map(v => formatVideo(v, userId, likedVideoIds)),
+      videos: videos.map((v) => formatVideo(v, userId, likedVideoIds)),
       hasMore: videos.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message }, 'Get trending error');
+    logger.error({ error: (error as Error).message }, 'Get trending error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Hashtag feed
-router.get('/hashtag/:tag', optionalAuth, async (req, res) => {
+router.get('/hashtag/:tag', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { tag } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const offset = parseInt(req.query.offset as string) || 0;
     const userId = req.session?.userId;
 
     const result = await query(
@@ -236,49 +266,51 @@ router.get('/hashtag/:tag', optionalAuth, async (req, res) => {
     );
 
     // Get liked video IDs if user is logged in
-    let likedVideoIds = [];
+    let likedVideoIds: number[] = [];
     if (userId) {
-      const videoIds = result.rows.map(v => v.id);
+      const videoIds = result.rows.map((v: VideoRow) => v.id);
       if (videoIds.length > 0) {
         const likeResult = await query(
           'SELECT video_id FROM likes WHERE user_id = $1 AND video_id = ANY($2)',
           [userId, videoIds]
         );
-        likedVideoIds = likeResult.rows.map(r => r.video_id);
+        likedVideoIds = likeResult.rows.map((r: { video_id: number }) => r.video_id);
       }
     }
 
     res.json({
       hashtag: tag.toLowerCase(),
-      videos: result.rows.map(v => formatVideo(v, userId, likedVideoIds)),
+      videos: result.rows.map((v: VideoRow) => formatVideo(v, userId, likedVideoIds)),
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, hashtag: req.params.tag }, 'Get hashtag feed error');
+    logger.error({ error: (error as Error).message, hashtag: req.params.tag }, 'Get hashtag feed error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Search videos
-router.get('/search', optionalAuth, async (req, res, next) => {
+router.get('/search', optionalAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const limiters = getLimiters();
   if (limiters?.search) {
-    return limiters.search(req, res, async () => {
+    limiters.search(req, res, async () => {
       await handleSearch(req, res, next);
     });
+    return;
   }
   await handleSearch(req, res, next);
 });
 
-async function handleSearch(req, res, next) {
+async function handleSearch(req: Request, res: Response, _next: NextFunction): Promise<void> {
   try {
-    const { q } = req.query;
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-    const offset = parseInt(req.query.offset) || 0;
+    const { q } = req.query as { q?: string };
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const offset = parseInt(req.query.offset as string) || 0;
     const userId = req.session?.userId;
 
     if (!q || q.trim().length === 0) {
-      return res.status(400).json({ error: 'Search query is required' });
+      res.status(400).json({ error: 'Search query is required' });
+      return;
     }
 
     const searchTerm = `%${q.trim().toLowerCase()}%`;
@@ -300,15 +332,15 @@ async function handleSearch(req, res, next) {
     );
 
     // Get liked video IDs if user is logged in
-    let likedVideoIds = [];
+    let likedVideoIds: number[] = [];
     if (userId) {
-      const videoIds = result.rows.map(v => v.id);
+      const videoIds = result.rows.map((v: VideoRow) => v.id);
       if (videoIds.length > 0) {
         const likeResult = await query(
           'SELECT video_id FROM likes WHERE user_id = $1 AND video_id = ANY($2)',
           [userId, videoIds]
         );
-        likedVideoIds = likeResult.rows.map(r => r.video_id);
+        likedVideoIds = likeResult.rows.map((r: { video_id: number }) => r.video_id);
       }
     }
 
@@ -316,17 +348,21 @@ async function handleSearch(req, res, next) {
 
     res.json({
       query: q,
-      videos: result.rows.map(v => formatVideo(v, userId, likedVideoIds)),
+      videos: result.rows.map((v: VideoRow) => formatVideo(v, userId, likedVideoIds)),
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, query: req.query.q }, 'Search error');
+    logger.error({ error: (error as Error).message, query: req.query.q }, 'Search error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Internal personalized feed function (wrapped by circuit breaker)
-async function getPersonalizedFeedInternal(userId, limit, offset) {
+async function getPersonalizedFeedInternal(
+  userId: number,
+  limit: number,
+  offset: number
+): Promise<VideoRow[]> {
   // Phase 1: Candidate Generation with metrics
   const candidates = await timeAsync(
     recommendationLatencyHistogram,
@@ -346,8 +382,8 @@ async function getPersonalizedFeedInternal(userId, limit, offset) {
 }
 
 // Generate candidate videos from multiple sources
-async function generateCandidates(userId, count) {
-  const candidateMap = new Map();
+async function generateCandidates(userId: number, count: number): Promise<VideoRow[]> {
+  const candidateMap = new Map<number, VideoRow>();
 
   // Source 1: Videos from followed creators (30%)
   const followedCount = Math.floor(count * 0.3);
@@ -362,7 +398,7 @@ async function generateCandidates(userId, count) {
      LIMIT $2`,
     [userId, followedCount]
   );
-  for (const video of followedResult.rows) {
+  for (const video of followedResult.rows as VideoRow[]) {
     candidateMap.set(video.id, { ...video, source: 'followed' });
   }
 
@@ -373,8 +409,15 @@ async function generateCandidates(userId, count) {
     [userId]
   );
 
-  if (prefResult.rows.length > 0 && prefResult.rows[0].hashtag_preferences) {
-    const prefs = prefResult.rows[0].hashtag_preferences;
+  interface HashtagPrefs {
+    hashtag_preferences: Record<string, number> | null;
+  }
+
+  if (
+    prefResult.rows.length > 0 &&
+    (prefResult.rows[0] as HashtagPrefs).hashtag_preferences
+  ) {
+    const prefs = (prefResult.rows[0] as HashtagPrefs).hashtag_preferences!;
     const topHashtags = Object.entries(prefs)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
@@ -392,7 +435,7 @@ async function generateCandidates(userId, count) {
          LIMIT $3`,
         [topHashtags, userId, hashtagCount]
       );
-      for (const video of hashtagResult.rows) {
+      for (const video of hashtagResult.rows as VideoRow[]) {
         if (!candidateMap.has(video.id)) {
           candidateMap.set(video.id, { ...video, source: 'hashtag' });
         }
@@ -404,13 +447,13 @@ async function generateCandidates(userId, count) {
   const embeddingCount = Math.floor(count * 0.2);
   try {
     const embeddingVideos = await getEmbeddingBasedRecommendations(userId, embeddingCount);
-    for (const video of embeddingVideos) {
+    for (const video of embeddingVideos as VideoRow[]) {
       if (!candidateMap.has(video.id)) {
         candidateMap.set(video.id, { ...video, source: 'embedding' });
       }
     }
   } catch (error) {
-    logger.warn({ error: error.message, userId }, 'Embedding recommendations failed, skipping');
+    logger.warn({ error: (error as Error).message, userId }, 'Embedding recommendations failed, skipping');
   }
 
   // Source 4: Trending videos for exploration (30%)
@@ -426,7 +469,7 @@ async function generateCandidates(userId, count) {
      LIMIT $2`,
     [userId, trendingCount]
   );
-  for (const video of trendingResult.rows) {
+  for (const video of trendingResult.rows as VideoRow[]) {
     if (!candidateMap.has(video.id)) {
       candidateMap.set(video.id, { ...video, source: 'trending' });
     }
@@ -436,16 +479,22 @@ async function generateCandidates(userId, count) {
 }
 
 // Rank videos based on predicted engagement
-async function rankVideos(userId, candidates) {
+async function rankVideos(userId: number, candidates: VideoRow[]): Promise<VideoRow[]> {
   // Get user preferences
   const prefResult = await query(
     'SELECT hashtag_preferences FROM user_embeddings WHERE user_id = $1',
     [userId]
   );
-  const userPrefs = prefResult.rows[0]?.hashtag_preferences || {};
+
+  interface HashtagPrefs {
+    hashtag_preferences: Record<string, number> | null;
+  }
+
+  const userPrefs =
+    (prefResult.rows[0] as HashtagPrefs)?.hashtag_preferences || {};
 
   // Score each video
-  const scored = candidates.map(video => {
+  const scored = candidates.map((video) => {
     let score = 0;
 
     // Base score from engagement metrics (normalized)
@@ -478,7 +527,7 @@ async function rankVideos(userId, candidates) {
     // Freshness boost (videos from last 24h get a boost)
     const ageHours = (Date.now() - new Date(video.created_at).getTime()) / (1000 * 60 * 60);
     if (ageHours < 24) {
-      score += (24 - ageHours) / 24 * 3;
+      score += ((24 - ageHours) / 24) * 3;
     }
 
     // Exploration: Add randomness
@@ -490,13 +539,13 @@ async function rankVideos(userId, candidates) {
   });
 
   // Sort by score
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => (b.score || 0) - (a.score || 0));
 
   return scored;
 }
 
 // Get trending feed for anonymous users
-async function getTrendingFeed(limit, offset) {
+async function getTrendingFeed(limit: number, offset: number): Promise<VideoRow[]> {
   const result = await query(
     `SELECT v.*, u.username as creator_username, u.display_name as creator_display_name,
             u.avatar_url as creator_avatar_url
@@ -508,7 +557,7 @@ async function getTrendingFeed(limit, offset) {
      LIMIT $1 OFFSET $2`,
     [limit, offset]
   );
-  return result.rows;
+  return result.rows as VideoRow[];
 }
 
 export default router;

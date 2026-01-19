@@ -26,7 +26,8 @@
     "api-server/src/**/*.ts",
     "gateway/src/**/*.ts",
     "load-balancer/src/**/*.ts",
-    "shared/**/*.ts"
+    "shared/**/*.ts",
+    "*.ts"
   ],
   "exclude": [
     "node_modules",

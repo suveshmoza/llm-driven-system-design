@@ -35,6 +35,27 @@ interface BookingPricing {
   total: number;
 }
 
+interface BookingRow {
+  id: number;
+  listing_id: number;
+  guest_id: number;
+  check_in: string;
+  check_out: string;
+  guests: number;
+  nights: number;
+  price_per_night: number;
+  cleaning_fee: number;
+  service_fee: number;
+  total_price: number;
+  status: string;
+  guest_message?: string;
+  host_response?: string;
+  cancelled_by?: string;
+  cancelled_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // Calculate booking price
 const calculateBookingPrice = (listing: ListingRow, checkIn: string, checkOut: string): BookingPricing => {
   const checkInDate = new Date(checkIn);
@@ -361,7 +382,7 @@ router.get('/:id', authenticate, async (req, res) => {
     const booking = result.rows[0];
 
     // Verify access (guest or host)
-    if (booking.guest_id !== req.user.id && booking.host_id !== req.user.id) {
+    if (booking.guest_id !== req.user!.id && booking.host_id !== req.user!.id) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
@@ -387,7 +408,7 @@ router.put('/:id/respond', authenticate, requireHost, async (req, res) => {
       `SELECT b.*, l.host_id, l.title as listing_title FROM bookings b
       JOIN listings l ON b.listing_id = l.id
       WHERE b.id = $1 AND l.host_id = $2 AND b.status = 'pending'`,
-      [id, req.user.id]
+      [id, req.user!.id]
     );
 
     if (bookingResult.rows.length === 0) {
@@ -472,8 +493,8 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
     const booking = bookingResult.rows[0];
 
     // Verify access
-    const isGuest = booking.guest_id === req.user.id;
-    const isHost = booking.host_id === req.user.id;
+    const isGuest = booking.guest_id === req.user!.id;
+    const isHost = booking.host_id === req.user!.id;
 
     if (!isGuest && !isHost) {
       return res.status(403).json({ error: 'Not authorized' });
@@ -540,7 +561,7 @@ router.put('/:id/complete', authenticate, requireHost, async (req, res) => {
   const { id } = req.params;
 
   try {
-    const result = await query(
+    const result = await query<BookingRow>(
       `UPDATE bookings b
       SET status = 'completed'
       FROM listings l
@@ -550,7 +571,7 @@ router.put('/:id/complete', authenticate, requireHost, async (req, res) => {
         AND b.status = 'confirmed'
         AND b.check_out <= CURRENT_DATE
       RETURNING b.*`,
-      [id, req.user.id]
+      [id, req.user!.id]
     );
 
     if (result.rows.length === 0) {

@@ -9,8 +9,26 @@
  */
 import logger from './logger.js';
 
+interface RetryOptions {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  factor: number;
+  jitter: boolean;
+  jitterFactor: number;
+  retryOn: ((error: RetryableError) => boolean) | null;
+}
+
+interface RetryableError extends Error {
+  code?: string;
+  status?: number;
+  meta?: {
+    statusCode?: number;
+  };
+}
+
 // Default retry options
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: RetryOptions = {
   maxAttempts: 3,          // Maximum number of retry attempts
   baseDelayMs: 100,        // Initial delay in milliseconds
   maxDelayMs: 10000,       // Maximum delay cap
@@ -21,14 +39,14 @@ const DEFAULT_OPTIONS = {
 };
 
 // Common retryable error conditions
-const isRetryableError = (error) => {
+const isRetryableError = (error: RetryableError): boolean => {
   // Network errors
   if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
     return true;
   }
 
   // HTTP 5xx errors
-  if (error.status >= 500 && error.status < 600) {
+  if (error.status !== undefined && error.status >= 500 && error.status < 600) {
     return true;
   }
 
@@ -51,7 +69,7 @@ const isRetryableError = (error) => {
 };
 
 // Errors that should never be retried
-const isNonRetryableError = (error) => {
+const isNonRetryableError = (error: RetryableError): boolean => {
   // Validation errors
   if (error.name === 'ValidationError') {
     return true;
@@ -77,11 +95,8 @@ const isNonRetryableError = (error) => {
 
 /**
  * Calculate delay with exponential backoff and optional jitter
- * @param {number} attempt - Current attempt number (1-based)
- * @param {Object} options - Retry options
- * @returns {number} Delay in milliseconds
  */
-function calculateDelay(attempt, options) {
+function calculateDelay(attempt: number, options: RetryOptions): number {
   // Calculate base exponential delay
   let delay = options.baseDelayMs * Math.pow(options.factor, attempt - 1);
 
@@ -99,34 +114,32 @@ function calculateDelay(attempt, options) {
 
 /**
  * Sleep for specified milliseconds
- * @param {number} ms - Milliseconds to sleep
- * @returns {Promise} Promise that resolves after delay
  */
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
  * Execute a function with retry logic
- * @param {Function} fn - Async function to execute
- * @param {Object} options - Retry options
- * @returns {Promise} Result of the function
  */
-export async function withRetry(fn, options = {}) {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: Partial<RetryOptions> = {}
+): Promise<T> {
+  const opts: RetryOptions = { ...DEFAULT_OPTIONS, ...options };
   const retryOn = opts.retryOn || isRetryableError;
 
-  let lastError;
+  let lastError: RetryableError;
 
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      lastError = error;
+      lastError = error as RetryableError;
 
       // Don't retry non-retryable errors
-      if (isNonRetryableError(error)) {
-        throw error;
+      if (isNonRetryableError(lastError)) {
+        throw lastError;
       }
 
       // Check if we've exhausted attempts
@@ -134,18 +147,18 @@ export async function withRetry(fn, options = {}) {
         logger.error({
           attempt,
           maxAttempts: opts.maxAttempts,
-          error: error.message
+          error: lastError.message
         }, 'All retry attempts exhausted');
-        throw error;
+        throw lastError;
       }
 
       // Check if error is retryable
-      if (!retryOn(error)) {
+      if (!retryOn(lastError)) {
         logger.warn({
           attempt,
-          error: error.message
+          error: lastError.message
         }, 'Error is not retryable, failing immediately');
-        throw error;
+        throw lastError;
       }
 
       // Calculate delay for next attempt
@@ -155,24 +168,24 @@ export async function withRetry(fn, options = {}) {
         attempt,
         maxAttempts: opts.maxAttempts,
         delayMs: delay,
-        error: error.message
+        error: lastError.message
       }, 'Retrying after transient error');
 
       await sleep(delay);
     }
   }
 
-  throw lastError;
+  throw lastError!;
 }
 
 /**
  * Create a retry wrapper for a specific function
- * @param {Function} fn - Function to wrap
- * @param {Object} options - Retry options
- * @returns {Function} Wrapped function with retry logic
  */
-export function createRetryWrapper(fn, options = {}) {
-  return async (...args) => {
+export function createRetryWrapper<T extends unknown[], R>(
+  fn: (...args: T) => Promise<R>,
+  options: Partial<RetryOptions> = {}
+): (...args: T) => Promise<R> {
+  return async (...args: T): Promise<R> => {
     return withRetry(() => fn(...args), options);
   };
 }
@@ -184,13 +197,13 @@ export function createRetryWrapper(fn, options = {}) {
 /**
  * Retry strategy for database operations
  */
-export const databaseRetryOptions = {
+export const databaseRetryOptions: Partial<RetryOptions> = {
   maxAttempts: 3,
   baseDelayMs: 50,
   maxDelayMs: 1000,
   factor: 2,
   jitter: true,
-  retryOn: (error) => {
+  retryOn: (error: RetryableError): boolean => {
     // PostgreSQL transient errors
     return error.code === '40001' ||  // serialization_failure
            error.code === '40P01' ||  // deadlock_detected
@@ -203,13 +216,13 @@ export const databaseRetryOptions = {
  * Retry strategy for payment operations
  * More conservative - fewer retries, longer delays
  */
-export const paymentRetryOptions = {
+export const paymentRetryOptions: Partial<RetryOptions> = {
   maxAttempts: 2,
   baseDelayMs: 500,
   maxDelayMs: 5000,
   factor: 2,
   jitter: true,
-  retryOn: (error) => {
+  retryOn: (error: RetryableError): boolean => {
     // Only retry on network issues, not on payment-specific errors
     return error.code === 'ECONNRESET' ||
            error.code === 'ETIMEDOUT' ||
@@ -222,30 +235,30 @@ export const paymentRetryOptions = {
 /**
  * Retry strategy for external API calls
  */
-export const externalApiRetryOptions = {
+export const externalApiRetryOptions: Partial<RetryOptions> = {
   maxAttempts: 3,
   baseDelayMs: 200,
   maxDelayMs: 5000,
   factor: 2,
   jitter: true,
-  retryOn: (error) => {
+  retryOn: (error: RetryableError): boolean => {
     return error.code === 'ECONNRESET' ||
            error.code === 'ETIMEDOUT' ||
            error.status === 429 ||  // Rate limited
-           error.status >= 500;
+           (error.status !== undefined && error.status >= 500);
   }
 };
 
 /**
  * Retry strategy for cache operations (Redis)
  */
-export const cacheRetryOptions = {
+export const cacheRetryOptions: Partial<RetryOptions> = {
   maxAttempts: 2,
   baseDelayMs: 50,
   maxDelayMs: 500,
   factor: 2,
   jitter: true,
-  retryOn: (error) => {
+  retryOn: (error: RetryableError): boolean => {
     return error.code === 'NR_CLOSED' ||
            error.code === 'CONNECTION_BROKEN' ||
            error.code === 'ECONNRESET';
@@ -255,61 +268,51 @@ export const cacheRetryOptions = {
 /**
  * Retry strategy for Elasticsearch operations
  */
-export const searchRetryOptions = {
+export const searchRetryOptions: Partial<RetryOptions> = {
   maxAttempts: 2,
   baseDelayMs: 100,
   maxDelayMs: 2000,
   factor: 2,
   jitter: true,
-  retryOn: (error) => {
+  retryOn: (error: RetryableError): boolean => {
     return error.code === 'ECONNRESET' ||
            error.name === 'ConnectionError' ||
-           error.meta?.statusCode >= 500;
+           (error.meta?.statusCode !== undefined && error.meta.statusCode >= 500);
   }
 };
 
 /**
  * Execute database operation with retry
- * @param {Function} fn - Database operation
- * @returns {Promise} Operation result
  */
-export async function withDatabaseRetry(fn) {
+export async function withDatabaseRetry<T>(fn: () => Promise<T>): Promise<T> {
   return withRetry(fn, databaseRetryOptions);
 }
 
 /**
  * Execute payment operation with retry
- * @param {Function} fn - Payment operation
- * @returns {Promise} Operation result
  */
-export async function withPaymentRetry(fn) {
+export async function withPaymentRetry<T>(fn: () => Promise<T>): Promise<T> {
   return withRetry(fn, paymentRetryOptions);
 }
 
 /**
  * Execute external API call with retry
- * @param {Function} fn - API call
- * @returns {Promise} API response
  */
-export async function withApiRetry(fn) {
+export async function withApiRetry<T>(fn: () => Promise<T>): Promise<T> {
   return withRetry(fn, externalApiRetryOptions);
 }
 
 /**
  * Execute cache operation with retry
- * @param {Function} fn - Cache operation
- * @returns {Promise} Operation result
  */
-export async function withCacheRetry(fn) {
+export async function withCacheRetry<T>(fn: () => Promise<T>): Promise<T> {
   return withRetry(fn, cacheRetryOptions);
 }
 
 /**
  * Execute search operation with retry
- * @param {Function} fn - Search operation
- * @returns {Promise} Search results
  */
-export async function withSearchRetry(fn) {
+export async function withSearchRetry<T>(fn: () => Promise<T>): Promise<T> {
   return withRetry(fn, searchRetryOptions);
 }
 

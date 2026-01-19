@@ -1,8 +1,8 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../db.js';
 import redisClient from '../redis.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { haversineDistance, calculateETA } from '../utils/geo.js';
+import { haversineDistance, calculateETA, ETAResult } from '../utils/geo.js';
 import { broadcast, broadcastToChannels } from '../websocket.js';
 
 // Shared modules
@@ -19,15 +19,20 @@ import {
 } from '../shared/metrics.js';
 import { auditOrderCreated, auditOrderStatusChange, auditDriverAssigned, ACTOR_TYPES } from '../shared/audit.js';
 import { idempotencyMiddleware, IDEMPOTENCY_KEYS, clearIdempotencyKey } from '../shared/idempotency.js';
-import { getDriverMatchCircuitBreaker } from '../shared/circuit-breaker.js';
+import { getDriverMatchCircuitBreaker, DriverMatchResult } from '../shared/circuit-breaker.js';
 import { publishOrderEvent, publishDispatchEvent } from '../shared/kafka.js';
 
 const router = Router();
 
 const TAX_RATE = 0.0875; // 8.75% tax
 
+interface OrderTransition {
+  next: string[];
+  actor: string | null;
+}
+
 // Order status flow
-const ORDER_TRANSITIONS = {
+const ORDER_TRANSITIONS: Record<string, OrderTransition> = {
   PLACED: { next: ['CONFIRMED', 'CANCELLED'], actor: 'restaurant' },
   CONFIRMED: { next: ['PREPARING', 'CANCELLED'], actor: 'restaurant' },
   PREPARING: { next: ['READY_FOR_PICKUP'], actor: 'restaurant' },
@@ -38,191 +43,294 @@ const ORDER_TRANSITIONS = {
   CANCELLED: { next: [], actor: null },
 };
 
+interface DeliveryAddress {
+  lat: number;
+  lon: number;
+  address: string;
+}
+
+interface OrderItem {
+  menuItemId: number;
+  name: string;
+  price: number;
+  quantity: number;
+  specialInstructions?: string;
+}
+
+interface Order {
+  id: number;
+  customer_id: number;
+  restaurant_id: number;
+  driver_id?: number | null;
+  status: string;
+  subtotal: number;
+  delivery_fee: number;
+  tax: number;
+  tip: number;
+  total: number;
+  delivery_address: DeliveryAddress;
+  delivery_instructions?: string;
+  placed_at?: string;
+  confirmed_at?: string;
+  preparing_at?: string;
+  ready_at?: string;
+  picked_up_at?: string;
+  delivered_at?: string;
+  cancelled_at?: string;
+  cancel_reason?: string;
+  estimated_delivery_at?: string;
+  eta_breakdown?: ETAResult['breakdown'];
+  items?: OrderItem[];
+  restaurant?: {
+    id: number;
+    name: string;
+    address: string;
+    lat: number;
+    lon: number;
+    prep_time_minutes?: number;
+    image_url?: string;
+    owner_id?: number;
+  };
+  driver?: {
+    id: number;
+    user_id: number;
+    name: string;
+    phone?: string;
+    current_lat?: number;
+    current_lon?: number;
+    rating?: number;
+    vehicle_type?: string;
+    total_deliveries?: number;
+  };
+}
+
+interface NearbyDriver {
+  id: number;
+  distance: number;
+}
+
+interface ScoredDriver {
+  driver: {
+    id: number;
+    name: string;
+    rating?: number | string;
+    total_deliveries: number;
+    user_id: number;
+  };
+  score: number;
+  distance: number;
+}
+
 // Place a new order - with idempotency to prevent duplicate orders
-router.post('/', requireAuth, idempotencyMiddleware(IDEMPOTENCY_KEYS.ORDER_CREATE), async (req, res) => {
-  const startTime = Date.now();
+router.post(
+  '/',
+  requireAuth,
+  idempotencyMiddleware(IDEMPOTENCY_KEYS.ORDER_CREATE),
+  async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
 
-  try {
-    const { restaurantId, items, deliveryAddress, deliveryInstructions, tip = 0 } = req.body;
+    try {
+      const { restaurantId, items, deliveryAddress, deliveryInstructions, tip = 0 } = req.body;
 
-    if (!restaurantId || !items || !items.length || !deliveryAddress) {
-      // Clear idempotency key on validation error so client can retry
-      await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-      return res.status(400).json({ error: 'Restaurant, items, and delivery address are required' });
-    }
+      if (!restaurantId || !items || !items.length || !deliveryAddress) {
+        // Clear idempotency key on validation error so client can retry
+        await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
+        res.status(400).json({ error: 'Restaurant, items, and delivery address are required' });
+        return;
+      }
 
-    if (!deliveryAddress.lat || !deliveryAddress.lon || !deliveryAddress.address) {
-      await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-      return res.status(400).json({ error: 'Delivery address must include lat, lon, and address' });
-    }
+      if (!deliveryAddress.lat || !deliveryAddress.lon || !deliveryAddress.address) {
+        await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
+        res.status(400).json({ error: 'Delivery address must include lat, lon, and address' });
+        return;
+      }
 
-    // Get restaurant
-    const restaurantResult = await query('SELECT * FROM restaurants WHERE id = $1', [restaurantId]);
-    if (restaurantResult.rows.length === 0) {
-      await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-      return res.status(404).json({ error: 'Restaurant not found' });
-    }
-    const restaurant = restaurantResult.rows[0];
+      // Get restaurant
+      const restaurantResult = await query('SELECT * FROM restaurants WHERE id = $1', [restaurantId]);
+      if (restaurantResult.rows.length === 0) {
+        await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
+        res.status(404).json({ error: 'Restaurant not found' });
+        return;
+      }
+      const restaurant = restaurantResult.rows[0];
 
-    // Get menu items
-    const itemIds = items.map((i) => i.menuItemId);
-    const menuResult = await query(
-      `SELECT id, name, price, is_available FROM menu_items
+      // Get menu items
+      const itemIds = items.map((i: { menuItemId: number }) => i.menuItemId);
+      const menuResult = await query(
+        `SELECT id, name, price, is_available FROM menu_items
        WHERE id = ANY($1) AND restaurant_id = $2`,
-      [itemIds, restaurantId]
-    );
+        [itemIds, restaurantId]
+      );
 
-    const menuItems = new Map(menuResult.rows.map((i) => [i.id, i]));
+      const menuItems = new Map<number, { id: number; name: string; price: string; is_available: boolean }>(
+        menuResult.rows.map((i: { id: number; name: string; price: string; is_available: boolean }) => [
+          i.id,
+          i,
+        ])
+      );
 
-    // Validate all items exist and are available
-    let subtotal = 0;
-    const orderItems = [];
-    for (const item of items) {
-      const menuItem = menuItems.get(item.menuItemId);
-      if (!menuItem) {
-        await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-        return res.status(400).json({ error: `Menu item ${item.menuItemId} not found` });
+      // Validate all items exist and are available
+      let subtotal = 0;
+      const orderItems: OrderItem[] = [];
+      for (const item of items) {
+        const menuItem = menuItems.get(item.menuItemId);
+        if (!menuItem) {
+          await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
+          res.status(400).json({ error: `Menu item ${item.menuItemId} not found` });
+          return;
+        }
+        if (!menuItem.is_available) {
+          await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
+          res.status(400).json({ error: `${menuItem.name} is not available` });
+          return;
+        }
+
+        const quantity = item.quantity || 1;
+        subtotal += parseFloat(menuItem.price) * quantity;
+        orderItems.push({
+          menuItemId: menuItem.id,
+          name: menuItem.name,
+          price: parseFloat(menuItem.price),
+          quantity,
+          specialInstructions: item.specialInstructions,
+        });
       }
-      if (!menuItem.is_available) {
+
+      // Check minimum order
+      if (subtotal < parseFloat(restaurant.min_order)) {
         await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-        return res.status(400).json({ error: `${menuItem.name} is not available` });
+        res.status(400).json({
+          error: `Minimum order is $${restaurant.min_order}`,
+        });
+        return;
       }
 
-      const quantity = item.quantity || 1;
-      subtotal += parseFloat(menuItem.price) * quantity;
-      orderItems.push({
-        menuItemId: menuItem.id,
-        name: menuItem.name,
-        price: menuItem.price,
-        quantity,
-        specialInstructions: item.specialInstructions,
-      });
-    }
+      const deliveryFee = parseFloat(restaurant.delivery_fee);
+      const tax = subtotal * TAX_RATE;
+      const total = subtotal + deliveryFee + tax + parseFloat(tip);
 
-    // Check minimum order
-    if (subtotal < parseFloat(restaurant.min_order)) {
-      await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-      return res.status(400).json({
-        error: `Minimum order is $${restaurant.min_order}`,
-      });
-    }
-
-    const deliveryFee = parseFloat(restaurant.delivery_fee);
-    const tax = subtotal * TAX_RATE;
-    const total = subtotal + deliveryFee + tax + parseFloat(tip);
-
-    // Create order
-    const orderResult = await query(
-      `INSERT INTO orders (customer_id, restaurant_id, subtotal, delivery_fee, tax, tip, total, delivery_address, delivery_instructions)
+      // Create order
+      const orderResult = await query(
+        `INSERT INTO orders (customer_id, restaurant_id, subtotal, delivery_fee, tax, tip, total, delivery_address, delivery_instructions)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [
-        req.user.id,
-        restaurantId,
-        subtotal.toFixed(2),
-        deliveryFee.toFixed(2),
-        tax.toFixed(2),
-        parseFloat(tip).toFixed(2),
-        total.toFixed(2),
-        JSON.stringify(deliveryAddress),
-        deliveryInstructions,
-      ]
-    );
-
-    const order = orderResult.rows[0];
-
-    // Insert order items
-    for (const item of orderItems) {
-      await query(
-        `INSERT INTO order_items (order_id, menu_item_id, name, price, quantity, special_instructions)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [order.id, item.menuItemId, item.name, item.price, item.quantity, item.specialInstructions]
+        [
+          req.user!.id,
+          restaurantId,
+          subtotal.toFixed(2),
+          deliveryFee.toFixed(2),
+          tax.toFixed(2),
+          parseFloat(tip).toFixed(2),
+          total.toFixed(2),
+          JSON.stringify(deliveryAddress),
+          deliveryInstructions,
+        ]
       );
-    }
 
-    // Get full order details
-    const fullOrder = await getOrderWithDetails(order.id);
-    fullOrder.items = orderItems;
+      const order = orderResult.rows[0];
 
-    // Record metrics
-    ordersTotal.inc({ status: 'PLACED', restaurant_id: restaurantId.toString() });
-    ordersActive.inc({ status: 'PLACED' });
-    orderPlacementDuration.observe((Date.now() - startTime) / 1000);
-
-    // Create audit log
-    await auditOrderCreated(
-      fullOrder,
-      { type: ACTOR_TYPES.CUSTOMER, id: req.user.id },
-      {
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
-        idempotencyKey: req.idempotencyKey,
+      // Insert order items
+      for (const item of orderItems) {
+        await query(
+          `INSERT INTO order_items (order_id, menu_item_id, name, price, quantity, special_instructions)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+          [order.id, item.menuItemId, item.name, item.price, item.quantity, item.specialInstructions]
+        );
       }
-    );
 
-    logger.info({
-      orderId: order.id,
-      customerId: req.user.id,
-      restaurantId,
-      total: order.total,
-      itemCount: orderItems.length,
-    }, 'Order placed');
+      // Get full order details
+      const fullOrder = await getOrderWithDetails(order.id);
+      if (fullOrder) {
+        fullOrder.items = orderItems;
+      }
 
-    // Publish order created event to Kafka
-    publishOrderEvent(order.id.toString(), 'created', {
-      customerId: req.user.id,
-      restaurantId,
-      total: order.total,
-      itemCount: orderItems.length,
-      deliveryAddress,
-    });
+      // Record metrics
+      ordersTotal.inc({ status: 'PLACED', restaurant_id: restaurantId.toString() });
+      ordersActive.inc({ status: 'PLACED' });
+      orderPlacementDuration.observe((Date.now() - startTime) / 1000);
 
-    // Notify restaurant via WebSocket
-    broadcast(`restaurant:${restaurantId}:orders`, {
-      type: 'new_order',
-      order: fullOrder,
-    });
+      // Create audit log
+      await auditOrderCreated(
+        fullOrder!,
+        { type: ACTOR_TYPES.CUSTOMER, id: req.user!.id },
+        {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          idempotencyKey: req.idempotencyKey,
+        }
+      );
 
-    res.status(201).json({ order: fullOrder });
-  } catch (err) {
-    // Clear idempotency key on error so client can retry
-    await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
-    logger.error({ error: err.message, stack: err.stack }, 'Place order error');
-    res.status(500).json({ error: 'Failed to place order' });
+      logger.info(
+        {
+          orderId: order.id,
+          customerId: req.user!.id,
+          restaurantId,
+          total: order.total,
+          itemCount: orderItems.length,
+        },
+        'Order placed'
+      );
+
+      // Publish order created event to Kafka
+      publishOrderEvent(order.id.toString(), 'created', {
+        customerId: req.user!.id,
+        restaurantId,
+        total: order.total,
+        itemCount: orderItems.length,
+        deliveryAddress,
+      });
+
+      // Notify restaurant via WebSocket
+      broadcast(`restaurant:${restaurantId}:orders`, {
+        type: 'new_order',
+        order: fullOrder,
+      });
+
+      res.status(201).json({ order: fullOrder });
+    } catch (err) {
+      const error = err as Error;
+      // Clear idempotency key on error so client can retry
+      await clearIdempotencyKey(IDEMPOTENCY_KEYS.ORDER_CREATE, req.idempotencyKey);
+      logger.error({ error: error.message, stack: error.stack }, 'Place order error');
+      res.status(500).json({ error: 'Failed to place order' });
+    }
   }
-});
+);
 
 // Get order by ID
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const order = await getOrderWithDetails(id);
+    const order = await getOrderWithDetails(parseInt(id));
 
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      res.status(404).json({ error: 'Order not found' });
+      return;
     }
 
     // Check authorization
-    const isCustomer = order.customer_id === req.user.id;
-    const isRestaurantOwner = order.restaurant?.owner_id === req.user.id;
-    const isDriver = order.driver?.user_id === req.user.id;
-    const isAdmin = req.user.role === 'admin';
+    const isCustomer = order.customer_id === req.user!.id;
+    const isRestaurantOwner = order.restaurant?.owner_id === req.user!.id;
+    const isDriver = order.driver?.user_id === req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
 
     if (!isCustomer && !isRestaurantOwner && !isDriver && !isAdmin) {
-      return res.status(403).json({ error: 'Not authorized to view this order' });
+      res.status(403).json({ error: 'Not authorized to view this order' });
+      return;
     }
 
     res.json({ order });
   } catch (err) {
-    logger.error({ error: err.message, orderId: req.params.id }, 'Get order error');
+    const error = err as Error;
+    logger.error({ error: error.message, orderId: req.params.id }, 'Get order error');
     res.status(500).json({ error: 'Failed to get order' });
   }
 });
 
 // Get customer's orders
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { status, limit = 20, offset = 0 } = req.query;
+    const { status, limit = '20', offset = '0' } = req.query;
 
     let sql = `
       SELECT o.*, r.name as restaurant_name, r.image_url as restaurant_image
@@ -230,7 +338,7 @@ router.get('/', requireAuth, async (req, res) => {
       JOIN restaurants r ON o.restaurant_id = r.id
       WHERE o.customer_id = $1
     `;
-    const params = [req.user.id];
+    const params: unknown[] = [req.user!.id];
 
     if (status) {
       params.push(status);
@@ -238,26 +346,28 @@ router.get('/', requireAuth, async (req, res) => {
     }
 
     sql += ' ORDER BY o.placed_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(parseInt(limit as string), parseInt(offset as string));
 
     const result = await query(sql, params);
 
     res.json({ orders: result.rows });
   } catch (err) {
-    logger.error({ error: err.message }, 'Get orders error');
+    const error = err as Error;
+    logger.error({ error: error.message }, 'Get orders error');
     res.status(500).json({ error: 'Failed to get orders' });
   }
 });
 
 // Update order status
-router.patch('/:id/status', requireAuth, async (req, res) => {
+router.patch('/:id/status', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { status, cancelReason } = req.body;
 
-    const order = await getOrderWithDetails(id);
+    const order = await getOrderWithDetails(parseInt(id));
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      res.status(404).json({ error: 'Order not found' });
+      return;
     }
 
     const previousStatus = order.status;
@@ -265,16 +375,17 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
     // Validate transition
     const currentTransition = ORDER_TRANSITIONS[order.status];
     if (!currentTransition.next.includes(status)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: `Cannot transition from ${order.status} to ${status}`,
       });
+      return;
     }
 
     // Check authorization based on actor
-    const isCustomer = order.customer_id === req.user.id;
-    const isRestaurantOwner = order.restaurant?.owner_id === req.user.id;
-    const isDriver = order.driver?.user_id === req.user.id;
-    const isAdmin = req.user.role === 'admin';
+    const isCustomer = order.customer_id === req.user!.id;
+    const isRestaurantOwner = order.restaurant?.owner_id === req.user!.id;
+    const isDriver = order.driver?.user_id === req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
 
     let actorType = ACTOR_TYPES.SYSTEM;
 
@@ -285,15 +396,18 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
       } else if (isRestaurantOwner || isAdmin) {
         actorType = isRestaurantOwner ? ACTOR_TYPES.RESTAURANT : ACTOR_TYPES.ADMIN;
       } else {
-        return res.status(403).json({ error: 'Not authorized to cancel this order' });
+        res.status(403).json({ error: 'Not authorized to cancel this order' });
+        return;
       }
     } else {
       // Check actor
       if (currentTransition.actor === 'restaurant' && !isRestaurantOwner && !isAdmin) {
-        return res.status(403).json({ error: 'Only restaurant can update this status' });
+        res.status(403).json({ error: 'Only restaurant can update this status' });
+        return;
       }
       if (currentTransition.actor === 'driver' && !isDriver && !isAdmin) {
-        return res.status(403).json({ error: 'Only driver can update this status' });
+        res.status(403).json({ error: 'Only driver can update this status' });
+        return;
       }
       actorType = isRestaurantOwner
         ? ACTOR_TYPES.RESTAURANT
@@ -304,10 +418,10 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
 
     // Update status
     const updateFields = [`status = $2`, `updated_at = NOW()`];
-    const params = [id, status];
+    const params: unknown[] = [id, status];
 
     // Set timestamp based on status
-    const timestampFields = {
+    const timestampFields: Record<string, string> = {
       CONFIRMED: 'confirmed_at',
       PREPARING: 'preparing_at',
       READY_FOR_PICKUP: 'ready_at',
@@ -350,7 +464,7 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
 
     // If confirmed, start driver matching
     if (status === 'CONFIRMED') {
-      await matchDriverToOrder(id);
+      await matchDriverToOrder(parseInt(id));
     }
 
     // Create audit log
@@ -358,7 +472,7 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
       order,
       previousStatus,
       status,
-      { type: actorType, id: req.user.id },
+      { type: actorType, id: req.user!.id },
       {
         ip: req.ip,
         userAgent: req.get('User-Agent'),
@@ -366,31 +480,52 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
       }
     );
 
-    logger.info({
-      orderId: id,
-      fromStatus: previousStatus,
-      toStatus: status,
-      actorType,
-      actorId: req.user.id,
-    }, 'Order status updated');
+    logger.info(
+      {
+        orderId: id,
+        fromStatus: previousStatus,
+        toStatus: status,
+        actorType,
+        actorId: req.user!.id,
+      },
+      'Order status updated'
+    );
 
     // Publish order status event to Kafka
     publishOrderEvent(id.toString(), status.toLowerCase(), {
       previousStatus,
       actorType,
-      actorId: req.user.id,
+      actorId: req.user!.id,
       cancelReason: status === 'CANCELLED' ? cancelReason : undefined,
     });
 
     // Get updated order
-    const updatedOrder = await getOrderWithDetails(id);
+    const updatedOrder = await getOrderWithDetails(parseInt(id));
 
     // Calculate ETA if driver assigned
-    let eta = null;
-    if (updatedOrder.driver && !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(status)) {
-      eta = calculateETA(updatedOrder, updatedOrder.driver, updatedOrder.restaurant);
+    let eta: ETAResult | null = null;
+    if (updatedOrder?.driver && !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(status)) {
+      eta = calculateETA(
+        {
+          status: updatedOrder.status,
+          preparing_at: updatedOrder.preparing_at,
+          confirmed_at: updatedOrder.confirmed_at,
+          placed_at: updatedOrder.placed_at,
+          delivery_address: updatedOrder.delivery_address,
+        },
+        {
+          current_lat: updatedOrder.driver.current_lat!,
+          current_lon: updatedOrder.driver.current_lon!,
+          vehicle_type: updatedOrder.driver.vehicle_type as 'car' | 'bike' | 'scooter' | 'walk' | undefined,
+        },
+        {
+          lat: updatedOrder.restaurant!.lat,
+          lon: updatedOrder.restaurant!.lon,
+          prep_time_minutes: updatedOrder.restaurant!.prep_time_minutes,
+        }
+      );
       await query('UPDATE orders SET estimated_delivery_at = $1 WHERE id = $2', [eta.eta, id]);
-      updatedOrder.estimated_delivery_at = eta.eta;
+      updatedOrder.estimated_delivery_at = eta.eta.toISOString();
       updatedOrder.eta_breakdown = eta.breakdown;
     }
 
@@ -406,65 +541,74 @@ router.patch('/:id/status', requireAuth, async (req, res) => {
 
     res.json({ order: updatedOrder, eta });
   } catch (err) {
-    logger.error({ error: err.message, orderId: req.params.id }, 'Update order status error');
+    const error = err as Error;
+    logger.error({ error: error.message, orderId: req.params.id }, 'Update order status error');
     res.status(500).json({ error: 'Failed to update order status' });
   }
 });
 
 // Restaurant: Get incoming orders
-router.get('/restaurant/:restaurantId', requireAuth, requireRole('restaurant_owner', 'admin'), async (req, res) => {
-  try {
-    const { restaurantId } = req.params;
-    const { status, limit = 50 } = req.query;
+router.get(
+  '/restaurant/:restaurantId',
+  requireAuth,
+  requireRole('restaurant_owner', 'admin'),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { restaurantId } = req.params;
+      const { status, limit = '50' } = req.query;
 
-    // Check ownership
-    const restaurant = await query('SELECT owner_id FROM restaurants WHERE id = $1', [restaurantId]);
-    if (restaurant.rows.length === 0) {
-      return res.status(404).json({ error: 'Restaurant not found' });
-    }
-    if (restaurant.rows[0].owner_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
+      // Check ownership
+      const restaurant = await query('SELECT owner_id FROM restaurants WHERE id = $1', [restaurantId]);
+      if (restaurant.rows.length === 0) {
+        res.status(404).json({ error: 'Restaurant not found' });
+        return;
+      }
+      if (restaurant.rows[0].owner_id !== req.user!.id && req.user!.role !== 'admin') {
+        res.status(403).json({ error: 'Not authorized' });
+        return;
+      }
 
-    let sql = `
+      let sql = `
       SELECT o.*, u.name as customer_name, u.phone as customer_phone
       FROM orders o
       JOIN users u ON o.customer_id = u.id
       WHERE o.restaurant_id = $1
     `;
-    const params = [restaurantId];
+      const params: unknown[] = [restaurantId];
 
-    if (status) {
-      if (status === 'active') {
-        sql += ` AND o.status NOT IN ('DELIVERED', 'COMPLETED', 'CANCELLED')`;
-      } else {
-        params.push(status);
-        sql += ` AND o.status = $${params.length}`;
+      if (status) {
+        if (status === 'active') {
+          sql += ` AND o.status NOT IN ('DELIVERED', 'COMPLETED', 'CANCELLED')`;
+        } else {
+          params.push(status);
+          sql += ` AND o.status = $${params.length}`;
+        }
       }
+
+      sql += ' ORDER BY o.placed_at DESC LIMIT $' + (params.length + 1);
+      params.push(parseInt(limit as string));
+
+      const result = await query(sql, params);
+
+      // Get items for each order
+      const orders = await Promise.all(
+        result.rows.map(async (order: { id: number }) => {
+          const itemsResult = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
+          return { ...order, items: itemsResult.rows };
+        })
+      );
+
+      res.json({ orders });
+    } catch (err) {
+      const error = err as Error;
+      logger.error({ error: error.message, restaurantId: req.params.restaurantId }, 'Get restaurant orders error');
+      res.status(500).json({ error: 'Failed to get orders' });
     }
-
-    sql += ' ORDER BY o.placed_at DESC LIMIT $' + (params.length + 1);
-    params.push(parseInt(limit));
-
-    const result = await query(sql, params);
-
-    // Get items for each order
-    const orders = await Promise.all(
-      result.rows.map(async (order) => {
-        const itemsResult = await query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
-        return { ...order, items: itemsResult.rows };
-      })
-    );
-
-    res.json({ orders });
-  } catch (err) {
-    logger.error({ error: err.message, restaurantId: req.params.restaurantId }, 'Get restaurant orders error');
-    res.status(500).json({ error: 'Failed to get orders' });
   }
-});
+);
 
 // Helper: Get order with full details
-async function getOrderWithDetails(orderId) {
+async function getOrderWithDetails(orderId: number): Promise<Order | null> {
   const orderResult = await query(
     `SELECT o.*,
             r.name as restaurant_name, r.address as restaurant_address,
@@ -512,23 +656,23 @@ async function getOrderWithDetails(orderId) {
     owner_id: order.restaurant_owner_id,
   };
 
-  return order;
+  return order as Order;
 }
 
 // Helper: Match a driver to an order (with circuit breaker)
-async function matchDriverToOrder(orderId) {
+async function matchDriverToOrder(orderId: number): Promise<DriverMatchResult> {
   const startTime = Date.now();
   const breaker = getDriverMatchCircuitBreaker();
 
   try {
-    const result = await breaker.fire(async () => {
+    const result = await breaker.fire(async (): Promise<DriverMatchResult> => {
       const order = await getOrderWithDetails(orderId);
       if (!order || order.driver_id) {
         return { matched: false, reason: 'already_matched' };
       }
 
       // Find nearby available drivers using Redis geo
-      const nearbyDrivers = await findNearbyDrivers(order.restaurant.lat, order.restaurant.lon, 5);
+      const nearbyDrivers = await findNearbyDrivers(order.restaurant!.lat, order.restaurant!.lon, 5);
 
       if (nearbyDrivers.length === 0) {
         logger.warn({ orderId }, 'No drivers available for order');
@@ -537,7 +681,7 @@ async function matchDriverToOrder(orderId) {
 
       // Score drivers
       const scoredDrivers = await Promise.all(
-        nearbyDrivers.map(async (d) => {
+        nearbyDrivers.map(async (d): Promise<ScoredDriver | null> => {
           const driver = await query(
             `SELECT d.*, u.name FROM drivers d JOIN users u ON d.user_id = u.id WHERE d.id = $1`,
             [d.id]
@@ -550,7 +694,9 @@ async function matchDriverToOrder(orderId) {
         })
       );
 
-      const validDrivers = scoredDrivers.filter((d) => d !== null).sort((a, b) => b.score - a.score);
+      const validDrivers = scoredDrivers
+        .filter((d): d is ScoredDriver => d !== null)
+        .sort((a, b) => b.score - a.score);
 
       if (validDrivers.length === 0) {
         return { matched: false, reason: 'no_valid_drivers' };
@@ -558,16 +704,34 @@ async function matchDriverToOrder(orderId) {
 
       // Assign best driver
       const bestMatch = validDrivers[0];
-      await query(
-        `UPDATE orders SET driver_id = $1, updated_at = NOW() WHERE id = $2`,
-        [bestMatch.driver.id, orderId]
-      );
+      await query(`UPDATE orders SET driver_id = $1, updated_at = NOW() WHERE id = $2`, [
+        bestMatch.driver.id,
+        orderId,
+      ]);
 
       // Mark driver as unavailable
       await query(`UPDATE drivers SET is_available = false WHERE id = $1`, [bestMatch.driver.id]);
 
       // Calculate ETA
-      const eta = calculateETA(order, bestMatch.driver, order.restaurant);
+      const fullOrder = await getOrderWithDetails(orderId);
+      const eta = calculateETA(
+        {
+          status: fullOrder!.status,
+          preparing_at: fullOrder!.preparing_at,
+          confirmed_at: fullOrder!.confirmed_at,
+          placed_at: fullOrder!.placed_at,
+          delivery_address: fullOrder!.delivery_address,
+        },
+        {
+          current_lat: bestMatch.driver.current_lat!,
+          current_lon: bestMatch.driver.current_lon!,
+        },
+        {
+          lat: order.restaurant!.lat,
+          lon: order.restaurant!.lon,
+          prep_time_minutes: order.restaurant!.prep_time_minutes,
+        }
+      );
       await query('UPDATE orders SET estimated_delivery_at = $1 WHERE id = $2', [eta.eta, orderId]);
 
       // Create audit log for driver assignment
@@ -583,12 +747,15 @@ async function matchDriverToOrder(orderId) {
         eta,
       });
 
-      logger.info({
-        orderId,
-        driverId: bestMatch.driver.id,
-        score: bestMatch.score,
-        distance: bestMatch.distance,
-      }, 'Driver assigned to order');
+      logger.info(
+        {
+          orderId,
+          driverId: bestMatch.driver.id,
+          score: bestMatch.score,
+          distance: bestMatch.distance,
+        },
+        'Driver assigned to order'
+      );
 
       // Publish dispatch event to Kafka
       publishDispatchEvent(orderId.toString(), bestMatch.driver.id.toString(), 'assigned', {
@@ -612,28 +779,34 @@ async function matchDriverToOrder(orderId) {
 
     return result;
   } catch (error) {
-    logger.error({ error: error.message, orderId }, 'Driver matching failed');
+    const err = error as Error;
+    logger.error({ error: err.message, orderId }, 'Driver matching failed');
     driverAssignmentsTotal.inc({ result: 'error' });
-    return { matched: false, reason: 'error', error: error.message };
+    return { matched: false, reason: 'error', error: err.message };
   }
 }
 
 // Helper: Find nearby drivers using Redis geo
-async function findNearbyDrivers(lat, lon, radiusKm) {
+async function findNearbyDrivers(lat: number, lon: number, radiusKm: number): Promise<NearbyDriver[]> {
   try {
     // Use Redis GEOSEARCH
-    const results = await redisClient.geoSearch('driver_locations', { longitude: lon, latitude: lat }, {
-      radius: radiusKm,
-      unit: 'km',
-    }, {
-      WITHDIST: true,
-      SORT: 'ASC',
-      COUNT: 20,
-    });
+    const results = await redisClient.geoSearch(
+      'driver_locations',
+      { longitude: lon, latitude: lat },
+      {
+        radius: radiusKm,
+        unit: 'km',
+      },
+      {
+        WITHDIST: true,
+        SORT: 'ASC',
+        COUNT: 20,
+      }
+    );
 
     // Filter by availability from database
-    const availableDrivers = [];
-    for (const result of results) {
+    const availableDrivers: NearbyDriver[] = [];
+    for (const result of results as Array<{ member: string; distance: number }>) {
       const driverId = parseInt(result.member);
       const check = await query(
         'SELECT id FROM drivers WHERE id = $1 AND is_active = true AND is_available = true',
@@ -649,7 +822,8 @@ async function findNearbyDrivers(lat, lon, radiusKm) {
 
     return availableDrivers;
   } catch (err) {
-    logger.warn({ error: err.message }, 'Redis geo search failed, falling back to database');
+    const error = err as Error;
+    logger.warn({ error: error.message }, 'Redis geo search failed, falling back to database');
     // Fallback to database query
     const result = await query(
       `SELECT id, current_lat, current_lon FROM drivers
@@ -658,25 +832,29 @@ async function findNearbyDrivers(lat, lon, radiusKm) {
     );
 
     return result.rows
-      .map((d) => ({
+      .map((d: { id: number; current_lat: string; current_lon: string }) => ({
         id: d.id,
         distance: haversineDistance(lat, lon, parseFloat(d.current_lat), parseFloat(d.current_lon)),
       }))
-      .filter((d) => d.distance <= radiusKm)
-      .sort((a, b) => a.distance - b.distance)
+      .filter((d: NearbyDriver) => d.distance <= radiusKm)
+      .sort((a: NearbyDriver, b: NearbyDriver) => a.distance - b.distance)
       .slice(0, 20);
   }
 }
 
 // Helper: Calculate match score for driver
-function calculateMatchScore(driver, order, distance) {
+function calculateMatchScore(
+  driver: { rating?: number | string; total_deliveries: number },
+  _order: Order,
+  distance: number
+): number {
   let score = 0;
 
   // Distance to restaurant (most important) - closer is better
   score += 100 - distance * 10;
 
   // Driver rating
-  score += parseFloat(driver.rating || 5) * 5;
+  score += parseFloat((driver.rating || '5').toString()) * 5;
 
   // Experience (more deliveries = more reliable)
   score += Math.min(driver.total_deliveries / 10, 20);

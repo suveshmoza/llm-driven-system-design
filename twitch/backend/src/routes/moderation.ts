@@ -12,11 +12,11 @@
  * - Abuse investigation
  * - Platform transparency
  */
-const express = require('express');
-const { query, getClient } = require('../services/database');
-const { getSession, publishMessage } = require('../services/redis');
-const { logger } = require('../utils/logger');
-const {
+import express, { Request, Response, Router } from 'express';
+import { query } from '../services/database.js';
+import { getSession, publishMessage } from '../services/redis.js';
+import { logger } from '../utils/logger.js';
+import {
   logUserBan,
   logUserUnban,
   logUserTimeout,
@@ -24,14 +24,81 @@ const {
   logChatClear,
   logModeratorAdd,
   logModeratorRemove
-} = require('../utils/audit');
+} from '../utils/audit.js';
 
-const router = express.Router();
+const router: Router = express.Router();
+
+interface ModeratorAccessResult {
+  hasAccess: boolean;
+  role: string | null;
+}
+
+interface ChannelParams {
+  channelId: string;
+}
+
+interface UserBanParams extends ChannelParams {
+  userId: string;
+}
+
+interface MessageParams extends ChannelParams {
+  messageId: string;
+}
+
+interface ModeratorParams extends ChannelParams {
+  userId: string;
+}
+
+interface BanBody {
+  userId?: number;
+  reason?: string;
+  durationSeconds?: number;
+}
+
+interface DeleteMessageBody {
+  reason?: string;
+}
+
+interface AddModeratorBody {
+  userId?: number;
+}
+
+interface UserRow {
+  username: string;
+}
+
+interface ChannelOwnerRow {
+  user_id: number;
+}
+
+interface RoleRow {
+  role: string;
+}
+
+interface BanRow {
+  user_id: number;
+  reason: string | null;
+  expires_at: Date | null;
+  created_at: Date;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  banned_by_username: string | null;
+}
+
+interface ModeratorRow {
+  user_id: number;
+  created_at: Date;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  added_by_username: string | null;
+}
 
 /**
  * Helper to check if user is moderator or owner of channel
  */
-async function checkModeratorAccess(userId, channelId) {
+async function checkModeratorAccess(userId: number, channelId: string): Promise<ModeratorAccessResult> {
   // Check if channel owner
   const ownerCheck = await query(
     'SELECT 1 FROM channels WHERE id = $1 AND user_id = $2',
@@ -51,7 +118,7 @@ async function checkModeratorAccess(userId, channelId) {
   }
 
   // Check if admin
-  const adminCheck = await query(
+  const adminCheck = await query<RoleRow>(
     'SELECT role FROM users WHERE id = $1',
     [userId]
   );
@@ -65,8 +132,8 @@ async function checkModeratorAccess(userId, channelId) {
 /**
  * Helper to get username from user ID
  */
-async function getUsername(userId) {
-  const result = await query('SELECT username FROM users WHERE id = $1', [userId]);
+async function getUsername(userId: number): Promise<string> {
+  const result = await query<UserRow>('SELECT username FROM users WHERE id = $1', [userId]);
   return result.rows[0]?.username || 'unknown';
 }
 
@@ -78,35 +145,40 @@ async function getUsername(userId) {
  * Ban a user from a channel
  * POST /api/moderation/:channelId/ban
  */
-router.post('/:channelId/ban', async (req, res) => {
+router.post('/:channelId/ban', async (req: Request<ChannelParams, object, BanBody>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId } = req.params;
     const { userId: targetUserId, reason, durationSeconds } = req.body;
 
     if (!targetUserId) {
-      return res.status(400).json({ error: 'userId is required' });
+      res.status(400).json({ error: 'userId is required' });
+      return;
     }
 
     // Check moderator access
-    const { hasAccess, role } = await checkModeratorAccess(actorId, channelId);
+    const { hasAccess } = await checkModeratorAccess(actorId, channelId);
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      return;
     }
 
     // Cannot ban the channel owner
-    const channelOwner = await query('SELECT user_id FROM channels WHERE id = $1', [channelId]);
+    const channelOwner = await query<ChannelOwnerRow>('SELECT user_id FROM channels WHERE id = $1', [channelId]);
     if (channelOwner.rows[0]?.user_id === targetUserId) {
-      return res.status(400).json({ error: 'Cannot ban channel owner' });
+      res.status(400).json({ error: 'Cannot ban channel owner' });
+      return;
     }
 
     // Calculate expiration
@@ -129,7 +201,7 @@ router.post('/:channelId/ban', async (req, res) => {
     // Log audit event
     if (durationSeconds) {
       logUserTimeout(
-        { userId: actorId, username: actorUsername, ip: req.ip },
+        { userId: actorId, username: actorUsername, ip: req.ip || '' },
         targetUserId,
         targetUsername,
         parseInt(channelId),
@@ -138,7 +210,7 @@ router.post('/:channelId/ban', async (req, res) => {
       );
     } else {
       logUserBan(
-        { userId: actorId, username: actorUsername, ip: req.ip },
+        { userId: actorId, username: actorUsername, ip: req.ip || '' },
         targetUserId,
         targetUsername,
         parseInt(channelId),
@@ -175,7 +247,7 @@ router.post('/:channelId/ban', async (req, res) => {
       }
     });
   } catch (error) {
-    logger.error({ error: error.message }, 'Ban user error');
+    logger.error({ error: (error as Error).message }, 'Ban user error');
     res.status(500).json({ error: 'Failed to ban user' });
   }
 });
@@ -184,16 +256,18 @@ router.post('/:channelId/ban', async (req, res) => {
  * Unban a user from a channel
  * DELETE /api/moderation/:channelId/ban/:userId
  */
-router.delete('/:channelId/ban/:userId', async (req, res) => {
+router.delete('/:channelId/ban/:userId', async (req: Request<UserBanParams>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId, userId: targetUserId } = req.params;
@@ -201,7 +275,8 @@ router.delete('/:channelId/ban/:userId', async (req, res) => {
     // Check moderator access
     const { hasAccess } = await checkModeratorAccess(actorId, channelId);
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      return;
     }
 
     // Remove ban
@@ -211,7 +286,8 @@ router.delete('/:channelId/ban/:userId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Ban not found' });
+      res.status(404).json({ error: 'Ban not found' });
+      return;
     }
 
     // Get usernames for audit log
@@ -220,7 +296,7 @@ router.delete('/:channelId/ban/:userId', async (req, res) => {
 
     // Log audit event
     logUserUnban(
-      { userId: actorId, username: actorUsername, ip: req.ip },
+      { userId: actorId, username: actorUsername, ip: req.ip || '' },
       parseInt(targetUserId),
       targetUsername,
       parseInt(channelId)
@@ -242,7 +318,7 @@ router.delete('/:channelId/ban/:userId', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    logger.error({ error: error.message }, 'Unban user error');
+    logger.error({ error: (error as Error).message }, 'Unban user error');
     res.status(500).json({ error: 'Failed to unban user' });
   }
 });
@@ -251,16 +327,18 @@ router.delete('/:channelId/ban/:userId', async (req, res) => {
  * Get banned users for a channel
  * GET /api/moderation/:channelId/bans
  */
-router.get('/:channelId/bans', async (req, res) => {
+router.get('/:channelId/bans', async (req: Request<ChannelParams>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId } = req.params;
@@ -268,10 +346,11 @@ router.get('/:channelId/bans', async (req, res) => {
     // Check moderator access
     const { hasAccess } = await checkModeratorAccess(actorId, channelId);
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      return;
     }
 
-    const result = await query(`
+    const result = await query<BanRow>(`
       SELECT cb.user_id, cb.reason, cb.expires_at, cb.created_at,
              u.username, u.display_name, u.avatar_url,
              bu.username as banned_by_username
@@ -296,7 +375,7 @@ router.get('/:channelId/bans', async (req, res) => {
       }))
     });
   } catch (error) {
-    logger.error({ error: error.message }, 'Get bans error');
+    logger.error({ error: (error as Error).message }, 'Get bans error');
     res.status(500).json({ error: 'Failed to get bans' });
   }
 });
@@ -309,16 +388,18 @@ router.get('/:channelId/bans', async (req, res) => {
  * Delete a chat message
  * DELETE /api/moderation/:channelId/message/:messageId
  */
-router.delete('/:channelId/message/:messageId', async (req, res) => {
+router.delete('/:channelId/message/:messageId', async (req: Request<MessageParams, object, DeleteMessageBody>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId, messageId } = req.params;
@@ -327,7 +408,8 @@ router.delete('/:channelId/message/:messageId', async (req, res) => {
     // Check moderator access
     const { hasAccess } = await checkModeratorAccess(actorId, channelId);
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      return;
     }
 
     // Mark message as deleted (soft delete for audit trail)
@@ -339,7 +421,8 @@ router.delete('/:channelId/message/:messageId', async (req, res) => {
     `, [channelId, messageId, actorId]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
+      res.status(404).json({ error: 'Message not found' });
+      return;
     }
 
     // Get actor username for audit log
@@ -347,7 +430,7 @@ router.delete('/:channelId/message/:messageId', async (req, res) => {
 
     // Log audit event
     logMessageDelete(
-      { userId: actorId, username: actorUsername, ip: req.ip },
+      { userId: actorId, username: actorUsername, ip: req.ip || '' },
       messageId,
       parseInt(channelId),
       reason
@@ -368,7 +451,7 @@ router.delete('/:channelId/message/:messageId', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    logger.error({ error: error.message }, 'Delete message error');
+    logger.error({ error: (error as Error).message }, 'Delete message error');
     res.status(500).json({ error: 'Failed to delete message' });
   }
 });
@@ -377,16 +460,18 @@ router.delete('/:channelId/message/:messageId', async (req, res) => {
  * Clear all chat messages
  * POST /api/moderation/:channelId/clear
  */
-router.post('/:channelId/clear', async (req, res) => {
+router.post('/:channelId/clear', async (req: Request<ChannelParams>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId } = req.params;
@@ -394,7 +479,8 @@ router.post('/:channelId/clear', async (req, res) => {
     // Check moderator access
     const { hasAccess } = await checkModeratorAccess(actorId, channelId);
     if (!hasAccess) {
-      return res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      res.status(403).json({ error: 'Not authorized to moderate this channel' });
+      return;
     }
 
     // Mark all recent messages as deleted
@@ -409,7 +495,7 @@ router.post('/:channelId/clear', async (req, res) => {
 
     // Log audit event
     logChatClear(
-      { userId: actorId, username: actorUsername, ip: req.ip },
+      { userId: actorId, username: actorUsername, ip: req.ip || '' },
       parseInt(channelId)
     );
 
@@ -426,7 +512,7 @@ router.post('/:channelId/clear', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    logger.error({ error: error.message }, 'Clear chat error');
+    logger.error({ error: (error as Error).message }, 'Clear chat error');
     res.status(500).json({ error: 'Failed to clear chat' });
   }
 });
@@ -439,41 +525,46 @@ router.post('/:channelId/clear', async (req, res) => {
  * Add a moderator to a channel
  * POST /api/moderation/:channelId/moderator
  */
-router.post('/:channelId/moderator', async (req, res) => {
+router.post('/:channelId/moderator', async (req: Request<ChannelParams, object, AddModeratorBody>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId } = req.params;
     const { userId: targetUserId } = req.body;
 
     if (!targetUserId) {
-      return res.status(400).json({ error: 'userId is required' });
+      res.status(400).json({ error: 'userId is required' });
+      return;
     }
 
     // Only channel owner or admin can add moderators
-    const ownerCheck = await query(
+    const ownerCheck = await query<ChannelOwnerRow>(
       'SELECT user_id FROM channels WHERE id = $1',
       [channelId]
     );
 
     if (!ownerCheck.rows[0]) {
-      return res.status(404).json({ error: 'Channel not found' });
+      res.status(404).json({ error: 'Channel not found' });
+      return;
     }
 
     const isOwner = ownerCheck.rows[0].user_id === actorId;
-    const adminCheck = await query('SELECT role FROM users WHERE id = $1', [actorId]);
+    const adminCheck = await query<RoleRow>('SELECT role FROM users WHERE id = $1', [actorId]);
     const isAdmin = adminCheck.rows[0]?.role === 'admin';
 
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ error: 'Only channel owner can add moderators' });
+      res.status(403).json({ error: 'Only channel owner can add moderators' });
+      return;
     }
 
     // Check if already a moderator
@@ -483,7 +574,8 @@ router.post('/:channelId/moderator', async (req, res) => {
     );
 
     if (existing.rows.length > 0) {
-      return res.json({ success: true, message: 'Already a moderator' });
+      res.json({ success: true, message: 'Already a moderator' });
+      return;
     }
 
     // Add moderator
@@ -498,7 +590,7 @@ router.post('/:channelId/moderator', async (req, res) => {
 
     // Log audit event
     logModeratorAdd(
-      { userId: actorId, username: actorUsername, ip: req.ip },
+      { userId: actorId, username: actorUsername, ip: req.ip || '' },
       targetUserId,
       targetUsername,
       parseInt(channelId)
@@ -512,7 +604,7 @@ router.post('/:channelId/moderator', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    logger.error({ error: error.message }, 'Add moderator error');
+    logger.error({ error: (error as Error).message }, 'Add moderator error');
     res.status(500).json({ error: 'Failed to add moderator' });
   }
 });
@@ -521,32 +613,35 @@ router.post('/:channelId/moderator', async (req, res) => {
  * Remove a moderator from a channel
  * DELETE /api/moderation/:channelId/moderator/:userId
  */
-router.delete('/:channelId/moderator/:userId', async (req, res) => {
+router.delete('/:channelId/moderator/:userId', async (req: Request<ModeratorParams>, res: Response): Promise<void> => {
   try {
-    const sessionId = req.cookies.session;
+    const sessionId = req.cookies.session as string | undefined;
     if (!sessionId) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const actorId = await getSession(sessionId);
     if (!actorId) {
-      return res.status(401).json({ error: 'Session expired' });
+      res.status(401).json({ error: 'Session expired' });
+      return;
     }
 
     const { channelId, userId: targetUserId } = req.params;
 
     // Only channel owner or admin can remove moderators
-    const ownerCheck = await query(
+    const ownerCheck = await query<ChannelOwnerRow>(
       'SELECT user_id FROM channels WHERE id = $1',
       [channelId]
     );
 
     const isOwner = ownerCheck.rows[0]?.user_id === actorId;
-    const adminCheck = await query('SELECT role FROM users WHERE id = $1', [actorId]);
+    const adminCheck = await query<RoleRow>('SELECT role FROM users WHERE id = $1', [actorId]);
     const isAdmin = adminCheck.rows[0]?.role === 'admin';
 
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ error: 'Only channel owner can remove moderators' });
+      res.status(403).json({ error: 'Only channel owner can remove moderators' });
+      return;
     }
 
     // Remove moderator
@@ -556,7 +651,8 @@ router.delete('/:channelId/moderator/:userId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Moderator not found' });
+      res.status(404).json({ error: 'Moderator not found' });
+      return;
     }
 
     // Get usernames for audit log
@@ -565,7 +661,7 @@ router.delete('/:channelId/moderator/:userId', async (req, res) => {
 
     // Log audit event
     logModeratorRemove(
-      { userId: actorId, username: actorUsername, ip: req.ip },
+      { userId: actorId, username: actorUsername, ip: req.ip || '' },
       parseInt(targetUserId),
       targetUsername,
       parseInt(channelId)
@@ -579,7 +675,7 @@ router.delete('/:channelId/moderator/:userId', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    logger.error({ error: error.message }, 'Remove moderator error');
+    logger.error({ error: (error as Error).message }, 'Remove moderator error');
     res.status(500).json({ error: 'Failed to remove moderator' });
   }
 });
@@ -588,11 +684,11 @@ router.delete('/:channelId/moderator/:userId', async (req, res) => {
  * Get moderators for a channel
  * GET /api/moderation/:channelId/moderators
  */
-router.get('/:channelId/moderators', async (req, res) => {
+router.get('/:channelId/moderators', async (req: Request<ChannelParams>, res: Response): Promise<void> => {
   try {
     const { channelId } = req.params;
 
-    const result = await query(`
+    const result = await query<ModeratorRow>(`
       SELECT cm.user_id, cm.created_at,
              u.username, u.display_name, u.avatar_url,
              au.username as added_by_username
@@ -614,9 +710,9 @@ router.get('/:channelId/moderators', async (req, res) => {
       }))
     });
   } catch (error) {
-    logger.error({ error: error.message }, 'Get moderators error');
+    logger.error({ error: (error as Error).message }, 'Get moderators error');
     res.status(500).json({ error: 'Failed to get moderators' });
   }
 });
 
-module.exports = router;
+export default router;

@@ -1,31 +1,31 @@
-require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const { WebSocketServer } = require('ws');
+import 'dotenv/config';
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import { WebSocketServer } from 'ws';
 
 // Import services
-const { initDatabase, pool } = require('./services/database');
-const { initRedis, getRedisClient } = require('./services/redis');
-const { setupChatWebSocket } = require('./services/chat');
-const { setupStreamSimulator } = require('./services/streamSimulator');
+import { initDatabase, pool } from './services/database.js';
+import { initRedis, getRedisClient } from './services/redis.js';
+import { setupChatWebSocket } from './services/chat.js';
+import { setupStreamSimulator } from './services/streamSimulator.js';
 
 // Import routes
-const authRoutes = require('./routes/auth');
-const channelRoutes = require('./routes/channels');
-const categoryRoutes = require('./routes/categories');
-const streamRoutes = require('./routes/streams');
-const userRoutes = require('./routes/users');
-const emoteRoutes = require('./routes/emotes');
-const moderationRoutes = require('./routes/moderation');
+import authRoutes from './routes/auth.js';
+import channelRoutes from './routes/channels.js';
+import categoryRoutes from './routes/categories.js';
+import streamRoutes from './routes/streams.js';
+import userRoutes from './routes/users.js';
+import emoteRoutes from './routes/emotes.js';
+import moderationRoutes from './routes/moderation.js';
 
 // Import shared utilities
-const { logger, requestLogger } = require('./utils/logger');
-const { metricsMiddleware, getMetrics } = require('./utils/metrics');
-const { createHealthChecks } = require('./utils/health');
-const { extractIdempotencyKey } = require('./utils/idempotency');
-const { auditContext } = require('./utils/audit');
+import { logger, requestLogger } from './utils/logger.js';
+import { metricsMiddleware, getMetrics } from './utils/metrics.js';
+import { createHealthChecks } from './utils/health.js';
+import { extractIdempotencyKey } from './utils/idempotency.js';
+import { auditContext } from './utils/audit.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -88,7 +88,7 @@ const wss = new WebSocketServer({ server, path: '/ws/chat' });
 // Server Initialization
 // ===================
 
-async function start() {
+async function start(): Promise<void> {
   try {
     // Initialize database
     await initDatabase();
@@ -140,7 +140,7 @@ async function start() {
     });
 
   } catch (error) {
-    logger.error({ error: error.message }, 'Failed to start server');
+    logger.error({ error: (error as Error).message }, 'Failed to start server');
     console.error('Failed to start server:', error);
     process.exit(1);
   }

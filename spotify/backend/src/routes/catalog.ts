@@ -1,14 +1,24 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import catalogService from '../services/catalogService.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { searchOperationsTotal } from '../shared/metrics.js';
+import type { AuthenticatedRequest } from '../types.js';
 
 const router = Router();
 
+interface CatalogQuery {
+  limit?: string;
+  offset?: string;
+  search?: string;
+  artistId?: string;
+  q?: string;
+  type?: string;
+}
+
 // Get all artists
-router.get('/artists', async (req, res) => {
+router.get('/artists', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20, offset = 0, search = '' } = req.query;
+    const { limit = '20', offset = '0', search = '' } = req.query as CatalogQuery;
     const result = await catalogService.getArtists({
       limit: parseInt(limit),
       offset: parseInt(offset),
@@ -22,11 +32,12 @@ router.get('/artists', async (req, res) => {
 });
 
 // Get artist by ID
-router.get('/artists/:id', async (req, res) => {
+router.get('/artists/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const artist = await catalogService.getArtistById(req.params.id);
     if (!artist) {
-      return res.status(404).json({ error: 'Artist not found' });
+      res.status(404).json({ error: 'Artist not found' });
+      return;
     }
     res.json(artist);
   } catch (error) {
@@ -36,9 +47,9 @@ router.get('/artists/:id', async (req, res) => {
 });
 
 // Get all albums
-router.get('/albums', async (req, res) => {
+router.get('/albums', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20, offset = 0, search = '', artistId } = req.query;
+    const { limit = '20', offset = '0', search = '', artistId } = req.query as CatalogQuery;
     const result = await catalogService.getAlbums({
       limit: parseInt(limit),
       offset: parseInt(offset),
@@ -53,11 +64,12 @@ router.get('/albums', async (req, res) => {
 });
 
 // Get album by ID
-router.get('/albums/:id', async (req, res) => {
+router.get('/albums/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const album = await catalogService.getAlbumById(req.params.id);
     if (!album) {
-      return res.status(404).json({ error: 'Album not found' });
+      res.status(404).json({ error: 'Album not found' });
+      return;
     }
     res.json(album);
   } catch (error) {
@@ -67,11 +79,12 @@ router.get('/albums/:id', async (req, res) => {
 });
 
 // Get track by ID
-router.get('/tracks/:id', async (req, res) => {
+router.get('/tracks/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const track = await catalogService.getTrackById(req.params.id);
     if (!track) {
-      return res.status(404).json({ error: 'Track not found' });
+      res.status(404).json({ error: 'Track not found' });
+      return;
     }
     res.json(track);
   } catch (error) {
@@ -81,9 +94,9 @@ router.get('/tracks/:id', async (req, res) => {
 });
 
 // Get new releases
-router.get('/new-releases', async (req, res) => {
+router.get('/new-releases', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20 } = req.query;
+    const { limit = '20' } = req.query as CatalogQuery;
     const releases = await catalogService.getNewReleases({ limit: parseInt(limit) });
     res.json({ albums: releases });
   } catch (error) {
@@ -93,9 +106,9 @@ router.get('/new-releases', async (req, res) => {
 });
 
 // Get featured tracks
-router.get('/featured', async (req, res) => {
+router.get('/featured', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20 } = req.query;
+    const { limit = '20' } = req.query as CatalogQuery;
     const tracks = await catalogService.getFeaturedTracks({ limit: parseInt(limit) });
     res.json({ tracks });
   } catch (error) {
@@ -105,12 +118,14 @@ router.get('/featured', async (req, res) => {
 });
 
 // Search (with rate limiting)
-router.get('/search', rateLimiters.search, async (req, res) => {
+router.get('/search', rateLimiters.search, async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { q, limit = 20, type } = req.query;
+    const { q, limit = '20', type } = req.query as CatalogQuery;
 
     if (!q) {
-      return res.status(400).json({ error: 'Search query is required' });
+      res.status(400).json({ error: 'Search query is required' });
+      return;
     }
 
     const types = type ? type.split(',') : ['artists', 'albums', 'tracks'];
@@ -126,8 +141,9 @@ router.get('/search', rateLimiters.search, async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    const log = req.log || console;
-    log.error({ error: error.message }, 'Search error');
+    const log = authReq.log || console;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error({ error: errorMessage }, 'Search error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

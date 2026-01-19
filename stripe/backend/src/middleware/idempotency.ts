@@ -1,54 +1,71 @@
+import type { Response, NextFunction } from 'express';
+import type { AuthenticatedRequest } from './auth.js';
 import {
   getIdempotencyKey,
   setIdempotencyKey,
   acquireIdempotencyLock,
   releaseIdempotencyLock,
+  IdempotencyResponse,
 } from '../db/redis.js';
 
 /**
  * Idempotency middleware - prevents duplicate requests
  */
-export function idempotencyMiddleware(req, res, next) {
-  const idempotencyKey = req.headers['idempotency-key'];
+export function idempotencyMiddleware(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
   if (!idempotencyKey) {
     // No idempotency key, proceed normally
-    return next();
+    next();
+    return;
   }
 
   // Validate key format (max 255 chars)
   if (idempotencyKey.length > 255) {
-    return res.status(400).json({
+    res.status(400).json({
       error: {
         type: 'invalid_request_error',
         message: 'Idempotency key must be 255 characters or fewer',
       },
     });
+    return;
   }
 
   const merchantId = req.merchantId;
 
   if (!merchantId) {
     // Can't use idempotency without merchant context
-    return next();
+    next();
+    return;
   }
 
   handleIdempotency(req, res, next, merchantId, idempotencyKey);
 }
 
-async function handleIdempotency(req, res, next, merchantId, idempotencyKey) {
+async function handleIdempotency(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+  merchantId: string,
+  idempotencyKey: string
+): Promise<void> {
   try {
     // Try to acquire lock
     const acquired = await acquireIdempotencyLock(merchantId, idempotencyKey);
 
     if (!acquired) {
       // Another request with same key is in progress
-      return res.status(409).json({
+      res.status(409).json({
         error: {
           type: 'idempotency_error',
           message: 'A request with this idempotency key is already in progress',
         },
       });
+      return;
     }
 
     // Check for cached response
@@ -58,44 +75,51 @@ async function handleIdempotency(req, res, next, merchantId, idempotencyKey) {
 
       // Verify request matches
       if (cached.requestPath !== req.path || cached.requestMethod !== req.method) {
-        return res.status(422).json({
+        res.status(422).json({
           error: {
             type: 'idempotency_error',
             message: 'Idempotency key was used for a different request',
           },
         });
+        return;
       }
 
       // Return cached response
-      return res.status(cached.statusCode).json(cached.body);
+      res.status(cached.statusCode).json(cached.body);
+      return;
     }
 
     // Store original json method
     const originalJson = res.json.bind(res);
 
     // Override json to capture response
-    res.json = function(body) {
+    res.json = function (body: unknown) {
       // Cache successful responses (2xx)
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        setIdempotencyKey(merchantId, idempotencyKey, {
+        const responseToCache: IdempotencyResponse = {
           statusCode: res.statusCode,
           body,
           requestPath: req.path,
           requestMethod: req.method,
-        }).catch(err => console.error('Failed to cache idempotency:', err));
+        };
+        setIdempotencyKey(merchantId, idempotencyKey, responseToCache).catch((err) =>
+          console.error('Failed to cache idempotency:', err)
+        );
       }
 
       // Release lock
-      releaseIdempotencyLock(merchantId, idempotencyKey)
-        .catch(err => console.error('Failed to release lock:', err));
+      releaseIdempotencyLock(merchantId, idempotencyKey).catch((err) =>
+        console.error('Failed to release lock:', err)
+      );
 
       return originalJson(body);
     };
 
     // Attach cleanup for error cases
     res.on('finish', () => {
-      releaseIdempotencyLock(merchantId, idempotencyKey)
-        .catch(err => console.error('Failed to release lock on finish:', err));
+      releaseIdempotencyLock(merchantId, idempotencyKey).catch((err) =>
+        console.error('Failed to release lock on finish:', err)
+      );
     });
 
     next();

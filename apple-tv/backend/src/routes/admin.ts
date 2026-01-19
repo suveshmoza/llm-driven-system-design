@@ -1,24 +1,63 @@
-const express = require('express');
-const db = require('../db');
-const { client: redis } = require('../db/redis');
-const { isAuthenticated, isAdmin } = require('../middleware/auth');
-const { v4: uuidv4 } = require('uuid');
-const router = express.Router();
+import express, { Request, Response, Router } from 'express';
+import * as db from '../db/index.js';
+import { client as redis } from '../db/redis.js';
+import { isAuthenticated, isAdmin } from '../middleware/auth.js';
+import { v4 as uuidv4 } from 'uuid';
+
+const router: Router = express.Router();
+
+interface StatsRow {
+  count: string;
+  total?: string;
+  subscription_tier?: string;
+}
+
+interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  subscription_tier: string;
+  subscription_expires_at: Date | null;
+  created_at: Date;
+}
+
+interface ContentRow {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+  content_type: string;
+  status: string;
+  featured: boolean;
+  view_count: number;
+  release_date: Date;
+  created_at: Date;
+}
+
+interface AnalyticsRow {
+  id: string;
+  title: string;
+  content_type: string;
+  view_count: number;
+  recent_views: number;
+}
 
 // Get dashboard stats
-router.get('/stats', isAuthenticated, isAdmin, async (req, res) => {
+router.get('/stats', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     // Try cache first
     const cached = await redis.get('admin:stats');
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
     const [users, content, views, subscriptions] = await Promise.all([
-      db.query('SELECT COUNT(*) FROM users'),
-      db.query(`SELECT COUNT(*) FROM content WHERE content_type != 'episode'`),
-      db.query('SELECT SUM(view_count) as total FROM content'),
-      db.query(`
+      db.query<StatsRow>('SELECT COUNT(*) FROM users'),
+      db.query<StatsRow>(`SELECT COUNT(*) FROM content WHERE content_type != 'episode'`),
+      db.query<StatsRow>('SELECT SUM(view_count) as total FROM content'),
+      db.query<StatsRow>(`
         SELECT subscription_tier, COUNT(*) as count
         FROM users
         WHERE subscription_tier != 'free'
@@ -30,9 +69,11 @@ router.get('/stats', isAuthenticated, isAdmin, async (req, res) => {
     const stats = {
       totalUsers: parseInt(users.rows[0].count),
       totalContent: parseInt(content.rows[0].count),
-      totalViews: parseInt(views.rows[0].total) || 0,
-      activeSubscriptions: subscriptions.rows.reduce((acc, row) => {
-        acc[row.subscription_tier] = parseInt(row.count);
+      totalViews: parseInt(views.rows[0].total || '0') || 0,
+      activeSubscriptions: subscriptions.rows.reduce((acc: Record<string, number>, row) => {
+        if (row.subscription_tier) {
+          acc[row.subscription_tier] = parseInt(row.count);
+        }
         return acc;
       }, {})
     };
@@ -48,15 +89,15 @@ router.get('/stats', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 // Get all users (paginated)
-router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+router.get('/users', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20, offset = 0, search } = req.query;
+    const { limit = '20', offset = '0', search } = req.query as Record<string, string>;
 
     let query = `
       SELECT id, email, name, role, subscription_tier, subscription_expires_at, created_at
       FROM users
     `;
-    const params = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (search) {
@@ -68,9 +109,9 @@ router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
     query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(parseInt(limit), parseInt(offset));
 
-    const result = await db.query(query, params);
+    const result = await db.query<UserRow>(query, params);
 
-    const countResult = await db.query('SELECT COUNT(*) FROM users');
+    const countResult = await db.query<StatsRow>('SELECT COUNT(*) FROM users');
 
     res.json({
       users: result.rows,
@@ -83,9 +124,9 @@ router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 // Get all content (paginated, admin view)
-router.get('/content', isAuthenticated, isAdmin, async (req, res) => {
+router.get('/content', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20, offset = 0, status, type, search } = req.query;
+    const { limit = '20', offset = '0', status, type, search } = req.query as Record<string, string>;
 
     let query = `
       SELECT id, title, description, duration, content_type, status, featured,
@@ -93,7 +134,7 @@ router.get('/content', isAuthenticated, isAdmin, async (req, res) => {
       FROM content
       WHERE content_type != 'episode'
     `;
-    const params = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (status) {
@@ -115,9 +156,9 @@ router.get('/content', isAuthenticated, isAdmin, async (req, res) => {
     query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(parseInt(limit), parseInt(offset));
 
-    const result = await db.query(query, params);
+    const result = await db.query<ContentRow>(query, params);
 
-    const countResult = await db.query(`SELECT COUNT(*) FROM content WHERE content_type != 'episode'`);
+    const countResult = await db.query<StatsRow>(`SELECT COUNT(*) FROM content WHERE content_type != 'episode'`);
 
     res.json({
       content: result.rows,
@@ -129,8 +170,21 @@ router.get('/content', isAuthenticated, isAdmin, async (req, res) => {
   }
 });
 
+interface CreateContentBody {
+  title?: string;
+  description?: string;
+  duration?: number;
+  releaseDate?: string;
+  contentType?: string;
+  rating?: string;
+  genres?: string[];
+  thumbnailUrl?: string;
+  bannerUrl?: string;
+  featured?: boolean;
+}
+
 // Create content
-router.post('/content', isAuthenticated, isAdmin, async (req, res) => {
+router.post('/content', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       title,
@@ -143,10 +197,11 @@ router.post('/content', isAuthenticated, isAdmin, async (req, res) => {
       thumbnailUrl,
       bannerUrl,
       featured
-    } = req.body;
+    } = req.body as CreateContentBody;
 
     if (!title || !contentType) {
-      return res.status(400).json({ error: 'Title and content type are required' });
+      res.status(400).json({ error: 'Title and content type are required' });
+      return;
     }
 
     const contentId = uuidv4();
@@ -176,8 +231,21 @@ router.post('/content', isAuthenticated, isAdmin, async (req, res) => {
   }
 });
 
+interface UpdateContentBody {
+  title?: string;
+  description?: string;
+  duration?: number;
+  releaseDate?: string;
+  rating?: string;
+  genres?: string[];
+  thumbnailUrl?: string;
+  bannerUrl?: string;
+  featured?: boolean;
+  status?: string;
+}
+
 // Update content
-router.put('/content/:id', isAuthenticated, isAdmin, async (req, res) => {
+router.put('/content/:id', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const {
@@ -191,7 +259,7 @@ router.put('/content/:id', isAuthenticated, isAdmin, async (req, res) => {
       bannerUrl,
       featured,
       status
-    } = req.body;
+    } = req.body as UpdateContentBody;
 
     await db.query(`
       UPDATE content SET
@@ -220,7 +288,7 @@ router.put('/content/:id', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 // Delete content
-router.delete('/content/:id', isAuthenticated, isAdmin, async (req, res) => {
+router.delete('/content/:id', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -238,7 +306,7 @@ router.delete('/content/:id', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 // Toggle featured status
-router.post('/content/:id/feature', isAuthenticated, isAdmin, async (req, res) => {
+router.post('/content/:id/feature', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -256,11 +324,11 @@ router.post('/content/:id/feature', isAuthenticated, isAdmin, async (req, res) =
 });
 
 // Get viewing analytics
-router.get('/analytics/views', isAuthenticated, isAdmin, async (req, res) => {
+router.get('/analytics/views', isAuthenticated, isAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { days = 7 } = req.query;
+    const { days = '7' } = req.query as Record<string, string>;
 
-    const result = await db.query(`
+    const result = await db.query<AnalyticsRow>(`
       SELECT
         c.id,
         c.title,
@@ -283,4 +351,4 @@ router.get('/analytics/views', isAuthenticated, isAdmin, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

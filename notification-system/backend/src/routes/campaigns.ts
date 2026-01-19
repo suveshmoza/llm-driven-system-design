@@ -1,21 +1,63 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../utils/database.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import { notificationService } from '../services/notifications.js';
 
-const router = Router();
+const router: Router = Router();
+
+interface CampaignRow {
+  id: string;
+  name: string;
+  description: string | null;
+  template_id: string | null;
+  target_audience: Record<string, unknown> | null;
+  channels: string[];
+  priority: string;
+  status: string;
+  scheduled_at: Date | null;
+  started_at: Date | null;
+  completed_at: Date | null;
+  created_by: string;
+  created_at: Date;
+  updated_at: Date;
+  total_sent?: number;
+  total_delivered?: number;
+  total_opened?: number;
+  total_clicked?: number;
+  total_failed?: number;
+}
+
+interface CreateCampaignRequest {
+  name: string;
+  description?: string;
+  templateId?: string;
+  targetAudience?: Record<string, unknown>;
+  channels?: string[];
+  priority?: string;
+  scheduledAt?: string;
+}
+
+interface UpdateCampaignRequest {
+  name?: string;
+  description?: string;
+  templateId?: string;
+  targetAudience?: Record<string, unknown>;
+  channels?: string[];
+  priority?: string;
+  scheduledAt?: string;
+}
 
 // Get all campaigns
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { status, limit = '50', offset = '0' } = req.query;
 
     let queryStr = `
       SELECT c.*, cs.total_sent, cs.total_delivered, cs.total_opened, cs.total_clicked, cs.total_failed
       FROM campaigns c
       LEFT JOIN campaign_stats cs ON c.id = cs.campaign_id
     `;
-    const params = [];
+    const params: unknown[] = [];
 
     if (status) {
       params.push(status);
@@ -23,9 +65,9 @@ router.get('/', async (req, res) => {
     }
 
     queryStr += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(parseInt(limit as string), parseInt(offset as string));
 
-    const result = await query(queryStr, params);
+    const result = await query<CampaignRow>(queryStr, params);
     res.json({ campaigns: result.rows });
   } catch (error) {
     console.error('Get campaigns error:', error);
@@ -34,9 +76,9 @@ router.get('/', async (req, res) => {
 });
 
 // Get campaign by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(
+    const result = await query<CampaignRow>(
       `SELECT c.*, cs.total_sent, cs.total_delivered, cs.total_opened, cs.total_clicked, cs.total_failed
        FROM campaigns c
        LEFT JOIN campaign_stats cs ON c.id = cs.campaign_id
@@ -45,7 +87,8 @@ router.get('/:id', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Campaign not found' });
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
     }
 
     res.json(result.rows[0]);
@@ -56,15 +99,16 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create campaign (admin only)
-router.post('/', adminMiddleware, async (req, res) => {
+router.post('/', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, description, templateId, targetAudience, channels, priority, scheduledAt } = req.body;
+    const { name, description, templateId, targetAudience, channels, priority, scheduledAt } = req.body as CreateCampaignRequest;
 
     if (!name) {
-      return res.status(400).json({ error: 'name is required' });
+      res.status(400).json({ error: 'name is required' });
+      return;
     }
 
-    const result = await query(
+    const result = await query<CampaignRow>(
       `INSERT INTO campaigns (name, description, template_id, target_audience, channels, priority, scheduled_at, status, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
@@ -77,7 +121,7 @@ router.post('/', adminMiddleware, async (req, res) => {
         priority || 'normal',
         scheduledAt || null,
         scheduledAt ? 'scheduled' : 'draft',
-        req.user.id,
+        req.user!.id,
       ]
     );
 
@@ -97,25 +141,27 @@ router.post('/', adminMiddleware, async (req, res) => {
 });
 
 // Update campaign (admin only)
-router.patch('/:id', adminMiddleware, async (req, res) => {
+router.patch('/:id', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, description, templateId, targetAudience, channels, priority, scheduledAt } = req.body;
+    const { name, description, templateId, targetAudience, channels, priority, scheduledAt } = req.body as UpdateCampaignRequest;
 
     // Check if campaign exists and is editable
-    const existing = await query(
+    const existing = await query<{ status: string }>(
       `SELECT status FROM campaigns WHERE id = $1`,
       [req.params.id]
     );
 
     if (existing.rows.length === 0) {
-      return res.status(404).json({ error: 'Campaign not found' });
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
     }
 
     if (!['draft', 'scheduled'].includes(existing.rows[0].status)) {
-      return res.status(400).json({ error: 'Can only edit draft or scheduled campaigns' });
+      res.status(400).json({ error: 'Can only edit draft or scheduled campaigns' });
+      return;
     }
 
-    const result = await query(
+    const result = await query<CampaignRow>(
       `UPDATE campaigns SET
          name = COALESCE($2, name),
          description = COALESCE($3, description),
@@ -146,22 +192,29 @@ router.patch('/:id', adminMiddleware, async (req, res) => {
   }
 });
 
+interface TargetAudience {
+  filters?: Array<{ field: string; value: unknown }>;
+  data?: Record<string, unknown>;
+}
+
 // Start campaign (admin only)
-router.post('/:id/start', adminMiddleware, async (req, res) => {
+router.post('/:id/start', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const campaignResult = await query(
+    const campaignResult = await query<CampaignRow>(
       `SELECT * FROM campaigns WHERE id = $1`,
       [req.params.id]
     );
 
     if (campaignResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Campaign not found' });
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
     }
 
     const campaign = campaignResult.rows[0];
 
     if (!['draft', 'scheduled'].includes(campaign.status)) {
-      return res.status(400).json({ error: 'Campaign cannot be started' });
+      res.status(400).json({ error: 'Campaign cannot be started' });
+      return;
     }
 
     // Update status to running
@@ -172,18 +225,19 @@ router.post('/:id/start', adminMiddleware, async (req, res) => {
 
     // Get target users based on audience filters
     let usersQuery = `SELECT id FROM users WHERE role = 'user'`;
-    const params = [];
+    const params: unknown[] = [];
 
-    if (campaign.target_audience?.filters) {
+    const targetAudience = campaign.target_audience as TargetAudience | null;
+    if (targetAudience?.filters) {
       // Simple filter example - in production this would be more sophisticated
-      for (const filter of campaign.target_audience.filters) {
+      for (const filter of targetAudience.filters) {
         if (filter.field === 'email_verified' && filter.value) {
           usersQuery += ` AND email_verified = true`;
         }
       }
     }
 
-    const usersResult = await query(usersQuery, params);
+    const usersResult = await query<{ id: string }>(usersQuery, params);
 
     // Send notifications to all target users
     let sentCount = 0;
@@ -191,10 +245,10 @@ router.post('/:id/start', adminMiddleware, async (req, res) => {
       try {
         await notificationService.sendNotification({
           userId: user.id,
-          templateId: campaign.template_id,
+          templateId: campaign.template_id || undefined,
           channels: campaign.channels,
-          priority: campaign.priority,
-          data: campaign.target_audience?.data || {},
+          priority: campaign.priority as 'critical' | 'high' | 'normal' | 'low',
+          data: targetAudience?.data || {},
         });
         sentCount++;
       } catch (e) {
@@ -222,15 +276,16 @@ router.post('/:id/start', adminMiddleware, async (req, res) => {
 });
 
 // Cancel campaign (admin only)
-router.post('/:id/cancel', adminMiddleware, async (req, res) => {
+router.post('/:id/cancel', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(
+    const result = await query<{ id: string }>(
       `UPDATE campaigns SET status = 'cancelled' WHERE id = $1 AND status IN ('draft', 'scheduled', 'running') RETURNING id`,
       [req.params.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Campaign not found or cannot be cancelled' });
+      res.status(404).json({ error: 'Campaign not found or cannot be cancelled' });
+      return;
     }
 
     res.json({ message: 'Campaign cancelled' });
@@ -241,15 +296,16 @@ router.post('/:id/cancel', adminMiddleware, async (req, res) => {
 });
 
 // Delete campaign (admin only)
-router.delete('/:id', adminMiddleware, async (req, res) => {
+router.delete('/:id', adminMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(
+    const result = await query<{ id: string }>(
       `DELETE FROM campaigns WHERE id = $1 AND status = 'draft' RETURNING id`,
       [req.params.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Campaign not found or cannot be deleted (only drafts can be deleted)' });
+      res.status(404).json({ error: 'Campaign not found or cannot be deleted (only drafts can be deleted)' });
+      return;
     }
 
     res.json({ message: 'Campaign deleted' });

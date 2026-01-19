@@ -2,18 +2,48 @@
  * RankingService implements multi-factor scoring for suggestions.
  * Combines popularity, recency, personalization, and trending signals.
  */
+import type Redis from 'ioredis';
+import type { Suggestion } from '../data-structures/trie.js';
+
+export interface RankingContext {
+  userId?: string | null;
+  prefix?: string;
+}
+
+export interface RankedSuggestion extends Suggestion {
+  score: number;
+  scores: {
+    popularity: number;
+    recency: number;
+    personal: number;
+    trending: number;
+    match: number;
+  };
+  fuzzyPenalty?: number;
+}
+
+interface UserHistoryEntry {
+  phrase: string;
+  count: number;
+  timestamp: number;
+}
+
+interface TrendingResult {
+  phrase: string;
+  score: number;
+}
+
 export class RankingService {
-  constructor(redis) {
+  private redis: Redis;
+
+  constructor(redis: Redis) {
     this.redis = redis;
   }
 
   /**
    * Rank suggestions using multiple scoring factors.
-   * @param {Array} suggestions - Base suggestions with phrase and count
-   * @param {object} context - Ranking context: userId, prefix, deviceType
-   * @returns {Promise<Array>} Ranked suggestions with scores
    */
-  async rank(suggestions, context = {}) {
+  async rank(suggestions: Suggestion[], context: RankingContext = {}): Promise<RankedSuggestion[]> {
     const { userId = null, prefix = '' } = context;
 
     if (!suggestions || suggestions.length === 0) {
@@ -21,7 +51,7 @@ export class RankingService {
     }
 
     const scored = await Promise.all(
-      suggestions.map(async (suggestion) => {
+      suggestions.map(async (suggestion): Promise<RankedSuggestion> => {
         // Base popularity score (logarithmic scaling)
         const popularityScore = this._calculatePopularityScore(suggestion.count);
 
@@ -41,7 +71,7 @@ export class RankingService {
         const matchQuality = this._calculateMatchQuality(prefix, suggestion.phrase);
 
         // Apply fuzzy penalty if present
-        const fuzzyPenalty = suggestion.fuzzyPenalty || 0;
+        const fuzzyPenalty = (suggestion as Suggestion & { fuzzyPenalty?: number }).fuzzyPenalty || 0;
 
         // Combine scores with weights
         const finalScore =
@@ -76,7 +106,7 @@ export class RankingService {
    * Calculate popularity score using logarithmic scaling.
    * This prevents very popular queries from completely dominating.
    */
-  _calculatePopularityScore(count) {
+  private _calculatePopularityScore(count: number): number {
     if (!count || count <= 0) return 0;
     // Log10 scaling, normalized to 0-1 range (assuming max ~1B queries)
     return Math.log10(count + 1) / 9; // log10(1B) ≈ 9
@@ -86,7 +116,7 @@ export class RankingService {
    * Calculate recency score with exponential decay.
    * More recent updates get higher scores.
    */
-  _calculateRecencyScore(lastUpdated) {
+  private _calculateRecencyScore(lastUpdated: number | undefined): number {
     if (!lastUpdated) return 0.5; // Default if no timestamp
 
     const ageInHours = (Date.now() - lastUpdated) / (1000 * 60 * 60);
@@ -99,7 +129,7 @@ export class RankingService {
    * Calculate match quality between prefix and phrase.
    * Rewards exact prefix matches and word boundary matches.
    */
-  _calculateMatchQuality(prefix, phrase) {
+  private _calculateMatchQuality(prefix: string, phrase: string): number {
     if (!prefix || !phrase) return 0;
 
     const lowerPrefix = prefix.toLowerCase();
@@ -128,7 +158,7 @@ export class RankingService {
   /**
    * Get personalization score based on user history.
    */
-  async _getPersonalScore(userId, phrase) {
+  private async _getPersonalScore(userId: string, phrase: string): Promise<number> {
     if (!userId) return 0;
 
     try {
@@ -137,8 +167,8 @@ export class RankingService {
 
       if (!userHistory) return 0;
 
-      const history = JSON.parse(userHistory);
-      const match = history.find(h => h.phrase.toLowerCase() === phrase.toLowerCase());
+      const history: UserHistoryEntry[] = JSON.parse(userHistory);
+      const match = history.find((h) => h.phrase.toLowerCase() === phrase.toLowerCase());
 
       if (match) {
         // Recency-weighted personal score
@@ -148,10 +178,10 @@ export class RankingService {
         // Also factor in how many times they've searched this
         const frequencyWeight = Math.min(match.count / 10, 1);
 
-        return (recencyWeight * 0.7 + frequencyWeight * 0.3);
+        return recencyWeight * 0.7 + frequencyWeight * 0.3;
       }
     } catch (error) {
-      console.error('Error getting personal score:', error.message);
+      console.error('Error getting personal score:', (error as Error).message);
     }
 
     return 0;
@@ -160,7 +190,7 @@ export class RankingService {
   /**
    * Get trending boost for a phrase.
    */
-  async _getTrendingBoost(phrase) {
+  private async _getTrendingBoost(phrase: string): Promise<number> {
     try {
       const score = await this.redis.zscore('trending_queries', phrase.toLowerCase());
 
@@ -169,7 +199,7 @@ export class RankingService {
       // Normalize trending score (assuming max score of ~1000)
       return Math.min(parseFloat(score) / 1000, 1.0);
     } catch (error) {
-      console.error('Error getting trending boost:', error.message);
+      console.error('Error getting trending boost:', (error as Error).message);
       return 0;
     }
   }
@@ -177,7 +207,7 @@ export class RankingService {
   /**
    * Record a user's search for personalization.
    */
-  async recordUserSearch(userId, phrase) {
+  async recordUserSearch(userId: string, phrase: string): Promise<void> {
     if (!userId || !phrase) return;
 
     try {
@@ -185,7 +215,7 @@ export class RankingService {
       const maxHistorySize = 100;
 
       // Get existing history
-      let history = [];
+      let history: UserHistoryEntry[] = [];
       const existing = await this.redis.get(historyKey);
       if (existing) {
         history = JSON.parse(existing);
@@ -193,7 +223,7 @@ export class RankingService {
 
       // Update or add the phrase
       const existingIndex = history.findIndex(
-        h => h.phrase.toLowerCase() === phrase.toLowerCase()
+        (h) => h.phrase.toLowerCase() === phrase.toLowerCase()
       );
 
       if (existingIndex !== -1) {
@@ -213,14 +243,14 @@ export class RankingService {
       // Save with 90-day expiration
       await this.redis.setex(historyKey, 90 * 24 * 60 * 60, JSON.stringify(history));
     } catch (error) {
-      console.error('Error recording user search:', error.message);
+      console.error('Error recording user search:', (error as Error).message);
     }
   }
 
   /**
    * Get user's search history.
    */
-  async getUserHistory(userId, limit = 10) {
+  async getUserHistory(userId: string, limit: number = 10): Promise<UserHistoryEntry[]> {
     if (!userId) return [];
 
     try {
@@ -229,10 +259,10 @@ export class RankingService {
 
       if (!existing) return [];
 
-      const history = JSON.parse(existing);
+      const history: UserHistoryEntry[] = JSON.parse(existing);
       return history.slice(0, limit);
     } catch (error) {
-      console.error('Error getting user history:', error.message);
+      console.error('Error getting user history:', (error as Error).message);
       return [];
     }
   }
@@ -240,7 +270,7 @@ export class RankingService {
   /**
    * Update trending scores for a phrase.
    */
-  async updateTrending(phrase, increment = 1) {
+  async updateTrending(phrase: string, increment: number = 1): Promise<void> {
     if (!phrase) return;
 
     try {
@@ -253,18 +283,18 @@ export class RankingService {
       // Note: EXPIRE on sorted set will expire the whole set, not individual members
       // For production, use time-windowed keys instead
     } catch (error) {
-      console.error('Error updating trending:', error.message);
+      console.error('Error updating trending:', (error as Error).message);
     }
   }
 
   /**
    * Get top trending queries.
    */
-  async getTopTrending(limit = 10) {
+  async getTopTrending(limit: number = 10): Promise<TrendingResult[]> {
     try {
       const trending = await this.redis.zrevrange('trending_queries', 0, limit - 1, 'WITHSCORES');
 
-      const results = [];
+      const results: TrendingResult[] = [];
       for (let i = 0; i < trending.length; i += 2) {
         results.push({
           phrase: trending[i],
@@ -274,7 +304,7 @@ export class RankingService {
 
       return results;
     } catch (error) {
-      console.error('Error getting trending:', error.message);
+      console.error('Error getting trending:', (error as Error).message);
       return [];
     }
   }
@@ -283,7 +313,7 @@ export class RankingService {
    * Decay trending scores periodically.
    * Call this on a schedule (e.g., every hour).
    */
-  async decayTrendingScores(decayFactor = 0.9) {
+  async decayTrendingScores(decayFactor: number = 0.9): Promise<void> {
     try {
       const trending = await this.redis.zrange('trending_queries', 0, -1, 'WITHSCORES');
 
@@ -302,7 +332,7 @@ export class RankingService {
 
       await pipeline.exec();
     } catch (error) {
-      console.error('Error decaying trending:', error.message);
+      console.error('Error decaying trending:', (error as Error).message);
     }
   }
 }

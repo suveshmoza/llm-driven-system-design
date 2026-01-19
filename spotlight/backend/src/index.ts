@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { Client } from '@elastic/elasticsearch';
 import pg from 'pg';
@@ -17,6 +17,36 @@ const { Pool } = pg;
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Extend Express Request to include custom properties
+interface CustomRequest extends Request {
+  requestId?: string;
+}
+
+// Health check types
+interface HealthComponent {
+  status: 'healthy' | 'unhealthy';
+  latencyMs?: number;
+  error?: string;
+  clusterStatus?: string;
+}
+
+interface HealthResponse {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  version: string;
+  uptime: number;
+  components: Record<string, HealthComponent>;
+  circuitBreakers?: Record<string, unknown>;
+  idempotencyStore?: {
+    entries: number | Promise<number>;
+  };
+  memory?: {
+    heapUsedMB: number;
+    heapTotalMB: number;
+    rssMB: number;
+  };
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -28,14 +58,16 @@ app.use(globalRateLimiter);
 app.use(metricsMiddleware);
 
 // Request ID middleware for tracing
-app.use((req, res, next) => {
-  req.requestId = req.headers['x-request-id'] || `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+app.use((req: CustomRequest, res: Response, next: NextFunction) => {
+  const requestIdHeader = req.headers['x-request-id'];
+  req.requestId = (typeof requestIdHeader === 'string' ? requestIdHeader : undefined) ||
+    `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   res.set('X-Request-ID', req.requestId);
   next();
 });
 
 // Request logging middleware
-app.use((req, res, next) => {
+app.use((req: CustomRequest, res: Response, next: NextFunction) => {
   const start = Date.now();
 
   res.on('finish', () => {
@@ -57,7 +89,7 @@ app.use((req, res, next) => {
 // Database connections
 export const pool = new Pool({
   host: process.env.PG_HOST || 'localhost',
-  port: process.env.PG_PORT || 5432,
+  port: parseInt(process.env.PG_PORT || '5432'),
   database: process.env.PG_DATABASE || 'spotlight',
   user: process.env.PG_USER || 'spotlight',
   password: process.env.PG_PASSWORD || 'spotlight_password',
@@ -75,13 +107,14 @@ app.use('/api/suggestions', suggestionsRoutes);
 // ============================================================================
 // Prometheus Metrics Endpoint
 // ============================================================================
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response): Promise<void> => {
   try {
     const metrics = await getMetrics();
     res.set('Content-Type', getContentType());
     res.send(metrics);
   } catch (error) {
-    logger.error({ error: error.message }, 'Failed to generate metrics');
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Failed to generate metrics');
     res.status(500).json({ error: 'Failed to generate metrics' });
   }
 });
@@ -89,8 +122,8 @@ app.get('/metrics', async (req, res) => {
 // ============================================================================
 // Enhanced Health Check Endpoint
 // ============================================================================
-app.get('/health', async (req, res) => {
-  const health = {
+app.get('/health', async (_req: Request, res: Response): Promise<void> => {
+  const health: HealthResponse = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
@@ -111,13 +144,14 @@ app.get('/health', async (req, res) => {
     };
     serviceHealth.labels('postgres').set(1);
   } catch (error) {
+    const err = error as Error;
     health.components.postgres = {
       status: 'unhealthy',
-      error: error.message
+      error: err.message
     };
     serviceHealth.labels('postgres').set(0);
     isHealthy = false;
-    healthLogger.error({ component: 'postgres', error: error.message }, 'PostgreSQL health check failed');
+    healthLogger.error({ component: 'postgres', error: err.message }, 'PostgreSQL health check failed');
   }
 
   // Check Elasticsearch
@@ -135,13 +169,14 @@ app.get('/health', async (req, res) => {
     const clusterHealth = await esClient.cluster.health();
     health.components.elasticsearch.clusterStatus = clusterHealth.status;
   } catch (error) {
+    const err = error as Error;
     health.components.elasticsearch = {
       status: 'unhealthy',
-      error: error.message
+      error: err.message
     };
     serviceHealth.labels('elasticsearch').set(0);
     isHealthy = false;
-    healthLogger.error({ component: 'elasticsearch', error: error.message }, 'Elasticsearch health check failed');
+    healthLogger.error({ component: 'elasticsearch', error: err.message }, 'Elasticsearch health check failed');
   }
 
   // Get circuit breaker states
@@ -149,7 +184,7 @@ app.get('/health', async (req, res) => {
 
   // Get idempotency store stats
   health.idempotencyStore = {
-    entries: getIdempotencyStore().size()
+    entries: await getIdempotencyStore().size()
   };
 
   // Memory usage
@@ -169,26 +204,27 @@ app.get('/health', async (req, res) => {
 });
 
 // Readiness check (for Kubernetes-style deployments)
-app.get('/ready', async (req, res) => {
+app.get('/ready', async (_req: Request, res: Response): Promise<void> => {
   try {
     // Quick checks to verify service is ready to accept traffic
     await pool.query('SELECT 1');
     await esClient.ping();
     res.json({ ready: true });
   } catch (error) {
-    res.status(503).json({ ready: false, error: error.message });
+    const err = error as Error;
+    res.status(503).json({ ready: false, error: err.message });
   }
 });
 
 // Liveness check (simple check that the process is running)
-app.get('/alive', (req, res) => {
+app.get('/alive', (_req: Request, res: Response): void => {
   res.json({ alive: true, uptime: process.uptime() });
 });
 
 // ============================================================================
 // Error Handling
 // ============================================================================
-app.use((err, req, res, next) => {
+app.use((err: Error, req: CustomRequest, res: Response, _next: NextFunction): void => {
   logger.error({
     error: err.message,
     stack: err.stack,
@@ -204,7 +240,7 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response): void => {
   res.status(404).json({
     error: 'Not found',
     path: req.path
@@ -214,7 +250,7 @@ app.use((req, res) => {
 // ============================================================================
 // Server Initialization
 // ============================================================================
-async function start() {
+async function start(): Promise<void> {
   try {
     // Initialize Elasticsearch indices
     await initializeElasticsearch(esClient);
@@ -234,7 +270,8 @@ async function start() {
       });
     });
   } catch (error) {
-    logger.fatal({ error: error.message }, 'Failed to start server');
+    const err = error as Error;
+    logger.fatal({ error: err.message }, 'Failed to start server');
     process.exit(1);
   }
 }

@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Response, NextFunction, ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
@@ -11,7 +12,7 @@ import commentRoutes from './routes/comments.js';
 import voteRoutes from './routes/votes.js';
 
 // Shared modules
-import logger, { requestLoggerMiddleware } from './shared/logger.js';
+import logger, { requestLoggerMiddleware, type AuthenticatedRequest } from './shared/logger.js';
 import { register, metricsMiddleware } from './shared/metrics.js';
 import pool from './db/index.js';
 import redis from './db/redis.js';
@@ -29,13 +30,14 @@ let isShuttingDown = false;
 // ============================================================================
 
 // Reject requests during shutdown
-app.use((req, res, next) => {
+app.use((req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
   if (isShuttingDown) {
     res.set('Connection', 'close');
-    return res.status(503).json({
+    res.status(503).json({
       error: 'Server is shutting down',
       retryAfter: 5,
     });
+    return;
   }
   next();
 });
@@ -60,6 +62,20 @@ app.use(authenticate);
 // Health and Metrics Endpoints
 // ============================================================================
 
+interface HealthCheckResult {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  service: string;
+  version: string;
+  checks: Record<string, { status: string; latencyMs?: number; error?: string }>;
+  memory?: {
+    heapUsedMB: number;
+    heapTotalMB: number;
+    rssMB: number;
+  };
+}
+
 /**
  * Prometheus metrics endpoint.
  *
@@ -68,7 +84,7 @@ app.use(authenticate);
  * - Unusual vote patterns (high rate from few accounts) indicate potential brigading
  * - Request latency histograms surface performance degradation
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());
@@ -86,8 +102,8 @@ app.get('/metrics', async (req, res) => {
  * - Debugging connectivity issues
  * - Monitoring dashboard integration
  */
-app.get('/health', async (req, res) => {
-  const checks = {
+app.get('/health', async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const checks: HealthCheckResult = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -105,9 +121,10 @@ app.get('/health', async (req, res) => {
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     checks.checks.postgres = {
       status: 'error',
-      error: error.message,
+      error: err.message,
     };
     checks.status = 'degraded';
   }
@@ -121,9 +138,10 @@ app.get('/health', async (req, res) => {
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     checks.checks.redis = {
       status: 'error',
-      error: error.message,
+      error: err.message,
     };
     checks.status = 'degraded';
   }
@@ -144,14 +162,14 @@ app.get('/health', async (req, res) => {
  * Simple liveness probe for Kubernetes/load balancers.
  * Returns 200 if the process is running, regardless of dependencies.
  */
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (_req: AuthenticatedRequest, res: Response): void => {
   res.json({ status: 'ok' });
 });
 
 /**
  * Readiness probe - only returns 200 if all dependencies are healthy.
  */
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     await Promise.all([
       pool.query('SELECT 1'),
@@ -159,7 +177,8 @@ app.get('/health/ready', async (req, res) => {
     ]);
     res.json({ status: 'ready' });
   } catch (error) {
-    res.status(503).json({ status: 'not ready', error: error.message });
+    const err = error as Error;
+    res.status(503).json({ status: 'not ready', error: err.message });
   }
 });
 
@@ -180,7 +199,7 @@ app.use('/api/r', subredditRoutes);
 // Error Handling
 // ============================================================================
 
-app.use((err, req, res, next) => {
+const errorHandler: ErrorRequestHandler = (err, req: AuthenticatedRequest, res, _next) => {
   const log = req.log || logger;
   log.error({
     err,
@@ -190,10 +209,12 @@ app.use((err, req, res, next) => {
   }, 'Unhandled error');
 
   res.status(500).json({ error: 'Internal server error' });
-});
+};
+
+app.use(errorHandler);
 
 // 404 handler
-app.use((req, res) => {
+app.use((_req: AuthenticatedRequest, res: Response): void => {
   res.status(404).json({ error: 'Not found' });
 });
 
@@ -222,9 +243,9 @@ const server = app.listen(PORT, () => {
  * - Redis connections are flushed, ensuring cached votes are persisted
  */
 
-const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS, 10) || 30000;
+const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS ?? '', 10) || 30000;
 
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Received shutdown signal, starting graceful shutdown');
 
   isShuttingDown = true;

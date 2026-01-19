@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express from 'express';
+import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { initializeDatabase, getPool } from './models/database.js';
 import { initializeRedis, getRedisClient } from './services/redis.js';
@@ -11,8 +11,8 @@ import trendingRoutes from './routes/trending.js';
 import sseRoutes from './routes/sse.js';
 
 // Import shared modules
-import { SERVER_CONFIG, ALERT_THRESHOLDS, RETENTION_CONFIG } from './shared/config.js';
-import logger, { requestLogger, logError } from './shared/logger.js';
+import { SERVER_CONFIG, ALERT_THRESHOLDS } from './shared/config.js';
+import logger, { requestLogger, logError, LoggedRequest } from './shared/logger.js';
 import {
   getMetrics,
   getContentType,
@@ -25,7 +25,7 @@ import {
   updateAlertStatus,
 } from './shared/metrics.js';
 
-const app = express();
+const app: Express = express();
 const PORT = SERVER_CONFIG.port;
 
 // Middleware
@@ -42,11 +42,47 @@ app.use(requestLogger);
 // Health Check Endpoints
 // ============================================
 
+interface HealthChecks {
+  postgres: string;
+  redis: string;
+  trendingService: string;
+}
+
+interface DetailedHealthChecks {
+  postgres: {
+    status: string;
+    connections?: number;
+    viewEventsCount?: number;
+    snapshotsCount?: number;
+    error?: string;
+  };
+  redis: {
+    status: string;
+    memoryBytes?: number;
+    memoryHuman?: string;
+    bucketKeyCount?: number;
+    error?: string;
+  };
+  trendingService: {
+    status: string;
+    error?: string;
+    [key: string]: unknown;
+  };
+}
+
+interface Alert {
+  metric: string;
+  status: string;
+  value: number;
+  warning: number;
+  critical: number;
+}
+
 /**
  * GET /health
  * Simple health check for load balancer probes
  */
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response): void => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
@@ -54,8 +90,8 @@ app.get('/health', (req, res) => {
  * GET /health/ready
  * Readiness probe - checks if all dependencies are available
  */
-app.get('/health/ready', async (req, res) => {
-  const checks = {
+app.get('/health/ready', async (req: Request, res: Response): Promise<void> => {
+  const checks: HealthChecks = {
     postgres: 'unknown',
     redis: 'unknown',
     trendingService: 'unknown',
@@ -68,7 +104,7 @@ app.get('/health/ready', async (req, res) => {
     checks.postgres = 'healthy';
   } catch (err) {
     checks.postgres = 'unhealthy';
-    logError(err, { check: 'postgres' });
+    logError(err as Error, { check: 'postgres' });
   }
 
   try {
@@ -78,7 +114,7 @@ app.get('/health/ready', async (req, res) => {
     checks.redis = 'healthy';
   } catch (err) {
     checks.redis = 'unhealthy';
-    logError(err, { check: 'redis' });
+    logError(err as Error, { check: 'redis' });
   }
 
   try {
@@ -91,7 +127,7 @@ app.get('/health/ready', async (req, res) => {
     }
   } catch (err) {
     checks.trendingService = 'unhealthy';
-    logError(err, { check: 'trendingService' });
+    logError(err as Error, { check: 'trendingService' });
   }
 
   const isReady = Object.values(checks).every((c) => c === 'healthy' || c === 'not_started');
@@ -107,7 +143,7 @@ app.get('/health/ready', async (req, res) => {
  * GET /health/live
  * Liveness probe - checks if the process is running
  */
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (req: Request, res: Response): void => {
   res.json({
     status: 'alive',
     uptime: process.uptime(),
@@ -121,8 +157,14 @@ app.get('/health/live', (req, res) => {
  * GET /health/detailed
  * Detailed health check with metrics and thresholds
  */
-app.get('/health/detailed', async (req, res) => {
-  const health = {
+app.get('/health/detailed', async (req: Request, res: Response): Promise<void> => {
+  const health: {
+    status: string;
+    timestamp: string;
+    uptime: number;
+    checks: Partial<DetailedHealthChecks>;
+    alerts: Alert[];
+  } = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -140,7 +182,7 @@ app.get('/health/detailed', async (req, res) => {
         (SELECT count(*) FROM trending_snapshots) as snapshots_count
     `);
 
-    const pgStats = pgResult.rows[0];
+    const pgStats = pgResult.rows[0] as { connections: string; view_events_count: string; snapshots_count: string };
     health.checks.postgres = {
       status: 'healthy',
       connections: parseInt(pgStats.connections),
@@ -149,13 +191,13 @@ app.get('/health/detailed', async (req, res) => {
     };
 
     // Update metrics
-    pgActiveConnections.set(health.checks.postgres.connections);
-    tableRowCount.set({ table: 'view_events' }, health.checks.postgres.viewEventsCount);
-    tableRowCount.set({ table: 'trending_snapshots' }, health.checks.postgres.snapshotsCount);
+    pgActiveConnections.set(health.checks.postgres.connections!);
+    tableRowCount.set({ table: 'view_events' }, health.checks.postgres.viewEventsCount!);
+    tableRowCount.set({ table: 'trending_snapshots' }, health.checks.postgres.snapshotsCount!);
 
     // Check thresholds
-    const viewEventsCheck = checkThreshold('view_events_rows', health.checks.postgres.viewEventsCount);
-    const snapshotsCheck = checkThreshold('snapshots_rows', health.checks.postgres.snapshotsCount);
+    const viewEventsCheck = checkThreshold('view_events_rows', health.checks.postgres.viewEventsCount!);
+    const snapshotsCheck = checkThreshold('snapshots_rows', health.checks.postgres.snapshotsCount!);
 
     if (viewEventsCheck.status !== 'ok') {
       health.alerts.push({
@@ -170,9 +212,9 @@ app.get('/health/detailed', async (req, res) => {
       });
     }
   } catch (err) {
-    health.checks.postgres = { status: 'unhealthy', error: err.message };
+    health.checks.postgres = { status: 'unhealthy', error: (err as Error).message };
     health.status = 'unhealthy';
-    logError(err, { check: 'postgres_detailed' });
+    logError(err as Error, { check: 'postgres_detailed' });
   }
 
   try {
@@ -204,9 +246,9 @@ app.get('/health/detailed', async (req, res) => {
     }
     updateAlertStatus('redis_memory', memoryBytes, ALERT_THRESHOLDS.redisMemoryWarningBytes, ALERT_THRESHOLDS.redisMemoryCriticalBytes);
   } catch (err) {
-    health.checks.redis = { status: 'unhealthy', error: err.message };
+    health.checks.redis = { status: 'unhealthy', error: (err as Error).message };
     health.status = 'unhealthy';
-    logError(err, { check: 'redis_detailed' });
+    logError(err as Error, { check: 'redis_detailed' });
   }
 
   try {
@@ -231,9 +273,9 @@ app.get('/health/detailed', async (req, res) => {
       });
     }
   } catch (err) {
-    health.checks.trendingService = { status: 'unhealthy', error: err.message };
+    health.checks.trendingService = { status: 'unhealthy', error: (err as Error).message };
     health.status = 'unhealthy';
-    logError(err, { check: 'trending_service_detailed' });
+    logError(err as Error, { check: 'trending_service_detailed' });
   }
 
   // Overall status based on alerts
@@ -255,13 +297,13 @@ app.get('/health/detailed', async (req, res) => {
  * GET /metrics
  * Prometheus metrics endpoint
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (req: Request, res: Response): Promise<void> => {
   try {
     const metrics = await getMetrics();
     res.set('Content-Type', getContentType());
     res.end(metrics);
   } catch (err) {
-    logError(err, { endpoint: '/metrics' });
+    logError(err as Error, { endpoint: '/metrics' });
     res.status(500).end('Error collecting metrics');
   }
 });
@@ -279,22 +321,22 @@ app.use('/api/sse', sseRoutes);
 // ============================================
 
 // 404 handler
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, _next: NextFunction): void => {
   res.status(404).json({ error: 'Not found', path: req.path });
 });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction): void => {
   logError(err, {
     method: req.method,
     path: req.path,
-    requestId: req.requestId,
+    requestId: (req as LoggedRequest).requestId,
   });
 
   res.status(500).json({
     error: 'Internal server error',
     message: SERVER_CONFIG.nodeEnv === 'development' ? err.message : 'An unexpected error occurred',
-    requestId: req.requestId,
+    requestId: (req as LoggedRequest).requestId,
   });
 });
 
@@ -302,7 +344,7 @@ app.use((err, req, res, next) => {
 // Server Startup
 // ============================================
 
-async function start() {
+async function start(): Promise<void> {
   try {
     logger.info('Initializing database...');
     await initializeDatabase();

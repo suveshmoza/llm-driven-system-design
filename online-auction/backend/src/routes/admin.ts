@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { query } from '../db.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { getConnectionStats } from '../services/websocket.js';
@@ -7,10 +7,10 @@ import { closeAuction } from '../services/scheduler.js';
 const router = express.Router();
 
 // All admin routes require authentication and admin role
-router.use(authenticate, requireAdmin);
+router.use(authenticate as express.RequestHandler, requireAdmin as express.RequestHandler);
 
 // Dashboard stats
-router.get('/stats', async (req, res) => {
+router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
     const [usersResult, auctionsResult, bidsResult, activeResult] = await Promise.all([
       query('SELECT COUNT(*) FROM users'),
@@ -35,9 +35,9 @@ router.get('/stats', async (req, res) => {
 });
 
 // Get all users
-router.get('/users', async (req, res) => {
+router.get('/users', async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 20, search } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
     let queryText = `
@@ -47,7 +47,7 @@ router.get('/users', async (req, res) => {
       FROM users
       WHERE 1=1
     `;
-    const params = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (search) {
@@ -58,7 +58,7 @@ router.get('/users', async (req, res) => {
 
     queryText += ` ORDER BY created_at DESC`;
     queryText += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-    params.push(parseInt(limit), offset);
+    params.push(parseInt(limit as string), offset);
 
     const result = await query(queryText, params);
 
@@ -70,22 +70,24 @@ router.get('/users', async (req, res) => {
 });
 
 // Update user role
-router.put('/users/:id/role', async (req, res) => {
+router.put('/users/:id/role', async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   const { role } = req.body;
 
   if (!['user', 'admin'].includes(role)) {
-    return res.status(400).json({ error: 'Invalid role' });
+    res.status(400).json({ error: 'Invalid role' });
+    return;
   }
 
   try {
-    const result = await query(
-      'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, username, email, role',
-      [role, id]
-    );
+    const result = await query('UPDATE users SET role = $1 WHERE id = $2 RETURNING id, username, email, role', [
+      role,
+      id,
+    ]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     res.json({ user: result.rows[0] });
@@ -96,9 +98,9 @@ router.put('/users/:id/role', async (req, res) => {
 });
 
 // Get all auctions for admin
-router.get('/auctions', async (req, res) => {
+router.get('/auctions', async (req: Request, res: Response): Promise<void> => {
   const { page = 1, limit = 20, status } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
     let queryText = `
@@ -108,7 +110,7 @@ router.get('/auctions', async (req, res) => {
       JOIN users u ON a.seller_id = u.id
       WHERE 1=1
     `;
-    const params = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (status) {
@@ -119,7 +121,7 @@ router.get('/auctions', async (req, res) => {
 
     queryText += ` ORDER BY a.created_at DESC`;
     queryText += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-    params.push(parseInt(limit), offset);
+    params.push(parseInt(limit as string), offset);
 
     const result = await query(queryText, params);
 
@@ -131,7 +133,7 @@ router.get('/auctions', async (req, res) => {
 });
 
 // Force close an auction
-router.post('/auctions/:id/close', async (req, res) => {
+router.post('/auctions/:id/close', async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
 
   try {
@@ -144,7 +146,7 @@ router.post('/auctions/:id/close', async (req, res) => {
 });
 
 // Cancel an auction (admin override)
-router.post('/auctions/:id/cancel', async (req, res) => {
+router.post('/auctions/:id/cancel', async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
 
   try {
@@ -157,7 +159,7 @@ router.post('/auctions/:id/cancel', async (req, res) => {
 });
 
 // Get recent notifications
-router.get('/notifications', async (req, res) => {
+router.get('/notifications', async (req: Request, res: Response): Promise<void> => {
   const { limit = 50 } = req.query;
 
   try {
@@ -167,7 +169,7 @@ router.get('/notifications', async (req, res) => {
        JOIN users u ON n.user_id = u.id
        ORDER BY n.created_at DESC
        LIMIT $1`,
-      [parseInt(limit)]
+      [parseInt(limit as string)]
     );
 
     res.json({ notifications: result.rows });
@@ -178,7 +180,7 @@ router.get('/notifications', async (req, res) => {
 });
 
 // Get system health
-router.get('/health', async (req, res) => {
+router.get('/health', async (_req: Request, res: Response): Promise<void> => {
   try {
     await query('SELECT 1');
     res.json({
@@ -187,10 +189,11 @@ router.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    const err = error as Error;
     res.status(500).json({
       status: 'unhealthy',
       database: 'disconnected',
-      error: error.message,
+      error: err.message,
     });
   }
 });

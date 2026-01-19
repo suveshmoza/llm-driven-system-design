@@ -1,17 +1,25 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import libraryService from '../services/libraryService.js';
 import { requireAuth } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../types.js';
 
 const router = Router();
+
+interface LibraryQuery {
+  limit?: string;
+  offset?: string;
+  ids?: string;
+}
 
 // All library routes require authentication
 router.use(requireAuth);
 
 // Get liked songs
-router.get('/tracks', async (req, res) => {
+router.get('/tracks', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { limit = 50, offset = 0 } = req.query;
-    const result = await libraryService.getLikedSongs(req.session.userId, {
+    const { limit = '50', offset = '0' } = req.query as LibraryQuery;
+    const result = await libraryService.getLikedSongs(authReq.session.userId!, {
       limit: parseInt(limit),
       offset: parseInt(offset),
     });
@@ -23,10 +31,11 @@ router.get('/tracks', async (req, res) => {
 });
 
 // Like a track
-router.put('/tracks/:id', async (req, res) => {
+router.put('/tracks/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.saveToLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'track',
       req.params.id
     );
@@ -38,10 +47,11 @@ router.put('/tracks/:id', async (req, res) => {
 });
 
 // Unlike a track
-router.delete('/tracks/:id', async (req, res) => {
+router.delete('/tracks/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.removeFromLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'track',
       req.params.id
     );
@@ -53,15 +63,17 @@ router.delete('/tracks/:id', async (req, res) => {
 });
 
 // Check if tracks are liked
-router.get('/tracks/contains', async (req, res) => {
+router.get('/tracks/contains', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { ids } = req.query;
+    const { ids } = req.query as LibraryQuery;
     if (!ids) {
-      return res.status(400).json({ error: 'Track IDs required' });
+      res.status(400).json({ error: 'Track IDs required' });
+      return;
     }
     const trackIds = ids.split(',');
     const result = await libraryService.checkMultipleInLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'track',
       trackIds
     );
@@ -73,10 +85,11 @@ router.get('/tracks/contains', async (req, res) => {
 });
 
 // Get saved albums
-router.get('/albums', async (req, res) => {
+router.get('/albums', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { limit = 50, offset = 0 } = req.query;
-    const result = await libraryService.getSavedAlbums(req.session.userId, {
+    const { limit = '50', offset = '0' } = req.query as LibraryQuery;
+    const result = await libraryService.getSavedAlbums(authReq.session.userId!, {
       limit: parseInt(limit),
       offset: parseInt(offset),
     });
@@ -88,10 +101,11 @@ router.get('/albums', async (req, res) => {
 });
 
 // Save album
-router.put('/albums/:id', async (req, res) => {
+router.put('/albums/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.saveToLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'album',
       req.params.id
     );
@@ -103,10 +117,11 @@ router.put('/albums/:id', async (req, res) => {
 });
 
 // Remove album
-router.delete('/albums/:id', async (req, res) => {
+router.delete('/albums/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.removeFromLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'album',
       req.params.id
     );
@@ -118,10 +133,11 @@ router.delete('/albums/:id', async (req, res) => {
 });
 
 // Get followed artists
-router.get('/artists', async (req, res) => {
+router.get('/artists', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { limit = 50, offset = 0 } = req.query;
-    const result = await libraryService.getFollowedArtists(req.session.userId, {
+    const { limit = '50', offset = '0' } = req.query as LibraryQuery;
+    const result = await libraryService.getFollowedArtists(authReq.session.userId!, {
       limit: parseInt(limit),
       offset: parseInt(offset),
     });
@@ -133,10 +149,11 @@ router.get('/artists', async (req, res) => {
 });
 
 // Follow artist
-router.put('/artists/:id', async (req, res) => {
+router.put('/artists/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.saveToLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'artist',
       req.params.id
     );
@@ -148,10 +165,11 @@ router.put('/artists/:id', async (req, res) => {
 });
 
 // Unfollow artist
-router.delete('/artists/:id', async (req, res) => {
+router.delete('/artists/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.removeFromLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'artist',
       req.params.id
     );
@@ -163,10 +181,11 @@ router.delete('/artists/:id', async (req, res) => {
 });
 
 // Get saved playlists (followed, not owned)
-router.get('/playlists', async (req, res) => {
+router.get('/playlists', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { limit = 50, offset = 0 } = req.query;
-    const result = await libraryService.getSavedPlaylists(req.session.userId, {
+    const { limit = '50', offset = '0' } = req.query as LibraryQuery;
+    const result = await libraryService.getSavedPlaylists(authReq.session.userId!, {
       limit: parseInt(limit),
       offset: parseInt(offset),
     });
@@ -178,10 +197,11 @@ router.get('/playlists', async (req, res) => {
 });
 
 // Follow playlist
-router.put('/playlists/:id', async (req, res) => {
+router.put('/playlists/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.saveToLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'playlist',
       req.params.id
     );
@@ -193,10 +213,11 @@ router.put('/playlists/:id', async (req, res) => {
 });
 
 // Unfollow playlist
-router.delete('/playlists/:id', async (req, res) => {
+router.delete('/playlists/:id', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
     const result = await libraryService.removeFromLibrary(
-      req.session.userId,
+      authReq.session.userId!,
       'playlist',
       req.params.id
     );

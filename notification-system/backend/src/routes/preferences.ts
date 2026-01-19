@@ -1,12 +1,30 @@
-import { Router } from 'express';
-import { preferencesService } from '../services/preferences.js';
+import { Router, Request, Response } from 'express';
+import { preferencesService, ChannelPreference } from '../services/preferences.js';
 
-const router = Router();
+const router: Router = Router();
+
+interface UpdatePreferencesRequest {
+  channels?: Record<string, ChannelPreference>;
+  categories?: Record<string, boolean>;
+  quietHoursStart?: number | null;
+  quietHoursEnd?: number | null;
+  timezone?: string;
+}
+
+interface UpdateChannelRequest {
+  enabled: boolean;
+}
+
+interface SetQuietHoursRequest {
+  start?: string | number;
+  end?: string | number;
+  enabled: boolean;
+}
 
 // Get current user's preferences
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const preferences = await preferencesService.getPreferences(req.user.id);
+    const preferences = await preferencesService.getPreferences(req.user!.id);
     res.json(preferences);
   } catch (error) {
     console.error('Get preferences error:', error);
@@ -15,21 +33,23 @@ router.get('/', async (req, res) => {
 });
 
 // Update preferences
-router.patch('/', async (req, res) => {
+router.patch('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { channels, categories, quietHoursStart, quietHoursEnd, timezone } = req.body;
+    const { channels, categories, quietHoursStart, quietHoursEnd, timezone } = req.body as UpdatePreferencesRequest;
 
     // Validate quiet hours
     if (quietHoursStart !== undefined || quietHoursEnd !== undefined) {
-      if (quietHoursStart !== null && (quietHoursStart < 0 || quietHoursStart >= 1440)) {
-        return res.status(400).json({ error: 'quietHoursStart must be between 0 and 1439 (minutes from midnight)' });
+      if (quietHoursStart !== null && quietHoursStart !== undefined && (quietHoursStart < 0 || quietHoursStart >= 1440)) {
+        res.status(400).json({ error: 'quietHoursStart must be between 0 and 1439 (minutes from midnight)' });
+        return;
       }
-      if (quietHoursEnd !== null && (quietHoursEnd < 0 || quietHoursEnd >= 1440)) {
-        return res.status(400).json({ error: 'quietHoursEnd must be between 0 and 1439 (minutes from midnight)' });
+      if (quietHoursEnd !== null && quietHoursEnd !== undefined && (quietHoursEnd < 0 || quietHoursEnd >= 1440)) {
+        res.status(400).json({ error: 'quietHoursEnd must be between 0 and 1439 (minutes from midnight)' });
+        return;
       }
     }
 
-    const preferences = await preferencesService.updatePreferences(req.user.id, {
+    const preferences = await preferencesService.updatePreferences(req.user!.id, {
       channels,
       categories,
       quietHoursStart,
@@ -45,26 +65,28 @@ router.patch('/', async (req, res) => {
 });
 
 // Enable/disable a specific channel
-router.patch('/channels/:channel', async (req, res) => {
+router.patch('/channels/:channel', async (req: Request, res: Response): Promise<void> => {
   try {
     const { channel } = req.params;
-    const { enabled } = req.body;
+    const { enabled } = req.body as UpdateChannelRequest;
 
     if (!['push', 'email', 'sms'].includes(channel)) {
-      return res.status(400).json({ error: 'Invalid channel' });
+      res.status(400).json({ error: 'Invalid channel' });
+      return;
     }
 
     if (typeof enabled !== 'boolean') {
-      return res.status(400).json({ error: 'enabled must be a boolean' });
+      res.status(400).json({ error: 'enabled must be a boolean' });
+      return;
     }
 
-    const currentPrefs = await preferencesService.getPreferences(req.user.id);
+    const currentPrefs = await preferencesService.getPreferences(req.user!.id);
     const updatedChannels = {
       ...currentPrefs.channels,
       [channel]: { ...currentPrefs.channels[channel], enabled },
     };
 
-    const preferences = await preferencesService.updatePreferences(req.user.id, {
+    const preferences = await preferencesService.updatePreferences(req.user!.id, {
       channels: updatedChannels,
     });
 
@@ -76,16 +98,17 @@ router.patch('/channels/:channel', async (req, res) => {
 });
 
 // Set quiet hours
-router.put('/quiet-hours', async (req, res) => {
+router.put('/quiet-hours', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { start, end, enabled } = req.body;
+    const { start, end, enabled } = req.body as SetQuietHoursRequest;
 
-    let quietHoursStart = null;
-    let quietHoursEnd = null;
+    let quietHoursStart: number | null = null;
+    let quietHoursEnd: number | null = null;
 
     if (enabled) {
       if (start === undefined || end === undefined) {
-        return res.status(400).json({ error: 'start and end are required when enabled is true' });
+        res.status(400).json({ error: 'start and end are required when enabled is true' });
+        return;
       }
 
       // Parse time strings (e.g., "22:00") or minutes
@@ -104,7 +127,7 @@ router.put('/quiet-hours', async (req, res) => {
       }
     }
 
-    const preferences = await preferencesService.updatePreferences(req.user.id, {
+    const preferences = await preferencesService.updatePreferences(req.user!.id, {
       quietHoursStart,
       quietHoursEnd,
     });

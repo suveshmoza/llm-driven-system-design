@@ -6,22 +6,73 @@ import {
   geocodingCircuitBreakerOptions,
 } from '../shared/circuitBreaker.js';
 import { cacheHits, cacheMisses } from '../shared/metrics.js';
+import type CircuitBreaker from 'opossum';
+
+/**
+ * Type definitions for search service
+ */
+interface SearchOptions {
+  lat?: number;
+  lng?: number;
+  radius?: number;
+  limit?: number;
+  category?: string;
+}
+
+interface Place {
+  id: string;
+  name: string;
+  category: string;
+  location: { lat: number; lng: number };
+  address: string | null;
+  phone: string | null;
+  rating: number | null;
+  reviewCount: number;
+  distance: number | null;
+  hours?: string | null;
+}
+
+interface GeocodeResult {
+  formattedAddress: string;
+  location: { lat: number; lng: number };
+  placeId?: string;
+  name?: string;
+  category?: string;
+  type?: string;
+}
+
+interface ReverseGeocodeResult {
+  type: string;
+  name: string;
+  address?: string;
+  category?: string;
+  roadClass?: string;
+  distance: number;
+}
+
+interface Category {
+  name: string;
+  count: number;
+}
 
 /**
  * Search and Geocoding Service
  * Enhanced with circuit breakers, caching, and structured logging
  */
 class SearchService {
+  private geocodeBreaker: CircuitBreaker<[string], GeocodeResult[]>;
+  private reverseGeocodeBreaker: CircuitBreaker<[number, number], ReverseGeocodeResult | null>;
+
   constructor() {
     // Circuit breaker for geocoding operations
-    this.geocodeBreaker = createCircuitBreaker(
+    this.geocodeBreaker = createCircuitBreaker<[string], GeocodeResult[]>(
       'geocoding',
       this._geocodeInternal.bind(this),
       geocodingCircuitBreakerOptions
     );
 
     // Circuit breaker for reverse geocoding
-    this.reverseGeocodeBreaker = createCircuitBreaker(
+    this.reverseGeocodeBreaker = createCircuitBreaker<[number, number], ReverseGeocodeResult | null>(
       'reverse_geocoding',
       this._reverseGeocodeInternal.bind(this),
       geocodingCircuitBreakerOptions
@@ -31,7 +82,7 @@ class SearchService {
   /**
    * Search for places by name or category
    */
-  async searchPlaces(query, options = {}) {
+  async searchPlaces(query: string, options: SearchOptions = {}): Promise<Place[]> {
     const { lat, lng, radius = 5000, limit = 20, category } = options;
 
     // Try cache for common searches
@@ -41,13 +92,13 @@ class SearchService {
     if (cached) {
       cacheHits.inc({ cache_name: 'search' });
       logger.debug({ query, cached: true }, 'Search cache hit');
-      return JSON.parse(cached);
+      return JSON.parse(cached) as Place[];
     }
 
     cacheMisses.inc({ cache_name: 'search' });
 
-    let sql;
-    let params;
+    let sql: string;
+    let params: (string | number | undefined)[];
 
     if (lat && lng) {
       // Search near a location
@@ -109,7 +160,7 @@ class SearchService {
 
     const result = await pool.query(sql, params);
 
-    const places = result.rows.map(row => ({
+    const places: Place[] = result.rows.map(row => ({
       id: row.id,
       name: row.name,
       category: row.category,
@@ -136,7 +187,7 @@ class SearchService {
   /**
    * Internal geocode implementation (for circuit breaker)
    */
-  async _geocodeInternal(address) {
+  private async _geocodeInternal(address: string): Promise<GeocodeResult[]> {
     // First try to find a matching POI
     const result = await pool.query(`
       SELECT id, name, lat, lng, address, category
@@ -180,7 +231,7 @@ class SearchService {
   /**
    * Geocode an address to coordinates (with circuit breaker)
    */
-  async geocode(address) {
+  async geocode(address: string): Promise<GeocodeResult[]> {
     // Check cache first
     const cacheKey = `geocode:${address.toLowerCase().trim()}`;
     const cached = await redis.get(cacheKey);
@@ -188,7 +239,7 @@ class SearchService {
     if (cached) {
       cacheHits.inc({ cache_name: 'geocode' });
       logger.debug({ address, cached: true }, 'Geocode cache hit');
-      return JSON.parse(cached);
+      return JSON.parse(cached) as GeocodeResult[];
     }
 
     cacheMisses.inc({ cache_name: 'geocode' });
@@ -212,7 +263,7 @@ class SearchService {
   /**
    * Internal reverse geocode implementation (for circuit breaker)
    */
-  async _reverseGeocodeInternal(lat, lng) {
+  private async _reverseGeocodeInternal(lat: number, lng: number): Promise<ReverseGeocodeResult | null> {
     // Find nearest POI
     const poiResult = await pool.query(`
       SELECT
@@ -238,13 +289,13 @@ class SearchService {
     const road = roadResult.rows[0];
 
     // Return the closest result
-    if (poi && (!road || poi.distance < road.distance)) {
+    if (poi && (!road || parseFloat(poi.distance) < parseFloat(road.distance))) {
       return {
         type: 'poi',
         name: poi.name,
         address: poi.address,
         category: poi.category,
-        distance: poi.distance,
+        distance: parseFloat(poi.distance),
       };
     }
 
@@ -253,7 +304,7 @@ class SearchService {
         type: 'street',
         name: road.street_name,
         roadClass: road.road_class,
-        distance: road.distance,
+        distance: parseFloat(road.distance),
       };
     }
 
@@ -263,7 +314,7 @@ class SearchService {
   /**
    * Reverse geocode coordinates to address (with circuit breaker)
    */
-  async reverseGeocode(lat, lng) {
+  async reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResult | null> {
     // Check cache (round coordinates for better cache hits)
     const roundedLat = Math.round(lat * 10000) / 10000;
     const roundedLng = Math.round(lng * 10000) / 10000;
@@ -273,7 +324,7 @@ class SearchService {
     if (cached) {
       cacheHits.inc({ cache_name: 'reverse_geocode' });
       logger.debug({ lat, lng, cached: true }, 'Reverse geocode cache hit');
-      return JSON.parse(cached);
+      return JSON.parse(cached) as ReverseGeocodeResult;
     }
 
     cacheMisses.inc({ cache_name: 'reverse_geocode' });
@@ -298,14 +349,14 @@ class SearchService {
   /**
    * Get POI details
    */
-  async getPlaceDetails(placeId) {
+  async getPlaceDetails(placeId: string): Promise<Place | null> {
     // Check cache
     const cacheKey = `place:${placeId}`;
     const cached = await redis.get(cacheKey);
 
     if (cached) {
       cacheHits.inc({ cache_name: 'place_details' });
-      return JSON.parse(cached);
+      return JSON.parse(cached) as Place;
     }
 
     cacheMisses.inc({ cache_name: 'place_details' });
@@ -321,7 +372,7 @@ class SearchService {
     }
 
     const row = result.rows[0];
-    const place = {
+    const place: Place = {
       id: row.id,
       name: row.name,
       category: row.category,
@@ -331,6 +382,7 @@ class SearchService {
       hours: row.hours,
       rating: row.rating ? parseFloat(row.rating) : null,
       reviewCount: row.review_count,
+      distance: null,
     };
 
     // Cache for 10 minutes
@@ -342,14 +394,14 @@ class SearchService {
   /**
    * Get available categories
    */
-  async getCategories() {
+  async getCategories(): Promise<Category[]> {
     // Check cache
     const cacheKey = 'categories:all';
     const cached = await redis.get(cacheKey);
 
     if (cached) {
       cacheHits.inc({ cache_name: 'categories' });
-      return JSON.parse(cached);
+      return JSON.parse(cached) as Category[];
     }
 
     cacheMisses.inc({ cache_name: 'categories' });
@@ -362,7 +414,7 @@ class SearchService {
       ORDER BY count DESC
     `);
 
-    const categories = result.rows.map(row => ({
+    const categories: Category[] = result.rows.map(row => ({
       name: row.category,
       count: parseInt(row.count),
     }));

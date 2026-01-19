@@ -14,10 +14,89 @@ import {
 } from '../shared/idempotency.js';
 
 /**
+ * Type definitions for traffic service
+ */
+interface TrafficData {
+  speed: number;
+  samples?: number;
+  congestion: string;
+  timestamp: Date;
+}
+
+interface GpsProbe {
+  deviceId: string;
+  latitude: number;
+  longitude: number;
+  speed: number;
+  heading: number;
+  timestamp: number;
+}
+
+interface ProbeResult {
+  status: string;
+  processed: boolean;
+  segmentId?: string;
+}
+
+interface IncidentData {
+  lat: number;
+  lng: number;
+  type: string;
+  severity: string;
+  description?: string;
+  clientRequestId?: string;
+}
+
+interface IncidentResult {
+  action: string;
+  incidentId?: string;
+  message?: string;
+  incident?: {
+    id: string;
+    segment_id: string;
+    lat: number;
+    lng: number;
+    type: string;
+    severity: string;
+    description: string;
+    reported_at: Date;
+  };
+}
+
+interface TrafficSegment {
+  segmentId: string;
+  streetName: string;
+  freeFlowSpeed: number;
+  currentSpeed: number | null;
+  congestion: string;
+  geometry: object | null;
+}
+
+interface Incident {
+  id: string;
+  segment_id: string;
+  lat: number;
+  lng: number;
+  type: string;
+  severity: string;
+  description: string;
+  reported_at: Date;
+}
+
+interface SegmentRow {
+  id: string;
+  free_flow_speed_kph: number;
+  road_class: string;
+}
+
+/**
  * Traffic Service for real-time traffic data and simulation
  * Enhanced with structured logging, metrics, and idempotency
  */
 class TrafficService {
+  private simulatedTraffic: Map<string, TrafficData>;
+  private simulationInterval: ReturnType<typeof setInterval> | null;
+
   constructor() {
     this.simulatedTraffic = new Map();
     this.simulationInterval = null;
@@ -26,7 +105,7 @@ class TrafficService {
   /**
    * Start traffic simulation
    */
-  startSimulation() {
+  startSimulation(): void {
     if (this.simulationInterval) return;
 
     logger.info('Starting traffic simulation');
@@ -36,13 +115,13 @@ class TrafficService {
     }, 10000); // Update every 10 seconds
 
     // Initial simulation
-    this.simulateTrafficUpdate();
+    void this.simulateTrafficUpdate();
   }
 
   /**
    * Stop traffic simulation
    */
-  stopSimulation() {
+  stopSimulation(): void {
     if (this.simulationInterval) {
       clearInterval(this.simulationInterval);
       this.simulationInterval = null;
@@ -53,7 +132,7 @@ class TrafficService {
   /**
    * Simulate traffic updates for all segments
    */
-  async simulateTrafficUpdate() {
+  async simulateTrafficUpdate(): Promise<void> {
     try {
       const segments = await pool.query(`
         SELECT id, free_flow_speed_kph, road_class
@@ -69,7 +148,7 @@ class TrafficService {
 
       let updateCount = 0;
 
-      for (const segment of segments.rows) {
+      for (const segment of segments.rows as SegmentRow[]) {
         // Random variation in speed
         const variation = 0.8 + Math.random() * 0.4; // 80% to 120%
         const baseMultiplier = segment.road_class === 'highway' ?
@@ -113,7 +192,7 @@ class TrafficService {
   /**
    * Calculate congestion level based on current speed vs free flow
    */
-  calculateCongestion(currentSpeed, freeFlowSpeed) {
+  private calculateCongestion(currentSpeed: number, freeFlowSpeed: number): string {
     const ratio = currentSpeed / freeFlowSpeed;
 
     if (ratio > 0.8) return 'free';
@@ -124,10 +203,8 @@ class TrafficService {
 
   /**
    * Ingest a GPS probe with idempotency
-   * @param {Object} probe - GPS probe data
-   * @returns {Object} - Processing result
    */
-  async ingestProbe(probe) {
+  async ingestProbe(probe: GpsProbe): Promise<ProbeResult> {
     const { deviceId, latitude, longitude, speed, heading, timestamp } = probe;
 
     // Create idempotency key from device ID and timestamp
@@ -162,6 +239,8 @@ class TrafficService {
       const current = this.simulatedTraffic.get(segment.id) || {
         speed: segment.free_flow_speed_kph,
         samples: 0,
+        congestion: 'free',
+        timestamp: new Date(),
       };
 
       const alpha = 0.1; // Smoothing factor
@@ -186,7 +265,7 @@ class TrafficService {
       logger.debug({
         segmentId: segment.id,
         speed: newSpeed,
-        samples: current.samples + 1,
+        samples: (current.samples || 0) + 1,
       }, 'GPS probe processed');
 
       return { status: 'processed', processed: true, segmentId: segment.id };
@@ -200,7 +279,11 @@ class TrafficService {
   /**
    * Map match a GPS coordinate to a road segment
    */
-  async mapMatchProbe(latitude, longitude, heading) {
+  private async mapMatchProbe(
+    latitude: number,
+    longitude: number,
+    _heading: number
+  ): Promise<{ id: string; free_flow_speed_kph: number; street_name: string } | null> {
     try {
       const result = await pool.query(`
         SELECT id, free_flow_speed_kph, street_name,
@@ -221,8 +304,8 @@ class TrafficService {
   /**
    * Get current traffic for segments
    */
-  async getTraffic(segmentIds) {
-    const result = [];
+  async getTraffic(segmentIds: string[]): Promise<Array<{ segmentId: string } & TrafficData>> {
+    const result: Array<{ segmentId: string } & TrafficData> = [];
 
     for (const id of segmentIds) {
       const traffic = this.simulatedTraffic.get(id);
@@ -240,7 +323,12 @@ class TrafficService {
   /**
    * Get traffic for a bounding box
    */
-  async getTrafficInBounds(minLat, minLng, maxLat, maxLng) {
+  async getTrafficInBounds(
+    minLat: number,
+    minLng: number,
+    maxLat: number,
+    maxLng: number
+  ): Promise<TrafficSegment[]> {
     const result = await pool.query(`
       SELECT DISTINCT ON (s.id)
         s.id,
@@ -271,7 +359,7 @@ class TrafficService {
   /**
    * Report an incident with idempotency
    */
-  async reportIncident(data) {
+  async reportIncident(data: IncidentData): Promise<IncidentResult> {
     const { lat, lng, type, severity, description, clientRequestId } = data;
 
     // Check for idempotent replay if client provided request ID
@@ -279,7 +367,7 @@ class TrafficService {
       const existing = await checkIdempotency('incident_report', clientRequestId);
       if (existing?.isReplay) {
         logger.debug({ clientRequestId }, 'Duplicate incident report ignored');
-        return existing.result;
+        return existing.result as IncidentResult;
       }
 
       const acquired = await startIdempotentRequest('incident_report', clientRequestId);
@@ -304,7 +392,7 @@ class TrafficService {
 
         trafficIncidentsDetected.inc({ type, severity: 'merged' });
 
-        const result = {
+        const result: IncidentResult = {
           action: 'merged',
           incidentId: nearbyIncident.id,
           message: 'Incident merged with existing report',
@@ -348,7 +436,7 @@ class TrafficService {
 
       trafficIncidentsDetected.inc({ type, severity });
 
-      const result = {
+      const result: IncidentResult = {
         action: 'created',
         incident: insertResult.rows[0],
       };
@@ -374,7 +462,11 @@ class TrafficService {
   /**
    * Find a nearby active incident
    */
-  async findNearbyIncident(lat, lng, radiusMeters) {
+  private async findNearbyIncident(
+    lat: number,
+    lng: number,
+    radiusMeters: number
+  ): Promise<{ id: string; type: string; severity: string } | null> {
     const result = await pool.query(`
       SELECT id, type, severity
       FROM incidents
@@ -394,7 +486,12 @@ class TrafficService {
   /**
    * Get active incidents in bounding box
    */
-  async getIncidents(minLat, minLng, maxLat, maxLng) {
+  async getIncidents(
+    minLat: number,
+    minLng: number,
+    maxLat: number,
+    maxLng: number
+  ): Promise<Incident[]> {
     const result = await pool.query(`
       SELECT id, segment_id, lat, lng, type, severity, description, reported_at
       FROM incidents
@@ -410,7 +507,7 @@ class TrafficService {
   /**
    * Resolve an incident
    */
-  async resolveIncident(incidentId) {
+  async resolveIncident(incidentId: string): Promise<void> {
     await pool.query(`
       UPDATE incidents
       SET is_active = FALSE, resolved_at = NOW()

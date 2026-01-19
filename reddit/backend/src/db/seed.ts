@@ -4,7 +4,27 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const seed = async () => {
+interface UserRow {
+  id: number;
+  username: string;
+}
+
+interface SubredditRow {
+  id: number;
+  name: string;
+}
+
+interface PostRow {
+  id: number;
+  title: string;
+}
+
+interface CommentRow {
+  id: number;
+  post_id: number;
+}
+
+const seed = async (): Promise<void> => {
   console.log('Seeding database...');
 
   try {
@@ -30,8 +50,8 @@ const seed = async () => {
     console.log('Created test users');
 
     // Get user IDs
-    const { rows: userRows } = await query('SELECT id, username FROM users');
-    const userMap = {};
+    const { rows: userRows } = await query<UserRow>('SELECT id, username FROM users');
+    const userMap: Record<string, number> = {};
     for (const row of userRows) {
       userMap[row.username] = row.id;
     }
@@ -56,8 +76,8 @@ const seed = async () => {
     console.log('Created subreddits');
 
     // Get subreddit IDs
-    const { rows: subRows } = await query('SELECT id, name FROM subreddits');
-    const subMap = {};
+    const { rows: subRows } = await query<SubredditRow>('SELECT id, name FROM subreddits');
+    const subMap: Record<string, number> = {};
     for (const row of subRows) {
       subMap[row.name] = row.id;
     }
@@ -110,7 +130,7 @@ const seed = async () => {
     console.log('Created sample posts');
 
     // Get post IDs
-    const { rows: postRows } = await query('SELECT id, title FROM posts ORDER BY id');
+    const { rows: postRows } = await query<PostRow>('SELECT id, title FROM posts ORDER BY id');
 
     // Create sample comments
     const comments = [
@@ -125,7 +145,7 @@ const seed = async () => {
     for (const comment of comments) {
       const postId = postRows[comment.postIndex].id;
       // Insert the comment to get its ID
-      const { rows } = await query(
+      const { rows } = await query<{ id: number }>(
         `INSERT INTO comments (post_id, author_id, content, path, depth)
          VALUES ($1, $2, $3, '', 0)
          RETURNING id`,
@@ -139,10 +159,10 @@ const seed = async () => {
     }
 
     // Add nested replies
-    const { rows: commentRows } = await query('SELECT id, post_id FROM comments ORDER BY id');
+    const { rows: commentRows } = await query<CommentRow>('SELECT id, post_id FROM comments ORDER BY id');
 
     // Reply to first comment
-    const reply1Result = await query(
+    const reply1Result = await query<{ id: number }>(
       `INSERT INTO comments (post_id, author_id, parent_id, content, path, depth)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id`,
@@ -154,7 +174,7 @@ const seed = async () => {
     );
 
     // Reply to the reply
-    const reply2Result = await query(
+    const reply2Result = await query<{ id: number }>(
       `INSERT INTO comments (post_id, author_id, parent_id, content, path, depth)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id`,
@@ -210,7 +230,6 @@ const seed = async () => {
     `);
 
     // Recalculate hot scores
-    const epochSeconds = 1134028003;
     await query(`
       UPDATE posts
       SET hot_score = (

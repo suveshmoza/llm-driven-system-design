@@ -1,52 +1,86 @@
-const express = require('express');
-const { pool, transaction } = require('../db/pool');
-const { authMiddleware } = require('../middleware/auth');
-const { executeTransfer, MAX_TRANSFER_AMOUNT } = require('../services/transfer');
+import express, { type Request, type Response } from 'express';
+import { pool } from '../db/pool.js';
+import { authMiddleware, type AuthenticatedRequest } from '../middleware/auth.js';
+import { executeTransfer, MAX_TRANSFER_AMOUNT } from '../services/transfer.js';
 
 const router = express.Router();
 
+interface CreateRequestBody {
+  recipientUsername: string;
+  amount: number | string;
+  note?: string;
+}
+
+interface PaymentRequestRow {
+  id: string;
+  requester_id: string;
+  requestee_id: string;
+  amount: number;
+  note: string;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+  transfer_id?: string | null;
+  reminder_sent_at?: Date | null;
+}
+
+interface PaymentRequestWithUser extends PaymentRequestRow {
+  requestee_username?: string;
+  requestee_name?: string | null;
+  requestee_avatar?: string | null;
+  requester_username?: string;
+  requester_name?: string | null;
+  requester_avatar?: string | null;
+}
+
 // Create a payment request
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, async (req: Request<object, unknown, CreateRequestBody>, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { recipientUsername, amount, note } = req.body;
 
     if (!recipientUsername || !amount) {
-      return res.status(400).json({ error: 'Recipient and amount are required' });
+      res.status(400).json({ error: 'Recipient and amount are required' });
+      return;
     }
 
     // Convert amount to cents
-    const amountCents = Math.round(parseFloat(amount) * 100);
+    const amountCents = Math.round(parseFloat(String(amount)) * 100);
 
     if (isNaN(amountCents) || amountCents <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
+      res.status(400).json({ error: 'Invalid amount' });
+      return;
     }
 
     if (amountCents > MAX_TRANSFER_AMOUNT) {
-      return res.status(400).json({ error: `Maximum request amount is $${MAX_TRANSFER_AMOUNT / 100}` });
+      res.status(400).json({ error: `Maximum request amount is $${MAX_TRANSFER_AMOUNT / 100}` });
+      return;
     }
 
     // Look up recipient (the person who will pay)
-    const recipientResult = await pool.query(
+    const recipientResult = await pool.query<{ id: string; username: string; name: string | null }>(
       'SELECT id, username, name FROM users WHERE username = $1',
       [recipientUsername.toLowerCase()]
     );
 
     if (recipientResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     const requestee = recipientResult.rows[0];
 
-    if (requestee.id === req.user.id) {
-      return res.status(400).json({ error: 'Cannot request money from yourself' });
+    if (requestee.id === authReq.user.id) {
+      res.status(400).json({ error: 'Cannot request money from yourself' });
+      return;
     }
 
     // Create the request
-    const result = await pool.query(
+    const result = await pool.query<PaymentRequestRow>(
       `INSERT INTO payment_requests (requester_id, requestee_id, amount, note)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [req.user.id, requestee.id, amountCents, note || '']
+      [authReq.user.id, requestee.id, amountCents, note || '']
     );
 
     res.status(201).json({
@@ -61,8 +95,9 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // Get requests sent by current user
-router.get('/sent', authMiddleware, async (req, res) => {
+router.get('/sent', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { status } = req.query;
 
     let query = `
@@ -74,16 +109,16 @@ router.get('/sent', authMiddleware, async (req, res) => {
       JOIN users u ON r.requestee_id = u.id
       WHERE r.requester_id = $1
     `;
-    const params = [req.user.id];
+    const params: (string | number)[] = [authReq.user.id];
 
-    if (status) {
+    if (status && typeof status === 'string') {
       query += ' AND r.status = $2';
       params.push(status);
     }
 
     query += ' ORDER BY r.created_at DESC';
 
-    const result = await pool.query(query, params);
+    const result = await pool.query<PaymentRequestWithUser>(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error('Get sent requests error:', error);
@@ -92,8 +127,9 @@ router.get('/sent', authMiddleware, async (req, res) => {
 });
 
 // Get requests received by current user
-router.get('/received', authMiddleware, async (req, res) => {
+router.get('/received', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const { status } = req.query;
 
     let query = `
@@ -105,16 +141,16 @@ router.get('/received', authMiddleware, async (req, res) => {
       JOIN users u ON r.requester_id = u.id
       WHERE r.requestee_id = $1
     `;
-    const params = [req.user.id];
+    const params: (string | number)[] = [authReq.user.id];
 
-    if (status) {
+    if (status && typeof status === 'string') {
       query += ' AND r.status = $2';
       params.push(status);
     }
 
     query += ' ORDER BY r.created_at DESC';
 
-    const result = await pool.query(query, params);
+    const result = await pool.query<PaymentRequestWithUser>(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error('Get received requests error:', error);
@@ -123,33 +159,36 @@ router.get('/received', authMiddleware, async (req, res) => {
 });
 
 // Pay a request
-router.post('/:id/pay', authMiddleware, async (req, res) => {
+router.post('/:id/pay', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const requestId = req.params.id;
 
     // Get the request
-    const requestResult = await pool.query(
+    const requestResult = await pool.query<PaymentRequestRow>(
       'SELECT * FROM payment_requests WHERE id = $1 AND status = $2',
       [requestId, 'pending']
     );
 
     if (requestResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Request not found or already processed' });
+      res.status(404).json({ error: 'Request not found or already processed' });
+      return;
     }
 
-    const request = requestResult.rows[0];
+    const paymentRequest = requestResult.rows[0];
 
     // Verify the current user is the requestee
-    if (request.requestee_id !== req.user.id) {
-      return res.status(403).json({ error: 'Not authorized to pay this request' });
+    if (paymentRequest.requestee_id !== authReq.user.id) {
+      res.status(403).json({ error: 'Not authorized to pay this request' });
+      return;
     }
 
     // Execute the transfer
     const transfer = await executeTransfer(
-      req.user.id,
-      request.requester_id,
-      request.amount,
-      request.note,
+      authReq.user.id,
+      paymentRequest.requester_id,
+      paymentRequest.amount,
+      paymentRequest.note,
       'public'
     );
 
@@ -167,25 +206,27 @@ router.post('/:id/pay', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Pay request error:', error);
-    res.status(400).json({ error: error.message || 'Failed to pay request' });
+    res.status(400).json({ error: (error as Error).message || 'Failed to pay request' });
   }
 });
 
 // Decline a request
-router.post('/:id/decline', authMiddleware, async (req, res) => {
+router.post('/:id/decline', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const requestId = req.params.id;
 
-    const result = await pool.query(
+    const result = await pool.query<PaymentRequestRow>(
       `UPDATE payment_requests
        SET status = 'declined', updated_at = NOW()
        WHERE id = $1 AND requestee_id = $2 AND status = 'pending'
        RETURNING *`,
-      [requestId, req.user.id]
+      [requestId, authReq.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Request not found or not authorized' });
+      res.status(404).json({ error: 'Request not found or not authorized' });
+      return;
     }
 
     res.json({ message: 'Request declined', request: result.rows[0] });
@@ -196,20 +237,22 @@ router.post('/:id/decline', authMiddleware, async (req, res) => {
 });
 
 // Cancel a request (by requester)
-router.post('/:id/cancel', authMiddleware, async (req, res) => {
+router.post('/:id/cancel', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const requestId = req.params.id;
 
-    const result = await pool.query(
+    const result = await pool.query<PaymentRequestRow>(
       `UPDATE payment_requests
        SET status = 'cancelled', updated_at = NOW()
        WHERE id = $1 AND requester_id = $2 AND status = 'pending'
        RETURNING *`,
-      [requestId, req.user.id]
+      [requestId, authReq.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Request not found or not authorized' });
+      res.status(404).json({ error: 'Request not found or not authorized' });
+      return;
     }
 
     res.json({ message: 'Request cancelled', request: result.rows[0] });
@@ -220,20 +263,22 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
 });
 
 // Send a reminder (by requester)
-router.post('/:id/remind', authMiddleware, async (req, res) => {
+router.post('/:id/remind', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const requestId = req.params.id;
 
-    const result = await pool.query(
+    const result = await pool.query<PaymentRequestRow>(
       `UPDATE payment_requests
        SET reminder_sent_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND requester_id = $2 AND status = 'pending'
        RETURNING *`,
-      [requestId, req.user.id]
+      [requestId, authReq.user.id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Request not found or not authorized' });
+      res.status(404).json({ error: 'Request not found or not authorized' });
+      return;
     }
 
     res.json({ message: 'Reminder sent', request: result.rows[0] });
@@ -243,4 +288,4 @@ router.post('/:id/remind', authMiddleware, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

@@ -9,25 +9,146 @@
  * - Structured logging for debugging
  */
 
-const db = require('../models/db');
-const redis = require('../models/redis');
-const roomService = require('./roomService');
-const config = require('../config');
-const { v4: uuidv4 } = require('uuid');
-const crypto = require('crypto');
+import { query, getClient } from '../models/db.js';
+import redis from '../models/redis.js';
+import roomService from './roomService.js';
+import config from '../config/index.js';
 
 // Import shared modules
-const {
+import {
   logger,
-  metrics,
   generateIdempotencyKey,
   checkIdempotency,
   cacheIdempotencyResult,
   withLock,
   createRoomLockResource,
-} = require('../shared');
+  bookingDurationSeconds,
+  bookingsCreatedTotal,
+  bookingRevenueTotal,
+  availabilityCacheHitsTotal,
+  availabilityCacheMissesTotal,
+  availabilityChecksTotal,
+  idempotentRequestsTotal,
+  bookingsConfirmedTotal,
+  bookingsCancelledTotal,
+} from '../shared/index.js';
 
 const AVAILABILITY_CACHE_TTL = 300; // 5 minutes
+
+export interface CreateBookingData {
+  hotelId: string;
+  roomTypeId: string;
+  checkIn: string;
+  checkOut: string;
+  roomCount?: number;
+  guestCount: number;
+  guestFirstName: string;
+  guestLastName: string;
+  guestEmail: string;
+  guestPhone?: string;
+  specialRequests?: string;
+}
+
+interface BookingTransactionData extends CreateBookingData {
+  idempotencyKey: string;
+}
+
+export interface AvailabilityCheck {
+  available: boolean;
+  availableRooms: number;
+  totalRooms: number;
+  requestedRooms: number;
+}
+
+export interface CalendarDay {
+  date: string;
+  available: number;
+  total: number;
+  booked: number;
+  price: number;
+}
+
+export interface Booking {
+  id: string;
+  userId: string;
+  hotelId: string;
+  roomTypeId: string;
+  checkIn: Date;
+  checkOut: Date;
+  roomCount: number;
+  guestCount: number;
+  totalPrice: number;
+  status: string;
+  paymentId: string | null;
+  reservedUntil: Date | null;
+  guestFirstName: string;
+  guestLastName: string;
+  guestEmail: string;
+  guestPhone: string | null;
+  specialRequests: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  deduplicated?: boolean;
+}
+
+export interface BookingWithDetails extends Booking {
+  hotelName?: string;
+  hotelAddress?: string;
+  hotelCity?: string;
+  hotelImages?: string[];
+  roomTypeName?: string;
+  userFirstName?: string;
+  userLastName?: string;
+  userEmail?: string;
+}
+
+interface BookingRow {
+  id: string;
+  user_id: string;
+  hotel_id: string;
+  room_type_id: string;
+  check_in: Date;
+  check_out: Date;
+  room_count: number;
+  guest_count: number;
+  total_price: string;
+  status: string;
+  payment_id: string | null;
+  reserved_until: Date | null;
+  guest_first_name: string;
+  guest_last_name: string;
+  guest_email: string;
+  guest_phone: string | null;
+  special_requests: string | null;
+  idempotency_key: string;
+  created_at: Date;
+  updated_at: Date;
+  hotel_name?: string;
+  hotel_address?: string;
+  hotel_city?: string;
+  hotel_images?: string[];
+  room_type_name?: string;
+  first_name?: string;
+  last_name?: string;
+  user_email?: string;
+}
+
+interface RoomTypeRow {
+  id: string;
+  total_count: number;
+  base_price: string;
+}
+
+interface BookingCountRow {
+  check_in: Date;
+  check_out: Date;
+  room_count: number;
+}
+
+interface PriceOverrideRow {
+  date: Date;
+  price: string;
+}
 
 class BookingService {
   /**
@@ -39,7 +160,13 @@ class BookingService {
    * - 5-minute cache reduces DB queries by ~90% during peak hours
    * - Cache is invalidated on booking state changes for consistency
    */
-  async checkAvailability(hotelId, roomTypeId, checkIn, checkOut, roomCount = 1) {
+  async checkAvailability(
+    hotelId: string,
+    roomTypeId: string,
+    checkIn: string,
+    checkOut: string,
+    roomCount: number = 1
+  ): Promise<AvailabilityCheck> {
     const startTime = Date.now();
 
     // Try cache first for calendar-style queries
@@ -47,17 +174,17 @@ class BookingService {
     const cached = await redis.get(cacheKey);
 
     if (cached) {
-      metrics.availabilityCacheHitsTotal.inc();
-      metrics.availabilityChecksTotal.inc({ cache_hit: 'true' });
+      availabilityCacheHitsTotal.inc();
+      availabilityChecksTotal.inc({ cache_hit: 'true' });
       logger.debug({ hotelId, roomTypeId, cacheHit: true }, 'Availability cache hit');
-      return JSON.parse(cached);
+      return JSON.parse(cached) as AvailabilityCheck;
     }
 
-    metrics.availabilityCacheMissesTotal.inc();
-    metrics.availabilityChecksTotal.inc({ cache_hit: 'false' });
+    availabilityCacheMissesTotal.inc();
+    availabilityChecksTotal.inc({ cache_hit: 'false' });
 
     // Get total rooms
-    const roomResult = await db.query(
+    const roomResult = await query<{ total_count: number }>(
       'SELECT total_count FROM room_types WHERE id = $1 AND hotel_id = $2 AND is_active = true',
       [roomTypeId, hotelId]
     );
@@ -66,11 +193,11 @@ class BookingService {
       throw new Error('Room type not found');
     }
 
-    const totalRooms = roomResult.rows[0].total_count;
+    const totalRooms = roomResult.rows[0]?.total_count ?? 0;
 
     // Count rooms booked for the date range
     // A booking overlaps if: booking.check_in < requested.check_out AND booking.check_out > requested.check_in
-    const bookedResult = await db.query(
+    const bookedResult = await query<{ max_booked: string }>(
       `SELECT COALESCE(MAX(daily_booked), 0) as max_booked
        FROM (
          SELECT d::date as date, COALESCE(SUM(b.room_count), 0) as daily_booked
@@ -85,10 +212,10 @@ class BookingService {
       [hotelId, roomTypeId, checkIn, checkOut]
     );
 
-    const maxBooked = parseInt(bookedResult.rows[0].max_booked);
+    const maxBooked = parseInt(bookedResult.rows[0]?.max_booked ?? '0', 10);
     const availableRooms = totalRooms - maxBooked;
 
-    const availability = {
+    const availability: AvailabilityCheck = {
       available: availableRooms >= roomCount,
       availableRooms,
       totalRooms,
@@ -111,25 +238,30 @@ class BookingService {
    * Get availability calendar for a month
    * Cached aggressively as calendar data changes less frequently
    */
-  async getAvailabilityCalendar(hotelId, roomTypeId, year, month) {
+  async getAvailabilityCalendar(
+    hotelId: string,
+    roomTypeId: string,
+    year: number,
+    month: number
+  ): Promise<CalendarDay[]> {
     const cacheKey = `availability:${hotelId}:${roomTypeId}:${year}-${month}`;
 
     // Check cache
     const cached = await redis.get(cacheKey);
     if (cached) {
-      metrics.availabilityCacheHitsTotal.inc();
-      return JSON.parse(cached);
+      availabilityCacheHitsTotal.inc();
+      return JSON.parse(cached) as CalendarDay[];
     }
 
-    metrics.availabilityCacheMissesTotal.inc();
+    availabilityCacheMissesTotal.inc();
 
     // Get total rooms
-    const roomResult = await db.query(
+    const roomResult = await query<RoomTypeRow>(
       'SELECT total_count, base_price FROM room_types WHERE id = $1 AND hotel_id = $2',
       [roomTypeId, hotelId]
     );
 
-    if (roomResult.rows.length === 0) {
+    if (roomResult.rows.length === 0 || !roomResult.rows[0]) {
       throw new Error('Room type not found');
     }
 
@@ -139,11 +271,11 @@ class BookingService {
     // Calculate start and end of month
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
-    const endDateStr = endDate.toISOString().split('T')[0];
-    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0] ?? '';
+    const startDateStr = startDate.toISOString().split('T')[0] ?? '';
 
     // Get bookings for the month
-    const bookingsResult = await db.query(
+    const bookingsResult = await query<BookingCountRow>(
       `SELECT check_in, check_out, room_count
        FROM bookings
        WHERE hotel_id = $1
@@ -155,20 +287,23 @@ class BookingService {
     );
 
     // Get price overrides
-    const overridesResult = await db.query(
+    const overridesResult = await query<PriceOverrideRow>(
       'SELECT date, price FROM pricing_overrides WHERE room_type_id = $1 AND date >= $2 AND date <= $3',
       [roomTypeId, startDateStr, endDateStr]
     );
 
-    const priceOverrides = {};
+    const priceOverrides: Record<string, number> = {};
     overridesResult.rows.forEach((row) => {
-      priceOverrides[row.date.toISOString().split('T')[0]] = parseFloat(row.price);
+      const dateStr = row.date.toISOString().split('T')[0];
+      if (dateStr) {
+        priceOverrides[dateStr] = parseFloat(row.price);
+      }
     });
 
     // Build calendar
-    const calendar = [];
+    const calendar: CalendarDay[] = [];
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = d.toISOString().split('T')[0] ?? '';
 
       // Count booked rooms for this date
       let bookedRooms = 0;
@@ -185,7 +320,7 @@ class BookingService {
         available: totalRooms - bookedRooms,
         total: totalRooms,
         booked: bookedRooms,
-        price: priceOverrides[dateStr] || basePrice,
+        price: priceOverrides[dateStr] ?? basePrice,
       });
     }
 
@@ -210,7 +345,7 @@ class BookingService {
    * - Without distributed lock, concurrent requests see same availability
    * - Both could succeed, resulting in oversold room
    */
-  async createBooking(bookingData, userId) {
+  async createBooking(bookingData: CreateBookingData, userId: string): Promise<Booking> {
     const startTime = Date.now();
     const {
       hotelId,
@@ -242,7 +377,7 @@ class BookingService {
         { idempotencyKey, bookingId: existing.id },
         'Returning existing booking (idempotent request)'
       );
-      metrics.idempotentRequestsTotal.inc({ deduplicated: 'true' });
+      idempotentRequestsTotal.inc({ deduplicated: 'true' });
       return {
         ...this.formatBooking(existing),
         deduplicated: true,
@@ -282,13 +417,13 @@ class BookingService {
     );
 
     // Cache idempotency result
-    await cacheIdempotencyResult(idempotencyKey, booking);
+    await cacheIdempotencyResult(idempotencyKey, booking as unknown as Record<string, unknown>);
 
     // Record metrics
     const durationSeconds = (Date.now() - startTime) / 1000;
-    metrics.bookingDurationSeconds.observe(durationSeconds);
-    metrics.bookingsCreatedTotal.inc({ status: 'reserved', hotel_id: hotelId });
-    metrics.bookingRevenueTotal.inc(
+    bookingDurationSeconds.observe(durationSeconds);
+    bookingsCreatedTotal.inc({ status: 'reserved', hotel_id: hotelId });
+    bookingRevenueTotal.inc(
       { hotel_id: hotelId, room_type_id: roomTypeId },
       Math.round(booking.totalPrice * 100) // Revenue in cents
     );
@@ -313,13 +448,13 @@ class BookingService {
    * Execute the booking transaction with pessimistic locking
    * Called within a distributed lock for additional safety
    */
-  async _executeBookingTransaction(bookingData, userId) {
+  async _executeBookingTransaction(bookingData: BookingTransactionData, userId: string): Promise<Booking> {
     const {
       hotelId,
       roomTypeId,
       checkIn,
       checkOut,
-      roomCount,
+      roomCount = 1,
       guestCount,
       guestFirstName,
       guestLastName,
@@ -329,7 +464,7 @@ class BookingService {
       idempotencyKey,
     } = bookingData;
 
-    const client = await db.getClient();
+    const client = await getClient();
 
     try {
       await client.query('BEGIN');
@@ -341,19 +476,19 @@ class BookingService {
       );
 
       // Get total rooms
-      const roomResult = await client.query(
+      const roomResult = await client.query<RoomTypeRow>(
         'SELECT total_count, base_price FROM room_types WHERE id = $1 AND hotel_id = $2 AND is_active = true',
         [roomTypeId, hotelId]
       );
 
-      if (roomResult.rows.length === 0) {
+      if (roomResult.rows.length === 0 || !roomResult.rows[0]) {
         throw new Error('Room type not found');
       }
 
       const totalRooms = roomResult.rows[0].total_count;
 
       // Check availability with lock held
-      const bookedResult = await client.query(
+      const bookedResult = await client.query<{ max_booked: string }>(
         `SELECT COALESCE(MAX(daily_booked), 0) as max_booked
          FROM (
            SELECT d::date as date, COALESCE(SUM(b.room_count), 0) as daily_booked
@@ -368,7 +503,7 @@ class BookingService {
         [hotelId, roomTypeId, checkIn, checkOut]
       );
 
-      const maxBooked = parseInt(bookedResult.rows[0].max_booked);
+      const maxBooked = parseInt(bookedResult.rows[0]?.max_booked ?? '0', 10);
       const availableRooms = totalRooms - maxBooked;
 
       if (availableRooms < roomCount) {
@@ -383,7 +518,7 @@ class BookingService {
       const reservedUntil = new Date(Date.now() + config.reservationHoldMinutes * 60 * 1000);
 
       // Create booking
-      const bookingResult = await client.query(
+      const bookingResult = await client.query<BookingRow>(
         `INSERT INTO bookings
          (user_id, hotel_id, room_type_id, check_in, check_out, room_count, guest_count,
           total_price, status, idempotency_key, reserved_until,
@@ -404,17 +539,22 @@ class BookingService {
           guestFirstName,
           guestLastName,
           guestEmail,
-          guestPhone,
-          specialRequests,
+          guestPhone ?? null,
+          specialRequests ?? null,
         ]
       );
 
       await client.query('COMMIT');
 
+      const row = bookingResult.rows[0];
+      if (!row) {
+        throw new Error('Failed to create booking');
+      }
+
       // Invalidate availability cache
       await this.invalidateAvailabilityCache(hotelId, roomTypeId, checkIn, checkOut);
 
-      return this.formatBooking(bookingResult.rows[0]);
+      return this.formatBooking(row);
     } catch (error) {
       await client.query('ROLLBACK');
       logger.error({ error, hotelId, roomTypeId }, 'Booking transaction failed');
@@ -427,8 +567,8 @@ class BookingService {
   /**
    * Confirm a booking (after payment)
    */
-  async confirmBooking(bookingId, userId, paymentId = null) {
-    const result = await db.query(
+  async confirmBooking(bookingId: string, userId: string, paymentId: string | null = null): Promise<Booking> {
+    const result = await query<BookingRow>(
       `UPDATE bookings
        SET status = 'confirmed', payment_id = $3
        WHERE id = $1 AND user_id = $2 AND status = 'reserved'
@@ -436,27 +576,24 @@ class BookingService {
       [bookingId, userId, paymentId]
     );
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0 || !result.rows[0]) {
       throw new Error('Booking not found or cannot be confirmed');
     }
 
     const booking = this.formatBooking(result.rows[0]);
 
     // Record metrics
-    metrics.bookingsConfirmedTotal.inc({ hotel_id: booking.hotelId });
+    bookingsConfirmedTotal.inc({ hotel_id: booking.hotelId });
 
     // Invalidate availability cache
     await this.invalidateAvailabilityCache(
       booking.hotelId,
       booking.roomTypeId,
-      booking.checkIn,
-      booking.checkOut
+      booking.checkIn.toISOString().split('T')[0] ?? '',
+      booking.checkOut.toISOString().split('T')[0] ?? ''
     );
 
-    logger.info(
-      { bookingId, paymentId },
-      'Booking confirmed'
-    );
+    logger.info({ bookingId, paymentId }, 'Booking confirmed');
 
     return booking;
   }
@@ -464,8 +601,8 @@ class BookingService {
   /**
    * Cancel a booking
    */
-  async cancelBooking(bookingId, userId, reason = 'user_requested') {
-    const result = await db.query(
+  async cancelBooking(bookingId: string, userId: string, reason: string = 'user_requested'): Promise<Booking> {
+    const result = await query<BookingRow>(
       `UPDATE bookings
        SET status = 'cancelled'
        WHERE id = $1 AND user_id = $2 AND status IN ('reserved', 'confirmed')
@@ -473,27 +610,24 @@ class BookingService {
       [bookingId, userId]
     );
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0 || !result.rows[0]) {
       throw new Error('Booking not found or cannot be cancelled');
     }
 
     const booking = this.formatBooking(result.rows[0]);
 
     // Record metrics
-    metrics.bookingsCancelledTotal.inc({ hotel_id: booking.hotelId, reason });
+    bookingsCancelledTotal.inc({ hotel_id: booking.hotelId, reason });
 
     // Invalidate availability cache
     await this.invalidateAvailabilityCache(
       booking.hotelId,
       booking.roomTypeId,
-      booking.checkIn,
-      booking.checkOut
+      booking.checkIn.toISOString().split('T')[0] ?? '',
+      booking.checkOut.toISOString().split('T')[0] ?? ''
     );
 
-    logger.info(
-      { bookingId, reason },
-      'Booking cancelled'
-    );
+    logger.info({ bookingId, reason }, 'Booking cancelled');
 
     return booking;
   }
@@ -501,8 +635,8 @@ class BookingService {
   /**
    * Get booking by ID
    */
-  async getBookingById(bookingId, userId = null) {
-    let query = `
+  async getBookingById(bookingId: string, userId: string | null = null): Promise<BookingWithDetails | null> {
+    let queryStr = `
       SELECT b.*, h.name as hotel_name, h.address as hotel_address, h.city as hotel_city,
              rt.name as room_type_name
       FROM bookings b
@@ -510,16 +644,16 @@ class BookingService {
       JOIN room_types rt ON b.room_type_id = rt.id
       WHERE b.id = $1
     `;
-    const params = [bookingId];
+    const params: unknown[] = [bookingId];
 
     if (userId) {
-      query += ' AND b.user_id = $2';
+      queryStr += ' AND b.user_id = $2';
       params.push(userId);
     }
 
-    const result = await db.query(query, params);
+    const result = await query<BookingRow>(queryStr, params);
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0 || !result.rows[0]) {
       return null;
     }
 
@@ -536,8 +670,8 @@ class BookingService {
   /**
    * Get bookings for a user
    */
-  async getBookingsByUser(userId, status = null) {
-    let query = `
+  async getBookingsByUser(userId: string, status: string | null = null): Promise<BookingWithDetails[]> {
+    let queryStr = `
       SELECT b.*, h.name as hotel_name, h.address as hotel_address, h.city as hotel_city,
              h.images as hotel_images, rt.name as room_type_name
       FROM bookings b
@@ -545,16 +679,16 @@ class BookingService {
       JOIN room_types rt ON b.room_type_id = rt.id
       WHERE b.user_id = $1
     `;
-    const params = [userId];
+    const params: unknown[] = [userId];
 
     if (status) {
-      query += ' AND b.status = $2';
+      queryStr += ' AND b.status = $2';
       params.push(status);
     }
 
-    query += ' ORDER BY b.created_at DESC';
+    queryStr += ' ORDER BY b.created_at DESC';
 
-    const result = await db.query(query, params);
+    const result = await query<BookingRow>(queryStr, params);
 
     return result.rows.map((row) => ({
       ...this.formatBooking(row),
@@ -569,9 +703,15 @@ class BookingService {
   /**
    * Get bookings for a hotel (for hotel admin)
    */
-  async getBookingsByHotel(hotelId, ownerId, status = null, startDate = null, endDate = null) {
+  async getBookingsByHotel(
+    hotelId: string,
+    ownerId: string,
+    status: string | null = null,
+    startDate: string | null = null,
+    endDate: string | null = null
+  ): Promise<BookingWithDetails[]> {
     // Verify ownership
-    const ownerCheck = await db.query(
+    const ownerCheck = await query<{ id: string }>(
       'SELECT id FROM hotels WHERE id = $1 AND owner_id = $2',
       [hotelId, ownerId]
     );
@@ -580,7 +720,7 @@ class BookingService {
       throw new Error('Hotel not found or access denied');
     }
 
-    let query = `
+    let queryStr = `
       SELECT b.*, u.first_name, u.last_name, u.email as user_email,
              rt.name as room_type_name
       FROM bookings b
@@ -588,30 +728,30 @@ class BookingService {
       JOIN room_types rt ON b.room_type_id = rt.id
       WHERE b.hotel_id = $1
     `;
-    const params = [hotelId];
+    const params: unknown[] = [hotelId];
     let paramIndex = 2;
 
     if (status) {
-      query += ` AND b.status = $${paramIndex}`;
+      queryStr += ` AND b.status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
     }
 
     if (startDate) {
-      query += ` AND b.check_in >= $${paramIndex}`;
+      queryStr += ` AND b.check_in >= $${paramIndex}`;
       params.push(startDate);
       paramIndex++;
     }
 
     if (endDate) {
-      query += ` AND b.check_out <= $${paramIndex}`;
+      queryStr += ` AND b.check_out <= $${paramIndex}`;
       params.push(endDate);
       paramIndex++;
     }
 
-    query += ' ORDER BY b.check_in ASC';
+    queryStr += ' ORDER BY b.check_in ASC';
 
-    const result = await db.query(query, params);
+    const result = await query<BookingRow>(queryStr, params);
 
     return result.rows.map((row) => ({
       ...this.formatBooking(row),
@@ -625,8 +765,8 @@ class BookingService {
   /**
    * Expire stale reservations (to be called by a background job)
    */
-  async expireStaleReservations() {
-    const result = await db.query(
+  async expireStaleReservations(): Promise<number> {
+    const result = await query<{ hotel_id: string; room_type_id: string; check_in: Date; check_out: Date }>(
       `UPDATE bookings
        SET status = 'expired'
        WHERE status = 'reserved' AND reserved_until < NOW()
@@ -638,54 +778,54 @@ class BookingService {
       await this.invalidateAvailabilityCache(
         row.hotel_id,
         row.room_type_id,
-        row.check_in,
-        row.check_out
+        row.check_in.toISOString().split('T')[0] ?? '',
+        row.check_out.toISOString().split('T')[0] ?? ''
       );
     }
 
-    if (result.rowCount > 0) {
+    if (result.rowCount && result.rowCount > 0) {
       logger.info({ count: result.rowCount }, 'Expired stale reservations');
     }
 
-    return result.rowCount;
+    return result.rowCount ?? 0;
   }
 
   /**
    * Invalidate availability cache for affected date range
    */
-  async invalidateAvailabilityCache(hotelId, roomTypeId, checkIn, checkOut) {
+  async invalidateAvailabilityCache(
+    hotelId: string,
+    roomTypeId: string,
+    checkIn: string,
+    checkOut: string
+  ): Promise<void> {
     const start = new Date(checkIn);
     const end = new Date(checkOut);
 
-    const months = new Set();
+    const months = new Set<string>();
     for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
       months.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
     }
 
-    const keysToDelete = [];
+    const keysToDelete: string[] = [];
     for (const monthKey of months) {
       keysToDelete.push(`availability:${hotelId}:${roomTypeId}:${monthKey}`);
     }
 
     // Also invalidate the specific check availability cache
-    keysToDelete.push(
-      `availability:check:${hotelId}:${roomTypeId}:${checkIn}:${checkOut}`
-    );
+    keysToDelete.push(`availability:check:${hotelId}:${roomTypeId}:${checkIn}:${checkOut}`);
 
     // Delete all cache keys
     if (keysToDelete.length > 0) {
       await redis.del(...keysToDelete);
-      logger.debug(
-        { keysDeleted: keysToDelete.length },
-        'Invalidated availability cache'
-      );
+      logger.debug({ keysDeleted: keysToDelete.length }, 'Invalidated availability cache');
     }
   }
 
   /**
    * Format a booking row from the database
    */
-  formatBooking(row) {
+  formatBooking(row: BookingRow): Booking {
     return {
       id: row.id,
       userId: row.user_id,
@@ -710,4 +850,4 @@ class BookingService {
   }
 }
 
-module.exports = new BookingService();
+export default new BookingService();
