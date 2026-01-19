@@ -1,9 +1,38 @@
 import { pool, initializeDatabase } from './db.js';
 import { migrate } from './models/migrate.js';
 import bcrypt from 'bcrypt';
+import type { PoolClient } from 'pg';
+
+// Sample data interfaces
+interface ArtistSeedData {
+  name: string;
+  bio: string;
+  image_url: string;
+  verified: boolean;
+  monthly_listeners: number;
+}
+
+interface TrackSeedData {
+  title: string;
+  duration_ms: number;
+  track_number: number;
+}
+
+interface AlbumSeedData {
+  title: string;
+  release_date: string;
+  cover_url: string;
+  album_type: string;
+  tracks: TrackSeedData[];
+}
+
+interface AlbumTemplateSeedData {
+  artistIndex: number;
+  albums: AlbumSeedData[];
+}
 
 // Sample data for seeding
-const artists = [
+const artists: ArtistSeedData[] = [
   { name: 'The Midnight', bio: 'Synthwave duo from Los Angeles', image_url: 'https://picsum.photos/seed/midnight/300/300', verified: true, monthly_listeners: 2500000 },
   { name: 'Tycho', bio: 'Ambient and electronic musician from San Francisco', image_url: 'https://picsum.photos/seed/tycho/300/300', verified: true, monthly_listeners: 1800000 },
   { name: 'ODESZA', bio: 'Electronic music duo from Seattle', image_url: 'https://picsum.photos/seed/odesza/300/300', verified: true, monthly_listeners: 4500000 },
@@ -17,7 +46,7 @@ const artists = [
 ];
 
 // Album templates with tracks
-const albumTemplates = [
+const albumTemplates: AlbumTemplateSeedData[] = [
   {
     artistIndex: 0, // The Midnight
     albums: [
@@ -242,14 +271,14 @@ const albumTemplates = [
   }
 ];
 
-async function seed() {
+async function seed(): Promise<void> {
   console.log('Starting database seed...');
 
   try {
     await initializeDatabase();
     await migrate();
 
-    const client = await pool.connect();
+    const client: PoolClient = await pool.connect();
 
     try {
       await client.query('BEGIN');
@@ -270,7 +299,7 @@ async function seed() {
 
       // Create demo user
       const passwordHash = await bcrypt.hash('password123', 10);
-      const userResult = await client.query(
+      const userResult = await client.query<{ id: string }>(
         `INSERT INTO users (email, password_hash, username, display_name, is_premium)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id`,
@@ -280,9 +309,9 @@ async function seed() {
       console.log('Created demo user');
 
       // Insert artists
-      const artistIds = [];
+      const artistIds: string[] = [];
       for (const artist of artists) {
-        const result = await client.query(
+        const result = await client.query<{ id: string }>(
           `INSERT INTO artists (name, bio, image_url, verified, monthly_listeners)
            VALUES ($1, $2, $3, $4, $5)
            RETURNING id`,
@@ -295,13 +324,13 @@ async function seed() {
       // Insert albums and tracks
       let trackCount = 0;
       let albumCount = 0;
-      const allTrackIds = [];
+      const allTrackIds: string[] = [];
 
       for (const template of albumTemplates) {
         const artistId = artistIds[template.artistIndex];
 
         for (const album of template.albums) {
-          const albumResult = await client.query(
+          const albumResult = await client.query<{ id: string }>(
             `INSERT INTO albums (artist_id, title, release_date, cover_url, album_type, total_tracks)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING id`,
@@ -314,7 +343,7 @@ async function seed() {
             // Use a sample audio file URL for demo (Creative Commons audio)
             const audioUrl = `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${(trackCount % 16) + 1}.mp3`;
 
-            const trackResult = await client.query(
+            const trackResult = await client.query<{ id: string }>(
               `INSERT INTO tracks (album_id, title, duration_ms, track_number, audio_url, stream_count, audio_features)
                VALUES ($1, $2, $3, $4, $5, $6, $7)
                RETURNING id`,
@@ -349,7 +378,7 @@ async function seed() {
       console.log(`Inserted ${albumCount} albums and ${trackCount} tracks`);
 
       // Create demo playlist with some tracks
-      const playlistResult = await client.query(
+      const playlistResult = await client.query<{ id: string }>(
         `INSERT INTO playlists (owner_id, name, description, is_public)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,

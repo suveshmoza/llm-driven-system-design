@@ -13,8 +13,13 @@ const pgPool = new pg.Pool({
   database: process.env.PG_DATABASE || 'typeahead',
 });
 
+interface SamplePhrase {
+  phrase: string;
+  count: number;
+}
+
 // Sample phrases with popularity counts
-const samplePhrases = [
+const samplePhrases: SamplePhrase[] = [
   // Tech
   { phrase: 'javascript', count: 50000 },
   { phrase: 'javascript tutorial', count: 35000 },
@@ -134,7 +139,7 @@ const samplePhrases = [
   { phrase: 'x ray', count: 50000 },
 ];
 
-async function seed() {
+async function seed(): Promise<void> {
   console.log('Seeding database with sample phrases...');
 
   try {

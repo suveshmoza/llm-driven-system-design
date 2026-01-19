@@ -1,27 +1,99 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool, redis } from '../db.js';
 import { SyncService } from '../services/sync.js';
 import { broadcastToUser } from '../services/websocket.js';
-import logger from '../shared/logger.js';
+import logger, { Logger } from '../shared/logger.js';
 import { syncDuration, syncOperationsTotal, conflictsTotal, startTimer, bytesDownloaded } from '../shared/metrics.js';
 import { withIdempotency } from '../shared/idempotency.js';
 
 const router = Router();
 const syncService = new SyncService();
 
+interface SyncChange {
+  fileId: string;
+  operation: string;
+  path?: string;
+  name?: string;
+  contentHash?: string;
+  versionVector?: VersionVector;
+  mimeType?: string;
+  size?: number;
+  data?: unknown;
+}
+
+interface PushChangesBody {
+  changes: SyncChange[];
+}
+
+interface ResolveConflictBody {
+  fileId: string;
+  resolution: string;
+  keepBoth?: boolean;
+}
+
+interface DeltaSyncBody {
+  fileId: string;
+  localChunkHashes: string[];
+}
+
+interface GetChangesQuery {
+  since?: string;
+}
+
+type VersionVector = Record<string, number>;
+
+interface FileRow {
+  id: string;
+  name: string;
+  path: string;
+  mime_type: string | null;
+  size: number;
+  content_hash: string | null;
+  version_vector: VersionVector;
+  is_folder: boolean;
+  is_deleted: boolean;
+  modified_at: Date;
+  last_modified_by: string | null;
+  created_at?: Date;
+}
+
+interface ConflictRow {
+  id: string;
+  file_id: string;
+  name: string;
+  path: string;
+  version_number: number;
+  content_hash: string;
+  version_vector: VersionVector;
+  device_name: string | null;
+  created_at: Date;
+}
+
+interface ChunkRow {
+  chunk_index: number;
+  chunk_hash: string;
+  chunk_size: number;
+}
+
+interface DeviceStateRow {
+  last_sync_at: Date | null;
+  sync_cursor: Record<string, unknown> | null;
+}
+
 // Get sync state for device
-router.get('/state', async (req, res) => {
-  const log = req.log || logger;
+router.get('/state', async (req: Request, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
 
     if (!deviceId) {
-      return res.status(400).json({ error: 'Device ID required for sync' });
+      res.status(400).json({ error: 'Device ID required for sync' });
+      return;
     }
 
     // Get device sync state
-    const deviceState = await pool.query(
+    const deviceState = await pool.query<DeviceStateRow>(
       `SELECT last_sync_at, sync_cursor
        FROM devices
        WHERE id = $1 AND user_id = $2`,
@@ -29,7 +101,8 @@ router.get('/state', async (req, res) => {
     );
 
     if (deviceState.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found' });
+      res.status(404).json({ error: 'Device not found' });
+      return;
     }
 
     const state = deviceState.rows[0];
@@ -40,30 +113,31 @@ router.get('/state', async (req, res) => {
       syncCursor: state.sync_cursor,
     });
   } catch (error) {
-    log.error({ error: error.message }, 'Get sync state error');
+    log.error({ error: (error as Error).message }, 'Get sync state error');
     res.status(500).json({ error: 'Failed to get sync state' });
   }
 });
 
 // Get changes since last sync
-router.get('/changes', async (req, res) => {
-  const log = req.log || logger;
+router.get('/changes', async (req: Request<object, unknown, unknown, GetChangesQuery>, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   const timer = startTimer(syncDuration, { operation: 'get_changes' });
 
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
     const { since } = req.query;
 
     if (!deviceId) {
       timer.end({ result: 'error' });
-      return res.status(400).json({ error: 'Device ID required for sync' });
+      res.status(400).json({ error: 'Device ID required for sync' });
+      return;
     }
 
     const sinceDate = since ? new Date(since) : new Date(0);
 
     // Get files modified since last sync (excluding this device's changes)
-    const changes = await pool.query(
+    const changes = await pool.query<FileRow>(
       `SELECT id, name, path, mime_type, size, content_hash, version_vector,
               is_folder, is_deleted, modified_at, last_modified_by
        FROM files
@@ -76,9 +150,9 @@ router.get('/changes', async (req, res) => {
     );
 
     // Group by operation type
-    const created = [];
-    const updated = [];
-    const deleted = [];
+    const created: FileRow[] = [];
+    const updated: FileRow[] = [];
+    const deleted: FileRow[] = [];
 
     for (const file of changes.rows) {
       const fileData = {
@@ -94,11 +168,11 @@ router.get('/changes', async (req, res) => {
       };
 
       if (file.is_deleted) {
-        deleted.push(fileData);
-      } else if (file.created_at === file.modified_at) {
-        created.push(fileData);
+        deleted.push(file);
+      } else if (file.created_at && file.created_at.getTime() === file.modified_at.getTime()) {
+        created.push(file);
       } else {
-        updated.push(fileData);
+        updated.push(file);
       }
     }
 
@@ -118,39 +192,79 @@ router.get('/changes', async (req, res) => {
     });
 
     res.json({
-      changes: { created, updated, deleted },
+      changes: {
+        created: created.map(f => ({
+          id: f.id,
+          name: f.name,
+          path: f.path,
+          mimeType: f.mime_type,
+          size: f.size,
+          contentHash: f.content_hash,
+          versionVector: f.version_vector,
+          isFolder: f.is_folder,
+          modifiedAt: f.modified_at,
+        })),
+        updated: updated.map(f => ({
+          id: f.id,
+          name: f.name,
+          path: f.path,
+          mimeType: f.mime_type,
+          size: f.size,
+          contentHash: f.content_hash,
+          versionVector: f.version_vector,
+          isFolder: f.is_folder,
+          modifiedAt: f.modified_at,
+        })),
+        deleted: deleted.map(f => ({
+          id: f.id,
+          name: f.name,
+          path: f.path,
+          mimeType: f.mime_type,
+          size: f.size,
+          contentHash: f.content_hash,
+          versionVector: f.version_vector,
+          isFolder: f.is_folder,
+          modifiedAt: f.modified_at,
+        })),
+      },
       cursor: newCursor,
       hasMore: changes.rows.length === 1000,
     });
   } catch (error) {
     timer.end({ result: 'error' });
     syncOperationsTotal.inc({ operation: 'get_changes', result: 'error' });
-    log.error({ error: error.message }, 'Get changes error');
+    log.error({ error: (error as Error).message }, 'Get changes error');
     res.status(500).json({ error: 'Failed to get changes' });
   }
 });
 
 // Push local changes to server - wrapped with idempotency for safe retries
-router.post('/push', withIdempotency(async (req, res) => {
-  const log = req.log || logger;
+router.post('/push', withIdempotency(async (req: Request<object, unknown, PushChangesBody>, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   const timer = startTimer(syncDuration, { operation: 'push' });
 
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
     const { changes } = req.body;
 
     if (!deviceId) {
       timer.end({ result: 'error' });
-      return res.status(400).json({ error: 'Device ID required for sync' });
+      res.status(400).json({ error: 'Device ID required for sync' });
+      return;
     }
 
     if (!changes || !Array.isArray(changes)) {
       timer.end({ result: 'error' });
-      return res.status(400).json({ error: 'Changes array required' });
+      res.status(400).json({ error: 'Changes array required' });
+      return;
     }
 
-    const results = {
+    const results: {
+      applied: { fileId: string; newVersion: VersionVector }[];
+      conflicts: { fileId: string; localVersion: VersionVector | undefined; serverVersion: VersionVector; conflictType: string }[];
+      errors: { fileId: string; error: string }[];
+    } = {
       applied: [],
       conflicts: [],
       errors: [],
@@ -164,13 +278,13 @@ router.post('/push', withIdempotency(async (req, res) => {
           results.conflicts.push({
             fileId: change.fileId,
             localVersion: change.versionVector,
-            serverVersion: result.serverVersion,
-            conflictType: result.conflictType,
+            serverVersion: result.serverVersion!,
+            conflictType: result.conflictType!,
           });
 
           // Track conflict metrics
           conflictsTotal.inc({
-            conflict_type: result.conflictType,
+            conflict_type: result.conflictType!,
             resolution: 'pending',
           });
 
@@ -182,7 +296,7 @@ router.post('/push', withIdempotency(async (req, res) => {
         } else {
           results.applied.push({
             fileId: change.fileId,
-            newVersion: result.versionVector,
+            newVersion: result.versionVector!,
           });
 
           // Notify other devices
@@ -195,9 +309,9 @@ router.post('/push', withIdempotency(async (req, res) => {
       } catch (error) {
         results.errors.push({
           fileId: change.fileId,
-          error: error.message,
+          error: (error as Error).message,
         });
-        log.error({ error: error.message, fileId: change.fileId }, 'Failed to apply change');
+        log.error({ error: (error as Error).message, fileId: change.fileId }, 'Failed to apply change');
       }
     }
 
@@ -225,21 +339,22 @@ router.post('/push', withIdempotency(async (req, res) => {
   } catch (error) {
     timer.end({ result: 'error' });
     syncOperationsTotal.inc({ operation: 'push', result: 'error' });
-    log.error({ error: error.message }, 'Push changes error');
+    log.error({ error: (error as Error).message }, 'Push changes error');
     res.status(500).json({ error: 'Failed to push changes' });
   }
 }));
 
 // Resolve conflict
-router.post('/resolve-conflict', withIdempotency(async (req, res) => {
-  const log = req.log || logger;
+router.post('/resolve-conflict', withIdempotency(async (req: Request<object, unknown, ResolveConflictBody>, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
     const { fileId, resolution, keepBoth } = req.body;
 
     if (!fileId || !resolution) {
-      return res.status(400).json({ error: 'fileId and resolution required' });
+      res.status(400).json({ error: 'fileId and resolution required' });
+      return;
     }
 
     const result = await syncService.resolveConflict(
@@ -273,18 +388,18 @@ router.post('/resolve-conflict', withIdempotency(async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    log.error({ error: error.message }, 'Resolve conflict error');
+    log.error({ error: (error as Error).message }, 'Resolve conflict error');
     res.status(500).json({ error: 'Failed to resolve conflict' });
   }
 }));
 
 // Get pending conflicts
-router.get('/conflicts', async (req, res) => {
-  const log = req.log || logger;
+router.get('/conflicts', async (req: Request, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
-    const conflicts = await pool.query(
+    const conflicts = await pool.query<ConflictRow>(
       `SELECT fv.*, f.name, f.path, d.name as device_name
        FROM file_versions fv
        JOIN files f ON fv.file_id = f.id
@@ -310,20 +425,21 @@ router.get('/conflicts', async (req, res) => {
       })),
     });
   } catch (error) {
-    log.error({ error: error.message }, 'Get conflicts error');
+    log.error({ error: (error as Error).message }, 'Get conflicts error');
     res.status(500).json({ error: 'Failed to get conflicts' });
   }
 });
 
 // Delta sync - get only changed chunks
-router.post('/delta', async (req, res) => {
-  const log = req.log || logger;
+router.post('/delta', async (req: Request<object, unknown, DeltaSyncBody>, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { fileId, localChunkHashes } = req.body;
 
     if (!fileId || !Array.isArray(localChunkHashes)) {
-      return res.status(400).json({ error: 'fileId and localChunkHashes required' });
+      res.status(400).json({ error: 'fileId and localChunkHashes required' });
+      return;
     }
 
     // Verify file belongs to user
@@ -333,11 +449,12 @@ router.post('/delta', async (req, res) => {
     );
 
     if (file.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
     // Get server chunks
-    const serverChunks = await pool.query(
+    const serverChunks = await pool.query<ChunkRow>(
       `SELECT chunk_index, chunk_hash, chunk_size
        FROM file_chunks
        WHERE file_id = $1
@@ -346,8 +463,8 @@ router.post('/delta', async (req, res) => {
     );
 
     const localHashSet = new Set(localChunkHashes);
-    const chunksToDownload = [];
-    const chunksToKeep = [];
+    const chunksToDownload: { index: number; hash: string; size: number }[] = [];
+    const chunksToKeep: { index: number; hash: string }[] = [];
 
     for (const chunk of serverChunks.rows) {
       if (localHashSet.has(chunk.chunk_hash)) {
@@ -382,20 +499,20 @@ router.post('/delta', async (req, res) => {
       bytesToDownload: totalBytesToDownload,
     });
   } catch (error) {
-    log.error({ error: error.message }, 'Delta sync error');
+    log.error({ error: (error as Error).message }, 'Delta sync error');
     res.status(500).json({ error: 'Failed to compute delta' });
   }
 });
 
 // Download a specific chunk
-router.get('/chunk/:chunkHash', async (req, res) => {
-  const log = req.log || logger;
+router.get('/chunk/:chunkHash', async (req: Request<{ chunkHash: string }>, res: Response): Promise<void> => {
+  const log: Logger = req.log || logger;
   try {
     const { chunkHash } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     // Verify user has access to this chunk
-    const access = await pool.query(
+    const access = await pool.query<{ storage_key: string }>(
       `SELECT fc.storage_key
        FROM file_chunks fc
        JOIN files f ON fc.file_id = f.id
@@ -405,7 +522,8 @@ router.get('/chunk/:chunkHash', async (req, res) => {
     );
 
     if (access.rows.length === 0) {
-      return res.status(404).json({ error: 'Chunk not found' });
+      res.status(404).json({ error: 'Chunk not found' });
+      return;
     }
 
     // Get chunk from service
@@ -421,7 +539,7 @@ router.get('/chunk/:chunkHash', async (req, res) => {
     res.setHeader('X-Chunk-Hash', chunkHash);
     res.send(chunkData);
   } catch (error) {
-    log.error({ error: error.message }, 'Download chunk error');
+    log.error({ error: (error as Error).message }, 'Download chunk error');
     res.status(500).json({ error: 'Failed to download chunk' });
   }
 });

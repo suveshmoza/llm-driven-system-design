@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool, redis } from '../db.js';
 import { ChunkService } from '../services/chunks.js';
 import { getUserConnectionCount, getConnectedDevices } from '../services/websocket.js';
@@ -6,11 +6,122 @@ import { getUserConnectionCount, getConnectedDevices } from '../services/websock
 const router = Router();
 const chunkService = new ChunkService();
 
+interface ListUsersQuery {
+  limit?: string;
+  offset?: string;
+  search?: string;
+}
+
+interface SyncOperationsQuery {
+  limit?: string;
+  status?: string;
+  userId?: string;
+}
+
+interface ConflictsQuery {
+  limit?: string;
+}
+
+interface UpdateUserBody {
+  role?: string;
+  storageQuota?: number;
+}
+
+interface PurgeDeletedBody {
+  olderThanDays?: number;
+}
+
+interface UserStatsRow {
+  total_users: string;
+  new_users_24h: string;
+  total_storage_used: string | null;
+  total_storage_quota: string | null;
+}
+
+interface FileStatsRow {
+  total_files: string;
+  total_folders: string;
+  total_file_size: string | null;
+  deleted_files: string;
+}
+
+interface PhotoStatsRow {
+  total_photos: string;
+  favorite_photos: string;
+  deleted_photos: string;
+}
+
+interface DeviceStatsRow {
+  total_devices: string;
+  active_24h: string;
+  active_7d: string;
+}
+
+interface SyncStatsRow {
+  total_operations: string;
+  completed: string;
+  failed: string;
+  conflicts: string;
+}
+
+interface ChunkStatsRow {
+  total_chunks: string;
+  total_chunk_storage: string | null;
+  dedup_savings: string | null;
+}
+
+interface UserRow {
+  id: string;
+  email: string;
+  role: string;
+  storage_quota: number;
+  storage_used: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface DeviceRow {
+  id: string;
+  name: string;
+  device_type: string;
+  last_sync_at: Date | null;
+  created_at: Date;
+}
+
+interface SyncOperationRow {
+  id: string;
+  user_id: string;
+  user_email: string;
+  device_id: string | null;
+  device_name: string | null;
+  file_id: string | null;
+  file_name: string | null;
+  file_path: string | null;
+  operation_type: string;
+  status: string;
+  operation_data: Record<string, unknown> | null;
+  created_at: Date;
+  completed_at: Date | null;
+}
+
+interface ConflictRow {
+  id: string;
+  file_id: string;
+  file_name: string;
+  file_path: string;
+  user_id: string;
+  user_email: string;
+  device_name: string | null;
+  version_number: number;
+  content_hash: string;
+  created_at: Date;
+}
+
 // Get system stats
-router.get('/stats', async (req, res) => {
+router.get('/stats', async (_req: Request, res: Response): Promise<void> => {
   try {
     // User stats
-    const userStats = await pool.query(`
+    const userStats = await pool.query<UserStatsRow>(`
       SELECT
         COUNT(*) as total_users,
         COUNT(CASE WHEN created_at > NOW() - INTERVAL '24 hours' THEN 1 END) as new_users_24h,
@@ -20,7 +131,7 @@ router.get('/stats', async (req, res) => {
     `);
 
     // File stats
-    const fileStats = await pool.query(`
+    const fileStats = await pool.query<FileStatsRow>(`
       SELECT
         COUNT(*) as total_files,
         COUNT(CASE WHEN is_folder = TRUE THEN 1 END) as total_folders,
@@ -30,7 +141,7 @@ router.get('/stats', async (req, res) => {
     `);
 
     // Photo stats
-    const photoStats = await pool.query(`
+    const photoStats = await pool.query<PhotoStatsRow>(`
       SELECT
         COUNT(*) as total_photos,
         COUNT(CASE WHEN is_favorite = TRUE THEN 1 END) as favorite_photos,
@@ -39,7 +150,7 @@ router.get('/stats', async (req, res) => {
     `);
 
     // Device stats
-    const deviceStats = await pool.query(`
+    const deviceStats = await pool.query<DeviceStatsRow>(`
       SELECT
         COUNT(*) as total_devices,
         COUNT(CASE WHEN last_sync_at > NOW() - INTERVAL '24 hours' THEN 1 END) as active_24h,
@@ -48,7 +159,7 @@ router.get('/stats', async (req, res) => {
     `);
 
     // Sync operation stats
-    const syncStats = await pool.query(`
+    const syncStats = await pool.query<SyncStatsRow>(`
       SELECT
         COUNT(*) as total_operations,
         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
@@ -59,7 +170,7 @@ router.get('/stats', async (req, res) => {
     `);
 
     // Chunk deduplication stats
-    const chunkStats = await pool.query(`
+    const chunkStats = await pool.query<ChunkStatsRow>(`
       SELECT
         COUNT(*) as total_chunks,
         SUM(chunk_size) as total_chunk_storage,
@@ -71,13 +182,13 @@ router.get('/stats', async (req, res) => {
       users: {
         total: parseInt(userStats.rows[0].total_users),
         new24h: parseInt(userStats.rows[0].new_users_24h),
-        storageUsed: parseInt(userStats.rows[0].total_storage_used) || 0,
-        storageQuota: parseInt(userStats.rows[0].total_storage_quota) || 0,
+        storageUsed: parseInt(userStats.rows[0].total_storage_used || '0'),
+        storageQuota: parseInt(userStats.rows[0].total_storage_quota || '0'),
       },
       files: {
         total: parseInt(fileStats.rows[0].total_files),
         folders: parseInt(fileStats.rows[0].total_folders),
-        totalSize: parseInt(fileStats.rows[0].total_file_size) || 0,
+        totalSize: parseInt(fileStats.rows[0].total_file_size || '0'),
         deleted: parseInt(fileStats.rows[0].deleted_files),
       },
       photos: {
@@ -97,9 +208,9 @@ router.get('/stats', async (req, res) => {
         conflicts: parseInt(syncStats.rows[0].conflicts),
       },
       chunks: {
-        total: parseInt(chunkStats.rows[0].total_chunks) || 0,
-        storageUsed: parseInt(chunkStats.rows[0].total_chunk_storage) || 0,
-        dedupSavings: parseInt(chunkStats.rows[0].dedup_savings) || 0,
+        total: parseInt(chunkStats.rows[0].total_chunks || '0'),
+        storageUsed: parseInt(chunkStats.rows[0].total_chunk_storage || '0'),
+        dedupSavings: parseInt(chunkStats.rows[0].dedup_savings || '0'),
       },
     });
   } catch (error) {
@@ -109,15 +220,15 @@ router.get('/stats', async (req, res) => {
 });
 
 // List all users
-router.get('/users', async (req, res) => {
+router.get('/users', async (req: Request<object, unknown, unknown, ListUsersQuery>, res: Response): Promise<void> => {
   try {
-    const { limit = 50, offset = 0, search } = req.query;
+    const { limit = '50', offset = '0', search } = req.query;
 
     let query = `
       SELECT id, email, role, storage_quota, storage_used, created_at, updated_at
       FROM users
     `;
-    const params = [];
+    const params: (string | number)[] = [];
 
     if (search) {
       query += ' WHERE email ILIKE $1';
@@ -130,15 +241,15 @@ router.get('/users', async (req, res) => {
     const result = await pool.query(query, params);
 
     // Get device counts
-    const userIds = result.rows.map(u => u.id);
-    const deviceCounts = await pool.query(
+    const userIds = result.rows.map((u: UserRow) => u.id);
+    const deviceCounts = await pool.query<{ user_id: string; count: string }>(
       `SELECT user_id, COUNT(*) as count FROM devices WHERE user_id = ANY($1) GROUP BY user_id`,
       [userIds]
     );
     const deviceMap = new Map(deviceCounts.rows.map(d => [d.user_id, parseInt(d.count)]));
 
     res.json({
-      users: result.rows.map(u => ({
+      users: result.rows.map((u: UserRow) => ({
         id: u.id,
         email: u.email,
         role: u.role,
@@ -156,7 +267,7 @@ router.get('/users', async (req, res) => {
 });
 
 // Get user details
-router.get('/users/:userId', async (req, res) => {
+router.get('/users/:userId', async (req: Request<{ userId: string }>, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
 
@@ -167,7 +278,8 @@ router.get('/users/:userId', async (req, res) => {
     );
 
     if (user.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     const devices = await pool.query(
@@ -176,19 +288,19 @@ router.get('/users/:userId', async (req, res) => {
       [userId]
     );
 
-    const fileStats = await pool.query(
+    const fileStats = await pool.query<{ file_count: string; total_size: string | null }>(
       `SELECT COUNT(*) as file_count, SUM(size) as total_size
        FROM files WHERE user_id = $1 AND is_deleted = FALSE`,
       [userId]
     );
 
-    const photoStats = await pool.query(
+    const photoStats = await pool.query<{ photo_count: string }>(
       `SELECT COUNT(*) as photo_count
        FROM photos WHERE user_id = $1 AND is_deleted = FALSE`,
       [userId]
     );
 
-    const u = user.rows[0];
+    const u: UserRow = user.rows[0];
 
     res.json({
       id: u.id,
@@ -198,7 +310,7 @@ router.get('/users/:userId', async (req, res) => {
       storageUsed: u.storage_used,
       createdAt: u.created_at,
       updatedAt: u.updated_at,
-      devices: devices.rows.map(d => ({
+      devices: devices.rows.map((d: DeviceRow) => ({
         id: d.id,
         name: d.name,
         deviceType: d.device_type,
@@ -208,7 +320,7 @@ router.get('/users/:userId', async (req, res) => {
       })),
       stats: {
         fileCount: parseInt(fileStats.rows[0].file_count),
-        totalFileSize: parseInt(fileStats.rows[0].total_size) || 0,
+        totalFileSize: parseInt(fileStats.rows[0].total_size || '0'),
         photoCount: parseInt(photoStats.rows[0].photo_count),
       },
     });
@@ -219,13 +331,13 @@ router.get('/users/:userId', async (req, res) => {
 });
 
 // Update user
-router.patch('/users/:userId', async (req, res) => {
+router.patch('/users/:userId', async (req: Request<{ userId: string }, unknown, UpdateUserBody>, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
     const { role, storageQuota } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates: string[] = [];
+    const params: (string | number)[] = [];
     let paramIndex = 1;
 
     if (role) {
@@ -239,7 +351,8 @@ router.patch('/users/:userId', async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: 'No updates provided' });
+      res.status(400).json({ error: 'No updates provided' });
+      return;
     }
 
     updates.push(`updated_at = NOW()`);
@@ -252,7 +365,8 @@ router.patch('/users/:userId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     res.json(result.rows[0]);
@@ -263,9 +377,9 @@ router.patch('/users/:userId', async (req, res) => {
 });
 
 // Get recent sync operations
-router.get('/sync-operations', async (req, res) => {
+router.get('/sync-operations', async (req: Request<object, unknown, unknown, SyncOperationsQuery>, res: Response): Promise<void> => {
   try {
-    const { limit = 100, status, userId } = req.query;
+    const { limit = '100', status, userId } = req.query;
 
     let query = `
       SELECT so.*, u.email as user_email, d.name as device_name, f.name as file_name, f.path as file_path
@@ -274,8 +388,8 @@ router.get('/sync-operations', async (req, res) => {
       LEFT JOIN devices d ON so.device_id = d.id
       LEFT JOIN files f ON so.file_id = f.id
     `;
-    const params = [];
-    const conditions = [];
+    const params: (string | number)[] = [];
+    const conditions: string[] = [];
 
     if (status) {
       conditions.push(`so.status = $${params.length + 1}`);
@@ -297,7 +411,7 @@ router.get('/sync-operations', async (req, res) => {
     const result = await pool.query(query, params);
 
     res.json({
-      operations: result.rows.map(op => ({
+      operations: result.rows.map((op: SyncOperationRow) => ({
         id: op.id,
         userId: op.user_id,
         userEmail: op.user_email,
@@ -320,9 +434,9 @@ router.get('/sync-operations', async (req, res) => {
 });
 
 // Get unresolved conflicts
-router.get('/conflicts', async (req, res) => {
+router.get('/conflicts', async (req: Request<object, unknown, unknown, ConflictsQuery>, res: Response): Promise<void> => {
   try {
-    const { limit = 50 } = req.query;
+    const { limit = '50' } = req.query;
 
     const result = await pool.query(
       `SELECT fv.*, f.name as file_name, f.path as file_path, u.email as user_email, d.name as device_name
@@ -337,7 +451,7 @@ router.get('/conflicts', async (req, res) => {
     );
 
     res.json({
-      conflicts: result.rows.map(c => ({
+      conflicts: result.rows.map((c: ConflictRow) => ({
         id: c.id,
         fileId: c.file_id,
         fileName: c.file_name,
@@ -357,7 +471,7 @@ router.get('/conflicts', async (req, res) => {
 });
 
 // Cleanup orphaned chunks
-router.post('/cleanup-chunks', async (req, res) => {
+router.post('/cleanup-chunks', async (_req: Request, res: Response): Promise<void> => {
   try {
     const cleaned = await chunkService.cleanupOrphanedChunks();
 
@@ -372,12 +486,12 @@ router.post('/cleanup-chunks', async (req, res) => {
 });
 
 // Permanently delete soft-deleted files older than X days
-router.post('/purge-deleted', async (req, res) => {
+router.post('/purge-deleted', async (req: Request<object, unknown, PurgeDeletedBody>, res: Response): Promise<void> => {
   try {
     const { olderThanDays = 30 } = req.body;
 
     // Get files to purge
-    const toDelete = await pool.query(
+    const toDelete = await pool.query<{ id: string }>(
       `SELECT id FROM files WHERE is_deleted = TRUE AND modified_at < NOW() - INTERVAL '1 day' * $1`,
       [olderThanDays]
     );

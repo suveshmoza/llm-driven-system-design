@@ -404,7 +404,7 @@ router.put('/:id/respond', authenticate, requireHost, async (req, res) => {
 
   try {
     // Verify host ownership
-    const bookingResult = await query(
+    const bookingResult = await query<BookingRow & { host_id: number; listing_title: string }>(
       `SELECT b.*, l.host_id, l.title as listing_title FROM bookings b
       JOIN listings l ON b.listing_id = l.id
       WHERE b.id = $1 AND l.host_id = $2 AND b.status = 'pending'`,
@@ -479,7 +479,7 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
 
   try {
     // Get booking with listing info
-    const bookingResult = await query(
+    const bookingResult = await query<BookingRow & { host_id: number; listing_title: string }>(
       `SELECT b.*, l.host_id, l.title as listing_title FROM bookings b
       JOIN listings l ON b.listing_id = l.id
       WHERE b.id = $1 AND b.status IN ('pending', 'confirmed')`,
