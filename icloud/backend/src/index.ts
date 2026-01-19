@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
@@ -24,6 +24,10 @@ import { createCaches } from './shared/cache.js';
 import { StorageCircuitBreakers } from './shared/circuitBreaker.js';
 import { createIdempotencyMiddleware } from './shared/idempotency.js';
 import { HealthChecker } from './shared/health.js';
+
+interface AppError extends Error {
+  status?: number;
+}
 
 const app = express();
 const server = createServer(app);
@@ -63,16 +67,16 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Health check endpoints
-app.get('/health', async (req, res) => {
+app.get('/health', async (_req: Request, res: Response) => {
   const health = await healthChecker.getFullHealth();
   res.status(health.status === 'healthy' ? 200 : 503).json(health);
 });
 
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (_req: Request, res: Response) => {
   res.json(healthChecker.getLiveness());
 });
 
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', async (_req: Request, res: Response) => {
   const health = await healthChecker.getReadiness();
   res.status(health.status === 'ready' ? 200 : 503).json(health);
 });
@@ -93,7 +97,7 @@ app.use('/api/v1/devices', authMiddleware, devicesRoutes);
 app.use('/api/v1/admin', authMiddleware, adminMiddleware, adminRoutes);
 
 // Error handler with structured logging
-app.use((err, req, res, next) => {
+app.use((err: AppError, req: Request, res: Response, _next: NextFunction) => {
   const log = req.log || logger;
   log.error({
     error: err.message,
@@ -121,7 +125,7 @@ wss.on('close', () => {
 });
 
 // Graceful shutdown
-const shutdown = async () => {
+const shutdown = async (): Promise<void> => {
   logger.info('Shutting down...');
   await closeConnections();
   server.close(() => {

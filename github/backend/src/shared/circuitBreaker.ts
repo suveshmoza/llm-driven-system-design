@@ -24,17 +24,38 @@ const CIRCUIT_OPTIONS = {
   volumeThreshold: 5,       // Minimum requests before calculating error percentage
 };
 
+interface CircuitBreakerStats {
+  successes: number;
+  failures: number;
+  rejects: number;
+  fires: number;
+  timeouts: number;
+  cacheHits: number;
+  cacheMisses: number;
+  semaphoreRejections: number;
+  percentiles: Record<string, number>;
+  latencyTimes: number[];
+  latencyMean: number;
+}
+
+interface CircuitBreakerInstance extends CircuitBreaker {
+  opened: boolean;
+  halfOpen: boolean;
+  stats: CircuitBreakerStats;
+  action: <T>() => Promise<T>;
+}
+
 // Map of circuit breakers by operation type
-const circuitBreakers = new Map();
+const circuitBreakers = new Map<string, CircuitBreakerInstance>();
 
 /**
  * Create a circuit breaker for a specific operation
  */
-function createCircuitBreaker(name, operation) {
+function createCircuitBreaker<T>(name: string, operation: () => Promise<T>): CircuitBreakerInstance {
   const breaker = new CircuitBreaker(operation, {
     ...CIRCUIT_OPTIONS,
     name,
-  });
+  }) as CircuitBreakerInstance;
 
   // Update metrics on state changes
   breaker.on('open', () => {
@@ -53,13 +74,13 @@ function createCircuitBreaker(name, operation) {
     circuitBreakerState.set({ service: name }, 0);
   });
 
-  breaker.on('success', (result, latency) => {
+  breaker.on('success', (_result: T, latency: number) => {
     const duration = latency / 1000;
     gitOperationDuration.observe({ operation: name }, duration);
     gitOperationsTotal.inc({ operation: name, status: 'success' });
   });
 
-  breaker.on('failure', (err, latency) => {
+  breaker.on('failure', (err: Error, latency: number) => {
     const duration = latency / 1000;
     gitOperationDuration.observe({ operation: name }, duration);
     gitOperationsTotal.inc({ operation: name, status: 'failure' });
@@ -86,12 +107,12 @@ function createCircuitBreaker(name, operation) {
 /**
  * Get or create a circuit breaker for an operation
  */
-function getCircuitBreaker(name, operation) {
+function getCircuitBreaker<T>(name: string, operation: () => Promise<T>): CircuitBreakerInstance {
   if (!circuitBreakers.has(name)) {
     return createCircuitBreaker(name, operation);
   }
 
-  const breaker = circuitBreakers.get(name);
+  const breaker = circuitBreakers.get(name)!;
   // Update the action if provided
   if (operation) {
     breaker.action = operation;
@@ -101,18 +122,14 @@ function getCircuitBreaker(name, operation) {
 
 /**
  * Wrap a git operation with circuit breaker protection
- *
- * @param {string} operationName - Name of the operation for metrics
- * @param {Function} operation - Async function to execute
- * @returns {Promise} - Result of the operation
  */
-export async function withCircuitBreaker(operationName, operation) {
+export async function withCircuitBreaker<T>(operationName: string, operation: () => Promise<T>): Promise<T> {
   const breaker = getCircuitBreaker(operationName, operation);
 
   try {
-    return await breaker.fire();
+    return await breaker.fire() as T;
   } catch (err) {
-    if (err.message === 'Breaker is open') {
+    if ((err as Error).message === 'Breaker is open') {
       throw new Error(`Git service temporarily unavailable: ${operationName}`);
     }
     throw err;
@@ -126,58 +143,63 @@ export const protectedGitOps = {
   /**
    * Clone repository with circuit breaker
    */
-  async clone(cloneOperation) {
+  async clone<T>(cloneOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_clone', cloneOperation);
   },
 
   /**
    * Get branches with circuit breaker
    */
-  async branches(branchesOperation) {
+  async branches<T>(branchesOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_branches', branchesOperation);
   },
 
   /**
    * Get commits with circuit breaker
    */
-  async commits(commitsOperation) {
+  async commits<T>(commitsOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_commits', commitsOperation);
   },
 
   /**
    * Get tree with circuit breaker
    */
-  async tree(treeOperation) {
+  async tree<T>(treeOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_tree', treeOperation);
   },
 
   /**
    * Get diff with circuit breaker
    */
-  async diff(diffOperation) {
+  async diff<T>(diffOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_diff', diffOperation);
   },
 
   /**
    * Merge branches with circuit breaker
    */
-  async merge(mergeOperation) {
+  async merge<T>(mergeOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_merge', mergeOperation);
   },
 
   /**
    * Push to repository with circuit breaker
    */
-  async push(pushOperation) {
+  async push<T>(pushOperation: () => Promise<T>): Promise<T> {
     return withCircuitBreaker('git_push', pushOperation);
   },
 };
 
+interface CircuitBreakerStatus {
+  state: 'open' | 'half-open' | 'closed';
+  stats: CircuitBreakerStats;
+}
+
 /**
  * Get the status of all circuit breakers
  */
-export function getCircuitBreakerStatus() {
-  const status = {};
+export function getCircuitBreakerStatus(): Record<string, CircuitBreakerStatus> {
+  const status: Record<string, CircuitBreakerStatus> = {};
   for (const [name, breaker] of circuitBreakers) {
     status[name] = {
       state: breaker.opened ? 'open' : (breaker.halfOpen ? 'half-open' : 'closed'),
@@ -190,7 +212,7 @@ export function getCircuitBreakerStatus() {
 /**
  * Force reset a specific circuit breaker (for admin use)
  */
-export function resetCircuitBreaker(name) {
+export function resetCircuitBreaker(name: string): boolean {
   const breaker = circuitBreakers.get(name);
   if (breaker) {
     breaker.close();

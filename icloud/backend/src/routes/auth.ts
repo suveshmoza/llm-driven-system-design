@@ -1,17 +1,32 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import { pool, redis } from '../db.js';
 
 const router = Router();
 
+interface RegisterBody {
+  email: string;
+  password: string;
+  deviceName?: string;
+  deviceType?: string;
+}
+
+interface LoginBody {
+  email: string;
+  password: string;
+  deviceName?: string;
+  deviceType?: string;
+}
+
 // Register new user
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request<object, unknown, RegisterBody>, res: Response): Promise<void> => {
   try {
     const { email, password, deviceName, deviceType } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     // Check if user exists
@@ -21,7 +36,8 @@ router.post('/register', async (req, res) => {
     );
 
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Email already registered' });
+      res.status(409).json({ error: 'Email already registered' });
+      return;
     }
 
     // Hash password
@@ -38,7 +54,7 @@ router.post('/register', async (req, res) => {
     const user = userResult.rows[0];
 
     // Create device if provided
-    let deviceId = null;
+    let deviceId: string | null = null;
     if (deviceName) {
       const deviceResult = await pool.query(
         `INSERT INTO devices (user_id, name, device_type)
@@ -91,12 +107,13 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request<object, unknown, LoginBody>, res: Response): Promise<void> => {
   try {
     const { email, password, deviceName, deviceType } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     // Find user
@@ -107,7 +124,8 @@ router.post('/login', async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
 
     const user = userResult.rows[0];
@@ -116,11 +134,12 @@ router.post('/login', async (req, res) => {
     const passwordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!passwordValid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
 
     // Create or get device
-    let deviceId = null;
+    let deviceId: string | null = null;
     if (deviceName) {
       // Check if device exists
       const existingDevice = await pool.query(
@@ -176,9 +195,10 @@ router.post('/login', async (req, res) => {
 });
 
 // Logout
-router.post('/logout', async (req, res) => {
+router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   try {
-    const token = req.cookies.session_token || req.headers.authorization?.replace('Bearer ', '');
+    const authHeader = req.headers.authorization;
+    const token = req.cookies.session_token || authHeader?.replace('Bearer ', '');
 
     if (token) {
       await pool.query('DELETE FROM sessions WHERE token = $1', [token]);
@@ -194,12 +214,14 @@ router.post('/logout', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', async (req, res) => {
+router.get('/me', async (req: Request, res: Response): Promise<void> => {
   try {
-    const token = req.cookies.session_token || req.headers.authorization?.replace('Bearer ', '');
+    const authHeader = req.headers.authorization;
+    const token = req.cookies.session_token || authHeader?.replace('Bearer ', '');
 
     if (!token) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const result = await pool.query(
@@ -211,7 +233,8 @@ router.get('/me', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid or expired session' });
+      res.status(401).json({ error: 'Invalid or expired session' });
+      return;
     }
 
     const user = result.rows[0];

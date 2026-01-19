@@ -3,22 +3,46 @@
  * In a distributed system, this would route to different sharded trie servers.
  * For local development, it uses a single trie with Redis caching.
  */
+import type Redis from 'ioredis';
+import type { Trie, Suggestion } from '../data-structures/trie.js';
+import type { RankingService, RankedSuggestion } from './ranking-service.js';
+
+export interface SuggestionOptions {
+  userId?: string | null;
+  limit?: number;
+  skipCache?: boolean;
+}
+
+export interface FuzzySuggestionOptions extends SuggestionOptions {
+  maxDistance?: number;
+}
+
+interface FuzzyMatch extends Suggestion {
+  distance?: number;
+  fuzzyPenalty?: number;
+  isFuzzy?: boolean;
+}
+
 export class SuggestionService {
-  constructor(trie, redis, rankingService) {
+  private trie: Trie;
+  private redis: Redis;
+  private rankingService: RankingService;
+  private cachePrefix: string = 'suggestions:';
+  private cacheTTL: number = 60; // 1 minute cache
+
+  constructor(trie: Trie, redis: Redis, rankingService: RankingService) {
     this.trie = trie;
     this.redis = redis;
     this.rankingService = rankingService;
-    this.cachePrefix = 'suggestions:';
-    this.cacheTTL = 60; // 1 minute cache
   }
 
   /**
    * Get suggestions for a prefix with caching and ranking.
-   * @param {string} prefix - The search prefix
-   * @param {object} options - Options: userId, limit, skipCache
-   * @returns {Promise<Array>} Ranked suggestions
    */
-  async getSuggestions(prefix, options = {}) {
+  async getSuggestions(
+    prefix: string,
+    options: SuggestionOptions = {}
+  ): Promise<RankedSuggestion[]> {
     const { userId = null, limit = 5, skipCache = false } = options;
 
     if (!prefix || prefix.trim().length === 0) {
@@ -32,10 +56,10 @@ export class SuggestionService {
     if (!skipCache) {
       const cached = await this._getCached(normalizedPrefix);
       if (cached) {
-        const rankedSuggestions = await this.rankingService.rank(
-          cached,
-          { userId, prefix: normalizedPrefix }
-        );
+        const rankedSuggestions = await this.rankingService.rank(cached, {
+          userId,
+          prefix: normalizedPrefix,
+        });
         return rankedSuggestions.slice(0, limit);
       }
     }
@@ -47,10 +71,10 @@ export class SuggestionService {
     await this._cache(normalizedPrefix, baseSuggestions);
 
     // Apply ranking
-    const rankedSuggestions = await this.rankingService.rank(
-      baseSuggestions,
-      { userId, prefix: normalizedPrefix }
-    );
+    const rankedSuggestions = await this.rankingService.rank(baseSuggestions, {
+      userId,
+      prefix: normalizedPrefix,
+    });
 
     return rankedSuggestions.slice(0, limit);
   }
@@ -59,7 +83,10 @@ export class SuggestionService {
    * Get fuzzy suggestions for typo correction.
    * Uses Levenshtein distance to find close matches.
    */
-  async getFuzzySuggestions(prefix, options = {}) {
+  async getFuzzySuggestions(
+    prefix: string,
+    options: FuzzySuggestionOptions = {}
+  ): Promise<(RankedSuggestion | FuzzyMatch)[]> {
     const { maxDistance = 2, limit = 5 } = options;
 
     // First get exact matches
@@ -73,9 +100,9 @@ export class SuggestionService {
     const fuzzyMatches = await this._getFuzzyMatches(prefix, maxDistance);
 
     // Merge and deduplicate
-    const allMatches = [...exactMatches];
+    const allMatches: (RankedSuggestion | FuzzyMatch)[] = [...exactMatches];
     for (const match of fuzzyMatches) {
-      if (!allMatches.some(m => m.phrase === match.phrase)) {
+      if (!allMatches.some((m) => m.phrase === match.phrase)) {
         allMatches.push({
           ...match,
           isFuzzy: true,
@@ -85,9 +112,13 @@ export class SuggestionService {
 
     // Sort by score (exact matches first, then fuzzy by count)
     allMatches.sort((a, b) => {
-      if (a.isFuzzy && !b.isFuzzy) return 1;
-      if (!a.isFuzzy && b.isFuzzy) return -1;
-      return (b.score || b.count) - (a.score || a.count);
+      const aFuzzy = 'isFuzzy' in a && a.isFuzzy;
+      const bFuzzy = 'isFuzzy' in b && b.isFuzzy;
+      if (aFuzzy && !bFuzzy) return 1;
+      if (!aFuzzy && bFuzzy) return -1;
+      const aScore = 'score' in a ? a.score : a.count;
+      const bScore = 'score' in b ? b.score : b.count;
+      return bScore - aScore;
     });
 
     return allMatches.slice(0, limit);
@@ -96,9 +127,9 @@ export class SuggestionService {
   /**
    * Get fuzzy matches using edit distance.
    */
-  async _getFuzzyMatches(prefix, maxDistance) {
+  private async _getFuzzyMatches(prefix: string, maxDistance: number): Promise<FuzzyMatch[]> {
     const normalizedPrefix = prefix.toLowerCase().trim();
-    const fuzzyMatches = [];
+    const fuzzyMatches: FuzzyMatch[] = [];
 
     // Generate variations with 1-character edits
     const variations = this._generateEditVariations(normalizedPrefix);
@@ -122,9 +153,9 @@ export class SuggestionService {
     }
 
     // Deduplicate and sort by count
-    const seen = new Set();
+    const seen = new Set<string>();
     return fuzzyMatches
-      .filter(m => {
+      .filter((m) => {
         if (seen.has(m.phrase)) return false;
         seen.add(m.phrase);
         return true;
@@ -135,8 +166,8 @@ export class SuggestionService {
   /**
    * Generate single-character edit variations of a prefix.
    */
-  _generateEditVariations(prefix) {
-    const variations = new Set();
+  private _generateEditVariations(prefix: string): string[] {
+    const variations = new Set<string>();
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789 ';
 
     // Deletions
@@ -156,13 +187,13 @@ export class SuggestionService {
       variations.add(prefix + char);
     }
 
-    return Array.from(variations).filter(v => v.length > 0);
+    return Array.from(variations).filter((v) => v.length > 0);
   }
 
   /**
    * Calculate Levenshtein distance between two strings.
    */
-  _levenshteinDistance(s1, s2) {
+  private _levenshteinDistance(s1: string, s2: string): number {
     const m = s1.length;
     const n = s2.length;
 
@@ -170,7 +201,9 @@ export class SuggestionService {
     if (n === 0) return m;
     if (s1 === s2) return 0;
 
-    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+    const dp: number[][] = Array(m + 1)
+      .fill(null)
+      .map(() => Array(n + 1).fill(0));
 
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
@@ -180,11 +213,13 @@ export class SuggestionService {
         if (s1[i - 1] === s2[j - 1]) {
           dp[i][j] = dp[i - 1][j - 1];
         } else {
-          dp[i][j] = 1 + Math.min(
-            dp[i - 1][j],     // deletion
-            dp[i][j - 1],     // insertion
-            dp[i - 1][j - 1]  // substitution
-          );
+          dp[i][j] =
+            1 +
+            Math.min(
+              dp[i - 1][j], // deletion
+              dp[i][j - 1], // insertion
+              dp[i - 1][j - 1] // substitution
+            );
         }
       }
     }
@@ -195,16 +230,16 @@ export class SuggestionService {
   /**
    * Get popular queries when no prefix is provided.
    */
-  async _getPopularQueries(limit) {
+  private async _getPopularQueries(limit: number): Promise<Suggestion[]> {
     const cacheKey = `${this.cachePrefix}popular`;
 
     try {
       const cached = await this.redis.get(cacheKey);
       if (cached) {
-        return JSON.parse(cached).slice(0, limit);
+        return (JSON.parse(cached) as Suggestion[]).slice(0, limit);
       }
     } catch (error) {
-      console.error('Redis error:', error.message);
+      console.error('Redis error:', (error as Error).message);
     }
 
     // Get from trie root
@@ -213,7 +248,7 @@ export class SuggestionService {
     try {
       await this.redis.setex(cacheKey, this.cacheTTL, JSON.stringify(popular));
     } catch (error) {
-      console.error('Redis cache error:', error.message);
+      console.error('Redis cache error:', (error as Error).message);
     }
 
     return popular.slice(0, limit);
@@ -222,16 +257,16 @@ export class SuggestionService {
   /**
    * Get cached suggestions.
    */
-  async _getCached(prefix) {
+  private async _getCached(prefix: string): Promise<Suggestion[] | null> {
     const cacheKey = `${this.cachePrefix}${prefix}`;
 
     try {
       const cached = await this.redis.get(cacheKey);
       if (cached) {
-        return JSON.parse(cached);
+        return JSON.parse(cached) as Suggestion[];
       }
     } catch (error) {
-      console.error('Redis error:', error.message);
+      console.error('Redis error:', (error as Error).message);
     }
 
     return null;
@@ -240,20 +275,20 @@ export class SuggestionService {
   /**
    * Cache suggestions.
    */
-  async _cache(prefix, suggestions) {
+  private async _cache(prefix: string, suggestions: Suggestion[]): Promise<void> {
     const cacheKey = `${this.cachePrefix}${prefix}`;
 
     try {
       await this.redis.setex(cacheKey, this.cacheTTL, JSON.stringify(suggestions));
     } catch (error) {
-      console.error('Redis cache error:', error.message);
+      console.error('Redis cache error:', (error as Error).message);
     }
   }
 
   /**
    * Clear cache for a prefix (call when trie is updated).
    */
-  async clearCache(prefix = null) {
+  async clearCache(prefix: string | null = null): Promise<void> {
     try {
       if (prefix) {
         await this.redis.del(`${this.cachePrefix}${prefix}`);
@@ -265,7 +300,7 @@ export class SuggestionService {
         }
       }
     } catch (error) {
-      console.error('Redis clear cache error:', error.message);
+      console.error('Redis clear cache error:', (error as Error).message);
     }
   }
 
@@ -273,7 +308,7 @@ export class SuggestionService {
    * Get shard ID for a prefix (for distributed deployment).
    * In a real system, this would route to different trie servers.
    */
-  static getShardForPrefix(prefix, totalShards) {
+  static getShardForPrefix(prefix: string, totalShards: number): number {
     if (!prefix || prefix.length === 0) {
       return 0;
     }

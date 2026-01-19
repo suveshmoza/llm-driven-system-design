@@ -1,28 +1,36 @@
-import express from 'express';
-import { esClient } from '../index.js';
+import express, { Request, Response, Router } from 'express';
 import { parseQuery, formatSpecialResult } from '../services/queryParser.js';
 import { searchAll, getSuggestions as getEsSuggestions } from '../services/elasticsearch.js';
 import { searchRateLimiter } from '../shared/rateLimiter.js';
 import { searchLatency, searchResultCount, searchRequestsTotal } from '../shared/metrics.js';
 import { logSearch, searchLogger } from '../shared/logger.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // Apply rate limiting to all search routes
 router.use(searchRateLimiter);
 
+// Extend Express Request to include requestId and session
+interface SearchRequest extends Request {
+  requestId?: string;
+  session?: {
+    userId?: string;
+  };
+}
+
 // ============================================================================
 // Main Search Endpoint
 // ============================================================================
-router.get('/', async (req, res) => {
+router.get('/', async (req: SearchRequest, res: Response): Promise<void> => {
   const startTime = Date.now();
   const requestId = req.requestId;
 
   try {
-    const { q, types, limit = 20 } = req.query;
+    const { q, types, limit = '20' } = req.query as { q?: string; types?: string; limit?: string };
 
     if (!q || q.trim().length === 0) {
-      return res.json({ results: [], suggestions: [] });
+      res.json({ results: [], suggestions: [] });
+      return;
     }
 
     const query = q.trim();
@@ -61,10 +69,11 @@ router.get('/', async (req, res) => {
         requestId
       });
 
-      return res.json({
+      res.json({
         results: [specialResult, ...searchResults],
         query: parsedQuery
       });
+      return;
     }
 
     // Regular search with timing
@@ -82,11 +91,12 @@ router.get('/', async (req, res) => {
     // Add web search fallback if few results
     if (results.length < 3) {
       results.push({
+        id: 'web-fallback',
         type: 'web',
+        score: 1,
         name: `Search the web for "${query}"`,
         url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-        icon: 'globe',
-        score: 1
+        icon: 'globe'
       });
     }
 
@@ -105,8 +115,9 @@ router.get('/', async (req, res) => {
       query: parsedQuery
     });
   } catch (error) {
+    const err = error as Error;
     searchLogger.error({
-      error: error.message,
+      error: err.message,
       requestId
     }, 'Search error');
     res.status(500).json({ error: 'Search failed' });
@@ -116,15 +127,16 @@ router.get('/', async (req, res) => {
 // ============================================================================
 // Autocomplete/Suggestions Endpoint
 // ============================================================================
-router.get('/suggest', async (req, res) => {
+router.get('/suggest', async (req: SearchRequest, res: Response): Promise<void> => {
   const startTime = Date.now();
   const requestId = req.requestId;
 
   try {
-    const { q, limit = 10 } = req.query;
+    const { q, limit = '10' } = req.query as { q?: string; limit?: string };
 
     if (!q || q.trim().length === 0) {
-      return res.json({ suggestions: [] });
+      res.json({ suggestions: [] });
+      return;
     }
 
     const suggestions = await getEsSuggestions(q.trim(), parseInt(limit));
@@ -134,8 +146,9 @@ router.get('/suggest', async (req, res) => {
 
     res.json({ suggestions });
   } catch (error) {
+    const err = error as Error;
     searchLogger.error({
-      error: error.message,
+      error: err.message,
       requestId
     }, 'Suggestion error');
     res.status(500).json({ error: 'Suggestions failed' });
@@ -145,21 +158,23 @@ router.get('/suggest', async (req, res) => {
 // ============================================================================
 // Search Within Specific Type
 // ============================================================================
-router.get('/:type', async (req, res) => {
+router.get('/:type', async (req: SearchRequest, res: Response): Promise<void> => {
   const startTime = Date.now();
   const requestId = req.requestId;
 
   try {
     const { type } = req.params;
-    const { q, limit = 20 } = req.query;
+    const { q, limit = '20' } = req.query as { q?: string; limit?: string };
 
     if (!q || q.trim().length === 0) {
-      return res.json({ results: [] });
+      res.json({ results: [] });
+      return;
     }
 
     const validTypes = ['files', 'apps', 'contacts', 'web'];
     if (!validTypes.includes(type)) {
-      return res.status(400).json({ error: 'Invalid type' });
+      res.status(400).json({ error: 'Invalid type' });
+      return;
     }
 
     // Track query by type
@@ -186,8 +201,9 @@ router.get('/:type', async (req, res) => {
 
     res.json({ results });
   } catch (error) {
+    const err = error as Error;
     searchLogger.error({
-      error: error.message,
+      error: err.message,
       requestId
     }, 'Search error');
     res.status(500).json({ error: 'Search failed' });

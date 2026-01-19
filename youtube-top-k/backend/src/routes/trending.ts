@@ -1,15 +1,19 @@
-import express from 'express';
-import { TrendingService } from '../services/trendingService.js';
+import express, { Request, Response, Router } from 'express';
+import { TrendingService, TrendingCacheEntry } from '../services/trendingService.js';
 
-const router = express.Router();
+const router: Router = express.Router();
+
+interface TrendingAllResult {
+  [category: string]: TrendingCacheEntry;
+}
 
 /**
  * GET /api/trending
  * Get trending videos for a category
  */
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { category = 'all' } = req.query;
+    const category = (req.query.category as string) || 'all';
     const trendingService = TrendingService.getInstance();
 
     const { videos, updatedAt } = trendingService.getTrending(category);
@@ -30,12 +34,12 @@ router.get('/', async (req, res) => {
  * GET /api/trending/all
  * Get trending videos for all categories
  */
-router.get('/all', async (req, res) => {
+router.get('/all', async (req: Request, res: Response): Promise<void> => {
   try {
     const trendingService = TrendingService.getInstance();
     const categories = ['all', 'music', 'gaming', 'sports', 'news', 'entertainment', 'education'];
 
-    const result = {};
+    const result: TrendingAllResult = {};
     for (const category of categories) {
       const { videos, updatedAt } = trendingService.getTrending(category);
       result[category] = { videos, updatedAt };
@@ -52,7 +56,7 @@ router.get('/all', async (req, res) => {
  * GET /api/trending/categories
  * Get available categories
  */
-router.get('/categories', async (req, res) => {
+router.get('/categories', async (req: Request, res: Response): Promise<void> => {
   try {
     const trendingService = TrendingService.getInstance();
     const categories = await trendingService.getCategories();
@@ -70,7 +74,7 @@ router.get('/categories', async (req, res) => {
  * GET /api/trending/stats
  * Get trending statistics
  */
-router.get('/stats', async (req, res) => {
+router.get('/stats', async (req: Request, res: Response): Promise<void> => {
   try {
     const trendingService = TrendingService.getInstance();
     const stats = await trendingService.getStats();
@@ -86,7 +90,7 @@ router.get('/stats', async (req, res) => {
  * POST /api/trending/refresh
  * Force refresh trending calculations
  */
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   try {
     const trendingService = TrendingService.getInstance();
     await trendingService.updateTrending();

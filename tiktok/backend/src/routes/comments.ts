@@ -1,17 +1,31 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, Router } from 'express';
 import { query } from '../db.js';
 import { requireAuth, optionalAuth, PERMISSIONS, hasPermission } from '../middleware/auth.js';
 import { createLogger } from '../shared/logger.js';
 import { getRateLimiters } from '../index.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 const logger = createLogger('comments');
+
+// Comment row type
+interface CommentRow {
+  id: number;
+  user_id: number;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  video_id: number;
+  parent_id: number | null;
+  content: string;
+  like_count: number;
+  created_at: string;
+}
 
 // Helper to get rate limiters
 const getLimiters = () => getRateLimiters();
 
 // Helper to format comment response
-const formatComment = (comment) => ({
+const formatComment = (comment: CommentRow): Record<string, unknown> => ({
   id: comment.id,
   userId: comment.user_id,
   username: comment.username,
@@ -25,11 +39,11 @@ const formatComment = (comment) => ({
 });
 
 // Get comments for a video
-router.get('/video/:videoId', async (req, res) => {
+router.get('/video/:videoId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { videoId } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
 
     // Get top-level comments
     const result = await query(
@@ -43,8 +57,8 @@ router.get('/video/:videoId', async (req, res) => {
     );
 
     // Get reply counts for each comment
-    const commentIds = result.rows.map(c => c.id);
-    let replyCounts = {};
+    const commentIds = result.rows.map((c: CommentRow) => c.id);
+    let replyCounts: Record<number, number> = {};
     if (commentIds.length > 0) {
       const replyResult = await query(
         `SELECT parent_id, COUNT(*) as count
@@ -54,29 +68,32 @@ router.get('/video/:videoId', async (req, res) => {
         [commentIds]
       );
       replyCounts = Object.fromEntries(
-        replyResult.rows.map(r => [r.parent_id, parseInt(r.count)])
+        replyResult.rows.map((r: { parent_id: number; count: string }) => [
+          r.parent_id,
+          parseInt(r.count),
+        ])
       );
     }
 
     res.json({
-      comments: result.rows.map(c => ({
+      comments: result.rows.map((c: CommentRow) => ({
         ...formatComment(c),
         replyCount: replyCounts[c.id] || 0,
       })),
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, videoId: req.params.videoId }, 'Get comments error');
+    logger.error({ error: (error as Error).message, videoId: req.params.videoId }, 'Get comments error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Get replies for a comment
-router.get('/:commentId/replies', async (req, res) => {
+router.get('/:commentId/replies', async (req: Request, res: Response): Promise<void> => {
   try {
     const { commentId } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
 
     const result = await query(
       `SELECT c.*, u.username, u.display_name, u.avatar_url
@@ -89,38 +106,41 @@ router.get('/:commentId/replies', async (req, res) => {
     );
 
     res.json({
-      replies: result.rows.map(formatComment),
+      replies: result.rows.map((c: CommentRow) => formatComment(c)),
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, commentId: req.params.commentId }, 'Get replies error');
+    logger.error({ error: (error as Error).message, commentId: req.params.commentId }, 'Get replies error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Create comment
-router.post('/video/:videoId', requireAuth, async (req, res, next) => {
+router.post('/video/:videoId', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // Apply rate limiting
   const limiters = getLimiters();
   if (limiters?.comment) {
-    return limiters.comment(req, res, async () => {
+    limiters.comment(req, res, async () => {
       await handleCreateComment(req, res, next);
     });
+    return;
   }
   await handleCreateComment(req, res, next);
 });
 
-async function handleCreateComment(req, res, next) {
+async function handleCreateComment(req: Request, res: Response, _next: NextFunction): Promise<void> {
   try {
     const { videoId } = req.params;
-    const { content, parentId } = req.body;
+    const { content, parentId } = req.body as { content?: string; parentId?: number };
 
     if (!content || content.trim().length === 0) {
-      return res.status(400).json({ error: 'Comment content is required' });
+      res.status(400).json({ error: 'Comment content is required' });
+      return;
     }
 
     if (content.length > 500) {
-      return res.status(400).json({ error: 'Comment too long (max 500 characters)' });
+      res.status(400).json({ error: 'Comment too long (max 500 characters)' });
+      return;
     }
 
     // Check if video exists
@@ -129,7 +149,8 @@ async function handleCreateComment(req, res, next) {
       [videoId, 'active']
     );
     if (videoResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Video not found' });
+      res.status(404).json({ error: 'Video not found' });
+      return;
     }
 
     // If reply, check parent comment exists
@@ -139,7 +160,8 @@ async function handleCreateComment(req, res, next) {
         [parentId, videoId]
       );
       if (parentResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Parent comment not found' });
+        res.status(404).json({ error: 'Parent comment not found' });
+        return;
       }
     }
 
@@ -164,8 +186,8 @@ async function handleCreateComment(req, res, next) {
     );
 
     const comment = {
-      ...result.rows[0],
-      ...userResult.rows[0],
+      ...(result.rows[0] as CommentRow),
+      ...(userResult.rows[0] as { username: string; display_name: string; avatar_url: string | null }),
     };
 
     logger.debug({
@@ -177,16 +199,16 @@ async function handleCreateComment(req, res, next) {
 
     res.status(201).json({
       message: 'Comment created successfully',
-      comment: formatComment(comment),
+      comment: formatComment(comment as CommentRow),
     });
   } catch (error) {
-    logger.error({ error: error.message, videoId: req.params.videoId }, 'Create comment error');
+    logger.error({ error: (error as Error).message, videoId: req.params.videoId }, 'Create comment error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Delete comment
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -197,15 +219,17 @@ router.delete('/:id', requireAuth, async (req, res) => {
     );
 
     if (commentResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Comment not found' });
+      res.status(404).json({ error: 'Comment not found' });
+      return;
     }
 
-    const comment = commentResult.rows[0];
+    const comment = commentResult.rows[0] as { user_id: number; video_id: number };
     const isOwner = comment.user_id === req.session.userId;
-    const canDeleteAny = hasPermission(req.session.role, PERMISSIONS.COMMENT_DELETE_ANY);
+    const canDeleteAny = hasPermission(req.session.role || 'user', PERMISSIONS.COMMENT_DELETE_ANY);
 
     if (!isOwner && !canDeleteAny) {
-      return res.status(403).json({ error: 'Not authorized to delete this comment' });
+      res.status(403).json({ error: 'Not authorized to delete this comment' });
+      return;
     }
 
     // Count this comment and its replies
@@ -213,7 +237,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
       'SELECT COUNT(*) as count FROM comments WHERE id = $1 OR parent_id = $1',
       [id]
     );
-    const deletedCount = parseInt(countResult.rows[0].count);
+    const deletedCount = parseInt((countResult.rows[0] as { count: string }).count);
 
     // Delete comment and its replies
     await query('DELETE FROM comments WHERE id = $1 OR parent_id = $1', [id]);
@@ -233,7 +257,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
     res.json({ message: 'Comment deleted successfully' });
   } catch (error) {
-    logger.error({ error: error.message, commentId: req.params.id }, 'Delete comment error');
+    logger.error({ error: (error as Error).message, commentId: req.params.id }, 'Delete comment error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

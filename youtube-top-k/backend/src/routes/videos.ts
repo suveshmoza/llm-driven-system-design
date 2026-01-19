@@ -1,28 +1,57 @@
-import express from 'express';
+import express, { Request, Response, Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../models/database.js';
 import { TrendingService } from '../services/trendingService.js';
 import { processViewWithIdempotency, getIdempotencyStats } from '../services/idempotency.js';
 import logger, { logError } from '../shared/logger.js';
-import { viewEventsTotal } from '../shared/metrics.js';
 
-const router = express.Router();
+const router: Router = express.Router();
+
+interface VideoRow {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string;
+  channel_name: string;
+  category: string;
+  duration_seconds: number;
+  total_views: number;
+  created_at: Date;
+}
+
+interface CountRow {
+  count: string;
+}
+
+interface BatchViewItem {
+  videoId: string;
+  count?: number;
+}
+
+interface BatchViewResult {
+  videoId: string;
+  count?: number;
+  success?: boolean;
+  error?: string;
+}
 
 /**
  * GET /api/videos
  * List all videos with pagination
  */
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page = 1, limit = 20, category } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const category = req.query.category as string | undefined;
+    const offset = (page - 1) * limit;
 
     let sql = `
       SELECT id, title, description, thumbnail_url, channel_name, category,
              duration_seconds, total_views, created_at
       FROM videos
     `;
-    const params = [];
+    const params: (string | number)[] = [];
 
     if (category && category !== 'all') {
       sql += ' WHERE category = $1';
@@ -31,30 +60,30 @@ router.get('/', async (req, res) => {
 
     sql += ' ORDER BY created_at DESC';
     sql += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(parseInt(limit), offset);
+    params.push(limit, offset);
 
-    const result = await query(sql, params);
+    const result = await query<VideoRow>(sql, params);
 
     // Get total count
     let countSql = 'SELECT COUNT(*) FROM videos';
-    const countParams = [];
+    const countParams: string[] = [];
     if (category && category !== 'all') {
       countSql += ' WHERE category = $1';
       countParams.push(category);
     }
-    const countResult = await query(countSql, countParams);
+    const countResult = await query<CountRow>(countSql, countParams);
 
     res.json({
       videos: result.rows,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page,
+        limit,
         total: parseInt(countResult.rows[0].count),
-        totalPages: Math.ceil(parseInt(countResult.rows[0].count) / parseInt(limit)),
+        totalPages: Math.ceil(parseInt(countResult.rows[0].count) / limit),
       },
     });
   } catch (error) {
-    logError(error, { endpoint: 'GET /api/videos' });
+    logError(error as Error, { endpoint: 'GET /api/videos' });
     res.status(500).json({ error: 'Failed to list videos' });
   }
 });
@@ -63,11 +92,11 @@ router.get('/', async (req, res) => {
  * GET /api/videos/:id
  * Get a single video by ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
-    const result = await query(
+    const result = await query<VideoRow>(
       `SELECT id, title, description, thumbnail_url, channel_name, category,
               duration_seconds, total_views, created_at
        FROM videos WHERE id = $1`,
@@ -75,12 +104,13 @@ router.get('/:id', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Video not found' });
+      res.status(404).json({ error: 'Video not found' });
+      return;
     }
 
     res.json(result.rows[0]);
   } catch (error) {
-    logError(error, { endpoint: 'GET /api/videos/:id' });
+    logError(error as Error, { endpoint: 'GET /api/videos/:id' });
     res.status(500).json({ error: 'Failed to get video' });
   }
 });
@@ -89,17 +119,25 @@ router.get('/:id', async (req, res) => {
  * POST /api/videos
  * Create a new video
  */
-router.post('/', async (req, res) => {
+router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const { title, description, thumbnail_url, channel_name, category, duration_seconds } =
-      req.body;
+      req.body as {
+        title?: string;
+        description?: string;
+        thumbnail_url?: string;
+        channel_name?: string;
+        category?: string;
+        duration_seconds?: number;
+      };
 
     if (!title || !channel_name || !category) {
-      return res.status(400).json({ error: 'title, channel_name, and category are required' });
+      res.status(400).json({ error: 'title, channel_name, and category are required' });
+      return;
     }
 
     const id = uuidv4();
-    const result = await query(
+    const result = await query<VideoRow>(
       `INSERT INTO videos (id, title, description, thumbnail_url, channel_name, category, duration_seconds)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
@@ -117,7 +155,7 @@ router.post('/', async (req, res) => {
     logger.info({ videoId: id, category }, 'New video created');
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    logError(error, { endpoint: 'POST /api/videos' });
+    logError(error as Error, { endpoint: 'POST /api/videos' });
     res.status(500).json({ error: 'Failed to create video' });
   }
 });
@@ -143,20 +181,21 @@ router.post('/', async (req, res) => {
  * - X-Request-Id: Unique request identifier for exact deduplication
  * - X-Session-Id: Session identifier for time-bucketed deduplication
  */
-router.post('/:id/view', async (req, res) => {
+router.post('/:id/view', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const requestId = req.headers['x-request-id'];
-    const sessionId = req.headers['x-session-id'] || req.body.sessionId;
+    const requestId = req.headers['x-request-id'] as string | undefined;
+    const sessionId = (req.headers['x-session-id'] as string) || (req.body as { sessionId?: string }).sessionId;
 
     // Check if video exists and get category
-    const videoResult = await query(
+    const videoResult = await query<{ id: string; category: string; total_views: number }>(
       'SELECT id, category, total_views FROM videos WHERE id = $1',
       [id]
     );
 
     if (videoResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Video not found' });
+      res.status(404).json({ error: 'Video not found' });
+      return;
     }
 
     const video = videoResult.rows[0];
@@ -179,13 +218,14 @@ router.post('/:id/view', async (req, res) => {
         'Duplicate view request ignored'
       );
 
-      return res.status(200).json({
+      res.status(200).json({
         success: true,
         duplicate: true,
         videoId: id,
         message: 'View already recorded (idempotency)',
         idempotencyKey: result.key,
       });
+      return;
     }
 
     res.json({
@@ -196,7 +236,7 @@ router.post('/:id/view', async (req, res) => {
       idempotencyKey: result.key,
     });
   } catch (error) {
-    logError(error, { endpoint: 'POST /api/videos/:id/view' });
+    logError(error as Error, { endpoint: 'POST /api/videos/:id/view' });
     res.status(500).json({ error: 'Failed to record view' });
   }
 });
@@ -207,20 +247,21 @@ router.post('/:id/view', async (req, res) => {
  *
  * Note: Batch views bypass idempotency by design (for testing purposes)
  */
-router.post('/batch-view', async (req, res) => {
+router.post('/batch-view', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { views } = req.body; // Array of { videoId, count }
+    const { views } = req.body as { views?: BatchViewItem[] }; // Array of { videoId, count }
 
     if (!Array.isArray(views)) {
-      return res.status(400).json({ error: 'views must be an array' });
+      res.status(400).json({ error: 'views must be an array' });
+      return;
     }
 
     const trendingService = TrendingService.getInstance();
-    const results = [];
+    const results: BatchViewResult[] = [];
 
     for (const { videoId, count = 1 } of views) {
       // Get video category
-      const videoResult = await query(
+      const videoResult = await query<{ id: string; category: string }>(
         'SELECT id, category FROM videos WHERE id = $1',
         [videoId]
       );
@@ -247,7 +288,7 @@ router.post('/batch-view', async (req, res) => {
 
     res.json({ results });
   } catch (error) {
-    logError(error, { endpoint: 'POST /api/videos/batch-view' });
+    logError(error as Error, { endpoint: 'POST /api/videos/batch-view' });
     res.status(500).json({ error: 'Failed to batch record views' });
   }
 });
@@ -256,12 +297,12 @@ router.post('/batch-view', async (req, res) => {
  * GET /api/videos/stats/idempotency
  * Get idempotency statistics (for debugging/monitoring)
  */
-router.get('/stats/idempotency', async (req, res) => {
+router.get('/stats/idempotency', async (req: Request, res: Response): Promise<void> => {
   try {
     const stats = await getIdempotencyStats();
     res.json(stats);
   } catch (error) {
-    logError(error, { endpoint: 'GET /api/videos/stats/idempotency' });
+    logError(error as Error, { endpoint: 'GET /api/videos/stats/idempotency' });
     res.status(500).json({ error: 'Failed to get idempotency stats' });
   }
 });

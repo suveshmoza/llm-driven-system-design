@@ -1,13 +1,38 @@
-const express = require('express');
-const db = require('../db');
-const { client: redis } = require('../db/redis');
-const { isAuthenticated } = require('../middleware/auth');
-const router = express.Router();
+import express, { Request, Response, Router } from 'express';
+import * as db from '../db/index.js';
+import { client as redis } from '../db/redis.js';
+import { isAuthenticated } from '../middleware/auth.js';
+
+const router: Router = express.Router();
+
+interface ContentRow {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string;
+  banner_url?: string;
+  content_type: string;
+  genres: string[];
+  rating: string;
+  duration: number;
+  view_count?: number;
+  release_date?: Date;
+  position?: number;
+  progress_pct?: number;
+  progressPercent?: number;
+}
+
+interface RecommendationSection {
+  title: string;
+  type: string;
+  genre?: string;
+  items: ContentRow[];
+}
 
 // Get personalized recommendations
-router.get('/', isAuthenticated, async (req, res) => {
+router.get('/', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 20 } = req.query;
+    const { limit = '20' } = req.query as Record<string, string>;
     const profileId = req.session.profileId;
     const isKids = req.session.isKids;
 
@@ -22,19 +47,20 @@ router.get('/', isAuthenticated, async (req, res) => {
 });
 
 // Get "Because you watched X" recommendations
-router.get('/because-you-watched/:contentId', isAuthenticated, async (req, res) => {
+router.get('/because-you-watched/:contentId', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     const { contentId } = req.params;
-    const { limit = 10 } = req.query;
+    const { limit = '10' } = req.query as Record<string, string>;
     const isKids = req.session.isKids;
 
     // Get the source content's genres
-    const source = await db.query(`
+    const source = await db.query<{ genres: string[] }>(`
       SELECT genres FROM content WHERE id = $1
     `, [contentId]);
 
     if (source.rows.length === 0) {
-      return res.json([]);
+      res.json([]);
+      return;
     }
 
     const genres = source.rows[0].genres || [];
@@ -48,7 +74,7 @@ router.get('/because-you-watched/:contentId', isAuthenticated, async (req, res) 
         AND content_type != 'episode'
         AND genres && $2
     `;
-    const params = [contentId, genres];
+    const params: unknown[] = [contentId, genres];
     let paramIndex = 3;
 
     if (isKids) {
@@ -59,7 +85,7 @@ router.get('/because-you-watched/:contentId', isAuthenticated, async (req, res) 
     query += ` LIMIT $${paramIndex++}`;
     params.push(parseInt(limit));
 
-    const result = await db.query(query, params);
+    const result = await db.query<ContentRow>(query, params);
 
     res.json(result.rows);
   } catch (error) {
@@ -69,17 +95,18 @@ router.get('/because-you-watched/:contentId', isAuthenticated, async (req, res) 
 });
 
 // Get trending content
-router.get('/trending', async (req, res) => {
+router.get('/trending', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 10 } = req.query;
+    const { limit = '10' } = req.query as Record<string, string>;
 
     // Try cache first
     const cached = await redis.get('recommendations:trending');
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
-    const result = await db.query(`
+    const result = await db.query<ContentRow>(`
       SELECT id, title, description, thumbnail_url, banner_url, content_type, genres, rating, duration, view_count
       FROM content
       WHERE status = 'ready'
@@ -99,16 +126,17 @@ router.get('/trending', async (req, res) => {
 });
 
 // Get new releases
-router.get('/new-releases', async (req, res) => {
+router.get('/new-releases', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 10 } = req.query;
+    const { limit = '10' } = req.query as Record<string, string>;
 
     const cached = await redis.get('recommendations:new-releases');
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
-    const result = await db.query(`
+    const result = await db.query<ContentRow>(`
       SELECT id, title, description, thumbnail_url, banner_url, content_type, genres, rating, duration, release_date
       FROM content
       WHERE status = 'ready'
@@ -128,12 +156,12 @@ router.get('/new-releases', async (req, res) => {
 });
 
 // Get recommendations by genre
-router.get('/genre/:genre', async (req, res) => {
+router.get('/genre/:genre', async (req: Request, res: Response): Promise<void> => {
   try {
     const { genre } = req.params;
-    const { limit = 20 } = req.query;
+    const { limit = '20' } = req.query as Record<string, string>;
 
-    const result = await db.query(`
+    const result = await db.query<ContentRow>(`
       SELECT id, title, description, thumbnail_url, content_type, genres, rating, duration
       FROM content
       WHERE status = 'ready'
@@ -151,17 +179,19 @@ router.get('/genre/:genre', async (req, res) => {
 });
 
 // Rate content
-router.post('/rate/:contentId', isAuthenticated, async (req, res) => {
+router.post('/rate/:contentId', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.session.profileId) {
-      return res.status(400).json({ error: 'Profile not selected' });
+      res.status(400).json({ error: 'Profile not selected' });
+      return;
     }
 
     const { contentId } = req.params;
-    const { rating } = req.body;
+    const { rating } = req.body as { rating?: number };
 
     if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+      res.status(400).json({ error: 'Rating must be between 1 and 5' });
+      return;
     }
 
     await db.query(`
@@ -179,15 +209,16 @@ router.post('/rate/:contentId', isAuthenticated, async (req, res) => {
 });
 
 // Get user's rating for content
-router.get('/rating/:contentId', isAuthenticated, async (req, res) => {
+router.get('/rating/:contentId', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.session.profileId) {
-      return res.status(400).json({ error: 'Profile not selected' });
+      res.status(400).json({ error: 'Profile not selected' });
+      return;
     }
 
     const { contentId } = req.params;
 
-    const result = await db.query(`
+    const result = await db.query<{ rating: number }>(`
       SELECT rating FROM content_ratings
       WHERE profile_id = $1 AND content_id = $2
     `, [req.session.profileId, contentId]);
@@ -202,12 +233,16 @@ router.get('/rating/:contentId', isAuthenticated, async (req, res) => {
 });
 
 // Helper function to build recommendations
-async function getRecommendations(profileId, isKids, limit) {
-  const sections = [];
+async function getRecommendations(
+  profileId: string | undefined,
+  isKids: boolean | undefined,
+  _limit: number
+): Promise<RecommendationSection[]> {
+  const sections: RecommendationSection[] = [];
 
   // Section 1: Continue Watching (if profile selected)
   if (profileId) {
-    const continueWatching = await db.query(`
+    const continueWatching = await db.query<ContentRow>(`
       SELECT
         c.id,
         c.title,
@@ -232,7 +267,7 @@ async function getRecommendations(profileId, isKids, limit) {
         type: 'continue_watching',
         items: continueWatching.rows.map(row => ({
           ...row,
-          progressPercent: Math.round(row.progress_pct * 100)
+          progressPercent: Math.round((row.progress_pct ?? 0) * 100)
         }))
       });
     }
@@ -249,7 +284,7 @@ async function getRecommendations(profileId, isKids, limit) {
   }
   featuredQuery += ` ORDER BY release_date DESC LIMIT 10`;
 
-  const featured = await db.query(featuredQuery);
+  const featured = await db.query<ContentRow>(featuredQuery);
   if (featured.rows.length > 0) {
     sections.push({
       title: 'Featured',
@@ -269,7 +304,7 @@ async function getRecommendations(profileId, isKids, limit) {
   }
   trendingQuery += ` ORDER BY view_count DESC LIMIT 10`;
 
-  const trending = await db.query(trendingQuery);
+  const trending = await db.query<ContentRow>(trendingQuery);
   if (trending.rows.length > 0) {
     sections.push({
       title: 'Trending Now',
@@ -290,7 +325,7 @@ async function getRecommendations(profileId, isKids, limit) {
   }
   newQuery += ` ORDER BY release_date DESC LIMIT 10`;
 
-  const newReleases = await db.query(newQuery);
+  const newReleases = await db.query<ContentRow>(newQuery);
   if (newReleases.rows.length > 0) {
     sections.push({
       title: 'New Releases',
@@ -301,7 +336,7 @@ async function getRecommendations(profileId, isKids, limit) {
 
   // Section 5: Genre-based recommendations (if profile has history)
   if (profileId) {
-    const watchedGenres = await db.query(`
+    const watchedGenres = await db.query<{ genre: string; count: number }>(`
       SELECT unnest(c.genres) as genre, COUNT(*) as count
       FROM watch_history wh
       JOIN content c ON c.id = wh.content_id
@@ -318,14 +353,14 @@ async function getRecommendations(profileId, isKids, limit) {
         WHERE status = 'ready' AND content_type != 'episode'
           AND $1 = ANY(genres)
       `;
-      const params = [genreRow.genre];
+      const params: unknown[] = [genreRow.genre];
 
       if (isKids) {
         genreQuery += ` AND rating IN ('G', 'PG', 'TV-Y', 'TV-G', 'TV-Y7')`;
       }
       genreQuery += ` ORDER BY view_count DESC LIMIT 10`;
 
-      const genreContent = await db.query(genreQuery, params);
+      const genreContent = await db.query<ContentRow>(genreQuery, params);
       if (genreContent.rows.length > 0) {
         sections.push({
           title: `${genreRow.genre}`,
@@ -348,7 +383,7 @@ async function getRecommendations(profileId, isKids, limit) {
   }
   moviesQuery += ` ORDER BY view_count DESC LIMIT 10`;
 
-  const movies = await db.query(moviesQuery);
+  const movies = await db.query<ContentRow>(moviesQuery);
   if (movies.rows.length > 0) {
     sections.push({
       title: 'Movies',
@@ -368,7 +403,7 @@ async function getRecommendations(profileId, isKids, limit) {
   }
   seriesQuery += ` ORDER BY view_count DESC LIMIT 10`;
 
-  const series = await db.query(seriesQuery);
+  const series = await db.query<ContentRow>(seriesQuery);
   if (series.rows.length > 0) {
     sections.push({
       title: 'TV Shows',
@@ -380,4 +415,4 @@ async function getRecommendations(profileId, isKids, limit) {
   return sections;
 }
 
-module.exports = router;
+export default router;

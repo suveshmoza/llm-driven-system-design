@@ -1,13 +1,13 @@
-import express from 'express';
+import express, { Request, Response, Router } from 'express';
 import { TrendingService } from '../services/trendingService.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 /**
  * GET /api/sse/trending
  * Server-Sent Events endpoint for real-time trending updates
  */
-router.get('/trending', (req, res) => {
+router.get('/trending', (req: Request, res: Response): void => {
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -52,13 +52,13 @@ router.get('/trending', (req, res) => {
  * GET /api/sse/heartbeat
  * Simple SSE heartbeat for connection testing
  */
-router.get('/heartbeat', (req, res) => {
+router.get('/heartbeat', (req: Request, res: Response): void => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  const sendHeartbeat = () => {
+  const sendHeartbeat = (): void => {
     const data = JSON.stringify({
       type: 'heartbeat',
       timestamp: new Date().toISOString(),

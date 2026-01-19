@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'url';
@@ -26,6 +26,31 @@ import adminRoutes from './routes/admin.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+interface HealthCheck {
+  status: 'healthy' | 'unhealthy';
+  latencyMs?: number;
+  error?: string;
+  circuitBreakers?: ReturnType<typeof getStorageHealth>;
+}
+
+interface HealthStatus {
+  status: 'healthy' | 'degraded';
+  timestamp: string;
+  version: string;
+  uptime: number;
+  checks: Record<string, HealthCheck | ReturnType<typeof getQueueHealth>>;
+  circuitBreakers?: ReturnType<typeof getCircuitBreakerHealth>;
+}
+
+interface EnvelopeStatusRow {
+  status: string;
+  count: string;
+}
+
+interface CountRow {
+  count: string;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -45,7 +70,7 @@ app.use(metricsMiddleware);
 app.use(idempotencyMiddleware);
 
 // Request logging middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   req.log = createRequestLogger(req);
   req.log.info('Request received');
   next();
@@ -55,13 +80,13 @@ app.use((req, res, next) => {
 app.get('/metrics', getMetrics);
 
 // Basic liveness probe (fast, no dependency checks)
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Comprehensive health check (checks all dependencies)
-app.get('/health', async (req, res) => {
-  const health = {
+app.get('/health', async (req: Request, res: Response) => {
+  const health: HealthStatus = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
@@ -78,9 +103,10 @@ app.get('/health', async (req, res) => {
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     health.checks.postgres = {
       status: 'unhealthy',
-      error: error.message,
+      error: err.message,
     };
     health.status = 'degraded';
   }
@@ -94,9 +120,10 @@ app.get('/health', async (req, res) => {
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     health.checks.redis = {
       status: 'unhealthy',
-      error: error.message,
+      error: err.message,
     };
     health.status = 'degraded';
   }
@@ -111,9 +138,10 @@ app.get('/health', async (req, res) => {
       circuitBreakers: getStorageHealth(),
     };
   } catch (error) {
+    const err = error as Error;
     health.checks.minio = {
       status: 'unhealthy',
-      error: error.message,
+      error: err.message,
       circuitBreakers: getStorageHealth(),
     };
     health.status = 'degraded';
@@ -130,9 +158,10 @@ app.get('/health', async (req, res) => {
       health.status = 'degraded';
     }
   } catch (error) {
+    const err = error as Error;
     health.checks.rabbitmq = {
       status: 'unhealthy',
-      error: error.message,
+      error: err.message,
     };
     health.status = 'degraded';
   }
@@ -144,7 +173,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Readiness probe (service ready to accept traffic)
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', async (req: Request, res: Response) => {
   try {
     // Quick checks for essential services
     await Promise.all([
@@ -153,10 +182,11 @@ app.get('/health/ready', async (req, res) => {
     ]);
     res.json({ ready: true, timestamp: new Date().toISOString() });
   } catch (error) {
+    const err = error as Error;
     res.status(503).json({
       ready: false,
       timestamp: new Date().toISOString(),
-      error: error.message,
+      error: err.message,
     });
   }
 });
@@ -172,7 +202,11 @@ app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 // Error handler with structured logging
-app.use((err, req, res, next) => {
+interface ErrorWithStatus extends Error {
+  status?: number;
+}
+
+app.use((err: ErrorWithStatus, req: Request, res: Response, next: NextFunction) => {
   const log = req.log || logger;
   log.error({
     error: err.message,
@@ -186,9 +220,9 @@ app.use((err, req, res, next) => {
 });
 
 // Background task: Update envelope status metrics periodically
-async function updateEnvelopeMetrics() {
+async function updateEnvelopeMetrics(): Promise<void> {
   try {
-    const result = await query(`
+    const result = await query<EnvelopeStatusRow>(`
       SELECT status, COUNT(*) as count
       FROM envelopes
       GROUP BY status
@@ -205,7 +239,7 @@ async function updateEnvelopeMetrics() {
     }
 
     // Update pending signatures count
-    const pendingResult = await query(`
+    const pendingResult = await query<CountRow>(`
       SELECT COUNT(*) as count
       FROM document_fields df
       JOIN documents d ON df.document_id = d.id
@@ -217,12 +251,13 @@ async function updateEnvelopeMetrics() {
     signaturesPending.set(parseInt(pendingResult.rows[0].count));
 
   } catch (error) {
-    logger.error({ error: error.message }, 'Failed to update envelope metrics');
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Failed to update envelope metrics');
   }
 }
 
 // Initialize services and start server
-async function start() {
+async function start(): Promise<void> {
   try {
     // Initialize database connection
     await initializeDatabase();
@@ -241,7 +276,8 @@ async function start() {
       await initializeQueue();
       logger.info('RabbitMQ connected');
     } catch (error) {
-      logger.warn({ error: error.message }, 'RabbitMQ not available - notifications will be synchronous');
+      const err = error as Error;
+      logger.warn({ error: err.message }, 'RabbitMQ not available - notifications will be synchronous');
     }
 
     // Start metrics update interval
@@ -252,7 +288,8 @@ async function start() {
       logger.info({ port: PORT }, `DocuSign backend running on port ${PORT}`);
     });
   } catch (error) {
-    logger.error({ error: error.message }, 'Failed to start server');
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Failed to start server');
     process.exit(1);
   }
 }

@@ -146,7 +146,7 @@ router.post('/', authenticate, async (req, res) => {
       // Check minimum/maximum nights
       const checkInDate = new Date(check_in);
       const checkOutDate = new Date(check_out);
-      const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+      const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
 
       if (nights < listing.minimum_nights) {
         throw new Error(`Minimum stay is ${listing.minimum_nights} nights`);
@@ -189,7 +189,7 @@ router.post('/', authenticate, async (req, res) => {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *`,
         [
-          listing_id, req.user.id, check_in, check_out, guests || 1,
+          listing_id, req.user!.id, check_in, check_out, guests || 1,
           pricing.nights, pricing.pricePerNight, pricing.cleaningFee,
           pricing.serviceFee, pricing.total, status, message,
         ]
@@ -231,7 +231,7 @@ router.post('/', authenticate, async (req, res) => {
       // Alert host about new booking
       await publishHostAlert(listing.host_id, 'new_booking', {
         bookingId: booking.id,
-        guestName: req.user.name,
+        guestName: req.user!.name,
         checkIn: check_in,
         checkOut: check_out,
         listingTitle: listing.title,
@@ -241,12 +241,12 @@ router.post('/', authenticate, async (req, res) => {
       log.error({ error: queueError }, 'Failed to publish booking event to queue');
     }
 
-    log.info({ bookingId: booking.id, listingId: listing_id, guestId: req.user.id }, 'Booking created');
+    log.info({ bookingId: booking.id, listingId: listing_id, guestId: req.user!.id }, 'Booking created');
 
     res.status(201).json({ booking });
   } catch (error) {
     log.error({ error, listingId: listing_id }, 'Create booking error');
-    res.status(400).json({ error: error.message || 'Failed to create booking' });
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to create booking' });
   }
 });
 
@@ -270,10 +270,10 @@ router.get('/my-trips', authenticate, async (req, res) => {
       WHERE b.guest_id = $1
     `;
 
-    const params = [req.user.id];
+    const params: (number | string)[] = [req.user!.id];
 
     if (status) {
-      params.push(status);
+      params.push(String(status));
       sql += ` AND b.status = $2`;
     }
 
@@ -306,10 +306,10 @@ router.get('/host-reservations', authenticate, requireHost, async (req, res) => 
       WHERE l.host_id = $1
     `;
 
-    const params = [req.user.id];
+    const params: (number | string)[] = [req.user!.id];
 
     if (status) {
-      params.push(status);
+      params.push(String(status));
       sql += ` AND b.status = $2`;
     }
 

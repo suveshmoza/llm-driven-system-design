@@ -4,14 +4,22 @@
  * Provides structured logging with correlation IDs for request tracing.
  * All logs are output as JSON for easy parsing by log aggregation tools.
  */
-import pino from 'pino';
+import pino, { Logger } from 'pino';
 import crypto from 'crypto';
+import { Request, Response, NextFunction } from 'express';
+import { Socket } from 'net';
+
+interface ExtendedRequest extends Request {
+  correlationId?: string;
+  log?: Logger;
+  connection?: Socket & { remoteAddress?: string };
+}
 
 // Configure logger based on environment
-const logger = pino({
+const logger: Logger = pino({
   level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
   formatters: {
-    level: (label) => ({ level: label })
+    level: (label: string) => ({ level: label })
   },
   // Add base fields to all log entries
   base: {
@@ -34,11 +42,9 @@ const logger = pino({
 
 /**
  * Create a child logger with request context
- * @param {Object} req - Express request object
- * @returns {Object} Child logger with correlation ID
  */
-export function createRequestLogger(req) {
-  const correlationId = req.headers['x-correlation-id'] || crypto.randomUUID();
+export function createRequestLogger(req: ExtendedRequest): Logger {
+  const correlationId = (req.headers['x-correlation-id'] as string) || crypto.randomUUID();
 
   return logger.child({
     correlationId,
@@ -52,9 +58,13 @@ export function createRequestLogger(req) {
 /**
  * Express middleware for request logging
  */
-export function requestLoggingMiddleware(req, res, next) {
+export function requestLoggingMiddleware(
+  req: ExtendedRequest,
+  res: Response,
+  next: NextFunction
+): void {
   // Generate or extract correlation ID
-  req.correlationId = req.headers['x-correlation-id'] || crypto.randomUUID();
+  req.correlationId = (req.headers['x-correlation-id'] as string) || crypto.randomUUID();
 
   // Attach logger to request
   req.log = createRequestLogger(req);
@@ -82,11 +92,11 @@ export function requestLoggingMiddleware(req, res, next) {
     };
 
     if (res.statusCode >= 500) {
-      req.log.error(logData, `${req.method} ${req.path} failed`);
+      req.log?.error(logData, `${req.method} ${req.path} failed`);
     } else if (res.statusCode >= 400) {
-      req.log.warn(logData, `${req.method} ${req.path} client error`);
+      req.log?.warn(logData, `${req.method} ${req.path} client error`);
     } else {
-      req.log.info(logData, `${req.method} ${req.path} completed`);
+      req.log?.info(logData, `${req.method} ${req.path} completed`);
     }
   });
 
@@ -132,6 +142,8 @@ export const LogEvents = {
   // Idempotency events
   IDEMPOTENCY_HIT: 'idempotency.hit',
   IDEMPOTENCY_MISS: 'idempotency.miss'
-};
+} as const;
+
+export type LogEvent = (typeof LogEvents)[keyof typeof LogEvents];
 
 export default logger;

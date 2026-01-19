@@ -1,5 +1,11 @@
-import { Router } from 'express';
-import { searchBusinesses, autocompleteBusiness } from '../utils/elasticsearch.js';
+import { Router, Request, Response } from 'express';
+import {
+  searchBusinesses,
+  autocompleteBusiness,
+  SearchOptions,
+  SearchResult,
+  AutocompleteResult,
+} from '../utils/elasticsearch.js';
 import { cache, redis } from '../utils/redis.js';
 import { logger, logSearch, logCacheOperation } from '../utils/logger.js';
 import { recordSearch, recordCacheOperation } from '../utils/metrics.js';
@@ -8,22 +14,59 @@ import { pool } from '../utils/db.js';
 
 const router = Router();
 
+// Search response interface
+interface SearchResponse {
+  businesses: SearchResult['businesses'];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+  filters: Record<string, string | number | undefined>;
+  meta: {
+    took_ms: number;
+    cache_hit: boolean;
+    fallback: boolean;
+  };
+}
+
+// Popular search item interface
+interface PopularSearchItem {
+  name: string;
+  slug: string;
+  icon: string;
+}
+
 // ============================================================================
 // Circuit Breakers for Search Operations
 // ============================================================================
 
 // Elasticsearch search circuit breaker
-const esSearchBreaker = createCircuitBreaker('elasticsearch_search', searchBusinesses, {
-  timeout: 3000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-});
+const esSearchBreaker = createCircuitBreaker(
+  'elasticsearch_search',
+  searchBusinesses,
+  {
+    timeout: 3000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+  }
+);
 
 // Fallback: PostgreSQL full-text search when Elasticsearch is down
-setFallback(esSearchBreaker, async (options) => {
+setFallback(esSearchBreaker, async (options: SearchOptions): Promise<SearchResult> => {
   logger.warn({ component: 'search' }, 'Using PostgreSQL fallback for search');
 
-  const { query, category, latitude, longitude, distance, minRating, from = 0, size = 20 } = options;
+  const {
+    query,
+    category,
+    latitude,
+    longitude,
+    distance,
+    minRating,
+    from = 0,
+    size = 20,
+  } = options;
 
   let sql = `
     SELECT b.*,
@@ -33,7 +76,7 @@ setFallback(esSearchBreaker, async (options) => {
     LEFT JOIN categories c ON bc.category_id = c.id
     WHERE 1=1
   `;
-  const params = [];
+  const params: unknown[] = [];
   let paramIndex = 1;
 
   if (query) {
@@ -49,26 +92,31 @@ setFallback(esSearchBreaker, async (options) => {
   }
 
   if (latitude && longitude && distance) {
-    const distanceKm = parseInt(distance.replace('km', '')) || 10;
+    const distanceKm =
+      parseInt(String(distance).replace('km', ''), 10) || 10;
     sql += ` AND ST_DWithin(b.location::geography, ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)::geography, $${paramIndex + 2})`;
-    params.push(parseFloat(longitude), parseFloat(latitude), distanceKm * 1000);
+    params.push(
+      parseFloat(String(longitude)),
+      parseFloat(String(latitude)),
+      distanceKm * 1000
+    );
     paramIndex += 3;
   }
 
   if (minRating) {
     sql += ` AND b.rating >= $${paramIndex}`;
-    params.push(parseFloat(minRating));
+    params.push(parseFloat(String(minRating)));
     paramIndex++;
   }
 
   sql += ` GROUP BY b.id ORDER BY b.rating DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-  params.push(parseInt(size), parseInt(from));
+  params.push(size, from);
 
   const result = await pool.query(sql, params);
 
   return {
     total: result.rows.length,
-    businesses: result.rows.map(b => ({
+    businesses: result.rows.map((b) => ({
       ...b,
       score: null, // No relevance score from PostgreSQL
     })),
@@ -77,32 +125,46 @@ setFallback(esSearchBreaker, async (options) => {
 });
 
 // Autocomplete circuit breaker
-const esAutocompleteBreaker = createCircuitBreaker('elasticsearch_autocomplete', autocompleteBusiness, {
-  timeout: 2000,
-  errorThresholdPercentage: 60,
-  resetTimeout: 20000,
-});
+const esAutocompleteBreaker = createCircuitBreaker(
+  'elasticsearch_autocomplete',
+  autocompleteBusiness,
+  {
+    timeout: 2000,
+    errorThresholdPercentage: 60,
+    resetTimeout: 20000,
+  }
+);
 
 // Fallback: Simple prefix search in PostgreSQL
-setFallback(esAutocompleteBreaker, async (prefix, latitude, longitude) => {
-  logger.warn({ component: 'search' }, 'Using PostgreSQL fallback for autocomplete');
+setFallback(
+  esAutocompleteBreaker,
+  async (
+    prefix: string,
+    latitude?: number | null,
+    longitude?: number | null
+  ): Promise<AutocompleteResult[]> => {
+    logger.warn(
+      { component: 'search' },
+      'Using PostgreSQL fallback for autocomplete'
+    );
 
-  const result = await pool.query(
-    `SELECT id, name, city, rating
+    const result = await pool.query<AutocompleteResult>(
+      `SELECT id, name, city, rating
      FROM businesses
      WHERE name ILIKE $1
      ORDER BY rating DESC
      LIMIT 10`,
-    [`${prefix}%`]
-  );
+      [`${prefix}%`]
+    );
 
-  return result.rows;
-});
+    return result.rows;
+  }
+);
 
 // ============================================================================
 // Main Search Endpoint
 // ============================================================================
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void | Response> => {
   const startTime = Date.now();
 
   try {
@@ -115,35 +177,25 @@ router.get('/', async (req, res) => {
       minRating,
       maxPriceLevel,
       sortBy,
-      page = 1,
-      limit = 20
-    } = req.query;
+      page = '1',
+      limit = '20',
+    } = req.query as {
+      q?: string;
+      category?: string;
+      latitude?: string;
+      longitude?: string;
+      distance?: string;
+      minRating?: string;
+      maxPriceLevel?: string;
+      sortBy?: string;
+      page?: string;
+      limit?: string;
+    };
 
-    const from = (parseInt(page) - 1) * parseInt(limit);
+    const from = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
     // Create cache key from query params
     const cacheKey = `search:${JSON.stringify({
-      query, category, latitude, longitude, distance, minRating, maxPriceLevel, sortBy, from, limit
-    })}`;
-
-    // Try cache first (short TTL for search results)
-    const cached = await cache.get(cacheKey);
-    if (cached) {
-      const duration = Date.now() - startTime;
-
-      // Log and record metrics
-      logCacheOperation('get', cacheKey, true);
-      recordCacheOperation('get', true);
-      recordSearch(true, !!latitude, !!category, cached.businesses.length, duration / 1000);
-      logSearch(query, cached.businesses.length, duration, { cache_hit: true, category, has_geo: !!latitude });
-
-      return res.json({ ...cached, meta: { ...cached.meta, cache_hit: true } });
-    }
-
-    recordCacheOperation('get', false);
-
-    // Execute search through circuit breaker
-    const results = await esSearchBreaker.fire({
       query,
       category,
       latitude,
@@ -153,16 +205,56 @@ router.get('/', async (req, res) => {
       maxPriceLevel,
       sortBy,
       from,
-      size: parseInt(limit)
-    });
+      limit,
+    })}`;
 
-    const response = {
+    // Try cache first (short TTL for search results)
+    const cached = await cache.get<SearchResponse>(cacheKey);
+    if (cached) {
+      const duration = Date.now() - startTime;
+
+      // Log and record metrics
+      logCacheOperation('get', cacheKey, true);
+      recordCacheOperation('get', true);
+      recordSearch(
+        true,
+        !!latitude,
+        !!category,
+        cached.businesses.length,
+        duration / 1000
+      );
+      logSearch(query, cached.businesses.length, duration, {
+        cache_hit: true,
+        category,
+        has_geo: !!latitude,
+      });
+
+      return res.json({ ...cached, meta: { ...cached.meta, cache_hit: true } });
+    }
+
+    recordCacheOperation('get', false);
+
+    // Execute search through circuit breaker
+    const results = (await esSearchBreaker.fire({
+      query,
+      category,
+      latitude,
+      longitude,
+      distance,
+      minRating,
+      maxPriceLevel,
+      sortBy: sortBy as SearchOptions['sortBy'],
+      from,
+      size: parseInt(limit, 10),
+    })) as SearchResult;
+
+    const response: SearchResponse = {
       businesses: results.businesses,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
         total: results.total,
-        pages: Math.ceil(results.total / parseInt(limit))
+        pages: Math.ceil(results.total / parseInt(limit, 10)),
       },
       filters: {
         query,
@@ -172,13 +264,13 @@ router.get('/', async (req, res) => {
         distance,
         minRating,
         maxPriceLevel,
-        sortBy
+        sortBy,
       },
       meta: {
         took_ms: Date.now() - startTime,
         cache_hit: false,
         fallback: results.fallback || false,
-      }
+      },
     };
 
     // Cache for 2 minutes (only if not a fallback result)
@@ -187,7 +279,13 @@ router.get('/', async (req, res) => {
     }
 
     const duration = Date.now() - startTime;
-    recordSearch(false, !!latitude, !!category, results.businesses.length, duration / 1000);
+    recordSearch(
+      false,
+      !!latitude,
+      !!category,
+      results.businesses.length,
+      duration / 1000
+    );
     logSearch(query, results.businesses.length, duration, {
       cache_hit: false,
       category,
@@ -197,7 +295,10 @@ router.get('/', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    logger.error({ component: 'search', error: error.message }, 'Search error');
+    logger.error(
+      { component: 'search', error: (error as Error).message },
+      'Search error'
+    );
     res.status(500).json({ error: { message: 'Search failed' } });
   }
 });
@@ -205,85 +306,106 @@ router.get('/', async (req, res) => {
 // ============================================================================
 // Autocomplete Endpoint
 // ============================================================================
-router.get('/autocomplete', async (req, res) => {
-  try {
-    const { q: prefix, latitude, longitude } = req.query;
+router.get(
+  '/autocomplete',
+  async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+      const { q: prefix, latitude, longitude } = req.query as {
+        q?: string;
+        latitude?: string;
+        longitude?: string;
+      };
 
-    if (!prefix || prefix.length < 2) {
-      return res.json({ suggestions: [] });
+      if (!prefix || prefix.length < 2) {
+        return res.json({ suggestions: [] });
+      }
+
+      const cacheKey = `autocomplete:${prefix.toLowerCase()}`;
+      const cached = await cache.get<AutocompleteResult[]>(cacheKey);
+      if (cached) {
+        recordCacheOperation('get', true);
+        return res.json({ suggestions: cached });
+      }
+
+      recordCacheOperation('get', false);
+
+      const suggestions = (await esAutocompleteBreaker.fire(
+        prefix,
+        latitude ? parseFloat(latitude) : null,
+        longitude ? parseFloat(longitude) : null
+      )) as AutocompleteResult[];
+
+      // Cache for 5 minutes
+      await cache.set(cacheKey, suggestions, 300);
+
+      res.json({ suggestions });
+    } catch (error) {
+      logger.error(
+        { component: 'search', error: (error as Error).message },
+        'Autocomplete error'
+      );
+      res.status(500).json({ error: { message: 'Autocomplete failed' } });
     }
-
-    const cacheKey = `autocomplete:${prefix.toLowerCase()}`;
-    const cached = await cache.get(cacheKey);
-    if (cached) {
-      recordCacheOperation('get', true);
-      return res.json({ suggestions: cached });
-    }
-
-    recordCacheOperation('get', false);
-
-    const suggestions = await esAutocompleteBreaker.fire(
-      prefix,
-      latitude ? parseFloat(latitude) : null,
-      longitude ? parseFloat(longitude) : null
-    );
-
-    // Cache for 5 minutes
-    await cache.set(cacheKey, suggestions, 300);
-
-    res.json({ suggestions });
-  } catch (error) {
-    logger.error({ component: 'search', error: error.message }, 'Autocomplete error');
-    res.status(500).json({ error: { message: 'Autocomplete failed' } });
   }
-});
+);
 
 // ============================================================================
 // Popular Searches by Location
 // ============================================================================
-router.get('/popular', async (req, res) => {
-  try {
-    const { latitude, longitude } = req.query;
+router.get(
+  '/popular',
+  async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+      const { latitude, longitude } = req.query as {
+        latitude?: string;
+        longitude?: string;
+      };
 
-    // Try to get popular searches from Redis sorted set
-    const cacheKey = 'popular:searches';
-    const cachedPopular = await redis.zrevrange(cacheKey, 0, 9, 'WITHSCORES');
+      // Try to get popular searches from Redis sorted set
+      const cacheKey = 'popular:searches';
+      const cachedPopular = await redis.zrevrange(cacheKey, 0, 9, 'WITHSCORES');
 
-    if (cachedPopular.length > 0) {
-      // Convert to array of {term, count}
-      const popular = [];
-      for (let i = 0; i < cachedPopular.length; i += 2) {
-        popular.push({
-          term: cachedPopular[i],
-          count: parseInt(cachedPopular[i + 1]),
-        });
+      if (cachedPopular.length > 0) {
+        // Convert to array of {term, count}
+        const popular: Array<{ term: string; count: number }> = [];
+        for (let i = 0; i < cachedPopular.length; i += 2) {
+          popular.push({
+            term: cachedPopular[i],
+            count: parseInt(cachedPopular[i + 1], 10),
+          });
+        }
+        return res.json({ popular });
       }
-      return res.json({ popular });
+
+      // Return static popular categories if no data
+      const popular: PopularSearchItem[] = [
+        { name: 'Restaurants', slug: 'restaurants', icon: 'utensils' },
+        { name: 'Coffee', slug: 'coffee-tea', icon: 'coffee' },
+        { name: 'Bars', slug: 'bars', icon: 'beer' },
+        { name: 'Pizza', slug: 'pizza', icon: 'pizza' },
+        { name: 'Mexican', slug: 'mexican', icon: 'taco' },
+        { name: 'Japanese', slug: 'japanese', icon: 'sushi' },
+      ];
+
+      res.json({ popular });
+    } catch (error) {
+      logger.error(
+        { component: 'search', error: (error as Error).message },
+        'Popular search error'
+      );
+      res
+        .status(500)
+        .json({ error: { message: 'Failed to get popular searches' } });
     }
-
-    // Return static popular categories if no data
-    const popular = [
-      { name: 'Restaurants', slug: 'restaurants', icon: 'utensils' },
-      { name: 'Coffee', slug: 'coffee-tea', icon: 'coffee' },
-      { name: 'Bars', slug: 'bars', icon: 'beer' },
-      { name: 'Pizza', slug: 'pizza', icon: 'pizza' },
-      { name: 'Mexican', slug: 'mexican', icon: 'taco' },
-      { name: 'Japanese', slug: 'japanese', icon: 'sushi' }
-    ];
-
-    res.json({ popular });
-  } catch (error) {
-    logger.error({ component: 'search', error: error.message }, 'Popular search error');
-    res.status(500).json({ error: { message: 'Failed to get popular searches' } });
   }
-});
+);
 
 // ============================================================================
 // Track Search Query for Analytics
 // ============================================================================
-router.post('/track', async (req, res) => {
+router.post('/track', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { query } = req.body;
+    const { query } = req.body as { query?: string };
 
     if (query && query.length >= 2) {
       // Increment query count in sorted set
@@ -295,7 +417,10 @@ router.post('/track', async (req, res) => {
 
     res.json({ tracked: true });
   } catch (error) {
-    logger.error({ component: 'search', error: error.message }, 'Track query error');
+    logger.error(
+      { component: 'search', error: (error as Error).message },
+      'Track query error'
+    );
     res.status(500).json({ error: { message: 'Failed to track query' } });
   }
 });

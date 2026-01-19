@@ -30,7 +30,7 @@ export const CACHE_TTL = {
 /**
  * Get value from cache with metrics tracking
  */
-async function getFromCache(key, cacheType) {
+async function getFromCache<T>(key: string, cacheType: string): Promise<T | null> {
   const startTime = Date.now();
   try {
     const value = await redisClient.get(key);
@@ -40,7 +40,7 @@ async function getFromCache(key, cacheType) {
     if (value) {
       cacheHits.inc({ cache_type: cacheType });
       logCacheOperation('get', key, true);
-      return JSON.parse(value);
+      return JSON.parse(value) as T;
     } else {
       cacheMisses.inc({ cache_type: cacheType });
       logCacheOperation('get', key, false);
@@ -55,7 +55,7 @@ async function getFromCache(key, cacheType) {
 /**
  * Set value in cache with metrics tracking
  */
-async function setInCache(key, value, ttl) {
+async function setInCache<T>(key: string, value: T, ttl: number): Promise<boolean> {
   const startTime = Date.now();
   try {
     await redisClient.setEx(key, ttl, JSON.stringify(value));
@@ -72,7 +72,7 @@ async function setInCache(key, value, ttl) {
 /**
  * Delete value from cache
  */
-async function deleteFromCache(key) {
+async function deleteFromCache(key: string): Promise<boolean> {
   const startTime = Date.now();
   try {
     await redisClient.del(key);
@@ -89,7 +89,7 @@ async function deleteFromCache(key) {
 /**
  * Delete keys matching a pattern using SCAN (safe for production)
  */
-async function deletePattern(pattern) {
+async function deletePattern(pattern: string): Promise<number> {
   try {
     let cursor = 0;
     let deletedCount = 0;
@@ -117,69 +117,69 @@ async function deletePattern(pattern) {
 }
 
 // Repository Metadata Cache
-export async function getRepoFromCache(repoId) {
-  return getFromCache(`repo:${repoId}`, 'repo_metadata');
+export async function getRepoFromCache(repoId: number): Promise<object | null> {
+  return getFromCache<object>(`repo:${repoId}`, 'repo_metadata');
 }
 
-export async function setRepoInCache(repoId, data) {
+export async function setRepoInCache(repoId: number, data: object): Promise<boolean> {
   return setInCache(`repo:${repoId}`, data, CACHE_TTL.REPO_METADATA);
 }
 
-export async function invalidateRepoCache(repoId) {
+export async function invalidateRepoCache(repoId: number): Promise<boolean> {
   return deleteFromCache(`repo:${repoId}`);
 }
 
 // File Tree Cache
-export async function getTreeFromCache(repoId, ref, path = '') {
+export async function getTreeFromCache(repoId: number, ref: string, path = ''): Promise<object[] | null> {
   const key = `repo:${repoId}:tree:${ref}:${path}`;
-  return getFromCache(key, 'file_tree');
+  return getFromCache<object[]>(key, 'file_tree');
 }
 
-export async function setTreeInCache(repoId, ref, path, data) {
+export async function setTreeInCache(repoId: number, ref: string, path: string, data: object[]): Promise<boolean> {
   const key = `repo:${repoId}:tree:${ref}:${path}`;
   return setInCache(key, data, CACHE_TTL.FILE_TREE);
 }
 
 // File Content Cache
-export async function getFileFromCache(repoId, ref, path) {
+export async function getFileFromCache(repoId: number, ref: string, path: string): Promise<string | null> {
   const key = `repo:${repoId}:file:${ref}:${path}`;
-  return getFromCache(key, 'file_content');
+  return getFromCache<string>(key, 'file_content');
 }
 
-export async function setFileInCache(repoId, ref, path, content) {
+export async function setFileInCache(repoId: number, ref: string, path: string, content: string): Promise<boolean> {
   const key = `repo:${repoId}:file:${ref}:${path}`;
   return setInCache(key, content, CACHE_TTL.FILE_CONTENT);
 }
 
 // PR Diff Cache
-export async function getPRDiffFromCache(prId) {
-  return getFromCache(`pr:${prId}:diff`, 'pr_diff');
+export async function getPRDiffFromCache(prId: number): Promise<object | null> {
+  return getFromCache<object>(`pr:${prId}:diff`, 'pr_diff');
 }
 
-export async function setPRDiffInCache(prId, diff) {
+export async function setPRDiffInCache(prId: number, diff: object): Promise<boolean> {
   return setInCache(`pr:${prId}:diff`, diff, CACHE_TTL.PR_DIFF);
 }
 
-export async function invalidatePRDiffCache(prId) {
+export async function invalidatePRDiffCache(prId: number): Promise<boolean> {
   return deleteFromCache(`pr:${prId}:diff`);
 }
 
 // Branch Cache
-export async function getBranchesFromCache(repoId) {
-  return getFromCache(`repo:${repoId}:branches`, 'branches');
+export async function getBranchesFromCache(repoId: number): Promise<Array<{ name: string; current: boolean }> | null> {
+  return getFromCache<Array<{ name: string; current: boolean }>>(`repo:${repoId}:branches`, 'branches');
 }
 
-export async function setBranchesInCache(repoId, branches) {
+export async function setBranchesInCache(repoId: number, branches: Array<{ name: string; current: boolean }>): Promise<boolean> {
   return setInCache(`repo:${repoId}:branches`, branches, CACHE_TTL.BRANCHES);
 }
 
 // Commit Cache
-export async function getCommitsFromCache(repoId, branch, page) {
+export async function getCommitsFromCache(repoId: number, branch: string, page: number | string): Promise<object[] | null> {
   const key = `repo:${repoId}:commits:${branch}:${page}`;
-  return getFromCache(key, 'commits');
+  return getFromCache<object[]>(key, 'commits');
 }
 
-export async function setCommitsInCache(repoId, branch, page, commits) {
+export async function setCommitsInCache(repoId: number, branch: string, page: number | string, commits: object[]): Promise<boolean> {
   const key = `repo:${repoId}:commits:${branch}:${page}`;
   return setInCache(key, commits, CACHE_TTL.COMMITS);
 }
@@ -188,7 +188,7 @@ export async function setCommitsInCache(repoId, branch, page, commits) {
  * Invalidate all caches for a repository
  * Called on push, merge, or settings change
  */
-export async function invalidateRepoCaches(repoId) {
+export async function invalidateRepoCaches(repoId: number): Promise<boolean> {
   logger.info({ repoId }, 'Invalidating all repository caches');
 
   await Promise.all([
@@ -207,10 +207,8 @@ export async function invalidateRepoCaches(repoId) {
 
 /**
  * Invalidate PR-related caches after push to a branch
- * @param {number} repoId
- * @param {number[]} prIds - IDs of open PRs that might be affected
  */
-export async function invalidatePRCaches(prIds) {
+export async function invalidatePRCaches(prIds: number[]): Promise<void> {
   if (!prIds || prIds.length === 0) return;
 
   logger.info({ prIds }, 'Invalidating PR caches');

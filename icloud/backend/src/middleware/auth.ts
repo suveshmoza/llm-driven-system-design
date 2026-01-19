@@ -1,22 +1,49 @@
+import type { Request, Response, NextFunction } from 'express';
 import { pool, redis } from '../db.js';
 
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: string;
+  storageQuota: number;
+  storageUsed: number;
+}
+
+// Extend Express Request to include user and deviceId
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthenticatedUser;
+      deviceId?: string;
+    }
+  }
+}
+
+interface SessionData {
+  user: AuthenticatedUser;
+  deviceId: string;
+}
+
 // Verify session token
-export async function authMiddleware(req, res, next) {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const token = req.cookies.session_token || req.headers.authorization?.replace('Bearer ', '');
+    const authHeader = req.headers.authorization;
+    const token = req.cookies.session_token || authHeader?.replace('Bearer ', '');
 
     if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ error: 'Authentication required' });
+      return;
     }
 
     // Check Redis cache first
     const cachedSession = await redis.get(`session:${token}`);
 
     if (cachedSession) {
-      const session = JSON.parse(cachedSession);
+      const session: SessionData = JSON.parse(cachedSession);
       req.user = session.user;
       req.deviceId = session.deviceId;
-      return next();
+      next();
+      return;
     }
 
     // Check database
@@ -29,7 +56,8 @@ export async function authMiddleware(req, res, next) {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid or expired session' });
+      res.status(401).json({ error: 'Invalid or expired session' });
+      return;
     }
 
     const session = result.rows[0];
@@ -58,9 +86,10 @@ export async function authMiddleware(req, res, next) {
 }
 
 // Check if user is admin
-export function adminMiddleware(req, res, next) {
+export function adminMiddleware(req: Request, res: Response, next: NextFunction): void {
   if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    res.status(403).json({ error: 'Admin access required' });
+    return;
   }
   next();
 }

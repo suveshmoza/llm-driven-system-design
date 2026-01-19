@@ -1,3 +1,4 @@
+import { Request } from 'express';
 import { query } from '../db/index.js';
 import logger from './logger.js';
 
@@ -58,24 +59,51 @@ export const AUDITED_ACTIONS = {
   ADMIN_USER_CREATE: 'admin.user_create',
   ADMIN_USER_DELETE: 'admin.user_delete',
   ADMIN_USER_ROLE_CHANGE: 'admin.user_role_change',
-};
+} as const;
+
+export type AuditedAction = typeof AUDITED_ACTIONS[keyof typeof AUDITED_ACTIONS];
+
+interface AuditLogFilters {
+  userId?: number;
+  action?: string;
+  resourceType?: string;
+  resourceId?: string;
+  startDate?: Date;
+  endDate?: Date;
+  outcome?: string;
+}
+
+interface AuditLogEntry {
+  id: number;
+  user_id: number | null;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  request_id: string | null;
+  details: object;
+  outcome: string;
+  timestamp: Date;
+  username?: string;
+}
 
 /**
  * Create an audit log entry
- *
- * @param {string} action - Action from AUDITED_ACTIONS
- * @param {string} resourceType - Type of resource (repository, user, webhook, etc.)
- * @param {string|number} resourceId - ID of the resource
- * @param {object} details - Additional details about the action
- * @param {object} req - Express request object for extracting context
- * @param {string} outcome - success, denied, or error
  */
-export async function auditLog(action, resourceType, resourceId, details = {}, req = null, outcome = 'success') {
+export async function auditLog(
+  action: AuditedAction,
+  resourceType: string,
+  resourceId: string | number,
+  details: object = {},
+  req: Request | null = null,
+  outcome = 'success'
+): Promise<void> {
   try {
     const userId = req?.user?.id || null;
-    const ipAddress = req?.ip || req?.connection?.remoteAddress || null;
+    const ipAddress = req?.ip || req?.socket?.remoteAddress || null;
     const userAgent = req?.headers?.['user-agent'] || null;
-    const requestId = req?.headers?.['x-request-id'] || null;
+    const requestId = (req?.headers?.['x-request-id'] as string) || null;
 
     await query(
       `INSERT INTO audit_logs
@@ -114,21 +142,10 @@ export async function auditLog(action, resourceType, resourceId, details = {}, r
 
 /**
  * Query audit logs with filters
- *
- * @param {object} filters - Query filters
- * @param {number} filters.userId - Filter by user ID
- * @param {string} filters.action - Filter by action
- * @param {string} filters.resourceType - Filter by resource type
- * @param {string} filters.resourceId - Filter by resource ID
- * @param {Date} filters.startDate - Filter by start date
- * @param {Date} filters.endDate - Filter by end date
- * @param {string} filters.outcome - Filter by outcome
- * @param {number} limit - Maximum results
- * @param {number} offset - Pagination offset
  */
-export async function queryAuditLogs(filters = {}, limit = 100, offset = 0) {
-  const conditions = [];
-  const params = [];
+export async function queryAuditLogs(filters: AuditLogFilters = {}, limit = 100, offset = 0): Promise<AuditLogEntry[]> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
 
   if (filters.userId) {
     params.push(filters.userId);
@@ -179,13 +196,13 @@ export async function queryAuditLogs(filters = {}, limit = 100, offset = 0) {
     params
   );
 
-  return result.rows;
+  return result.rows as AuditLogEntry[];
 }
 
 /**
  * Get audit logs for a specific repository
  */
-export async function getRepoAuditLogs(repoId, limit = 50) {
+export async function getRepoAuditLogs(repoId: number, limit = 50): Promise<AuditLogEntry[]> {
   return queryAuditLogs({
     resourceType: 'repository',
     resourceId: String(repoId),
@@ -195,7 +212,7 @@ export async function getRepoAuditLogs(repoId, limit = 50) {
 /**
  * Get audit logs for a specific user
  */
-export async function getUserAuditLogs(userId, limit = 50) {
+export async function getUserAuditLogs(userId: number, limit = 50): Promise<AuditLogEntry[]> {
   return queryAuditLogs({ userId }, limit);
 }
 

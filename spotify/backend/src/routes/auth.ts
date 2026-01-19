@@ -1,8 +1,9 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import authService from '../services/authService.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { auditLog, AuditActions } from '../shared/audit.js';
 import { authEventsTotal } from '../shared/metrics.js';
+import type { AuthenticatedRequest, UserRegistration, UserLogin } from '../types.js';
 
 const router = Router();
 
@@ -11,87 +12,96 @@ router.use('/register', rateLimiters.auth);
 router.use('/login', rateLimiters.auth);
 
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { email, password, username, displayName } = req.body;
+    const { email, password, username, displayName } = req.body as UserRegistration;
 
     if (!email || !password || !username) {
-      return res.status(400).json({ error: 'Email, password, and username are required' });
+      res.status(400).json({ error: 'Email, password, and username are required' });
+      return;
     }
 
     const user = await authService.register({ email, password, username, displayName });
 
     // Set session
-    req.session.userId = user.id;
+    authReq.session.userId = user.id;
 
     // Audit log
-    await auditLog(req, AuditActions.USER_REGISTER, 'user', user.id, { email, username });
+    await auditLog(authReq, AuditActions.USER_REGISTER, 'user', user.id, { email, username });
 
     // Metrics
     authEventsTotal.inc({ event: 'register', success: 'true' });
 
     res.status(201).json({ user });
   } catch (error) {
-    const log = req.log || console;
-    log.error({ error: error.message }, 'Register error');
+    const log = authReq.log || console;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error({ error: errorMessage }, 'Register error');
     authEventsTotal.inc({ event: 'register', success: 'false' });
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: errorMessage });
   }
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body as UserLogin;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     const user = await authService.login({ email, password });
 
     // Set session
-    req.session.userId = user.id;
+    authReq.session.userId = user.id;
 
     // Audit log
-    await auditLog(req, AuditActions.USER_LOGIN, 'user', user.id, { email });
+    await auditLog(authReq, AuditActions.USER_LOGIN, 'user', user.id, { email });
 
     // Metrics
     authEventsTotal.inc({ event: 'login', success: 'true' });
 
     res.json({ user });
   } catch (error) {
-    const log = req.log || console;
-    log.warn({ error: error.message, email: req.body.email }, 'Login failed');
+    const log = authReq.log || console;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const bodyEmail = (req.body as { email?: string }).email;
+    log.warn({ error: errorMessage, email: bodyEmail }, 'Login failed');
 
     // Audit failed login attempt
     await auditLog(
-      req,
+      authReq,
       AuditActions.USER_LOGIN_FAILED,
       'user',
       null,
-      { email: req.body.email, reason: error.message },
+      { email: bodyEmail, reason: errorMessage },
       false
     );
 
     authEventsTotal.inc({ event: 'login', success: 'false' });
-    res.status(401).json({ error: error.message });
+    res.status(401).json({ error: errorMessage });
   }
 });
 
 // Logout
-router.post('/logout', async (req, res) => {
-  const userId = req.session?.userId;
+router.post('/logout', (req, res: Response): void => {
+  const authReq = req as AuthenticatedRequest;
+  const userId = authReq.session?.userId;
 
-  req.session.destroy((err) => {
+  authReq.session.destroy((err) => {
     if (err) {
-      return res.status(500).json({ error: 'Failed to logout' });
+      res.status(500).json({ error: 'Failed to logout' });
+      return;
     }
 
     // Audit log (async, don't wait)
     if (userId) {
       auditLog(
-        { ...req, session: { userId } },
+        { ...authReq, session: { userId } } as AuthenticatedRequest,
         AuditActions.USER_LOGOUT,
         'user',
         userId,
@@ -107,51 +117,58 @@ router.post('/logout', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', async (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Not authenticated' });
+router.get('/me', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.session.userId) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
 
   try {
-    const user = await authService.getUserById(req.session.userId);
+    const user = await authService.getUserById(authReq.session.userId);
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      res.status(401).json({ error: 'User not found' });
+      return;
     }
     res.json({ user });
   } catch (error) {
-    const log = req.log || console;
-    log.error({ error: error.message }, 'Get user error');
+    const log = authReq.log || console;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error({ error: errorMessage }, 'Get user error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Update profile
-router.patch('/me', async (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Not authenticated' });
+router.patch('/me', async (req, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.session.userId) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
 
   try {
-    const previousUser = await authService.getUserById(req.session.userId);
-    const user = await authService.updateProfile(req.session.userId, req.body);
+    const previousUser = await authService.getUserById(authReq.session.userId);
+    const user = await authService.updateProfile(authReq.session.userId, req.body);
 
     // Audit log profile changes
     await auditLog(
-      req,
+      authReq,
       AuditActions.USER_UPDATE_PROFILE,
       'user',
-      req.session.userId,
+      authReq.session.userId,
       {
-        fields: Object.keys(req.body),
-        previousDisplayName: previousUser.display_name,
+        fields: Object.keys(req.body as object),
+        previousDisplayName: previousUser?.display_name,
         newDisplayName: user.display_name,
       }
     );
 
     res.json({ user });
   } catch (error) {
-    const log = req.log || console;
-    log.error({ error: error.message }, 'Update profile error');
+    const log = authReq.log || console;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    log.error({ error: errorMessage }, 'Update profile error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

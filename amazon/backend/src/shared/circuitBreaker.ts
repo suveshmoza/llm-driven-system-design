@@ -13,8 +13,31 @@ import CircuitBreaker from 'opossum';
 import logger, { LogEvents } from './logger.js';
 import { circuitBreakerState, circuitBreakerTripsTotal } from './metrics.js';
 
+interface CircuitBreakerOptions {
+  timeout?: number;
+  errorThresholdPercentage?: number;
+  resetTimeout?: number;
+  volumeThreshold?: number;
+  rollingCountTimeout?: number;
+  rollingCountBuckets?: number;
+  name?: string;
+}
+
+interface CircuitBreakerStats {
+  name: string;
+  state: 'open' | 'halfOpen' | 'closed';
+  stats: unknown;
+  options: {
+    timeout: number;
+    errorThresholdPercentage: number;
+    resetTimeout: number;
+  };
+}
+
+type AsyncFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
+
 // Default circuit breaker options
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: CircuitBreakerOptions = {
   timeout: 10000,           // 10 seconds - if function takes longer, trip
   errorThresholdPercentage: 50,  // Trip when 50% of requests fail
   resetTimeout: 30000,      // Try again after 30 seconds
@@ -24,10 +47,10 @@ const DEFAULT_OPTIONS = {
 };
 
 // Store circuit breakers by name
-const breakers = new Map();
+const breakers = new Map<string, CircuitBreaker<unknown[], unknown>>();
 
 // Map opossum state to metric value
-const stateToMetricValue = {
+const stateToMetricValue: Record<string, number> = {
   closed: 0,
   halfOpen: 1,
   open: 2
@@ -35,14 +58,14 @@ const stateToMetricValue = {
 
 /**
  * Create or get a circuit breaker for a service
- * @param {string} name - Service name
- * @param {Function} fn - Async function to wrap
- * @param {Object} options - Circuit breaker options
- * @returns {Function} Wrapped function with circuit breaker
  */
-export function createCircuitBreaker(name, fn, options = {}) {
+export function createCircuitBreaker<T extends unknown[], R>(
+  name: string,
+  fn: AsyncFunction<T, R>,
+  options: CircuitBreakerOptions = {}
+): CircuitBreaker<T, R> {
   if (breakers.has(name)) {
-    return breakers.get(name);
+    return breakers.get(name) as CircuitBreaker<T, R>;
   }
 
   const breaker = new CircuitBreaker(fn, {
@@ -68,7 +91,7 @@ export function createCircuitBreaker(name, fn, options = {}) {
     circuitBreakerState.set({ service: name }, stateToMetricValue.halfOpen);
   });
 
-  breaker.on('fallback', (result) => {
+  breaker.on('fallback', (result: unknown) => {
     logger.debug({ service: name, result }, `Circuit breaker fallback executed for ${name}`);
   });
 
@@ -80,23 +103,21 @@ export function createCircuitBreaker(name, fn, options = {}) {
     logger.warn({ service: name }, `Circuit breaker rejected request for ${name}`);
   });
 
-  breaker.on('failure', (error) => {
+  breaker.on('failure', (error: Error) => {
     logger.error({ service: name, error: error.message }, `Circuit breaker recorded failure for ${name}`);
   });
 
   // Initialize metric
   circuitBreakerState.set({ service: name }, stateToMetricValue.closed);
 
-  breakers.set(name, breaker);
+  breakers.set(name, breaker as CircuitBreaker<unknown[], unknown>);
   return breaker;
 }
 
 /**
  * Get circuit breaker stats
- * @param {string} name - Service name
- * @returns {Object} Circuit breaker statistics
  */
-export function getCircuitBreakerStats(name) {
+export function getCircuitBreakerStats(name: string): CircuitBreakerStats | null {
   const breaker = breakers.get(name);
   if (!breaker) {
     return null;
@@ -116,12 +137,14 @@ export function getCircuitBreakerStats(name) {
 
 /**
  * Get all circuit breaker stats
- * @returns {Object[]} Array of circuit breaker statistics
  */
-export function getAllCircuitBreakerStats() {
-  const stats = [];
-  for (const [name, breaker] of breakers) {
-    stats.push(getCircuitBreakerStats(name));
+export function getAllCircuitBreakerStats(): CircuitBreakerStats[] {
+  const stats: CircuitBreakerStats[] = [];
+  for (const [name] of breakers) {
+    const stat = getCircuitBreakerStats(name);
+    if (stat) {
+      stats.push(stat);
+    }
   }
   return stats;
 }
@@ -134,7 +157,7 @@ export function getAllCircuitBreakerStats() {
  * Payment Gateway Circuit Breaker
  * More conservative settings - payment is critical
  */
-export const paymentCircuitBreakerOptions = {
+export const paymentCircuitBreakerOptions: CircuitBreakerOptions = {
   timeout: 30000,           // Payment can take longer
   errorThresholdPercentage: 30,  // Trip faster for payment
   resetTimeout: 60000,      // Wait longer before retrying
@@ -144,7 +167,7 @@ export const paymentCircuitBreakerOptions = {
 /**
  * Inventory Service Circuit Breaker
  */
-export const inventoryCircuitBreakerOptions = {
+export const inventoryCircuitBreakerOptions: CircuitBreakerOptions = {
   timeout: 5000,            // Inventory should be fast
   errorThresholdPercentage: 50,
   resetTimeout: 15000,
@@ -155,7 +178,7 @@ export const inventoryCircuitBreakerOptions = {
  * Elasticsearch Circuit Breaker
  * Less critical - can fallback to PostgreSQL
  */
-export const searchCircuitBreakerOptions = {
+export const searchCircuitBreakerOptions: CircuitBreakerOptions = {
   timeout: 5000,
   errorThresholdPercentage: 60,  // More tolerant
   resetTimeout: 10000,
@@ -164,11 +187,11 @@ export const searchCircuitBreakerOptions = {
 
 /**
  * Create a payment circuit breaker wrapper
- * @param {Function} paymentFn - Payment processing function
- * @param {Function} fallbackFn - Fallback function when circuit is open
- * @returns {CircuitBreaker} Configured circuit breaker
  */
-export function createPaymentCircuitBreaker(paymentFn, fallbackFn = null) {
+export function createPaymentCircuitBreaker<T extends unknown[], R>(
+  paymentFn: AsyncFunction<T, R>,
+  fallbackFn: AsyncFunction<T, R> | null = null
+): CircuitBreaker<T, R> {
   const breaker = createCircuitBreaker('payment-gateway', paymentFn, paymentCircuitBreakerOptions);
 
   if (fallbackFn) {
@@ -180,11 +203,11 @@ export function createPaymentCircuitBreaker(paymentFn, fallbackFn = null) {
 
 /**
  * Create an inventory circuit breaker wrapper
- * @param {Function} inventoryFn - Inventory check function
- * @param {Function} fallbackFn - Fallback function when circuit is open
- * @returns {CircuitBreaker} Configured circuit breaker
  */
-export function createInventoryCircuitBreaker(inventoryFn, fallbackFn = null) {
+export function createInventoryCircuitBreaker<T extends unknown[], R>(
+  inventoryFn: AsyncFunction<T, R>,
+  fallbackFn: AsyncFunction<T, R> | null = null
+): CircuitBreaker<T, R> {
   const breaker = createCircuitBreaker('inventory-service', inventoryFn, inventoryCircuitBreakerOptions);
 
   if (fallbackFn) {
@@ -196,11 +219,11 @@ export function createInventoryCircuitBreaker(inventoryFn, fallbackFn = null) {
 
 /**
  * Create a search circuit breaker wrapper
- * @param {Function} searchFn - Elasticsearch search function
- * @param {Function} fallbackFn - Fallback function (PostgreSQL search)
- * @returns {CircuitBreaker} Configured circuit breaker
  */
-export function createSearchCircuitBreaker(searchFn, fallbackFn = null) {
+export function createSearchCircuitBreaker<T extends unknown[], R>(
+  searchFn: AsyncFunction<T, R>,
+  fallbackFn: AsyncFunction<T, R> | null = null
+): CircuitBreaker<T, R> {
   const breaker = createCircuitBreaker('elasticsearch', searchFn, searchCircuitBreakerOptions);
 
   if (fallbackFn) {
@@ -212,19 +235,16 @@ export function createSearchCircuitBreaker(searchFn, fallbackFn = null) {
 
 /**
  * Check if a circuit breaker is open
- * @param {string} name - Service name
- * @returns {boolean} True if circuit is open
  */
-export function isCircuitOpen(name) {
+export function isCircuitOpen(name: string): boolean {
   const breaker = breakers.get(name);
   return breaker ? breaker.opened : false;
 }
 
 /**
  * Force close a circuit breaker (for testing/recovery)
- * @param {string} name - Service name
  */
-export function forceCloseCircuit(name) {
+export function forceCloseCircuit(name: string): void {
   const breaker = breakers.get(name);
   if (breaker) {
     breaker.close();
@@ -234,9 +254,8 @@ export function forceCloseCircuit(name) {
 
 /**
  * Force open a circuit breaker (for testing/maintenance)
- * @param {string} name - Service name
  */
-export function forceOpenCircuit(name) {
+export function forceOpenCircuit(name: string): void {
   const breaker = breakers.get(name);
   if (breaker) {
     breaker.open();
