@@ -404,8 +404,8 @@ export async function searchBusinesses(
 // Autocomplete suggestions
 export async function autocompleteBusiness(
   prefix: string,
-  latitude?: number | null,
-  longitude?: number | null
+  _latitude?: number | null,
+  _longitude?: number | null
 ): Promise<AutocompleteResult[]> {
   const suggest = {
     business_suggest: {

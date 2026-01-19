@@ -15,7 +15,7 @@ import {
 } from './metrics.js';
 import { isElasticsearchCircuitOpen, getElasticsearchCircuitState } from './circuitBreaker.js';
 import {
-  ELASTICSEARCH_THRESHOLDS,
+  ELASTICSEARCH_THRESHOLDS as _ELASTICSEARCH_THRESHOLDS,
   POSTGRES_THRESHOLDS,
   REDIS_THRESHOLDS,
 } from './alertThresholds.js';

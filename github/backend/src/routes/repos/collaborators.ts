@@ -10,7 +10,7 @@ import { Router, Request, Response } from 'express';
 import { query } from '../../db/index.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { invalidateRepoCache } from '../../shared/cache.js';
-import { getRepoId, sendRepoNotFound } from './types.js';
+import { getRepoId, sendRepoNotFound, RepoParams } from './types.js';
 
 const router = Router();
 
@@ -38,7 +38,7 @@ const router = Router();
  * // Response: { starred: true }
  */
 router.post('/:owner/:repo/star', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
 
   const repoId = await getRepoId(owner, repo);
   if (!repoId) {
@@ -85,7 +85,7 @@ router.post('/:owner/:repo/star', requireAuth, async (req: Request, res: Respons
  * // Response: { starred: false }
  */
 router.delete('/:owner/:repo/star', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
 
   const repoId = await getRepoId(owner, repo);
   if (!repoId) {
@@ -126,7 +126,7 @@ router.delete('/:owner/:repo/star', requireAuth, async (req: Request, res: Respo
  * // Response: { starred: true }
  */
 router.get('/:owner/:repo/starred', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
 
   const result = await query(
     `SELECT s.id FROM stars s

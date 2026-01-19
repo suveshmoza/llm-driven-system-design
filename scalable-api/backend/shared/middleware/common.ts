@@ -1,15 +1,23 @@
+import type { Request, Response, NextFunction } from 'express';
+import type { Logger } from 'pino';
 import { generateId } from '../utils/index.js';
 import { metricsService } from '../services/metrics.js';
 import logger, { createRequestLogger } from '../services/logger.js';
 
+interface RequestWithId extends Request {
+  id: string;
+  log: Logger;
+}
+
 /**
  * Request ID middleware - adds unique ID to each request for tracing
  */
-export function requestIdMiddleware(req, res, next) {
-  req.id = req.headers['x-request-id'] || generateId();
-  res.setHeader('X-Request-ID', req.id);
+export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const extReq = req as RequestWithId;
+  extReq.id = (req.headers['x-request-id'] as string) || generateId();
+  res.setHeader('X-Request-ID', extReq.id);
   // Attach a request-scoped logger
-  req.log = createRequestLogger(req);
+  extReq.log = createRequestLogger(extReq);
   next();
 }
 
@@ -22,9 +30,10 @@ export function requestIdMiddleware(req, res, next) {
  * - Enables filtering and alerting on specific fields
  * - Correlates requests via request IDs for distributed tracing
  */
-export function requestLoggerMiddleware(req, res, next) {
+export function requestLoggerMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const extReq = req as RequestWithId;
   const start = Date.now();
-  const log = req.log || logger.child({ requestId: req.id });
+  const log = extReq.log || logger.child({ requestId: extReq.id });
 
   // Log request start at debug level
   log.debug({ method: req.method, path: req.path }, 'Request started');
@@ -35,18 +44,20 @@ export function requestLoggerMiddleware(req, res, next) {
     // Record metrics
     metricsService.recordRequest({
       method: req.method,
-      path: req.route?.path || req.path,
+      path: extReq.route?.path || req.path,
       status: res.statusCode,
       duration,
     });
 
     // Log with appropriate level based on status
+    const forwardedFor = req.headers?.['x-forwarded-for'];
+    const ip = typeof forwardedFor === 'string' ? forwardedFor.split(',')[0] : forwardedFor?.[0];
     const logData = {
       method: req.method,
       path: req.path,
       status: res.statusCode,
       duration,
-      ip: req.ip || req.headers?.['x-forwarded-for']?.split(',')[0],
+      ip: req.ip || ip,
     };
 
     if (res.statusCode >= 500) {
@@ -66,8 +77,14 @@ export function requestLoggerMiddleware(req, res, next) {
 /**
  * Error handler middleware
  */
-export function errorHandlerMiddleware(err, req, res, _next) {
-  const log = req.log || logger.child({ requestId: req.id });
+export function errorHandlerMiddleware(
+  err: Error & { isOperational?: boolean; statusCode?: number; retryAfter?: number },
+  req: Request,
+  res: Response,
+  _next: NextFunction
+): void {
+  const extReq = req as RequestWithId;
+  const log = extReq.log || logger.child({ requestId: extReq.id });
 
   // Record error metrics
   metricsService.recordError({
@@ -86,52 +103,62 @@ export function errorHandlerMiddleware(err, req, res, _next) {
 
   // Handle operational errors
   if (err.isOperational) {
-    return res.status(err.statusCode).json({
+    res.status(err.statusCode || 500).json({
       error: err.message,
-      requestId: req.id,
+      requestId: extReq.id,
       ...(err.retryAfter && { retryAfter: err.retryAfter }),
     });
+    return;
   }
 
   // Handle validation errors
   if (err.name === 'ValidationError') {
-    return res.status(400).json({
+    res.status(400).json({
       error: 'Validation failed',
       details: err.message,
-      requestId: req.id,
+      requestId: extReq.id,
     });
+    return;
   }
 
   // Handle syntax errors (bad JSON)
   if (err instanceof SyntaxError && 'body' in err) {
-    return res.status(400).json({
+    res.status(400).json({
       error: 'Invalid JSON',
-      requestId: req.id,
+      requestId: extReq.id,
     });
+    return;
   }
 
   // Generic server error
   res.status(500).json({
     error: 'Internal server error',
-    requestId: req.id,
+    requestId: extReq.id,
   });
 }
 
 /**
  * Not found handler middleware
  */
-export function notFoundMiddleware(req, res) {
+export function notFoundMiddleware(req: Request, res: Response): void {
+  const extReq = req as RequestWithId;
   res.status(404).json({
     error: 'Not found',
     path: req.path,
-    requestId: req.id,
+    requestId: extReq.id,
   });
 }
 
 /**
  * CORS middleware configuration
  */
-export function corsOptions() {
+export function corsOptions(): {
+  origin: boolean;
+  credentials: boolean;
+  methods: string[];
+  allowedHeaders: string[];
+  exposedHeaders: string[];
+} {
   return {
     origin: true, // Allow all origins in development
     credentials: true,

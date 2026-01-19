@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import config from '../../shared/config/index.js';
@@ -14,6 +14,7 @@ import { RateLimiter } from '../../shared/services/rate-limiter.js';
 import { metricsService } from '../../shared/services/metrics.js';
 import { circuitBreakerRegistry } from '../../shared/services/circuit-breaker.js';
 import { CacheService } from '../../shared/services/cache.js';
+import type { AuthenticatedRequest } from '../../shared/types.js';
 
 const app = express();
 const rateLimiter = new RateLimiter();
@@ -30,7 +31,7 @@ app.use(requestIdMiddleware);
 app.use(requestLoggerMiddleware);
 
 // Health check endpoint (no auth, no rate limit)
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'healthy',
     service: 'api-gateway',
@@ -40,7 +41,7 @@ app.get('/health', (req, res) => {
 });
 
 // Readiness check
-app.get('/ready', async (req, res) => {
+app.get('/ready', async (req: Request, res: Response) => {
   try {
     // Check Redis connection
     const redisOk = await cache.redis.ping() === 'PONG';
@@ -51,12 +52,12 @@ app.get('/ready', async (req, res) => {
       res.status(503).json({ status: 'not ready', redis: 'disconnected' });
     }
   } catch (error) {
-    res.status(503).json({ status: 'not ready', error: error.message });
+    res.status(503).json({ status: 'not ready', error: (error as Error).message });
   }
 });
 
 // Metrics endpoint (Prometheus format)
-app.get('/metrics', (req, res) => {
+app.get('/metrics', (req: Request, res: Response) => {
   res.set('Content-Type', 'text/plain');
   res.send(metricsService.getMetricsPrometheus());
 });
@@ -72,7 +73,7 @@ app.use('/api', authMiddleware);
 app.use('/api', rateLimiter.middleware());
 
 // API versioning support - version info
-app.get('/api/version', (req, res) => {
+app.get('/api/version', (req: Request, res: Response) => {
   res.json({
     current: 'v1',
     supported: ['v1'],
@@ -84,30 +85,32 @@ app.get('/api/version', (req, res) => {
 const apiV1Router = express.Router();
 
 // Public endpoints (authenticated but not requiring specific role)
-apiV1Router.get('/status', (req, res) => {
+apiV1Router.get('/status', (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   res.json({
     status: 'operational',
     version: 'v1',
     timestamp: new Date().toISOString(),
-    user: req.user ? { id: req.user.id, email: req.user.email, tier: req.user.tier } : null,
+    user: authReq.user ? { id: authReq.user.id, email: authReq.user.email, tier: authReq.user.tier } : null,
   });
 });
 
 // User profile
-apiV1Router.get('/me', requireAuth, (req, res) => {
+apiV1Router.get('/me', requireAuth, (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   res.json({
     user: {
-      id: req.user.id,
-      email: req.user.email,
-      role: req.user.role,
-      tier: req.user.tier,
+      id: authReq.user!.id,
+      email: authReq.user!.email,
+      role: authReq.user!.role,
+      tier: authReq.user!.tier,
     },
-    rateLimit: req.rateLimit,
+    rateLimit: authReq.rateLimit,
   });
 });
 
 // Demo resource endpoints
-apiV1Router.get('/resources', async (req, res) => {
+apiV1Router.get('/resources', async (req: Request, res: Response) => {
   const cacheKey = 'resources:list';
 
   const data = await cache.getOrFetch(cacheKey, async () => {
@@ -122,7 +125,7 @@ apiV1Router.get('/resources', async (req, res) => {
   res.json({ resources: data, cached: true });
 });
 
-apiV1Router.get('/resources/:id', async (req, res) => {
+apiV1Router.get('/resources/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const cacheKey = `resources:${id}`;
 
@@ -139,7 +142,7 @@ const adminRouter = express.Router();
 adminRouter.use(requireAdmin);
 
 // Admin dashboard data
-adminRouter.get('/dashboard', (req, res) => {
+adminRouter.get('/dashboard', (req: Request, res: Response) => {
   res.json({
     metrics: metricsService.getMetricsJSON(),
     circuitBreakers: circuitBreakerRegistry.getAll(),
@@ -148,43 +151,45 @@ adminRouter.get('/dashboard', (req, res) => {
 });
 
 // Admin: View all circuit breakers
-adminRouter.get('/circuit-breakers', (req, res) => {
+adminRouter.get('/circuit-breakers', (req: Request, res: Response) => {
   res.json(circuitBreakerRegistry.getAll());
 });
 
 // Admin: Reset a circuit breaker
-adminRouter.post('/circuit-breakers/:name/reset', (req, res) => {
-  const breaker = circuitBreakerRegistry.get(req.params.name);
+adminRouter.post('/circuit-breakers/:name/reset', (req: Request, res: Response) => {
+  const name = req.params['name'] as string;
+  const breaker = circuitBreakerRegistry.get(name);
   breaker.close();
   breaker.resetStats();
   res.json({ message: 'Circuit breaker reset', state: breaker.getState() });
 });
 
 // Admin: View metrics
-adminRouter.get('/metrics', (req, res) => {
+adminRouter.get('/metrics', (req: Request, res: Response) => {
   res.json(metricsService.getMetricsJSON());
 });
 
 // Admin: Reset metrics
-adminRouter.post('/metrics/reset', (req, res) => {
+adminRouter.post('/metrics/reset', (req: Request, res: Response) => {
   metricsService.reset();
   res.json({ message: 'Metrics reset' });
 });
 
 // Admin: View cache stats
-adminRouter.get('/cache', (req, res) => {
+adminRouter.get('/cache', (req: Request, res: Response) => {
   res.json(cache.getStats());
 });
 
 // Admin: Clear cache
-adminRouter.post('/cache/clear', async (req, res) => {
+adminRouter.post('/cache/clear', async (req: Request, res: Response) => {
   await cache.clear();
   res.json({ message: 'Cache cleared' });
 });
 
 // Admin: Rate limit status
-adminRouter.get('/rate-limits/:identifier', async (req, res) => {
-  const status = await rateLimiter.getStatus(req.params.identifier);
+adminRouter.get('/rate-limits/:identifier', async (req: Request, res: Response) => {
+  const identifier = req.params['identifier'] as string;
+  const status = await rateLimiter.getStatus(identifier);
   if (status) {
     res.json(status);
   } else {

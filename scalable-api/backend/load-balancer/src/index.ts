@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import config from '../../shared/config/index.js';
 import { requestIdMiddleware, requestLoggerMiddleware, corsOptions } from '../../shared/middleware/common.js';
@@ -7,10 +7,30 @@ import { CircuitBreaker } from '../../shared/services/circuit-breaker.js';
 
 const app = express();
 
+interface ExtendedRequest extends Request {
+  id: string;
+}
+
+interface ServerInfo {
+  url: string;
+  healthy: boolean;
+  weight: number;
+  currentConnections: number;
+  totalRequests: number;
+  failedRequests: number;
+  lastCheck: string | null;
+  lastError: string | null;
+  circuitBreaker: CircuitBreaker;
+}
+
 // Server pool management
 class ServerPool {
-  constructor(servers) {
-    this.servers = servers.map(url => ({
+  private servers: ServerInfo[];
+  private currentIndex: number;
+  private healthCheckInterval: ReturnType<typeof setInterval> | null;
+
+  constructor(serverUrls: string[]) {
+    this.servers = serverUrls.map((url: string) => ({
       url,
       healthy: true,
       weight: 5,
@@ -31,8 +51,8 @@ class ServerPool {
   /**
    * Get next healthy server using least connections algorithm
    */
-  getNextServer() {
-    const healthyServers = this.servers.filter(s => s.healthy && s.circuitBreaker.state !== 'open');
+  getNextServer(): ServerInfo | undefined {
+    const healthyServers = this.servers.filter((s: ServerInfo) => s.healthy && s.circuitBreaker.state !== 'open');
 
     if (healthyServers.length === 0) {
       // Fallback: try any server if all are unhealthy
@@ -41,7 +61,7 @@ class ServerPool {
     }
 
     // Least connections with weight consideration
-    healthyServers.sort((a, b) => {
+    healthyServers.sort((a: ServerInfo, b: ServerInfo) => {
       const aScore = a.currentConnections / a.weight;
       const bScore = b.currentConnections / b.weight;
       return aScore - bScore;
@@ -53,8 +73,8 @@ class ServerPool {
   /**
    * Round-robin selection (alternative algorithm)
    */
-  getNextServerRoundRobin() {
-    const healthyServers = this.servers.filter(s => s.healthy);
+  getNextServerRoundRobin(): ServerInfo | undefined {
+    const healthyServers = this.servers.filter((s: ServerInfo) => s.healthy);
     if (healthyServers.length === 0) {
       return this.servers[0];
     }
@@ -66,7 +86,7 @@ class ServerPool {
   /**
    * Mark request as started
    */
-  requestStarted(server) {
+  requestStarted(server: ServerInfo): void {
     server.currentConnections++;
     server.totalRequests++;
   }
@@ -74,7 +94,7 @@ class ServerPool {
   /**
    * Mark request as completed
    */
-  requestCompleted(server, success) {
+  requestCompleted(server: ServerInfo, success: boolean): void {
     server.currentConnections = Math.max(0, server.currentConnections - 1);
     if (!success) {
       server.failedRequests++;
@@ -84,7 +104,7 @@ class ServerPool {
   /**
    * Check health of a single server
    */
-  async checkServerHealth(server) {
+  async checkServerHealth(server: ServerInfo): Promise<boolean> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2000);
 
@@ -96,14 +116,14 @@ class ServerPool {
       clearTimeout(timeout);
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as { load?: number };
         server.healthy = true;
         server.lastCheck = new Date().toISOString();
         server.lastError = null;
 
         // Adjust weight based on response time or load
-        if (data.load !== undefined) {
-          server.weight = Math.max(1, 10 - Math.floor(data.load / 10));
+        if (data['load'] !== undefined) {
+          server.weight = Math.max(1, 10 - Math.floor(data['load'] / 10));
         }
 
         return true;
@@ -114,8 +134,8 @@ class ServerPool {
       clearTimeout(timeout);
       server.healthy = false;
       server.lastCheck = new Date().toISOString();
-      server.lastError = error.message;
-      console.warn(`Health check failed for ${server.url}:`, error.message);
+      server.lastError = (error as Error).message;
+      console.warn(`Health check failed for ${server.url}:`, (error as Error).message);
       return false;
     }
   }
@@ -123,7 +143,7 @@ class ServerPool {
   /**
    * Start periodic health checks
    */
-  startHealthChecks(intervalMs = 5000) {
+  startHealthChecks(intervalMs = 5000): void {
     // Initial check
     this.checkAllServers();
 
@@ -135,14 +155,14 @@ class ServerPool {
   /**
    * Check all servers
    */
-  async checkAllServers() {
-    await Promise.all(this.servers.map(s => this.checkServerHealth(s)));
+  async checkAllServers(): Promise<void> {
+    await Promise.all(this.servers.map((s: ServerInfo) => this.checkServerHealth(s)));
   }
 
   /**
    * Stop health checks
    */
-  stopHealthChecks() {
+  stopHealthChecks(): void {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
@@ -152,11 +172,26 @@ class ServerPool {
   /**
    * Get pool status
    */
-  getStatus() {
+  getStatus(): {
+    totalServers: number;
+    healthyServers: number;
+    servers: Array<{
+      url: string;
+      healthy: boolean;
+      weight: number;
+      currentConnections: number;
+      totalRequests: number;
+      failedRequests: number;
+      successRate: string;
+      lastCheck: string | null;
+      lastError: string | null;
+      circuitState: string;
+    }>;
+  } {
     return {
       totalServers: this.servers.length,
-      healthyServers: this.servers.filter(s => s.healthy).length,
-      servers: this.servers.map(s => ({
+      healthyServers: this.servers.filter((s: ServerInfo) => s.healthy).length,
+      servers: this.servers.map((s: ServerInfo) => ({
         url: s.url,
         healthy: s.healthy,
         weight: s.weight,
@@ -186,7 +221,7 @@ app.use(requestIdMiddleware);
 app.use(requestLoggerMiddleware);
 
 // Load balancer health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   const status = serverPool.getStatus();
   const healthy = status.healthyServers > 0;
 
@@ -200,25 +235,27 @@ app.get('/health', (req, res) => {
 });
 
 // Load balancer status
-app.get('/lb/status', (req, res) => {
+app.get('/lb/status', (req: Request, res: Response) => {
   res.json(serverPool.getStatus());
 });
 
 // Metrics endpoint
-app.get('/metrics', (req, res) => {
+app.get('/metrics', (req: Request, res: Response) => {
   res.set('Content-Type', 'text/plain');
   res.send(metricsService.getMetricsPrometheus());
 });
 
 // Proxy all other requests to backend servers
-app.use('*', async (req, res) => {
+app.use('*', async (req: Request, res: Response): Promise<void> => {
+  const extReq = req as ExtendedRequest;
   const server = serverPool.getNextServer();
 
   if (!server) {
-    return res.status(503).json({
+    res.status(503).json({
       error: 'No healthy backend servers available',
-      requestId: req.id,
+      requestId: extReq.id,
     });
+    return;
   }
 
   const targetUrl = `${server.url}${req.originalUrl}`;
@@ -232,15 +269,19 @@ app.use('*', async (req, res) => {
       const timeout = setTimeout(() => controller.abort(), 30000);
 
       // Prepare headers
-      const headers = { ...req.headers };
-      delete headers.host;
-      headers['x-request-id'] = req.id;
-      headers['x-forwarded-for'] = req.ip;
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (key !== 'host' && typeof value === 'string') {
+          headers[key] = value;
+        }
+      }
+      headers['x-request-id'] = extReq.id;
+      headers['x-forwarded-for'] = req.ip || '';
       headers['x-forwarded-host'] = req.hostname;
       headers['x-forwarded-proto'] = req.protocol;
 
       // Prepare body
-      let body = undefined;
+      let body: string | Buffer | undefined = undefined;
       if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
         if (typeof req.body === 'object' && !(req.body instanceof Buffer)) {
           body = JSON.stringify(req.body);
@@ -289,29 +330,29 @@ app.use('*', async (req, res) => {
     });
 
   } catch (error) {
-    const _duration = Date.now() - startTime;
     serverPool.requestCompleted(server, false);
 
-    console.error(`Proxy error to ${server.url}:`, error.message);
+    console.error(`Proxy error to ${server.url}:`, (error as Error).message);
 
     metricsService.recordError({
       method: req.method,
       path: req.path,
-      error: error.name || 'ProxyError',
+      error: (error as Error).name || 'ProxyError',
     });
 
-    if (error.message.includes('Circuit breaker')) {
-      return res.status(503).json({
+    if ((error as Error).message.includes('Circuit breaker')) {
+      res.status(503).json({
         error: 'Service temporarily unavailable',
         message: 'Backend server is experiencing issues',
-        requestId: req.id,
+        requestId: extReq.id,
       });
+      return;
     }
 
     res.status(502).json({
       error: 'Bad gateway',
       message: 'Failed to connect to backend server',
-      requestId: req.id,
+      requestId: extReq.id,
     });
   }
 });

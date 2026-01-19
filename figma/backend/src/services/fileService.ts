@@ -46,7 +46,7 @@ export class FileService {
    * @returns Promise resolving to array of design files
    */
   // Get all files for a user
-  async getFiles(userId?: string): Promise<DesignFile[]> {
+  async getFiles(_userId?: string): Promise<DesignFile[]> {
     const files = await query<FileRow>(
       `SELECT * FROM files WHERE deleted_at IS NULL ORDER BY updated_at DESC`
     );

@@ -10,7 +10,7 @@ import { Router, Request, Response } from 'express';
 import * as gitService from '../../services/git.js';
 import { getBranchesFromCache, setBranchesInCache } from '../../shared/cache.js';
 import { withCircuitBreaker } from '../../shared/circuitBreaker.js';
-import { getRepoId, sendRepoNotFound } from './types.js';
+import { getRepoId, sendRepoNotFound, RepoParams } from './types.js';
 
 const router = Router();
 
@@ -34,7 +34,7 @@ const router = Router();
  * // Response: ['main', 'develop', 'feature/new-feature']
  */
 router.get('/:owner/:repo/branches', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
 
   const repoId = await getRepoId(owner, repo);
   if (!repoId) {
@@ -70,7 +70,7 @@ router.get('/:owner/:repo/branches', async (req: Request, res: Response): Promis
  * // Response: ['v1.0.0', 'v1.1.0', 'v2.0.0']
  */
 router.get('/:owner/:repo/tags', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
   const tags = await withCircuitBreaker('git_tags', () => gitService.getTags(owner, repo));
   res.json(tags);
 });

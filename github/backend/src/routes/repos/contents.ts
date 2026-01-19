@@ -18,7 +18,7 @@ import {
   setCommitsInCache,
 } from '../../shared/cache.js';
 import { withCircuitBreaker } from '../../shared/circuitBreaker.js';
-import { TreeQueryParams, CommitsQueryParams, getRepoId, sendRepoNotFound } from './types.js';
+import { TreeQueryParams, CommitsQueryParams, getRepoId, sendRepoNotFound, RepoParams, ContentParams, CommitParams } from './types.js';
 
 const router = Router();
 
@@ -45,7 +45,7 @@ const router = Router();
  * // Response: [{ name: 'index.ts', type: 'blob', ... }, { name: 'lib', type: 'tree', ... }]
  */
 router.get('/:owner/:repo/tree/:ref(*)', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, ref } = req.params;
+  const { owner, repo, ref } = req.params as unknown as ContentParams;
   const { path: treePath = '' } = req.query as TreeQueryParams;
 
   const repoId = await getRepoId(owner, repo);
@@ -88,7 +88,7 @@ router.get('/:owner/:repo/tree/:ref(*)', async (req: Request, res: Response): Pr
  * // Response: { path: 'README.md', content: '# Hello World\n...' }
  */
 router.get('/:owner/:repo/blob/:ref/:path(*)', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, ref, path: filePath } = req.params;
+  const { owner, repo, ref, path: filePath } = req.params as unknown as ContentParams & { path: string };
 
   const repoId = await getRepoId(owner, repo);
   if (!repoId) {
@@ -135,7 +135,7 @@ router.get('/:owner/:repo/blob/:ref/:path(*)', async (req: Request, res: Respons
  * // Response: [{ sha: 'abc123', message: 'Initial commit', ... }]
  */
 router.get('/:owner/:repo/commits', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
   const { branch = 'HEAD', page = '1', limit = '30' } = req.query as CommitsQueryParams;
 
   const repoId = await getRepoId(owner, repo);
@@ -182,7 +182,7 @@ router.get('/:owner/:repo/commits', async (req: Request, res: Response): Promise
  * // Response: { sha: 'abc123', message: 'Fix bug', author: {...}, files: [...] }
  */
 router.get('/:owner/:repo/commit/:sha', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, sha } = req.params;
+  const { owner, repo, sha } = req.params as unknown as CommitParams;
 
   const commit = await withCircuitBreaker('git_commit', () => gitService.getCommit(owner, repo, sha));
 

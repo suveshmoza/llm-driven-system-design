@@ -91,8 +91,8 @@ function fromPgVector(vectorStr: string | number[] | null): number[] | null {
  */
 export async function generateVideoEmbedding(
   videoId: number,
-  description: string = '',
-  hashtags: string[] = []
+  _description: string = '',
+  _hashtags: string[] = []
 ): Promise<number[]> {
   try {
     // Simulate text-based embedding generation

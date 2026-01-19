@@ -1,6 +1,20 @@
 import pino from 'pino';
 import config from '../config/index.js';
 
+interface RequestLike {
+  id?: string;
+  user?: { id?: string };
+  method?: string;
+  path?: string;
+  url?: string;
+  ip?: string;
+  headers?: Record<string, string | string[] | undefined>;
+}
+
+interface ResponseLike {
+  statusCode: number;
+}
+
 /**
  * Structured JSON logger using pino
  *
@@ -28,11 +42,11 @@ const transport = isProduction
 // Create base logger
 const logger = pino(
   {
-    level: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
+    level: process.env['LOG_LEVEL'] || (isProduction ? 'info' : 'debug'),
     base: {
       instanceId: config.instanceId,
-      service: process.env.SERVICE_NAME || 'api-server',
-      version: process.env.APP_VERSION || '1.0.0',
+      service: process.env['SERVICE_NAME'] || 'api-server',
+      version: process.env['APP_VERSION'] || '1.0.0',
     },
     // Redact sensitive fields
     redact: {
@@ -41,15 +55,15 @@ const logger = pino(
     },
     // Serializers for common objects
     serializers: {
-      req: (req) => ({
+      req: (req: RequestLike) => ({
         method: req.method,
         url: req.url,
         path: req.path,
         requestId: req.id,
-        ip: req.ip || req.headers?.['x-forwarded-for']?.split(',')[0],
+        ip: req.ip || (req.headers?.['x-forwarded-for'] as string)?.split(',')[0],
         userAgent: req.headers?.['user-agent'],
       }),
-      res: (res) => ({
+      res: (res: ResponseLike) => ({
         statusCode: res.statusCode,
       }),
       err: pino.stdSerializers.err,
@@ -63,7 +77,7 @@ const logger = pino(
 /**
  * Create a child logger with request context
  */
-export function createRequestLogger(req) {
+export function createRequestLogger(req: RequestLike): pino.Logger {
   return logger.child({
     requestId: req.id,
     userId: req.user?.id,

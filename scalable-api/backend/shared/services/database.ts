@@ -1,4 +1,4 @@
-import pg, { QueryResultRow, QueryResult, Pool as PgPool } from 'pg';
+import pg, { QueryResultRow, QueryResult, Pool as PgPool, PoolClient } from 'pg';
 import config from '../config/index.js';
 
 const { Pool } = pg;
@@ -58,7 +58,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
 /**
  * Execute a transaction
  */
-export async function transaction(callback) {
+export async function transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -76,19 +76,19 @@ export async function transaction(callback) {
 /**
  * Check database connection
  */
-export async function checkConnection() {
+export async function checkConnection(): Promise<{ connected: boolean; timestamp?: string; error?: string }> {
   try {
-    const result = await query('SELECT NOW()');
-    return { connected: true, timestamp: result.rows[0].now };
+    const result = await query<{ now: string }>('SELECT NOW() as now');
+    return { connected: true, timestamp: result.rows[0]?.['now'] };
   } catch (error) {
-    return { connected: false, error: error.message };
+    return { connected: false, error: (error as Error).message };
   }
 }
 
 /**
  * Close the pool
  */
-export async function closePool() {
+export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();
     pool = null;

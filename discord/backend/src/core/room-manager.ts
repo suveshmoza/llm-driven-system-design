@@ -144,7 +144,7 @@ export class RoomManager {
    */
   async leaveAllRooms(userId: number): Promise<void> {
     // Update in-memory state
-    for (const [roomName, members] of this.roomMembers) {
+    for (const [_roomName, members] of this.roomMembers) {
       members.delete(userId);
     }
 

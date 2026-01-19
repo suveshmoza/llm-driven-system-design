@@ -38,9 +38,8 @@ const logger = pino({
 
 /**
  * Create a child logger for a specific service
- * @param {string} serviceName
  */
-export function createServiceLogger(serviceName) {
+export function createServiceLogger(serviceName: string) {
   return logger.child({ service: serviceName });
 }
 
@@ -81,11 +80,11 @@ export function requestLoggerMiddleware(
     };
 
     if (res.statusCode >= 500) {
-      req.log.error(logData, 'request completed with error');
+      req.log?.error(logData, 'request completed with error');
     } else if (res.statusCode >= 400) {
-      req.log.warn(logData, 'request completed with client error');
+      req.log?.warn(logData, 'request completed with client error');
     } else {
-      req.log.info(logData, 'request completed');
+      req.log?.info(logData, 'request completed');
     }
   });
 

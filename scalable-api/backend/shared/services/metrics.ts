@@ -1,5 +1,43 @@
 import { normalizePath, percentile } from '../utils/index.js';
-import config from '../config/index.js';
+
+interface RequestData {
+  method: string;
+  path: string;
+  status: number;
+  duration: number;
+}
+
+interface ErrorData {
+  method: string;
+  path: string;
+  error: string;
+}
+
+interface EndpointLatencyStats {
+  count: number;
+  totalDuration: number;
+  min: number;
+  max: number;
+  p50: number;
+  p90: number;
+  p99: number;
+  samples: number[];
+}
+
+interface QueueDepthInfo {
+  depth: number;
+  timestamp: number;
+}
+
+interface CircuitBreakerInfo {
+  state: string;
+  stats: Record<string, unknown>;
+  timestamp: number;
+}
+
+interface Labels {
+  [key: string]: string | number;
+}
 
 /**
  * Metrics service for collecting and exposing Prometheus-compatible metrics
@@ -11,6 +49,14 @@ import config from '../config/index.js';
  * - Support capacity planning based on actual usage patterns
  */
 export class MetricsService {
+  private counters: Map<string, number>;
+  private histograms: Map<string, number[]>;
+  private gauges: Map<string, number>;
+  private startTime: number;
+  private queueDepths: Map<string, QueueDepthInfo>;
+  private circuitBreakerStates: Map<string, CircuitBreakerInfo>;
+  private endpointLatencies: Map<string, EndpointLatencyStats>;
+
   constructor() {
     this.counters = new Map();
     this.histograms = new Map();
@@ -30,7 +76,7 @@ export class MetricsService {
   /**
    * Increment a counter
    */
-  increment(name, labels = {}, amount = 1) {
+  increment(name: string, labels: Labels = {}, amount = 1): void {
     const key = this.formatKey(name, labels);
     const current = this.counters.get(key) || 0;
     this.counters.set(key, current + amount);
@@ -39,15 +85,15 @@ export class MetricsService {
   /**
    * Observe a histogram value
    */
-  observe(name, value, labels = {}) {
+  observe(name: string, value: number, labels: Labels = {}): void {
     const key = this.formatKey(name, labels);
     if (!this.histograms.has(key)) {
       this.histograms.set(key, []);
     }
-    this.histograms.get(key).push(value);
+    this.histograms.get(key)!.push(value);
 
     // Keep only last 1000 observations to prevent memory bloat
-    const values = this.histograms.get(key);
+    const values = this.histograms.get(key)!;
     if (values.length > 1000) {
       this.histograms.set(key, values.slice(-1000));
     }
@@ -56,7 +102,7 @@ export class MetricsService {
   /**
    * Set a gauge value
    */
-  gauge(name, value, labels = {}) {
+  gauge(name: string, value: number, labels: Labels = {}): void {
     const key = this.formatKey(name, labels);
     this.gauges.set(key, value);
   }
@@ -66,7 +112,7 @@ export class MetricsService {
    * WHY per-endpoint metrics: Enable identifying slow endpoints, high error rates,
    * and usage patterns for targeted optimization and capacity planning.
    */
-  recordRequest(data) {
+  recordRequest(data: RequestData): void {
     const { method, path, status, duration } = data;
     const normalizedPath = normalizePath(path);
 
@@ -80,7 +126,7 @@ export class MetricsService {
   /**
    * Record error metrics
    */
-  recordError(data) {
+  recordError(data: ErrorData): void {
     this.increment('http_errors_total', {
       method: data.method,
       path: normalizePath(data.path),
@@ -91,11 +137,11 @@ export class MetricsService {
   /**
    * Record cache metrics
    */
-  recordCacheHit(level) {
+  recordCacheHit(level: string): void {
     this.increment('cache_hits_total', { level });
   }
 
-  recordCacheMiss() {
+  recordCacheMiss(): void {
     this.increment('cache_misses_total');
   }
 
@@ -104,7 +150,7 @@ export class MetricsService {
    * WHY: Queue depth is a leading indicator of system health.
    * Rising queue depths indicate processing bottlenecks before they cause failures.
    */
-  recordQueueDepth(queueName, depth) {
+  recordQueueDepth(queueName: string, depth: number): void {
     this.queueDepths.set(queueName, {
       depth,
       timestamp: Date.now(),
@@ -115,22 +161,23 @@ export class MetricsService {
   /**
    * Record circuit breaker state changes
    */
-  recordCircuitBreakerState(name, state, stats = {}) {
+  recordCircuitBreakerState(name: string, state: string, stats: Record<string, unknown> = {}): void {
     this.circuitBreakerStates.set(name, {
       state,
       stats,
       timestamp: Date.now(),
     });
     // Map state to numeric value for graphing
-    const stateValue = { closed: 0, half_open: 1, open: 2 }[state.replace('-', '_')] ?? -1;
+    const stateMap: Record<string, number> = { closed: 0, half_open: 1, open: 2 };
+    const stateValue = stateMap[state.replace('-', '_')] ?? -1;
     this.gauge('circuit_breaker_state', stateValue, { name });
-    this.gauge('circuit_breaker_failures', stats.failedCalls || 0, { name });
+    this.gauge('circuit_breaker_failures', (stats['failedCalls'] as number) || 0, { name });
   }
 
   /**
    * Track per-endpoint latency for optimization
    */
-  trackEndpointLatency(method, path, duration) {
+  trackEndpointLatency(method: string, path: string, duration: number): void {
     const normalizedPath = normalizePath(path);
     const key = `${method}:${normalizedPath}`;
 
@@ -147,7 +194,7 @@ export class MetricsService {
       });
     }
 
-    const stats = this.endpointLatencies.get(key);
+    const stats = this.endpointLatencies.get(key)!;
     stats.count++;
     stats.totalDuration += duration;
     stats.min = Math.min(stats.min, duration);
@@ -168,14 +215,30 @@ export class MetricsService {
   /**
    * Get slow endpoints that may need optimization
    */
-  getSlowEndpoints(thresholdMs = 500) {
-    const slow = [];
+  getSlowEndpoints(thresholdMs = 500): Array<{
+    method: string;
+    path: string;
+    avgDuration: number;
+    p50: number;
+    p90: number;
+    p99: number;
+    count: number;
+  }> {
+    const slow: Array<{
+      method: string;
+      path: string;
+      avgDuration: number;
+      p50: number;
+      p90: number;
+      p99: number;
+      count: number;
+    }> = [];
     for (const [key, stats] of this.endpointLatencies) {
       if (stats.p90 > thresholdMs) {
         const [method, path] = key.split(':');
         slow.push({
-          method,
-          path,
+          method: method ?? '',
+          path: path ?? '',
           avgDuration: stats.totalDuration / stats.count,
           p50: stats.p50,
           p90: stats.p90,
@@ -190,7 +253,7 @@ export class MetricsService {
   /**
    * Update system metrics
    */
-  updateSystemMetrics() {
+  updateSystemMetrics(): void {
     const memUsage = process.memoryUsage();
     this.gauge('nodejs_heap_used_bytes', memUsage.heapUsed);
     this.gauge('nodejs_heap_total_bytes', memUsage.heapTotal);
@@ -202,14 +265,14 @@ export class MetricsService {
     this.gauge('nodejs_cpu_system_seconds', cpuUsage.system / 1e6);
 
     this.gauge('nodejs_uptime_seconds', process.uptime());
-    this.gauge('nodejs_active_handles', process._getActiveHandles?.()?.length || 0);
-    this.gauge('nodejs_active_requests', process._getActiveRequests?.()?.length || 0);
+    this.gauge('nodejs_active_handles', (process as unknown as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.()?.length || 0);
+    this.gauge('nodejs_active_requests', (process as unknown as { _getActiveRequests?: () => unknown[] })._getActiveRequests?.()?.length || 0);
   }
 
   /**
    * Format metric key with labels
    */
-  formatKey(name, labels) {
+  formatKey(name: string, labels: Labels): string {
     if (Object.keys(labels).length === 0) {
       return name;
     }
@@ -223,19 +286,23 @@ export class MetricsService {
   /**
    * Parse key back to name and labels
    */
-  parseKey(key) {
+  parseKey(key: string): { name: string; labels: Record<string, string> } {
     const match = key.match(/^([^{]+)(\{(.+)\})?$/);
     if (!match) return { name: key, labels: {} };
 
-    const name = match[1];
+    const name = match[1] ?? key;
     const labelsStr = match[3];
 
     if (!labelsStr) return { name, labels: {} };
 
-    const labels = {};
+    const labels: Record<string, string> = {};
     labelsStr.split(',').forEach(pair => {
-      const [k, v] = pair.split('=');
-      labels[k] = v.replace(/"/g, '');
+      const parts = pair.split('=');
+      const k = parts[0];
+      const v = parts[1];
+      if (k && v) {
+        labels[k] = v.replace(/"/g, '');
+      }
     });
 
     return { name, labels };
@@ -244,7 +311,7 @@ export class MetricsService {
   /**
    * Get metrics in Prometheus format
    */
-  getMetricsPrometheus() {
+  getMetricsPrometheus(): string {
     this.updateSystemMetrics();
     let output = '';
 
@@ -289,23 +356,24 @@ export class MetricsService {
   /**
    * Get metrics in JSON format for dashboard
    */
-  getMetricsJSON() {
+  getMetricsJSON(): Record<string, unknown> {
     this.updateSystemMetrics();
 
-    const requests = {};
-    const errors = {};
-    const durations = {};
+    const requests: Record<string, { total: number; byStatus: Record<string, number> }> = {};
+    const errors: Record<string, number> = {};
+    const durations: Record<string, { count: number; avg: number; p50: number; p90: number; p99: number }> = {};
 
     for (const [key, value] of this.counters) {
       const { name, labels } = this.parseKey(key);
       if (name === 'http_requests_total') {
-        const path = labels.path || 'unknown';
+        const path = labels['path'] || 'unknown';
         if (!requests[path]) requests[path] = { total: 0, byStatus: {} };
         requests[path].total += value;
-        requests[path].byStatus[labels.status] = (requests[path].byStatus[labels.status] || 0) + value;
+        const status = labels['status'] || 'unknown';
+        requests[path].byStatus[status] = (requests[path].byStatus[status] || 0) + value;
       }
       if (name === 'http_errors_total') {
-        const path = labels.path || 'unknown';
+        const path = labels['path'] || 'unknown';
         errors[path] = (errors[path] || 0) + value;
       }
     }
@@ -313,7 +381,7 @@ export class MetricsService {
     for (const [key, values] of this.histograms) {
       const { name, labels } = this.parseKey(key);
       if (name === 'http_request_duration_ms') {
-        const path = labels.path || 'unknown';
+        const path = labels['path'] || 'unknown';
         durations[path] = {
           count: values.length,
           avg: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0,
@@ -367,13 +435,13 @@ export class MetricsService {
   /**
    * Format uptime to human readable string
    */
-  formatUptime(seconds) {
+  formatUptime(seconds: number): string {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
 
-    const parts = [];
+    const parts: string[] = [];
     if (days > 0) parts.push(`${days}d`);
     if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
@@ -385,7 +453,7 @@ export class MetricsService {
   /**
    * Reset all metrics
    */
-  reset() {
+  reset(): void {
     this.counters.clear();
     this.histograms.clear();
     this.gauges.clear();

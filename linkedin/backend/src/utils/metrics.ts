@@ -207,7 +207,7 @@ function normalizePath(path: string): string {
  * Should be called periodically by a background task.
  */
 export async function updateQueueMetrics(): Promise<void> {
-  for (const [name, queue] of Object.entries(QUEUES)) {
+  for (const [_name, queue] of Object.entries(QUEUES)) {
     const depth = await getQueueDepth(queue);
     queueDepth.set({ queue_name: queue }, depth);
   }

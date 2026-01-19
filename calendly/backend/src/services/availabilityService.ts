@@ -8,7 +8,7 @@ import { meetingTypeService } from './meetingTypeService.js';
 import { bookingService } from './booking/index.js';
 import { logger } from '../shared/logger.js';
 import {
-  availabilityChecksTotal,
+  availabilityChecksTotal as _availabilityChecksTotal,
   availabilityCalculationDuration,
   recordAvailabilityCheck,
   recordCacheOperation,
@@ -17,11 +17,11 @@ import { RETENTION_CONFIG } from '../shared/config.js';
 import {
   createDateWithTime,
   getDayOfWeekInTimezone,
-  mergeIntervals,
+  mergeIntervals as _mergeIntervals,
   findGaps,
   generateSlots,
   type TimeInterval,
-  utcToLocal,
+  _utcToLocal,
   formatInTimezone,
 } from '../utils/time.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -177,7 +177,7 @@ export class AvailabilityService {
   async getAvailableSlots(
     meetingTypeId: string,
     dateStr: string,
-    inviteeTimezone: string
+    _inviteeTimezone: string
   ): Promise<TimeSlot[]> {
     const startTime = Date.now();
     const slotLogger = logger.child({

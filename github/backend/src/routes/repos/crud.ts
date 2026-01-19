@@ -20,6 +20,7 @@ import {
   getRepoByOwnerAndName,
   sendRepoNotFound,
   isRepoOwner,
+  RepoParams,
 } from './types.js';
 
 const router = Router();
@@ -135,7 +136,7 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
  * // Response: { id: 1, description: 'Updated description', is_private: true, ... }
  */
 router.patch('/:owner/:repo', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
   const { description, isPrivate, defaultBranch } = req.body as UpdateRepoBody;
 
   const repoData = await getRepoByOwnerAndName(owner, repo);
@@ -216,7 +217,7 @@ router.patch('/:owner/:repo', requireAuth, async (req: Request, res: Response): 
  * // Response: { success: true }
  */
 router.delete('/:owner/:repo', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
 
   const repoData = await getRepoByOwnerAndName(owner, repo);
   if (!repoData) {

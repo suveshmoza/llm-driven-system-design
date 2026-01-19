@@ -3,6 +3,33 @@ import config from '../config/index.js';
 import { CircuitOpenError } from '../utils/index.js';
 import { metricsService } from './metrics.js';
 import logger from './logger.js';
+import type { Logger } from 'pino';
+
+interface CircuitBreakerOptions {
+  failureThreshold?: number;
+  resetTimeout?: number;
+  halfOpenRequests?: number;
+}
+
+interface CircuitBreakerStats {
+  totalCalls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  rejectedCalls: number;
+  stateChanges: Array<{
+    from: string;
+    to: string;
+    timestamp: string;
+  }>;
+}
+
+interface CircuitBreakerState {
+  name: string;
+  state: string;
+  failures: number;
+  lastFailure: number | null;
+  stats: CircuitBreakerStats;
+}
 
 /**
  * Circuit Breaker implementation for protecting against cascading failures
@@ -18,7 +45,19 @@ import logger from './logger.js';
  * while maintaining backward compatibility with our simpler implementation.
  */
 export class CircuitBreaker {
-  constructor(name, options = {}) {
+  public name: string;
+  public state: string;
+  private failureThreshold: number;
+  private resetTimeout: number;
+  private halfOpenRequests: number;
+  private failures: number;
+  private successes: number;
+  private lastFailure: number | null;
+  private halfOpenCount: number;
+  private log: Logger;
+  private stats: CircuitBreakerStats;
+
+  constructor(name: string, options: CircuitBreakerOptions = {}) {
     this.name = name;
     this.failureThreshold = options.failureThreshold || config.circuitBreaker.failureThreshold;
     this.resetTimeout = options.resetTimeout || config.circuitBreaker.resetTimeout;
@@ -44,11 +83,11 @@ export class CircuitBreaker {
   /**
    * Execute a function with circuit breaker protection
    */
-  async execute(fn) {
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
     this.stats.totalCalls++;
 
     if (this.state === 'open') {
-      if (Date.now() - this.lastFailure >= this.resetTimeout) {
+      if (this.lastFailure !== null && Date.now() - this.lastFailure >= this.resetTimeout) {
         this.transitionTo('half-open');
         this.halfOpenCount = 0;
       } else {
@@ -66,7 +105,7 @@ export class CircuitBreaker {
       this.onSuccess();
       return result;
     } catch (error) {
-      this.onFailure(error);
+      this.onFailure(error as Error);
       throw error;
     }
   }
@@ -74,7 +113,7 @@ export class CircuitBreaker {
   /**
    * Handle successful execution
    */
-  onSuccess() {
+  onSuccess(): void {
     this.stats.successfulCalls++;
 
     if (this.state === 'half-open') {
@@ -93,7 +132,7 @@ export class CircuitBreaker {
   /**
    * Handle failed execution
    */
-  onFailure(error) {
+  onFailure(error: Error): void {
     this.stats.failedCalls++;
     this.failures++;
     this.lastFailure = Date.now();
@@ -110,7 +149,7 @@ export class CircuitBreaker {
   /**
    * Transition to a new state
    */
-  transitionTo(newState) {
+  transitionTo(newState: string): void {
     const oldState = this.state;
     this.state = newState;
 
@@ -123,13 +162,13 @@ export class CircuitBreaker {
     this.log.info({ from: oldState, to: newState }, 'Circuit breaker state change');
 
     // Record state change in metrics
-    metricsService.recordCircuitBreakerState(this.name, newState, this.stats);
+    metricsService.recordCircuitBreakerState(this.name, newState, this.stats as unknown as Record<string, unknown>);
   }
 
   /**
    * Get current state and statistics
    */
-  getState() {
+  getState(): CircuitBreakerState {
     return {
       name: this.name,
       state: this.state,
@@ -142,7 +181,7 @@ export class CircuitBreaker {
   /**
    * Force the circuit to open
    */
-  open() {
+  open(): void {
     this.transitionTo('open');
     this.lastFailure = Date.now();
   }
@@ -150,7 +189,7 @@ export class CircuitBreaker {
   /**
    * Force the circuit to close
    */
-  close() {
+  close(): void {
     this.transitionTo('closed');
     this.failures = 0;
     this.successes = 0;
@@ -159,7 +198,7 @@ export class CircuitBreaker {
   /**
    * Reset all statistics
    */
-  resetStats() {
+  resetStats(): void {
     this.stats = {
       totalCalls: 0,
       successfulCalls: 0,
@@ -174,6 +213,8 @@ export class CircuitBreaker {
  * Circuit Breaker Registry for managing multiple breakers
  */
 export class CircuitBreakerRegistry {
+  private breakers: Map<string, CircuitBreaker>;
+
   constructor() {
     this.breakers = new Map();
   }
@@ -181,18 +222,18 @@ export class CircuitBreakerRegistry {
   /**
    * Get or create a circuit breaker
    */
-  get(name, options = {}) {
+  get(name: string, options: CircuitBreakerOptions = {}): CircuitBreaker {
     if (!this.breakers.has(name)) {
       this.breakers.set(name, new CircuitBreaker(name, options));
     }
-    return this.breakers.get(name);
+    return this.breakers.get(name)!;
   }
 
   /**
    * Get all circuit breaker states
    */
-  getAll() {
-    const states = {};
+  getAll(): Record<string, CircuitBreakerState> {
+    const states: Record<string, CircuitBreakerState> = {};
     for (const [name, breaker] of this.breakers) {
       states[name] = breaker.getState();
     }
@@ -202,7 +243,7 @@ export class CircuitBreakerRegistry {
   /**
    * Reset all circuit breakers
    */
-  resetAll() {
+  resetAll(): void {
     for (const breaker of this.breakers.values()) {
       breaker.close();
       breaker.resetStats();
@@ -212,6 +253,22 @@ export class CircuitBreakerRegistry {
 
 // Singleton instance
 export const circuitBreakerRegistry = new CircuitBreakerRegistry();
+
+interface OpossumOptions {
+  timeout?: number;
+  errorThresholdPercentage?: number;
+  resetTimeout?: number;
+  volumeThreshold?: number;
+}
+
+interface OpossumStats {
+  fires?: number;
+  successes?: number;
+  failures?: number;
+  rejects?: number;
+  timeouts?: number;
+  fallbacks?: number;
+}
 
 /**
  * Production-grade circuit breaker using opossum library
@@ -223,8 +280,12 @@ export const circuitBreakerRegistry = new CircuitBreakerRegistry();
  * - Volume threshold (min requests before opening)
  * - Error percentage threshold
  */
-export class OpossumCircuitBreaker {
-  constructor(name, action, options = {}) {
+export class OpossumCircuitBreaker<T extends unknown[], R> {
+  public name: string;
+  private log: Logger;
+  private breaker: CircuitBreakerLib<T, R>;
+
+  constructor(name: string, action: (...args: T) => Promise<R>, options: OpossumOptions = {}) {
     this.name = name;
     this.log = logger.child({ circuitBreaker: name });
 
@@ -240,17 +301,17 @@ export class OpossumCircuitBreaker {
     // Set up event handlers
     this.breaker.on('open', () => {
       this.log.warn('Circuit opened');
-      metricsService.recordCircuitBreakerState(name, 'open', this.getStats());
+      metricsService.recordCircuitBreakerState(name, 'open', this.getStats() as unknown as Record<string, unknown>);
     });
 
     this.breaker.on('halfOpen', () => {
       this.log.info('Circuit half-open');
-      metricsService.recordCircuitBreakerState(name, 'half-open', this.getStats());
+      metricsService.recordCircuitBreakerState(name, 'half-open', this.getStats() as unknown as Record<string, unknown>);
     });
 
     this.breaker.on('close', () => {
       this.log.info('Circuit closed');
-      metricsService.recordCircuitBreakerState(name, 'closed', this.getStats());
+      metricsService.recordCircuitBreakerState(name, 'closed', this.getStats() as unknown as Record<string, unknown>);
     });
 
     this.breaker.on('fallback', () => {
@@ -272,14 +333,14 @@ export class OpossumCircuitBreaker {
   /**
    * Execute the protected action
    */
-  async fire(...args) {
+  async fire(...args: T): Promise<R> {
     return this.breaker.fire(...args);
   }
 
   /**
    * Set fallback function
    */
-  fallback(fn) {
+  fallback(fn: (...args: T) => R | Promise<R>): this {
     this.breaker.fallback(fn);
     return this;
   }
@@ -287,7 +348,7 @@ export class OpossumCircuitBreaker {
   /**
    * Get current state
    */
-  get state() {
+  get state(): string {
     if (this.breaker.opened) return 'open';
     if (this.breaker.halfOpen) return 'half-open';
     return 'closed';
@@ -296,8 +357,15 @@ export class OpossumCircuitBreaker {
   /**
    * Get statistics
    */
-  getStats() {
-    const stats = this.breaker.stats;
+  getStats(): {
+    totalCalls: number;
+    successfulCalls: number;
+    failedCalls: number;
+    rejectedCalls: number;
+    timeouts: number;
+    fallbacks: number;
+  } {
+    const stats = this.breaker.stats as OpossumStats;
     return {
       totalCalls: stats.fires || 0,
       successfulCalls: stats.successes || 0,
@@ -311,7 +379,19 @@ export class OpossumCircuitBreaker {
   /**
    * Get full state for monitoring
    */
-  getState() {
+  getState(): {
+    name: string;
+    state: string;
+    stats: {
+      totalCalls: number;
+      successfulCalls: number;
+      failedCalls: number;
+      rejectedCalls: number;
+      timeouts: number;
+      fallbacks: number;
+    };
+    status: unknown;
+  } {
     return {
       name: this.name,
       state: this.state,
@@ -323,14 +403,14 @@ export class OpossumCircuitBreaker {
   /**
    * Force open
    */
-  open() {
+  open(): void {
     this.breaker.open();
   }
 
   /**
    * Force close
    */
-  close() {
+  close(): void {
     this.breaker.close();
   }
 }

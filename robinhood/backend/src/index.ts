@@ -38,7 +38,7 @@ import {
   httpRequestsTotal,
   httpRequestDurationMs,
   dbPoolSizeGauge,
-  websocketConnectionsGauge,
+  websocketConnectionsGauge as _websocketConnectionsGauge,
   quoteUpdatesTotal,
 } from './shared/metrics.js';
 

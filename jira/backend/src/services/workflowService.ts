@@ -291,7 +291,7 @@ async function runPostFunction(
   postFunc: TransitionPostFunction,
   issue: Issue,
   user: User,
-  transition: Transition
+  _transition: Transition
 ): Promise<void> {
   switch (postFunc.type) {
     case 'assign_to_current_user':

@@ -3,21 +3,21 @@ import { v4 as uuidv4 } from 'uuid';
 /**
  * Generate a UUID v4
  */
-export function generateId() {
+export function generateId(): string {
   return uuidv4();
 }
 
 /**
  * Sleep for a given number of milliseconds
  */
-export function sleep(ms) {
+export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
  * Format bytes to human readable string
  */
-export function formatBytes(bytes) {
+export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
@@ -28,17 +28,17 @@ export function formatBytes(bytes) {
 /**
  * Calculate percentile from an array of values
  */
-export function percentile(arr, p) {
+export function percentile(arr: number[], p: number): number {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
   const index = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, index)];
+  return sorted[Math.max(0, index)] ?? 0;
 }
 
 /**
  * Normalize API path for metrics (replace dynamic IDs with placeholders)
  */
-export function normalizePath(path) {
+export function normalizePath(path: string): string {
   return path
     .replace(/\/[0-9a-f-]{36}/g, '/:id')
     .replace(/\/\d+/g, '/:id');
@@ -47,7 +47,7 @@ export function normalizePath(path) {
 /**
  * Hash a string using SHA-256 (simple implementation for API keys)
  */
-export async function hashString(str) {
+export async function hashString(str: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(str);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -59,7 +59,11 @@ export async function hashString(str) {
  * Create an operational error
  */
 export class AppError extends Error {
-  constructor(message, statusCode = 500, isOperational = true) {
+  statusCode: number;
+  isOperational: boolean;
+  retryAfter?: number;
+
+  constructor(message: string, statusCode = 500, isOperational = true) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
@@ -104,11 +108,13 @@ export class ForbiddenError extends AppError {
   }
 }
 
+// Alias with underscore prefix for backwards compatibility
+export { ForbiddenError as _ForbiddenError };
+
 /**
  * Create a 429 rate limit error
  */
 export class RateLimitError extends AppError {
-  retryAfter: number;
   constructor(message = 'Rate limit exceeded', retryAfter = 60) {
     super(message, 429);
     this.retryAfter = retryAfter;

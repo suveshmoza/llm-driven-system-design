@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { query, queryOne, withTransaction } from '../db/connection.js';
 import type {
   Refund,
-  RefundStatus,
+  RefundStatus as _RefundStatus,
   Transaction,
   RefundRequest,
   Chargeback,

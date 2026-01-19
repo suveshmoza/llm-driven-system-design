@@ -2,6 +2,32 @@ import { Response } from 'express';
 import { query } from '../../db/index.js';
 
 /**
+ * Route parameters for repository paths.
+ * Used to type Express request params for :owner/:repo patterns.
+ */
+export interface RepoParams {
+  owner: string;
+  repo: string;
+}
+
+/**
+ * Route parameters for content paths.
+ * Extends RepoParams with ref and optional path for tree/blob routes.
+ */
+export interface ContentParams extends RepoParams {
+  ref: string;
+  path?: string;
+}
+
+/**
+ * Route parameters for commit paths.
+ * Extends RepoParams with sha for commit detail routes.
+ */
+export interface CommitParams extends RepoParams {
+  sha: string;
+}
+
+/**
  * Repository entity representing a Git repository.
  * Contains all metadata about a repository including ownership, visibility, and statistics.
  */

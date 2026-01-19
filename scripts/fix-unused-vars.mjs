@@ -2,7 +2,7 @@
 
 /**
  * Enhanced script to fix unused variable errors by prefixing them with _
- * Handles imports with 'as' syntax, destructuring, catch blocks, type imports, and more
+ * Now handles multi-line imports and more patterns
  */
 
 import { execSync } from 'child_process';
@@ -65,11 +65,9 @@ for (const entry of entries) {
     }
   }
 
-  // Apply fixes
+  // Apply fixes - using direct replacement at reported position
   for (const fix of fixes) {
     if (!fs.existsSync(fix.file)) continue;
-
-    // Skip if already prefixed with _
     if (fix.varName.startsWith('_')) continue;
 
     let content = fs.readFileSync(fix.file, 'utf8');
@@ -79,115 +77,62 @@ for (const entry of entries) {
     if (lineIndex < 0 || lineIndex >= fileLines.length) continue;
 
     const originalLine = fileLines[lineIndex];
+    const colIndex = fix.col - 1;
+
+    // Check if the variable appears at the reported column
+    if (colIndex < 0 || colIndex >= originalLine.length) continue;
+
+    const charAtCol = originalLine.substring(colIndex);
+    if (!charAtCol.startsWith(fix.varName)) continue;
+
+    // Determine the context to apply the right fix
+    const before = originalLine.substring(0, colIndex);
+    const after = originalLine.substring(colIndex + fix.varName.length);
+
     let newLine = originalLine;
     let fixed = false;
 
-    // Pattern 1: Catch blocks - catch (error)
-    if (!fixed && originalLine.includes('catch')) {
-      const catchPattern = new RegExp(`(catch\\s*\\()\\s*${fix.varName}\\s*(\\))`);
-      if (catchPattern.test(originalLine)) {
-        newLine = originalLine.replace(catchPattern, `$1_${fix.varName}$2`);
-        fixed = newLine !== originalLine;
-      }
+    // Check if this is inside an import statement (multi-line)
+    // Look back to find import keyword
+    let inImport = before.includes('import') || (lineIndex > 0 && fileLines.slice(Math.max(0, lineIndex - 5), lineIndex).some(l => l.includes('import') && !l.includes('from')));
+
+    // For imports, use "as _varName" syntax
+    if (inImport && !after.includes('as ')) {
+      newLine = before + fix.varName + ' as _' + fix.varName + after;
+      fixed = newLine !== originalLine;
     }
 
-    // Pattern 2: Type imports - import type { Foo } or import { type Foo }
-    if (!fixed && originalLine.includes('import')) {
-      // Handle: import type { Foo, Bar }
-      const typeImportPattern = new RegExp(`(import\\s+type\\s*\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\})`);
-      if (typeImportPattern.test(originalLine)) {
-        newLine = originalLine.replace(typeImportPattern, `$1${fix.varName} as _${fix.varName}$3`);
-        fixed = newLine !== originalLine;
-      }
-
-      // Handle: import { type Foo, bar }
-      if (!fixed) {
-        const inlineTypePattern = new RegExp(`(\\{[^}]*?)(type\\s+${fix.varName})\\b([^}]*?\\})`);
-        if (inlineTypePattern.test(originalLine)) {
-          newLine = originalLine.replace(inlineTypePattern, `$1type ${fix.varName} as _${fix.varName}$3`);
-          fixed = newLine !== originalLine;
-        }
-      }
+    // For destructuring patterns, use "varName: _varName" syntax
+    if (!fixed && before.includes('{') && after.match(/^\s*[,}]/)) {
+      newLine = before + fix.varName + ': _' + fix.varName + after;
+      fixed = newLine !== originalLine;
     }
 
-    // Pattern 3: Import with 'as' - import { foo as bar }
-    if (!fixed && originalLine.includes('import') && originalLine.includes('as')) {
-      const asPattern = new RegExp(`\\b(${fix.varName})\\s+as\\s+(${fix.varName})\\b`);
-      if (asPattern.test(originalLine)) {
-        newLine = originalLine.replace(asPattern, `$1 as _${fix.varName}`);
-        fixed = newLine !== originalLine;
-      } else {
-        const importPattern = new RegExp(`(import\\s*\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\}\\s*from)`);
-        if (importPattern.test(originalLine)) {
-          const hasAs = new RegExp(`${fix.varName}\\s+as\\s+`).test(originalLine);
-          if (!hasAs) {
-            newLine = originalLine.replace(importPattern, `$1${fix.varName} as _${fix.varName}$3`);
-            fixed = newLine !== originalLine;
-          }
-        }
-      }
+    // For function parameters, just prefix with _
+    if (!fixed && (before.match(/[(,]\s*$/) || before.match(/^\s*$/))) {
+      newLine = before + '_' + fix.varName + after;
+      fixed = newLine !== originalLine;
     }
 
-    // Pattern 4: Simple import - import { foo } or import { foo, bar }
-    if (!fixed && originalLine.includes('import') && !originalLine.includes('as')) {
-      const importPattern = new RegExp(`(import\\s*\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\}\\s*from)`);
-      if (importPattern.test(originalLine)) {
-        newLine = originalLine.replace(importPattern, `$1${fix.varName} as _${fix.varName}$3`);
-        fixed = newLine !== originalLine;
-      }
+    // For const/let/var declarations
+    if (!fixed && before.match(/(const|let|var)\s+$/)) {
+      newLine = before + '_' + fix.varName + after;
+      fixed = newLine !== originalLine;
     }
 
-    // Pattern 5: const/let/var declarations
+    // Generic fallback: if in object context, use rename; otherwise prefix
     if (!fixed) {
-      const declPattern = new RegExp(`(const|let|var)\\s+${fix.varName}\\b`);
-      if (declPattern.test(originalLine)) {
-        newLine = originalLine.replace(declPattern, `$1 _${fix.varName}`);
+      // For array destructuring elements
+      if (before.match(/\[\s*$/) || before.match(/,\s*$/)) {
+        newLine = before + '_' + fix.varName + after;
         fixed = newLine !== originalLine;
       }
     }
 
-    // Pattern 6: Destructuring - const { foo, bar } =
-    if (!fixed) {
-      const destructPattern = new RegExp(`(\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\}\\s*=)`);
-      if (destructPattern.test(originalLine)) {
-        newLine = originalLine.replace(destructPattern, `$1${fix.varName}: _${fix.varName}$3`);
-        fixed = newLine !== originalLine;
-      }
-    }
-
-    // Pattern 7: Function parameters - (foo, bar) or function(foo)
-    if (!fixed) {
-      const paramPattern = new RegExp(`([\\(,]\\s*)${fix.varName}(\\s*[\\),:])`);
-      if (paramPattern.test(originalLine)) {
-        newLine = originalLine.replace(paramPattern, `$1_${fix.varName}$2`);
-        fixed = newLine !== originalLine;
-      }
-    }
-
-    // Pattern 8: Arrow function single param - foo =>
-    if (!fixed) {
-      const arrowPattern = new RegExp(`^(\\s*)${fix.varName}(\\s*=>)`);
-      if (arrowPattern.test(originalLine)) {
-        newLine = originalLine.replace(arrowPattern, `$1_${fix.varName}$2`);
-        fixed = newLine !== originalLine;
-      }
-    }
-
-    // Pattern 9: Standalone type import on same line - handles column-based detection
-    if (!fixed && fix.col > 1) {
-      // Check if the variable name appears near the column position
-      const colIndex = fix.col - 1;
-      if (originalLine.substring(colIndex).startsWith(fix.varName)) {
-        // Try various patterns based on context
-        const beforeVar = originalLine.substring(0, colIndex);
-        const afterVar = originalLine.substring(colIndex + fix.varName.length);
-
-        // If it's in an import context
-        if (beforeVar.includes('import') || beforeVar.includes('{')) {
-          newLine = beforeVar + fix.varName + ' as _' + fix.varName + afterVar;
-          fixed = newLine !== originalLine;
-        }
-      }
+    // Final fallback: just try adding "as _" for imports
+    if (!fixed && inImport) {
+      newLine = before + fix.varName + ' as _' + fix.varName + after;
+      fixed = newLine !== originalLine;
     }
 
     if (fixed && newLine !== originalLine) {

@@ -14,7 +14,7 @@ import { cacheSet } from '../utils/redis.js';
 import config from '../config/index.js';
 import logger, { logEvent } from '../shared/logger.js';
 import {
-  transcodeQueueDepth,
+  transcodeQueueDepth as _transcodeQueueDepth,
   transcodeJobDuration,
   transcodedVideosTotal,
   videoUploadsTotal,

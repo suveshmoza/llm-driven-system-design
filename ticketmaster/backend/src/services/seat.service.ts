@@ -16,12 +16,12 @@ import logger, { businessLogger, createRequestLogger } from '../shared/logger.js
 import {
   acquireSeatLocks,
   releaseSeatLocks,
-  Lock,
-  acquireSeatLockWithFallback,
+  Lock as _Lock,
+  acquireSeatLockWithFallback as _acquireSeatLockWithFallback,
 } from '../shared/distributed-lock.js';
 import {
   seatsReservedTotal,
-  seatLockAttempts,
+  seatLockAttempts as _seatLockAttempts,
   availableSeats,
   redisOperationDuration,
 } from '../shared/metrics.js';

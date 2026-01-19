@@ -31,7 +31,7 @@ function hashPassword(password: string): string {
 function generateVisibilityFingerprints(
   authorId: string,
   visibility: Visibility,
-  friendIds: string[]
+  _friendIds: string[]
 ): string[] {
   const fingerprints: string[] = [];
 

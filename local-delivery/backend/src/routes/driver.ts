@@ -9,7 +9,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authenticate, requireDriver } from '../middleware/auth.js';
 import {
-  getDriverById,
+  getDriverById as _getDriverById,
   getDriverWithUser,
   updateDriverStatus,
   updateDriverLocation,

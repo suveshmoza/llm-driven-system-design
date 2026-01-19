@@ -52,7 +52,7 @@ import {
   activeConnections,
   connectionEvents,
   dependencyHealth,
-  pendingNotifications,
+  _pendingNotifications,
 } from "./shared/metrics.js";
 
 const app = express();

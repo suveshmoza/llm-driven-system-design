@@ -103,10 +103,10 @@ function generateAuthCode(): string {
  * Internal authorization logic (called within circuit breaker)
  */
 async function authorizeInternal({
-  amount,
-  currency,
+  _amount,
+  _currency,
   cardToken,
-  merchantId,
+  _merchantId,
 }: AuthorizeParams): Promise<AuthorizeResult> {
   // Simulate network latency (50-150ms)
   await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));

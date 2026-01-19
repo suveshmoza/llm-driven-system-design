@@ -1,7 +1,47 @@
 import esClient from '../db/elasticsearch.js';
 import * as gitService from './git.js';
 
-const LANGUAGE_EXTENSIONS = {
+interface SearchTotalHits {
+  value: number;
+  relation: string;
+}
+
+interface CodeDocument {
+  repo_id: string;
+  repo_name: string;
+  owner: string;
+  path: string;
+  filename: string;
+  extension: string;
+  language: string;
+  content: string;
+  symbols: Symbol[];
+  indexed_at: string;
+}
+
+interface Symbol {
+  name: string;
+  kind: string;
+  line: number;
+}
+
+interface SearchFilters {
+  language?: string;
+  repo?: string;
+  path?: string;
+  owner?: string;
+  page?: number;
+  limit?: number;
+  kind?: string;
+}
+
+interface TreeItem {
+  type: string;
+  name: string;
+  path: string;
+}
+
+const LANGUAGE_EXTENSIONS: Record<string, string> = {
   js: 'javascript',
   jsx: 'javascript',
   ts: 'typescript',
@@ -30,20 +70,20 @@ const LANGUAGE_EXTENSIONS = {
 /**
  * Detect language from file extension
  */
-function detectLanguage(filePath) {
-  const ext = filePath.split('.').pop().toLowerCase();
+function detectLanguage(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
   return LANGUAGE_EXTENSIONS[ext] || 'unknown';
 }
 
 /**
  * Extract simple symbols from code (basic implementation)
  */
-function extractSymbols(content, language) {
-  const symbols = [];
+function extractSymbols(content: string, language: string): Symbol[] {
+  const symbols: Symbol[] = [];
   const lines = content.split('\n');
 
   // Function patterns for common languages
-  const patterns = {
+  const patterns: Record<string, RegExp> = {
     javascript: /(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function|\(|\w+\s*=>))/g,
     typescript: /(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function|\(|\w+\s*=>)|class\s+(\w+))/g,
     python: /(?:def\s+(\w+)|class\s+(\w+))/g,
@@ -76,10 +116,10 @@ function extractSymbols(content, language) {
 /**
  * Index a single file
  */
-export async function indexFile(repoId, owner, repoName, filePath, content) {
+export async function indexFile(repoId: number, owner: string, repoName: string, filePath: string, content: string): Promise<void> {
   const language = detectLanguage(filePath);
-  const filename = filePath.split('/').pop();
-  const extension = filename.includes('.') ? filename.split('.').pop() : '';
+  const filename = filePath.split('/').pop() || '';
+  const extension = filename.includes('.') ? filename.split('.').pop() || '' : '';
 
   const symbols = extractSymbols(content, language);
 
@@ -104,16 +144,16 @@ export async function indexFile(repoId, owner, repoName, filePath, content) {
 /**
  * Index all files in a repository
  */
-export async function indexRepository(repoId, owner, repoName) {
-  const indexFileRecursive = async (treePath = '') => {
-    const tree = await gitService.getTree(owner, repoName, 'HEAD', treePath);
+export async function indexRepository(repoId: number, owner: string, repoName: string): Promise<void> {
+  const indexFileRecursive = async (treePath: string = ''): Promise<void> => {
+    const tree = await gitService.getTree(owner, repoName, 'HEAD', treePath) as TreeItem[];
 
     for (const item of tree) {
       if (item.type === 'dir') {
         await indexFileRecursive(item.path);
       } else if (item.type === 'file') {
         // Only index text files (skip binary)
-        const ext = item.name.split('.').pop().toLowerCase();
+        const ext = item.name.split('.').pop()?.toLowerCase() || '';
         if (LANGUAGE_EXTENSIONS[ext] || ['txt', 'md', 'json', 'xml', 'yaml', 'yml'].includes(ext)) {
           try {
             const content = await gitService.getFileContent(owner, repoName, 'HEAD', item.path);
@@ -135,7 +175,7 @@ export async function indexRepository(repoId, owner, repoName) {
 /**
  * Remove all indexed files for a repository
  */
-export async function removeRepositoryIndex(repoId) {
+export async function removeRepositoryIndex(repoId: number): Promise<void> {
   await esClient.deleteByQuery({
     index: 'code',
     body: {
@@ -149,18 +189,18 @@ export async function removeRepositoryIndex(repoId) {
 /**
  * Search code across repositories
  */
-export async function searchCode(queryText, filters = {}) {
+export async function searchCode(queryText: string, filters: SearchFilters = {}) {
   const { language, repo, path: pathFilter, owner, page = 1, limit = 20 } = filters;
 
-  const must = [{ match: { content: queryText } }];
+  const must: object[] = [{ match: { content: queryText } }];
 
-  const filter = [];
+  const filter: object[] = [];
   if (language) filter.push({ term: { language } });
   if (repo) filter.push({ term: { repo_name: repo } });
   if (owner) filter.push({ term: { owner } });
   if (pathFilter) filter.push({ wildcard: { path: `*${pathFilter}*` } });
 
-  const response = await esClient.search({
+  const response = await esClient.search<CodeDocument>({
     index: 'code',
     body: {
       query: {
@@ -182,14 +222,15 @@ export async function searchCode(queryText, filters = {}) {
     },
   });
 
+  const total = response.hits.total as SearchTotalHits;
   return {
-    total: response.hits.total.value,
+    total: total?.value || 0,
     results: response.hits.hits.map((hit) => ({
-      repo_id: hit._source.repo_id,
-      repo_name: hit._source.repo_name,
-      owner: hit._source.owner,
-      path: hit._source.path,
-      language: hit._source.language,
+      repo_id: hit._source?.repo_id,
+      repo_name: hit._source?.repo_name,
+      owner: hit._source?.owner,
+      path: hit._source?.path,
+      language: hit._source?.language,
       highlights: hit.highlight?.content || [],
       score: hit._score,
     })),
@@ -199,10 +240,10 @@ export async function searchCode(queryText, filters = {}) {
 /**
  * Search for symbols
  */
-export async function searchSymbols(symbolName, filters = {}) {
+export async function searchSymbols(symbolName: string, filters: SearchFilters = {}) {
   const { language, repo, owner, kind, page = 1, limit = 20 } = filters;
 
-  const must = [
+  const must: object[] = [
     {
       nested: {
         path: 'symbols',
@@ -217,12 +258,12 @@ export async function searchSymbols(symbolName, filters = {}) {
     },
   ];
 
-  const filter = [];
+  const filter: object[] = [];
   if (language) filter.push({ term: { language } });
   if (repo) filter.push({ term: { repo_name: repo } });
   if (owner) filter.push({ term: { owner } });
 
-  const response = await esClient.search({
+  const response = await esClient.search<CodeDocument>({
     index: 'code',
     body: {
       query: {
@@ -233,15 +274,16 @@ export async function searchSymbols(symbolName, filters = {}) {
     },
   });
 
+  const total = response.hits.total as SearchTotalHits;
   return {
-    total: response.hits.total.value,
+    total: total?.value || 0,
     results: response.hits.hits.map((hit) => ({
-      repo_id: hit._source.repo_id,
-      repo_name: hit._source.repo_name,
-      owner: hit._source.owner,
-      path: hit._source.path,
-      language: hit._source.language,
-      symbols: hit.inner_hits.symbols.hits.hits.map((s) => s._source),
+      repo_id: hit._source?.repo_id,
+      repo_name: hit._source?.repo_name,
+      owner: hit._source?.owner,
+      path: hit._source?.path,
+      language: hit._source?.language,
+      symbols: hit.inner_hits?.symbols?.hits?.hits?.map((s) => s._source) || [],
     })),
   };
 }

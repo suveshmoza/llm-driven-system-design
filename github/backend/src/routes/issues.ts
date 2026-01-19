@@ -3,7 +3,7 @@ import { query } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
 // Import shared modules
-import logger from '../shared/logger.js';
+import _logger from '../shared/logger.js';
 import { auditLog, AUDITED_ACTIONS } from '../shared/audit.js';
 import { getIdempotencyKey, withIdempotencyTransaction } from '../shared/idempotency.js';
 import { issuesCreated, issuesClosed } from '../shared/metrics.js';
@@ -69,22 +69,6 @@ interface CreateLabelBody {
   name?: string;
   color?: string;
   description?: string;
-}
-
-/**
- * Get next issue number for a repo
- */
-async function getNextNumber(repoId: number): Promise<number> {
-  const prResult = await query(
-    'SELECT COALESCE(MAX(number), 0) as max_num FROM pull_requests WHERE repo_id = $1',
-    [repoId]
-  );
-  const issueResult = await query(
-    'SELECT COALESCE(MAX(number), 0) as max_num FROM issues WHERE repo_id = $1',
-    [repoId]
-  );
-
-  return Math.max(parseInt(prResult.rows[0].max_num as string), parseInt(issueResult.rows[0].max_num as string)) + 1;
 }
 
 /**
@@ -192,7 +176,7 @@ router.get('/:owner/:repo/issues/:number', async (req: Request, res: Response): 
      JOIN users author ON i.author_id = author.id
      LEFT JOIN users assignee ON i.assignee_id = assignee.id
      WHERE owner_user.username = $1 AND r.name = $2 AND i.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (result.rows.length === 0) {
@@ -351,7 +335,7 @@ router.patch('/:owner/:repo/issues/:number', requireAuth, async (req: Request, r
      JOIN repositories r ON i.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND i.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (issueResult.rows.length === 0) {
@@ -445,7 +429,7 @@ router.post('/:owner/:repo/issues/:number/comments', requireAuth, async (req: Re
      JOIN repositories r ON i.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND i.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (issueResult.rows.length === 0) {

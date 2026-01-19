@@ -1,12 +1,23 @@
+import type { Request, Response, NextFunction } from 'express';
+import type { Redis } from 'ioredis';
 import { getRedisClient } from './cache.js';
 import { generateId } from '../utils/index.js';
-import config from '../config/index.js';
+import config, { type Config } from '../config/index.js';
+import type { AuthenticatedRequest, RateLimitResult } from '../types.js';
+
+interface RateLimitTier {
+  requests: number;
+  windowMs: number;
+}
 
 /**
  * Distributed Rate Limiter using Redis sliding window
  */
 export class RateLimiter {
-  constructor(redis = null) {
+  private redis: Redis;
+  private config: Config['rateLimit'];
+
+  constructor(redis: Redis | null = null) {
     this.redis = redis || getRedisClient();
     this.config = config.rateLimit;
   }
@@ -14,27 +25,29 @@ export class RateLimiter {
   /**
    * Get identifier for rate limiting (API key or IP)
    */
-  getIdentifier(req) {
+  getIdentifier(req: AuthenticatedRequest): string {
     if (req.user?.apiKey) {
       return `key:${req.user.apiKey}`;
     }
     // Use X-Forwarded-For if behind proxy, otherwise use IP
-    const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || req.connection?.remoteAddress;
+    const forwardedFor = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+    const ip = forwarded?.split(',')[0] || req.ip || (req as unknown as { connection?: { remoteAddress?: string } }).connection?.remoteAddress;
     return `ip:${ip}`;
   }
 
   /**
    * Get rate limit configuration for request
    */
-  getLimit(req) {
+  getLimit(req: AuthenticatedRequest): RateLimitTier {
     const tier = req.user?.tier || 'anonymous';
-    return this.config.limits[tier] || this.config.limits.anonymous;
+    return this.config.limits[tier] || this.config.limits['anonymous'];
   }
 
   /**
    * Check if request is within rate limit
    */
-  async checkLimit(identifier, limit) {
+  async checkLimit(identifier: string, limit: RateLimitTier): Promise<RateLimitResult> {
     const key = `ratelimit:${identifier}`;
     const now = Date.now();
     const windowStart = now - limit.windowMs;
@@ -48,13 +61,14 @@ export class RateLimiter {
       pipeline.expire(key, Math.ceil(limit.windowMs / 1000)); // Set expiry
 
       const results = await pipeline.exec();
-      const currentCount = results[1][1];
+      const currentCount = (results?.[1]?.[1] as number) || 0;
 
       if (currentCount >= limit.requests) {
         // Get oldest entry to calculate retry-after
         const oldest = await this.redis.zrange(key, 0, 0, 'WITHSCORES');
-        const retryAfter = oldest.length >= 2
-          ? Math.ceil((parseInt(oldest[1]) + limit.windowMs - now) / 1000)
+        const oldestScore = oldest[1] ?? '';
+        const retryAfter = oldestScore
+          ? Math.ceil((parseInt(oldestScore, 10) + limit.windowMs - now) / 1000)
           : Math.ceil(limit.windowMs / 1000);
 
         return {
@@ -73,7 +87,7 @@ export class RateLimiter {
         limit: limit.requests,
       };
     } catch (error) {
-      console.error('Rate limiter error:', error.message);
+      console.error('Rate limiter error:', (error as Error).message);
       // Fail open on Redis errors to prevent service disruption
       return {
         allowed: true,
@@ -88,10 +102,11 @@ export class RateLimiter {
   /**
    * Express middleware for rate limiting
    */
-  middleware() {
-    return async (req, res, next) => {
-      const identifier = this.getIdentifier(req);
-      const limit = this.getLimit(req);
+  middleware(): (req: Request, res: Response, next: NextFunction) => Promise<void | Response> {
+    return async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
+      const authReq = req as AuthenticatedRequest;
+      const identifier = this.getIdentifier(authReq);
+      const limit = this.getLimit(authReq);
 
       const result = await this.checkLimit(identifier, limit);
 
@@ -101,7 +116,7 @@ export class RateLimiter {
       res.setHeader('X-RateLimit-Reset', result.resetAt);
 
       if (!result.allowed) {
-        res.setHeader('Retry-After', result.retryAfter);
+        res.setHeader('Retry-After', result.retryAfter || 60);
         return res.status(429).json({
           error: 'Rate limit exceeded',
           message: `Too many requests. Please try again in ${result.retryAfter} seconds.`,
@@ -110,7 +125,7 @@ export class RateLimiter {
       }
 
       // Attach rate limit info to request for logging
-      req.rateLimit = result;
+      authReq.rateLimit = result;
       next();
     };
   }
@@ -118,10 +133,16 @@ export class RateLimiter {
   /**
    * Get current rate limit status for an identifier
    */
-  async getStatus(identifier) {
+  async getStatus(identifier: string): Promise<{
+    identifier: string;
+    currentCount: number;
+    limit: number;
+    remaining: number;
+    windowMs: number;
+  } | null> {
     const key = `ratelimit:${identifier}`;
     const now = Date.now();
-    const limit = this.config.limits.anonymous;
+    const limit = this.config.limits['anonymous'];
     const windowStart = now - limit.windowMs;
 
     try {
@@ -136,7 +157,7 @@ export class RateLimiter {
         windowMs: limit.windowMs,
       };
     } catch (error) {
-      console.error('Rate limiter status error:', error.message);
+      console.error('Rate limiter status error:', (error as Error).message);
       return null;
     }
   }

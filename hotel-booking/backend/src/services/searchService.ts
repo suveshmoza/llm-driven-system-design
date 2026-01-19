@@ -241,7 +241,7 @@ class SearchService {
     hotelId: string,
     checkIn: string | null,
     checkOut: string | null,
-    guests: number = 2
+    _guests: number = 2
   ): Promise<HotelFormatted | null> {
     const hotelResult = await query<HotelRow>(
       `SELECT h.*,

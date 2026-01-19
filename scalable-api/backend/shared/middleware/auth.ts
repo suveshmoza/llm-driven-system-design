@@ -1,39 +1,49 @@
+import type { Request, Response, NextFunction } from 'express';
 import { query } from '../services/database.js';
 import { CacheService } from '../services/cache.js';
 import { UnauthorizedError, _ForbiddenError, hashString } from '../utils/index.js';
 import config from '../config/index.js';
+import type { ApiUser, AuthenticatedRequest } from '../types.js';
 
 const cache = new CacheService();
+
+interface OperationalError extends Error {
+  isOperational?: boolean;
+  statusCode?: number;
+}
 
 /**
  * Authentication middleware - verifies API key or session token
  */
-export async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const apiKey = req.headers['x-api-key'];
+export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const authReq = req as AuthenticatedRequest;
+  const authHeader = req.headers['authorization'];
+  const apiKey = req.headers['x-api-key'] as string | undefined;
 
   try {
     if (apiKey) {
       // API key authentication
       const user = await verifyApiKey(apiKey);
-      req.user = user;
-      req.authMethod = 'api-key';
-    } else if (authHeader && authHeader.startsWith('Bearer ')) {
+      authReq.user = user;
+      authReq.authMethod = 'api-key';
+    } else if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
       // Bearer token authentication
       const token = authHeader.substring(7);
       const user = await verifyBearerToken(token);
-      req.user = user;
-      req.authMethod = 'bearer';
+      authReq.user = user;
+      authReq.authMethod = 'bearer';
     } else {
       // Allow anonymous access with limited permissions
-      req.user = null;
-      req.authMethod = 'anonymous';
+      authReq.user = null;
+      authReq.authMethod = 'anonymous';
     }
 
     next();
   } catch (error) {
-    if (error.isOperational) {
-      return res.status(error.statusCode).json({ error: error.message });
+    const err = error as OperationalError;
+    if (err.isOperational) {
+      res.status(err.statusCode || 500).json({ error: err.message });
+      return;
     }
     console.error('Auth error:', error);
     res.status(500).json({ error: 'Authentication failed' });
@@ -43,12 +53,14 @@ export async function authMiddleware(req, res, next) {
 /**
  * Require authentication middleware
  */
-export function requireAuth(req, res, next) {
-  if (!req.user) {
-    return res.status(401).json({
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.user) {
+    res.status(401).json({
       error: 'Authentication required',
       message: 'Please provide a valid API key or bearer token',
     });
+    return;
   }
   next();
 }
@@ -56,12 +68,15 @@ export function requireAuth(req, res, next) {
 /**
  * Require admin role middleware
  */
-export function requireAdmin(req, res, next) {
-  if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const authReq = req as AuthenticatedRequest;
+  if (!authReq.user) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+  if (authReq.user.role !== 'admin') {
+    res.status(403).json({ error: 'Admin access required' });
+    return;
   }
   next();
 }
@@ -69,18 +84,25 @@ export function requireAdmin(req, res, next) {
 /**
  * Verify API key and return user info
  */
-async function verifyApiKey(apiKey) {
+async function verifyApiKey(apiKey: string): Promise<ApiUser> {
   const keyHash = await hashString(apiKey);
   const cacheKey = `auth:apikey:${keyHash}`;
 
   // Check cache first
-  const cached = await cache.get(cacheKey);
+  const cached = await cache.get<ApiUser>(cacheKey);
   if (cached) {
     return cached;
   }
 
   // Query database
-  const result = await query(
+  const result = await query<{
+    id: string;
+    user_id: string;
+    tier: ApiUser['tier'];
+    scopes: string[];
+    email: string;
+    role: ApiUser['role'];
+  }>(
     `SELECT ak.id, ak.user_id, ak.tier, ak.scopes, u.email, u.role
      FROM api_keys ak
      JOIN users u ON u.id = ak.user_id
@@ -94,13 +116,14 @@ async function verifyApiKey(apiKey) {
     throw new UnauthorizedError('Invalid API key');
   }
 
-  const user = {
-    id: result.rows[0].user_id,
-    email: result.rows[0].email,
-    role: result.rows[0].role,
-    tier: result.rows[0].tier,
-    scopes: result.rows[0].scopes || [],
-    apiKeyId: result.rows[0].id,
+  const row = result.rows[0]!;
+  const user: ApiUser = {
+    id: row['user_id'],
+    email: row['email'],
+    role: row['role'],
+    tier: row['tier'],
+    scopes: row['scopes'] || [],
+    apiKeyId: row['id'],
   };
 
   // Update last used timestamp (fire and forget)
@@ -115,11 +138,11 @@ async function verifyApiKey(apiKey) {
 /**
  * Verify bearer token (simple session-based auth)
  */
-async function verifyBearerToken(token) {
+async function verifyBearerToken(token: string): Promise<ApiUser> {
   const cacheKey = `auth:session:${token}`;
 
   // Check cache (session store)
-  const cached = await cache.get(cacheKey);
+  const cached = await cache.get<ApiUser>(cacheKey);
   if (cached) {
     return cached;
   }
@@ -141,17 +164,18 @@ async function verifyBearerToken(token) {
 /**
  * Login endpoint handler
  */
-export async function login(req, res) {
+export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
+    res.status(400).json({ error: 'Email and password required' });
+    return;
   }
 
   // Check admin credentials (for demo)
   if (email === config.admin.email && password === config.admin.password) {
     const token = 'admin-token-dev';
-    const user = {
+    const user: ApiUser = {
       id: 'admin-1',
       email: config.admin.email,
       role: 'admin',
@@ -161,7 +185,7 @@ export async function login(req, res) {
 
     await cache.set(`auth:session:${token}`, user, 86400); // 24 hours
 
-    return res.json({
+    res.json({
       token,
       user: {
         id: user.id,
@@ -169,11 +193,18 @@ export async function login(req, res) {
         role: user.role,
       },
     });
+    return;
   }
 
   // Query database for user
   try {
-    const result = await query(
+    const result = await query<{
+      id: string;
+      email: string;
+      password_hash: string;
+      role: ApiUser['role'];
+      tier: ApiUser['tier'];
+    }>(
       `SELECT id, email, password_hash, role, tier
        FROM users
        WHERE email = $1`,
@@ -181,24 +212,26 @@ export async function login(req, res) {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
 
-    const user = result.rows[0];
+    const userRow = result.rows[0]!;
 
     // In production, use bcrypt.compare
     const passwordHash = await hashString(password);
-    if (passwordHash !== user.password_hash) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    if (passwordHash !== userRow['password_hash']) {
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
 
     // Create session token
-    const token = await hashString(`${user.id}:${Date.now()}:${Math.random()}`);
-    const sessionUser = {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tier: user.tier,
+    const token = await hashString(`${userRow['id']}:${Date.now()}:${Math.random()}`);
+    const sessionUser: ApiUser = {
+      id: userRow['id'],
+      email: userRow['email'],
+      role: userRow['role'],
+      tier: userRow['tier'],
     };
 
     await cache.set(`auth:session:${token}`, sessionUser, 86400);
@@ -216,9 +249,9 @@ export async function login(req, res) {
 /**
  * Logout endpoint handler
  */
-export async function logout(req, res) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
+export async function logout(req: Request, res: Response): Promise<void> {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     await cache.delete(`auth:session:${token}`);
   }

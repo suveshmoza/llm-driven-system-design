@@ -143,7 +143,7 @@ async function simulateProcessorAuth(
  */
 export async function captureWithProcessor(
   processorRef: string,
-  amount: number
+  _amount: number
 ): Promise<boolean> {
   // Simulate some processing time
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -196,7 +196,7 @@ export async function voidWithProcessor(processorRef: string): Promise<boolean> 
  */
 export async function refundWithProcessor(
   processorRef: string,
-  amount: number
+  _amount: number
 ): Promise<{ success: boolean; refundRef?: string }> {
   // Simulate some processing time
   await new Promise((resolve) => setTimeout(resolve, 100));

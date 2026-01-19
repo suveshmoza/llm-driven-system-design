@@ -70,7 +70,7 @@ export async function initRepository(owner: string, repoName: string, defaultBra
 
   // Initialize bare repository
   const git: SimpleGit = simpleGit();
-  await git.init(true, repoPath);
+  await git.init(true, [repoPath]);
 
   // Set default branch
   const repoGit: SimpleGit = simpleGit(repoPath);
@@ -257,7 +257,7 @@ export async function getDiff(owner: string, repoName: string, base: string, hea
       stats: {
         additions: stats.insertions,
         deletions: stats.deletions,
-        files: stats.files.map((f: DiffResultTextFile) => ({
+        files: stats.files.filter((f): f is DiffResultTextFile => 'insertions' in f).map((f) => ({
           path: f.file,
           additions: f.insertions,
           deletions: f.deletions,

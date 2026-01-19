@@ -16,7 +16,7 @@ import {
   setBranchesInCache,
 } from '../../shared/cache.js';
 import { withCircuitBreaker } from '../../shared/circuitBreaker.js';
-import { Repository, getRepoId, sendRepoNotFound } from './types.js';
+import { Repository, getRepoId, sendRepoNotFound, RepoParams } from './types.js';
 
 const router = Router();
 
@@ -44,7 +44,7 @@ const router = Router();
  * // Response: { id: 1, name: 'hello-world', branches: ['main'], tags: ['v1.0'] }
  */
 router.get('/:owner/:repo', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
 
   const repoId = await getRepoId(owner, repo);
   if (!repoId) {

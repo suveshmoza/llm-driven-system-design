@@ -144,8 +144,8 @@ export class PaymentService {
   private async simulateNetworkAuthorization(
     card: any,
     amount: number,
-    merchant: any,
-    cryptogram: string
+    _merchant: any,
+    _cryptogram: string
   ): Promise<{ approved: boolean; authCode?: string; declineReason?: string }> {
     // Simulate various authorization scenarios
 

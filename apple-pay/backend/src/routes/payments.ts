@@ -22,7 +22,7 @@ import { z } from 'zod';
 
 // Import shared infrastructure
 import {
-  logger,
+  logger as _logger,
   createChildLogger,
   idempotencyMiddleware,
   auditLog,

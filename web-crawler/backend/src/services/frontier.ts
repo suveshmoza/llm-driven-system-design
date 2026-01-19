@@ -326,7 +326,7 @@ export class FrontierService {
    * @param urlHash - SHA-256 hash of the URL that failed
    * @param error - Optional error message for debugging
    */
-  async markFailed(urlHash: string, error?: string): Promise<void> {
+  async markFailed(urlHash: string, _error?: string): Promise<void> {
     await pool.query(
       `UPDATE url_frontier SET status = 'failed', updated_at = NOW() WHERE url_hash = $1`,
       [urlHash]

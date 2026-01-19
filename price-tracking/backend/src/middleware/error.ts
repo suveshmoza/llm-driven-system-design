@@ -14,7 +14,7 @@ export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void {
   logger.error({ err, path: req.path, action: 'error' }, `Error: ${err.message}`);
 

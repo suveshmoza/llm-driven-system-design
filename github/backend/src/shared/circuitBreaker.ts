@@ -1,4 +1,4 @@
-import CircuitBreaker from 'opossum';
+import CircuitBreaker, { Options } from 'opossum';
 import logger from './logger.js';
 import { circuitBreakerState, circuitBreakerTrips, gitOperationDuration, gitOperationsTotal } from './metrics.js';
 
@@ -17,45 +17,24 @@ import { circuitBreakerState, circuitBreakerTrips, gitOperationDuration, gitOper
  */
 
 // Circuit breaker configuration
-const CIRCUIT_OPTIONS = {
+const CIRCUIT_OPTIONS: Options = {
   timeout: 30000,           // 30 seconds - git operations can be slow
   errorThresholdPercentage: 50,  // Open circuit if 50% of requests fail
   resetTimeout: 30000,      // Try again after 30 seconds
   volumeThreshold: 5,       // Minimum requests before calculating error percentage
 };
 
-interface CircuitBreakerStats {
-  successes: number;
-  failures: number;
-  rejects: number;
-  fires: number;
-  timeouts: number;
-  cacheHits: number;
-  cacheMisses: number;
-  semaphoreRejections: number;
-  percentiles: Record<string, number>;
-  latencyTimes: number[];
-  latencyMean: number;
-}
-
-interface CircuitBreakerInstance extends CircuitBreaker {
-  opened: boolean;
-  halfOpen: boolean;
-  stats: CircuitBreakerStats;
-  action: <T>() => Promise<T>;
-}
-
 // Map of circuit breakers by operation type
-const circuitBreakers = new Map<string, CircuitBreakerInstance>();
+const circuitBreakers = new Map<string, CircuitBreaker>();
 
 /**
  * Create a circuit breaker for a specific operation
  */
-function createCircuitBreaker<T>(name: string, operation: () => Promise<T>): CircuitBreakerInstance {
+function createCircuitBreaker<T>(name: string, operation: () => Promise<T>): CircuitBreaker<[], T> {
   const breaker = new CircuitBreaker(operation, {
     ...CIRCUIT_OPTIONS,
     name,
-  }) as CircuitBreakerInstance;
+  });
 
   // Update metrics on state changes
   breaker.on('open', () => {
@@ -74,7 +53,8 @@ function createCircuitBreaker<T>(name: string, operation: () => Promise<T>): Cir
     circuitBreakerState.set({ service: name }, 0);
   });
 
-  breaker.on('success', (_result: T, latency: number) => {
+  breaker.on('success', (result: T, latency: number) => {
+    void result; // Unused but required by type
     const duration = latency / 1000;
     gitOperationDuration.observe({ operation: name }, duration);
     gitOperationsTotal.inc({ operation: name, status: 'success' });
@@ -107,17 +87,12 @@ function createCircuitBreaker<T>(name: string, operation: () => Promise<T>): Cir
 /**
  * Get or create a circuit breaker for an operation
  */
-function getCircuitBreaker<T>(name: string, operation: () => Promise<T>): CircuitBreakerInstance {
+function getCircuitBreaker<T>(name: string, operation: () => Promise<T>): CircuitBreaker<[], T> {
   if (!circuitBreakers.has(name)) {
     return createCircuitBreaker(name, operation);
   }
 
-  const breaker = circuitBreakers.get(name)!;
-  // Update the action if provided
-  if (operation) {
-    breaker.action = operation;
-  }
-  return breaker;
+  return circuitBreakers.get(name) as CircuitBreaker<[], T>;
 }
 
 /**
@@ -192,7 +167,7 @@ export const protectedGitOps = {
 
 interface CircuitBreakerStatus {
   state: 'open' | 'half-open' | 'closed';
-  stats: CircuitBreakerStats;
+  stats: CircuitBreaker.Stats;
 }
 
 /**

@@ -20,7 +20,7 @@ import {
   serverId,
   broadcastToDocument,
   updateCollaboratorsMetric,
-  getCollaborationStats,
+  getCollaborationStats as _getCollaborationStats,
 } from './state.js';
 import { handleOperation } from './ot.js';
 import { handleLeaveDocument, getDocumentPresence as _getDocumentPresence } from './presence.js';

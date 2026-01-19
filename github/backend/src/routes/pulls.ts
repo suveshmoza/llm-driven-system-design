@@ -4,7 +4,7 @@ import * as gitService from '../services/git.js';
 import { requireAuth } from '../middleware/auth.js';
 
 // Import shared modules
-import logger from '../shared/logger.js';
+import _logger from '../shared/logger.js';
 import { auditLog, AUDITED_ACTIONS } from '../shared/audit.js';
 import { getPRDiffFromCache, setPRDiffInCache, invalidatePRDiffCache, invalidateRepoCaches } from '../shared/cache.js';
 import { withCircuitBreaker } from '../shared/circuitBreaker.js';
@@ -73,27 +73,20 @@ interface CommentBody {
   body?: string;
 }
 
-/**
- * Get next PR/issue number for a repo
- */
-async function getNextNumber(repoId: number): Promise<number> {
-  const prResult = await query(
-    'SELECT COALESCE(MAX(number), 0) as max_num FROM pull_requests WHERE repo_id = $1',
-    [repoId]
-  );
-  const issueResult = await query(
-    'SELECT COALESCE(MAX(number), 0) as max_num FROM issues WHERE repo_id = $1',
-    [repoId]
-  );
+interface RepoParams {
+  owner: string;
+  repo: string;
+}
 
-  return Math.max(parseInt(prResult.rows[0].max_num as string), parseInt(issueResult.rows[0].max_num as string)) + 1;
+interface PullParams extends RepoParams {
+  number: string;
 }
 
 /**
  * List pull requests for a repo
  */
 router.get('/:owner/:repo/pulls', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
   const { state = 'open', page = '1', limit = '20' } = req.query as ListPullsQuery;
 
   const repoResult = await query(
@@ -149,7 +142,7 @@ router.get('/:owner/:repo/pulls', async (req: Request, res: Response): Promise<v
  * Get single pull request
  */
 router.get('/:owner/:repo/pulls/:number', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
 
   const result = await query(
     `SELECT p.*,
@@ -162,7 +155,7 @@ router.get('/:owner/:repo/pulls/:number', async (req: Request, res: Response): P
      JOIN users author ON p.author_id = author.id
      LEFT JOIN users merger ON p.merged_by = merger.id
      WHERE owner_user.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (result.rows.length === 0) {
@@ -213,7 +206,7 @@ router.get('/:owner/:repo/pulls/:number', async (req: Request, res: Response): P
  * Get PR diff (with caching)
  */
 router.get('/:owner/:repo/pulls/:number/diff', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
 
   const result = await query(
     `SELECT p.id, p.head_branch, p.base_branch
@@ -221,7 +214,7 @@ router.get('/:owner/:repo/pulls/:number/diff', async (req: Request, res: Respons
      JOIN repositories r ON p.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (result.rows.length === 0) {
@@ -251,7 +244,7 @@ router.get('/:owner/:repo/pulls/:number/diff', async (req: Request, res: Respons
  * Create pull request (with idempotency)
  */
 router.post('/:owner/:repo/pulls', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
   const { title, body, headBranch, baseBranch, isDraft } = req.body as CreatePRBody;
   const idempotencyKey = getIdempotencyKey(req);
 
@@ -384,7 +377,7 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req: Request, res: Respon
  * Update pull request
  */
 router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
   const { title, body, state } = req.body as UpdatePRBody;
 
   const prResult = await query(
@@ -392,7 +385,7 @@ router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req: Request, re
      JOIN repositories r ON p.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (prResult.rows.length === 0) {
@@ -456,7 +449,7 @@ router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req: Request, re
  * Merge pull request
  */
 router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
   const { strategy = 'merge', message } = req.body as MergeBody;
 
   const prResult = await query(
@@ -464,7 +457,7 @@ router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req: Reques
      JOIN repositories r ON p.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (prResult.rows.length === 0) {
@@ -532,7 +525,7 @@ router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req: Reques
  * Add review
  */
 router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
   const { state, body } = req.body as ReviewBody;
 
   if (!state || !['approved', 'changes_requested', 'commented'].includes(state)) {
@@ -545,7 +538,7 @@ router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req: Requ
      JOIN repositories r ON p.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (prResult.rows.length === 0) {
@@ -569,14 +562,14 @@ router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req: Requ
  * Get PR comments
  */
 router.get('/:owner/:repo/pulls/:number/comments', async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
 
   const prResult = await query(
     `SELECT p.id FROM pull_requests p
      JOIN repositories r ON p.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (prResult.rows.length === 0) {
@@ -600,7 +593,7 @@ router.get('/:owner/:repo/pulls/:number/comments', async (req: Request, res: Res
  * Add PR comment
  */
 router.post('/:owner/:repo/pulls/:number/comments', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo, number } = req.params;
+  const { owner, repo, number } = req.params as unknown as PullParams;
   const { body } = req.body as CommentBody;
 
   if (!body) {
@@ -613,7 +606,7 @@ router.post('/:owner/:repo/pulls/:number/comments', requireAuth, async (req: Req
      JOIN repositories r ON p.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND p.number = $3`,
-    [owner, repo, parseInt(number)]
+    [owner, repo, parseInt(number as string)]
   );
 
   if (prResult.rows.length === 0) {

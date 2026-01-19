@@ -348,7 +348,8 @@ adminRouter.get('/circuit-breakers', (req: Request, res: Response) => {
 
 // Admin: Reset a circuit breaker
 adminRouter.post('/circuit-breakers/:name/reset', (req: Request, res: Response) => {
-  const breaker = circuitBreakerRegistry.get(req.params['name']!);
+  const name = req.params['name'] as string;
+  const breaker = circuitBreakerRegistry.get(name);
   breaker.close();
   breaker.resetStats();
   res.json({ message: 'Circuit breaker reset', state: breaker.getState() });
@@ -378,7 +379,8 @@ adminRouter.post('/cache/clear', async (req: Request, res: Response) => {
 
 // Admin: Rate limit status
 adminRouter.get('/rate-limits/:identifier', async (req: Request, res: Response) => {
-  const status = await rateLimiter.getStatus(req.params['identifier']!);
+  const identifier = req.params['identifier'] as string;
+  const status = await rateLimiter.getStatus(identifier);
   if (status) {
     res.json(status);
   } else {

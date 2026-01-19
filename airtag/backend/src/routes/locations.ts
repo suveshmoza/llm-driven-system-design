@@ -5,7 +5,7 @@ import { SimulatedLocation } from '../types/index.js';
 import {
   publishLocationReport,
   createComponentLogger,
-  locationReportsTotal,
+  locationReportsTotal as _locationReportsTotal,
 } from '../shared/index.js';
 
 /**

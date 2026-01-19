@@ -142,7 +142,7 @@ export async function assessRisk({
  */
 async function checkVelocity(
   paymentMethodId: string | undefined,
-  merchantId: string
+  _merchantId: string
 ): Promise<RiskSignal> {
   if (!paymentMethodId) {
     return { rule: 'velocity', score: 0, details: 'No payment method' };
@@ -213,7 +213,7 @@ async function checkAmount(amount: number, merchantId: string): Promise<RiskSign
  */
 function checkGeoMismatch(
   paymentMethod: PaymentMethod | null,
-  ipAddress?: string
+  _ipAddress?: string
 ): RiskSignal {
   // In real implementation, this would use GeoIP lookup
   // For demo, simulate based on payment method properties

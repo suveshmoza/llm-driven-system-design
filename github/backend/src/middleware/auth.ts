@@ -31,7 +31,7 @@ declare global {
 }
 
 // Auth middleware
-export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function authMiddleware(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const sessionId = req.headers['x-session-id'] as string | undefined || (req as Request & { cookies?: { sessionId?: string } }).cookies?.sessionId;
 
   if (!sessionId) {

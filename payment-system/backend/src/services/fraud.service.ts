@@ -169,8 +169,8 @@ export class FraudService {
    * @returns Risk score contribution (0-10)
    */
   private async evaluateVelocity(
-    merchantId: string,
-    customerEmail?: string
+    _merchantId: string,
+    _customerEmail?: string
   ): Promise<number> {
     // Simplified - in production would query Redis for recent transaction counts
     // For demo purposes, we'll return a random low score

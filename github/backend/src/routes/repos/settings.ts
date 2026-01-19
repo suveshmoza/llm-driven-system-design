@@ -11,7 +11,7 @@ import { query } from '../../db/index.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { invalidateRepoCaches, invalidatePRCaches } from '../../shared/cache.js';
 import { pushesTotal } from '../../shared/metrics.js';
-import { PushBody, sendRepoNotFound } from './types.js';
+import { PushBody, sendRepoNotFound, RepoParams } from './types.js';
 
 const router = Router();
 
@@ -43,7 +43,7 @@ const router = Router();
  * // Response: { success: true, invalidatedPRs: 2 }
  */
 router.post('/:owner/:repo/push', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const { owner, repo } = req.params;
+  const { owner, repo } = req.params as unknown as RepoParams;
   const { branch, commits } = req.body as PushBody;
 
   const repoResult = await query(

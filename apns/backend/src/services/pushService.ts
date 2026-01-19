@@ -21,7 +21,7 @@ import {
 import {
   notificationsSent,
   notificationDeliveryLatency,
-  pendingNotifications,
+  pendingNotifications as _pendingNotifications,
   notificationsInFlight,
   idempotencyChecks,
 } from "../shared/metrics.js";

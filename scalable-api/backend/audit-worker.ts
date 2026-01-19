@@ -18,7 +18,7 @@ console.log(`Audit Worker [${workerId}] starting...`);
 /**
  * Store audit event in database
  */
-async function storeAuditEvent(event: AuditEvent) {
+async function storeAuditEvent(event: AuditEvent): Promise<void> {
   const { id, action, userId, details, timestamp, instanceId } = event;
 
   await db.query(
@@ -31,7 +31,7 @@ async function storeAuditEvent(event: AuditEvent) {
 /**
  * Handle incoming audit event
  */
-async function handleAuditEvent(event: AuditEvent) {
+async function handleAuditEvent(event: AuditEvent): Promise<void> {
   const { id, action, userId, details } = event;
 
   console.log(`[${workerId}] Processing audit event: ${action} (user: ${userId || 'system'})`);
@@ -58,7 +58,7 @@ async function handleAuditEvent(event: AuditEvent) {
 /**
  * Process security-related audit events for alerting
  */
-async function processSecurityAlerts(event: AuditEvent) {
+async function processSecurityAlerts(event: AuditEvent): Promise<void> {
   const { action, userId, details } = event;
 
   // Security-critical events that might need alerting
@@ -73,17 +73,18 @@ async function processSecurityAlerts(event: AuditEvent) {
     'circuit_breaker.opened',
   ];
 
-  if (securityEvents.some((e) => action.startsWith(e.split('.')[0]))) {
+  if (securityEvents.some((e) => action.startsWith(e.split('.')[0] ?? ''))) {
     // In production, this could trigger PagerDuty, Slack, or email alerts
     console.log(`[${workerId}] SECURITY ALERT: ${action}`, {
       userId,
-      ip: details.ip,
+      ip: details['ip'],
       timestamp: event.timestamp,
     });
 
     // Track failed login attempts for brute force detection
-    if (action === 'user.login_failed' && details.ip) {
-      await trackFailedLogin(details.ip, userId);
+    const ip = details['ip'];
+    if (action === 'user.login_failed' && typeof ip === 'string') {
+      await trackFailedLogin(ip, userId);
     }
   }
 }
@@ -91,10 +92,10 @@ async function processSecurityAlerts(event: AuditEvent) {
 /**
  * Track failed logins for security monitoring
  */
-async function trackFailedLogin(ip: string, _attemptedUser: string | number | undefined) {
+async function trackFailedLogin(ip: string, _attemptedUser: string | number | undefined): Promise<void> {
   try {
     // Count recent failed attempts from this IP
-    const result = await db.query(
+    const result = await db.query<{ count: string }>(
       `SELECT COUNT(*) as count FROM audit_log
        WHERE action = 'user.login_failed'
          AND details->>'ip' = $1
@@ -102,7 +103,7 @@ async function trackFailedLogin(ip: string, _attemptedUser: string | number | un
       [ip]
     );
 
-    const failedCount = parseInt(result.rows[0]?.count || 0, 10);
+    const failedCount = parseInt(result.rows[0]?.['count'] || '0', 10);
 
     if (failedCount >= 5) {
       console.warn(`[${workerId}] BRUTE FORCE ALERT: ${failedCount} failed logins from IP ${ip}`);
@@ -117,7 +118,7 @@ async function trackFailedLogin(ip: string, _attemptedUser: string | number | un
 /**
  * Start the worker
  */
-async function start() {
+async function start(): Promise<void> {
   try {
     // Connect to RabbitMQ
     await queue.connect();
@@ -129,7 +130,7 @@ async function start() {
     }
 
     // Start consuming audit events
-    await queue.consume(QUEUES.AUDIT_LOG, handleAuditEvent, {
+    await queue.consume<AuditEvent>(QUEUES.AUDIT_LOG, handleAuditEvent, {
       prefetch: 20, // Audit events are lightweight, process more concurrently
     });
 
@@ -142,7 +143,7 @@ async function start() {
 }
 
 // Graceful shutdown
-async function shutdown() {
+async function shutdown(): Promise<void> {
   console.log(`[${workerId}] Shutting down...`);
   await queue.close();
   await db.closePool();
