@@ -1,11 +1,27 @@
 import { query, transaction } from './database.js';
 import { setRecommendations } from './redis.js';
+import type { PoolClient } from 'pg';
+
+interface CartItem {
+  id: number;
+  product_id: number;
+  quantity: number;
+}
+
+interface OrderProduct {
+  product_id: number;
+}
+
+interface RecommendationResult {
+  product_id: number;
+  frequency: number;
+}
 
 // Release expired cart reservations
-async function releaseExpiredReservations() {
+async function releaseExpiredReservations(): Promise<void> {
   try {
     // Find expired cart items
-    const result = await query(
+    const result = await query<CartItem>(
       `SELECT id, product_id, quantity FROM cart_items
        WHERE reserved_until IS NOT NULL AND reserved_until < NOW()`
     );
@@ -15,7 +31,7 @@ async function releaseExpiredReservations() {
     console.log(`Releasing ${result.rows.length} expired reservations`);
 
     for (const item of result.rows) {
-      await transaction(async (client) => {
+      await transaction(async (client: PoolClient) => {
         // Release the reserved inventory
         await client.query(
           `UPDATE inventory SET reserved = GREATEST(0, reserved - $1)
@@ -35,18 +51,18 @@ async function releaseExpiredReservations() {
 }
 
 // Update product recommendations based on co-purchase data
-async function updateRecommendations() {
+async function updateRecommendations(): Promise<void> {
   try {
     console.log('Updating product recommendations...');
 
     // Get all products that have been ordered
-    const products = await query(
+    const products = await query<OrderProduct>(
       `SELECT DISTINCT product_id FROM order_items`
     );
 
     for (const { product_id } of products.rows) {
       // Find products frequently bought together
-      const result = await query(
+      const result = await query<RecommendationResult>(
         `SELECT oi2.product_id, COUNT(*) as frequency
          FROM order_items oi1
          JOIN order_items oi2 ON oi1.order_id = oi2.order_id
@@ -82,7 +98,7 @@ async function updateRecommendations() {
 }
 
 // Update product ratings from reviews
-async function updateProductRatings() {
+async function updateProductRatings(): Promise<void> {
   try {
     await query(
       `UPDATE products p
@@ -104,7 +120,7 @@ async function updateProductRatings() {
   }
 }
 
-export function startBackgroundJobs() {
+export function startBackgroundJobs(): void {
   // Release expired reservations every minute
   setInterval(releaseExpiredReservations, 60 * 1000);
 

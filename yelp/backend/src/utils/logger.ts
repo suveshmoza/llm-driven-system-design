@@ -1,4 +1,5 @@
-import pino from 'pino';
+import pino, { Logger, Bindings } from 'pino';
+import type { Request, Response } from 'express';
 
 /**
  * Structured JSON logging with pino
@@ -12,13 +13,23 @@ import pino from 'pino';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-export const logger = pino({
+// Extended request interface with custom properties
+interface ExtendedRequest extends Request {
+  user?: {
+    id: string;
+    role: string;
+    [key: string]: unknown;
+  };
+  requestId?: string;
+}
+
+export const logger: Logger = pino({
   level: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
 
   // Format options
   formatters: {
-    level: (label) => ({ level: label }),
-    bindings: (bindings) => ({
+    level: (label: string) => ({ level: label }),
+    bindings: (bindings: Bindings) => ({
       service: 'yelp-api',
       pid: bindings.pid,
       hostname: bindings.hostname,
@@ -49,41 +60,44 @@ export const logger = pino({
   },
 
   // Pretty print in development
-  ...(isProduction ? {} : {
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
-        translateTime: 'SYS:standard',
-        ignore: 'pid,hostname',
-      },
-    },
-  }),
+  ...(isProduction
+    ? {}
+    : {
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname',
+          },
+        },
+      }),
 });
 
 /**
  * Create a child logger with request context
- * @param {object} context - Additional context (requestId, userId, etc.)
- * @returns {pino.Logger}
  */
-export function createRequestLogger(context = {}) {
+export function createRequestLogger(
+  context: Record<string, unknown> = {}
+): Logger {
   return logger.child(context);
 }
 
 /**
  * Log HTTP request with standard fields
- * @param {object} req - Express request object
- * @param {object} res - Express response object
- * @param {number} duration - Request duration in ms
- * @param {object} extra - Additional fields to log
  */
-export function logRequest(req, res, duration, extra = {}) {
-  const logData = {
+export function logRequest(
+  req: ExtendedRequest,
+  res: Response,
+  duration: number,
+  extra: Record<string, unknown> = {}
+): void {
+  const logData: Record<string, unknown> = {
     method: req.method,
     path: req.path,
     status: res.statusCode,
     duration_ms: duration,
-    ip: req.ip || req.connection?.remoteAddress,
+    ip: req.ip || req.socket?.remoteAddress,
     userAgent: req.get('user-agent'),
     ...extra,
   };
@@ -108,69 +122,85 @@ export function logRequest(req, res, duration, extra = {}) {
 
 /**
  * Log database operation
- * @param {string} operation - Query type (SELECT, INSERT, etc.)
- * @param {string} table - Table name
- * @param {number} duration - Query duration in ms
- * @param {object} extra - Additional fields
  */
-export function logDbOperation(operation, table, duration, extra = {}) {
-  logger.debug({
-    component: 'database',
-    operation,
-    table,
-    duration_ms: duration,
-    ...extra,
-  }, 'Database operation');
+export function logDbOperation(
+  operation: string,
+  table: string,
+  duration: number,
+  extra: Record<string, unknown> = {}
+): void {
+  logger.debug(
+    {
+      component: 'database',
+      operation,
+      table,
+      duration_ms: duration,
+      ...extra,
+    },
+    'Database operation'
+  );
 }
 
 /**
  * Log cache operation
- * @param {string} operation - Cache operation (get, set, del)
- * @param {string} key - Cache key
- * @param {boolean} hit - Whether cache hit occurred
- * @param {object} extra - Additional fields
  */
-export function logCacheOperation(operation, key, hit, extra = {}) {
-  logger.debug({
-    component: 'cache',
-    operation,
-    key,
-    hit,
-    ...extra,
-  }, `Cache ${operation}`);
+export function logCacheOperation(
+  operation: string,
+  key: string,
+  hit: boolean,
+  extra: Record<string, unknown> = {}
+): void {
+  logger.debug(
+    {
+      component: 'cache',
+      operation,
+      key,
+      hit,
+      ...extra,
+    },
+    `Cache ${operation}`
+  );
 }
 
 /**
  * Log search operation
- * @param {string} query - Search query
- * @param {number} resultCount - Number of results
- * @param {number} duration - Search duration in ms
- * @param {object} extra - Additional fields (cache_hit, filters, etc.)
  */
-export function logSearch(query, resultCount, duration, extra = {}) {
-  logger.info({
-    component: 'search',
-    query,
-    resultCount,
-    duration_ms: duration,
-    ...extra,
-  }, 'Search executed');
+export function logSearch(
+  query: string | undefined,
+  resultCount: number,
+  duration: number,
+  extra: Record<string, unknown> = {}
+): void {
+  logger.info(
+    {
+      component: 'search',
+      query,
+      resultCount,
+      duration_ms: duration,
+      ...extra,
+    },
+    'Search executed'
+  );
 }
 
 /**
  * Log circuit breaker events
- * @param {string} name - Circuit breaker name
- * @param {string} state - New state (OPEN, CLOSED, HALF_OPEN)
- * @param {object} extra - Additional context
  */
-export function logCircuitBreaker(name, state, extra = {}) {
-  const logLevel = state === 'OPEN' ? 'warn' : 'info';
-  logger[logLevel]({
-    component: 'circuit_breaker',
-    name,
-    state,
-    ...extra,
-  }, `Circuit breaker ${name} is ${state}`);
+export function logCircuitBreaker(
+  name: string,
+  state: 'OPEN' | 'CLOSED' | 'HALF_OPEN',
+  extra: Record<string, unknown> = {}
+): void {
+  const logLevel: 'warn' | 'info' = state === 'OPEN' ? 'warn' : 'info';
+  logger[logLevel](
+    {
+      component: 'circuit_breaker',
+      name,
+      state,
+      ...extra,
+    },
+    `Circuit breaker ${name} is ${state}`
+  );
 }
 
 export default logger;
