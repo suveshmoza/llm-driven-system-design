@@ -1,10 +1,95 @@
 import { Client } from '@elastic/elasticsearch';
+import type {
+  SearchHit,
+  SearchTotalHits,
+} from '@elastic/elasticsearch/lib/api/types.js';
 
-export const elasticsearch = new Client({
-  node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200'
+export const elasticsearch: Client = new Client({
+  node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
 });
 
 const BUSINESS_INDEX = 'businesses';
+
+// Business document interface for Elasticsearch
+export interface BusinessDocument {
+  id: string;
+  name: string;
+  description?: string | null;
+  categories: string[];
+  category_names: string[];
+  location: {
+    lat: number;
+    lon: number;
+  };
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  rating: number;
+  review_count: number;
+  price_level?: number | null;
+  is_claimed: boolean;
+  is_verified: boolean;
+  phone?: string | null;
+  website?: string | null;
+  photo_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Business input for indexing
+export interface BusinessInput {
+  id: string;
+  name: string;
+  description?: string | null;
+  categories?: string[] | null;
+  category_names?: string[] | null;
+  latitude: string | number;
+  longitude: string | number;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  rating?: string | number | null;
+  review_count?: string | number | null;
+  price_level?: number | null;
+  is_claimed?: boolean;
+  is_verified?: boolean;
+  phone?: string | null;
+  website?: string | null;
+  photo_url?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Search options interface
+export interface SearchOptions {
+  query?: string;
+  category?: string;
+  latitude?: string | number;
+  longitude?: string | number;
+  distance?: string;
+  minRating?: string | number;
+  maxPriceLevel?: string | number;
+  sortBy?: 'relevance' | 'rating' | 'review_count' | 'distance';
+  from?: number;
+  size?: number;
+}
+
+// Search result interface
+export interface SearchResult {
+  total: number;
+  businesses: Array<BusinessDocument & { score?: number | null; distance?: number }>;
+  fallback?: boolean;
+}
+
+// Autocomplete result interface
+export interface AutocompleteResult {
+  id: string;
+  name: string;
+  city: string;
+  rating: number;
+}
 
 // Index mapping for businesses
 const businessMapping = {
@@ -21,9 +106,9 @@ const businessMapping = {
             analyzer: 'simple',
             preserve_separators: true,
             preserve_position_increments: true,
-            max_input_length: 50
-          }
-        }
+            max_input_length: 50,
+          },
+        },
       },
       description: { type: 'text' },
       categories: { type: 'keyword' },
@@ -32,7 +117,7 @@ const businessMapping = {
       address: { type: 'text' },
       city: {
         type: 'text',
-        fields: { keyword: { type: 'keyword' } }
+        fields: { keyword: { type: 'keyword' } },
       },
       state: { type: 'keyword' },
       zip_code: { type: 'keyword' },
@@ -45,8 +130,8 @@ const businessMapping = {
       website: { type: 'keyword' },
       photo_url: { type: 'keyword' },
       created_at: { type: 'date' },
-      updated_at: { type: 'date' }
-    }
+      updated_at: { type: 'date' },
+    },
   },
   settings: {
     number_of_shards: 1,
@@ -56,29 +141,31 @@ const businessMapping = {
         autocomplete: {
           type: 'custom',
           tokenizer: 'standard',
-          filter: ['lowercase', 'autocomplete_filter']
-        }
+          filter: ['lowercase', 'autocomplete_filter'],
+        },
       },
       filter: {
         autocomplete_filter: {
           type: 'edge_ngram',
           min_gram: 1,
-          max_gram: 20
-        }
-      }
-    }
-  }
+          max_gram: 20,
+        },
+      },
+    },
+  },
 };
 
 // Initialize Elasticsearch index
-export async function initElasticsearch() {
+export async function initElasticsearch(): Promise<void> {
   try {
-    const indexExists = await elasticsearch.indices.exists({ index: BUSINESS_INDEX });
+    const indexExists = await elasticsearch.indices.exists({
+      index: BUSINESS_INDEX,
+    });
 
     if (!indexExists) {
       await elasticsearch.indices.create({
         index: BUSINESS_INDEX,
-        body: businessMapping
+        ...businessMapping,
       });
       console.log(`Created Elasticsearch index: ${BUSINESS_INDEX}`);
     }
@@ -89,27 +176,27 @@ export async function initElasticsearch() {
 }
 
 // Index a business document
-export async function indexBusiness(business) {
+export async function indexBusiness(business: BusinessInput): Promise<void> {
   try {
     await elasticsearch.index({
       index: BUSINESS_INDEX,
       id: business.id,
-      body: {
+      document: {
         id: business.id,
         name: business.name,
         description: business.description,
         categories: business.categories || [],
         category_names: business.category_names || [],
         location: {
-          lat: parseFloat(business.latitude),
-          lon: parseFloat(business.longitude)
+          lat: parseFloat(String(business.latitude)),
+          lon: parseFloat(String(business.longitude)),
         },
         address: business.address,
         city: business.city,
         state: business.state,
         zip_code: business.zip_code,
-        rating: parseFloat(business.rating) || 0,
-        review_count: parseInt(business.review_count) || 0,
+        rating: parseFloat(String(business.rating)) || 0,
+        review_count: parseInt(String(business.review_count), 10) || 0,
         price_level: business.price_level,
         is_claimed: business.is_claimed,
         is_verified: business.is_verified,
@@ -117,9 +204,9 @@ export async function indexBusiness(business) {
         website: business.website,
         photo_url: business.photo_url,
         created_at: business.created_at,
-        updated_at: business.updated_at
+        updated_at: business.updated_at,
       },
-      refresh: true
+      refresh: true,
     });
   } catch (error) {
     console.error('Error indexing business:', error);
@@ -128,15 +215,16 @@ export async function indexBusiness(business) {
 }
 
 // Update a business document
-export async function updateBusinessIndex(businessId, updates) {
+export async function updateBusinessIndex(
+  businessId: string,
+  updates: Partial<BusinessDocument>
+): Promise<void> {
   try {
     await elasticsearch.update({
       index: BUSINESS_INDEX,
       id: businessId,
-      body: {
-        doc: updates
-      },
-      refresh: true
+      doc: updates,
+      refresh: true,
     });
   } catch (error) {
     console.error('Error updating business index:', error);
@@ -145,12 +233,12 @@ export async function updateBusinessIndex(businessId, updates) {
 }
 
 // Delete a business document
-export async function deleteBusinessIndex(businessId) {
+export async function deleteBusinessIndex(businessId: string): Promise<void> {
   try {
     await elasticsearch.delete({
       index: BUSINESS_INDEX,
       id: businessId,
-      refresh: true
+      refresh: true,
     });
   } catch (error) {
     console.error('Error deleting business from index:', error);
@@ -159,7 +247,9 @@ export async function deleteBusinessIndex(businessId) {
 }
 
 // Search businesses
-export async function searchBusinesses(options) {
+export async function searchBusinesses(
+  options: SearchOptions
+): Promise<SearchResult> {
   const {
     query,
     category,
@@ -170,11 +260,11 @@ export async function searchBusinesses(options) {
     maxPriceLevel,
     sortBy = 'relevance',
     from = 0,
-    size = 20
+    size = 20,
   } = options;
 
-  const must = [];
-  const filter = [];
+  const must: object[] = [];
+  const filter: object[] = [];
 
   // Text search
   if (query) {
@@ -182,8 +272,8 @@ export async function searchBusinesses(options) {
       multi_match: {
         query,
         fields: ['name^3', 'description', 'category_names', 'city'],
-        fuzziness: 'AUTO'
-      }
+        fuzziness: 'AUTO',
+      },
     });
   }
 
@@ -198,25 +288,29 @@ export async function searchBusinesses(options) {
       geo_distance: {
         distance,
         location: {
-          lat: parseFloat(latitude),
-          lon: parseFloat(longitude)
-        }
-      }
+          lat: parseFloat(String(latitude)),
+          lon: parseFloat(String(longitude)),
+        },
+      },
     });
   }
 
   // Rating filter
   if (minRating) {
-    filter.push({ range: { rating: { gte: parseFloat(minRating) } } });
+    filter.push({
+      range: { rating: { gte: parseFloat(String(minRating)) } },
+    });
   }
 
   // Price level filter
   if (maxPriceLevel) {
-    filter.push({ range: { price_level: { lte: parseInt(maxPriceLevel) } } });
+    filter.push({
+      range: { price_level: { lte: parseInt(String(maxPriceLevel), 10) } },
+    });
   }
 
   // Build sort
-  const sort = [];
+  const sort: object[] = [];
   switch (sortBy) {
     case 'rating':
       sort.push({ rating: 'desc' });
@@ -229,12 +323,12 @@ export async function searchBusinesses(options) {
         sort.push({
           _geo_distance: {
             location: {
-              lat: parseFloat(latitude),
-              lon: parseFloat(longitude)
+              lat: parseFloat(String(latitude)),
+              lon: parseFloat(String(longitude)),
             },
             order: 'asc',
-            unit: 'km'
-          }
+            unit: 'km',
+          },
         });
       }
       break;
@@ -243,16 +337,24 @@ export async function searchBusinesses(options) {
       sort.push({ rating: 'desc' });
   }
 
-  const searchBody = {
+  interface SearchBody {
+    query: object;
+    sort: object[];
+    from: number;
+    size: number;
+    script_fields?: object;
+  }
+
+  const searchBody: SearchBody = {
     query: {
       bool: {
         must: must.length > 0 ? must : [{ match_all: {} }],
-        filter
-      }
+        filter,
+      },
     },
     sort,
     from,
-    size
+    size,
   };
 
   // Add distance calculation if location provided
@@ -262,27 +364,34 @@ export async function searchBusinesses(options) {
         script: {
           source: "doc['location'].arcDistance(params.lat, params.lon) / 1000",
           params: {
-            lat: parseFloat(latitude),
-            lon: parseFloat(longitude)
-          }
-        }
-      }
+            lat: parseFloat(String(latitude)),
+            lon: parseFloat(String(longitude)),
+          },
+        },
+      },
     };
   }
 
   try {
-    const result = await elasticsearch.search({
+    const result = await elasticsearch.search<BusinessDocument>({
       index: BUSINESS_INDEX,
-      body: searchBody
+      ...searchBody,
     });
 
+    const total =
+      typeof result.hits.total === 'number'
+        ? result.hits.total
+        : (result.hits.total as SearchTotalHits).value;
+
     return {
-      total: result.hits.total.value,
-      businesses: result.hits.hits.map(hit => ({
-        ...hit._source,
-        score: hit._score,
-        distance: hit.fields?.distance?.[0]
-      }))
+      total,
+      businesses: result.hits.hits.map(
+        (hit: SearchHit<BusinessDocument>) => ({
+          ...(hit._source as BusinessDocument),
+          score: hit._score,
+          distance: (hit.fields?.distance as number[] | undefined)?.[0],
+        })
+      ),
     };
   } catch (error) {
     console.error('Search error:', error);
@@ -291,30 +400,41 @@ export async function searchBusinesses(options) {
 }
 
 // Autocomplete suggestions
-export async function autocompleteBusiness(prefix, latitude, longitude) {
+export async function autocompleteBusiness(
+  prefix: string,
+  latitude?: number | null,
+  longitude?: number | null
+): Promise<AutocompleteResult[]> {
   const suggest = {
     business_suggest: {
       prefix,
       completion: {
         field: 'name.suggest',
         size: 10,
-        skip_duplicates: true
-      }
-    }
+        skip_duplicates: true,
+      },
+    },
   };
 
   try {
-    const result = await elasticsearch.search({
+    const result = await elasticsearch.search<BusinessDocument>({
       index: BUSINESS_INDEX,
-      body: { suggest }
+      suggest,
     });
 
-    return result.suggest.business_suggest[0].options.map(opt => ({
-      id: opt._source.id,
-      name: opt._source.name,
-      city: opt._source.city,
-      rating: opt._source.rating
-    }));
+    const suggestions = result.suggest?.business_suggest;
+    if (!suggestions || !suggestions[0] || !('options' in suggestions[0])) {
+      return [];
+    }
+
+    return suggestions[0].options.map(
+      (opt: { _source?: BusinessDocument }) => ({
+        id: opt._source?.id ?? '',
+        name: opt._source?.name ?? '',
+        city: opt._source?.city ?? '',
+        rating: opt._source?.rating ?? 0,
+      })
+    );
   } catch (error) {
     console.error('Autocomplete error:', error);
     throw error;

@@ -12,7 +12,7 @@
  * - Idempotency: Consumers track processed message IDs to handle redelivery
  */
 
-import amqp from 'amqplib';
+import amqp, { Connection, Channel, ConsumeMessage } from 'amqplib';
 import { v4 as uuidv4 } from 'uuid';
 import logger, { createModuleLogger } from './logger.js';
 import { metrics } from './metrics.js';
@@ -32,7 +32,7 @@ export const QUEUES = {
   HOST_ALERTS: 'host.alerts',
   SEARCH_REINDEX: 'search.reindex',
   ANALYTICS_EVENTS: 'analytics.events',
-};
+} as const;
 
 // Event types
 export const EVENT_TYPES = {
@@ -44,16 +44,60 @@ export const EVENT_TYPES = {
   AVAILABILITY_CHANGED: 'availability.changed',
   REVIEW_SUBMITTED: 'review.submitted',
   HOST_ALERT: 'host.alert',
-};
+} as const;
 
-let connection = null;
-let channel = null;
+// Type definitions
+interface QueueEvent {
+  eventId: string;
+  eventType: string;
+  timestamp: string;
+  data: unknown;
+}
+
+interface PublishOptions {
+  eventId?: string;
+  headers?: Record<string, unknown>;
+}
+
+interface ConsumerOptions {
+  prefetch?: number;
+  maxRetries?: number;
+}
+
+interface QueueStats {
+  [queueName: string]: {
+    messageCount?: number;
+    consumerCount?: number;
+    error?: string;
+  };
+}
+
+interface Booking {
+  id: number;
+  listing_id: number;
+  check_in: string;
+  check_out: string;
+  total_price: number;
+  nights: number;
+  guests: number;
+}
+
+interface Listing {
+  id: number;
+  title: string;
+  host_id: number;
+}
+
+type MessageHandler = (event: QueueEvent, msg: ConsumeMessage) => Promise<void>;
+
+let connection: Connection | null = null;
+let channel: Channel | null = null;
 let isConnecting = false;
 
 /**
  * Initialize RabbitMQ connection and channels
  */
-export async function initQueue() {
+export async function initQueue(): Promise<{ connection: Connection; channel: Channel }> {
   if (connection && channel) {
     return { connection, channel };
   }
@@ -130,11 +174,11 @@ export async function initQueue() {
 
 /**
  * Publish an event to the exchange
- * @param {string} eventType - Event type (routing key)
- * @param {object} data - Event data
- * @param {object} options - Publish options
+ * @param eventType - Event type (routing key)
+ * @param data - Event data
+ * @param options - Publish options
  */
-export async function publishEvent(eventType, data, options = {}) {
+export async function publishEvent(eventType: string, data: unknown, options: PublishOptions = {}): Promise<string> {
   try {
     if (!channel) {
       await initQueue();
@@ -181,11 +225,11 @@ export async function publishEvent(eventType, data, options = {}) {
 
 /**
  * Start consuming messages from a queue
- * @param {string} queueName - Queue to consume from
- * @param {Function} handler - Message handler function
- * @param {object} options - Consumer options
+ * @param queueName - Queue to consume from
+ * @param handler - Message handler function
+ * @param options - Consumer options
  */
-export async function startConsumer(queueName, handler, options = {}) {
+export async function startConsumer(queueName: string, handler: MessageHandler, options: ConsumerOptions = {}): Promise<void> {
   try {
     if (!channel) {
       await initQueue();

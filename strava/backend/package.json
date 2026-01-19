@@ -5,16 +5,17 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon src/index.js",
-    "dev:server1": "PORT=3001 nodemon src/index.js",
-    "dev:server2": "PORT=3002 nodemon src/index.js",
-    "dev:server3": "PORT=3003 nodemon src/index.js",
-    "start": "node src/index.js",
-    "db:rollback": "node src/db/migrate.js rollback",
-    "db:status": "node src/db/migrate.js status",
-    "db:create-migration": "node src/db/migrate.js create",
-    "migrate": "node src/migrate.js",
-    "seed": "node src/seed.js"
+    "dev": "tsx watch src/index.ts",
+    "dev:server1": "PORT=3001 tsx watch src/index.ts",
+    "dev:server2": "PORT=3002 tsx watch src/index.ts",
+    "dev:server3": "PORT=3003 tsx watch src/index.ts",
+    "start": "node --import tsx src/index.ts",
+    "db:rollback": "tsx src/db/migrate.ts rollback",
+    "db:status": "tsx src/db/migrate.ts status",
+    "db:create-migration": "tsx src/db/migrate.ts create",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -37,6 +38,16 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/express-session": "^1.18.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }

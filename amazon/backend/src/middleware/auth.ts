@@ -1,9 +1,29 @@
+import { Request, Response, NextFunction } from 'express';
 import { getSession } from '../services/redis.js';
 import { query } from '../services/database.js';
 
-export async function authMiddleware(req, res, next) {
+// Extend Express Request to include user and sessionId
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: number;
+        email: string;
+        name: string;
+        role: 'user' | 'admin' | 'seller';
+      } | null;
+      sessionId?: string;
+    }
+  }
+}
+
+export async function authMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
   try {
-    const sessionId = req.headers['x-session-id'] || req.headers.authorization?.replace('Bearer ', '');
+    const sessionId = (req.headers['x-session-id'] as string) || req.headers.authorization?.replace('Bearer ', '');
 
     if (!sessionId) {
       req.user = null;
@@ -37,29 +57,46 @@ export async function authMiddleware(req, res, next) {
   }
 }
 
-export function requireAuth(req, res, next) {
+export function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
   next();
 }
 
-export function requireAdmin(req, res, next) {
+export function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    res.status(403).json({ error: 'Admin access required' });
+    return;
   }
   next();
 }
 
-export function requireSeller(req, res, next) {
+export function requireSeller(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
   if (req.user.role !== 'seller' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Seller access required' });
+    res.status(403).json({ error: 'Seller access required' });
+    return;
   }
   next();
 }

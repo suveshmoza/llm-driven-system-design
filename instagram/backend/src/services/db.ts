@@ -1,9 +1,7 @@
-import pg from 'pg';
+import pg, { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import config from '../config/index.js';
 
-const { Pool } = pg;
-
-const pool = new Pool({
+const pool: Pool = new pg.Pool({
   host: config.database.host,
   port: config.database.port,
   database: config.database.database,
@@ -14,13 +12,17 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-pool.on('error', (err) => {
+pool.on('error', (err: Error) => {
   console.error('Unexpected error on idle database client', err);
   process.exit(-1);
 });
 
-export const query = (text, params) => pool.query(text, params);
+export const query = <T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params?: unknown[]
+): Promise<QueryResult<T>> => pool.query<T>(text, params);
 
-export const getClient = () => pool.connect();
+export const getClient = (): Promise<PoolClient> => pool.connect();
 
+export { pool };
 export default pool;

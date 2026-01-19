@@ -2,15 +2,15 @@
   "name": "github-backend",
   "version": "1.0.0",
   "description": "GitHub clone - code hosting platform backend",
-  "main": "src/index.js",
+  "main": "src/index.ts",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development node --watch src/index.js",
+    "dev": "NODE_ENV=development tsx --watch src/index.ts",
     "dev:server1": "PORT=3001 npm run dev",
     "dev:server2": "PORT=3002 npm run dev",
     "dev:server3": "PORT=3003 npm run dev",
-    "start": "NODE_ENV=production node src/index.js",
-    "db:seed": "node src/db/seed.js"
+    "start": "NODE_ENV=production tsx src/index.ts",
+    "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^8.12.0",
@@ -31,6 +31,14 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "eslint": "^8.57.0"
+    "@types/bcrypt": "^5.0.2",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "@types/uuid": "^9.0.8",
+    "eslint": "^8.57.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
   }
 }

@@ -1,10 +1,10 @@
-import pg, { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import pg from 'pg';
 
-const { Pool: PgPool } = pg;
+const { Pool } = pg;
 
-export const pool: Pool = new PgPool({
+export const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT || '5432'),
+  port: process.env.POSTGRES_PORT || 5432,
   database: process.env.POSTGRES_DB || 'docusign',
   user: process.env.POSTGRES_USER || 'docusign',
   password: process.env.POSTGRES_PASSWORD || 'docusign_dev',
@@ -13,7 +13,7 @@ export const pool: Pool = new PgPool({
   connectionTimeoutMillis: 2000,
 });
 
-export async function initializeDatabase(): Promise<void> {
+export async function initializeDatabase() {
   const client = await pool.connect();
   try {
     await client.query('SELECT 1');
@@ -22,12 +22,9 @@ export async function initializeDatabase(): Promise<void> {
   }
 }
 
-export async function query<T extends QueryResultRow = QueryResultRow>(
-  text: string,
-  params?: unknown[]
-): Promise<QueryResult<T>> {
+export async function query(text, params) {
   const start = Date.now();
-  const result = await pool.query<T>(text, params);
+  const result = await pool.query(text, params);
   const duration = Date.now() - start;
   if (duration > 100) {
     console.log('Slow query:', { text, duration, rows: result.rowCount });
@@ -35,6 +32,6 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   return result;
 }
 
-export async function getClient(): Promise<PoolClient> {
+export async function getClient() {
   return await pool.connect();
 }

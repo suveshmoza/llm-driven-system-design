@@ -36,15 +36,15 @@ export const CACHE_PREFIX = {
 
 /**
  * Get value from cache
- * @param {string} key - Cache key
- * @returns {Promise<any|null>} Cached value or null
+ * @param key - Cache key
+ * @returns Cached value or null
  */
-export async function cacheGet(key) {
+export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
   try {
     const value = await redisClient.get(key);
     if (value) {
       metrics.cacheHits.inc({ cache_type: key.split(':')[0] });
-      return JSON.parse(value);
+      return JSON.parse(value) as T;
     }
     metrics.cacheMisses.inc({ cache_type: key.split(':')[0] });
     return null;
@@ -57,11 +57,11 @@ export async function cacheGet(key) {
 
 /**
  * Set value in cache with TTL
- * @param {string} key - Cache key
- * @param {any} value - Value to cache (will be JSON stringified)
- * @param {number} ttl - Time to live in seconds
+ * @param key - Cache key
+ * @param value - Value to cache (will be JSON stringified)
+ * @param ttl - Time to live in seconds
  */
-export async function cacheSet(key, value, ttl) {
+export async function cacheSet(key: string, value: unknown, ttl: number): Promise<void> {
   try {
     await redisClient.setEx(key, ttl, JSON.stringify(value));
   } catch (error) {
@@ -71,9 +71,9 @@ export async function cacheSet(key, value, ttl) {
 
 /**
  * Delete a cache key
- * @param {string} key - Cache key to delete
+ * @param key - Cache key to delete
  */
-export async function cacheDel(key) {
+export async function cacheDel(key: string): Promise<void> {
   try {
     await redisClient.del(key);
   } catch (error) {
@@ -83,9 +83,9 @@ export async function cacheDel(key) {
 
 /**
  * Delete all keys matching a pattern
- * @param {string} pattern - Pattern to match (e.g., 'listing:123:*')
+ * @param pattern - Pattern to match (e.g., 'listing:123:*')
  */
-export async function cacheDelPattern(pattern) {
+export async function cacheDelPattern(pattern: string): Promise<void> {
   try {
     const keys = await redisClient.keys(pattern);
     if (keys.length > 0) {
@@ -98,14 +98,14 @@ export async function cacheDelPattern(pattern) {
 
 /**
  * Cache-aside helper - get from cache or fetch from source
- * @param {string} key - Cache key
- * @param {Function} fetchFn - Async function to fetch data if cache miss
- * @param {number} ttl - Time to live in seconds
- * @returns {Promise<any>} Data from cache or source
+ * @param key - Cache key
+ * @param fetchFn - Async function to fetch data if cache miss
+ * @param ttl - Time to live in seconds
+ * @returns Data from cache or source
  */
-export async function cacheAside(key, fetchFn, ttl) {
+export async function cacheAside<T>(key: string, fetchFn: () => Promise<T>, ttl: number): Promise<T> {
   // Try cache first
-  const cached = await cacheGet(key);
+  const cached = await cacheGet<T>(key);
   if (cached !== null) {
     return cached;
   }
@@ -125,19 +125,19 @@ export async function cacheAside(key, fetchFn, ttl) {
 
 /**
  * Get listing from cache or database
- * @param {number} listingId - Listing ID
- * @param {Function} fetchFn - Function to fetch from database
+ * @param listingId - Listing ID
+ * @param fetchFn - Function to fetch from database
  */
-export async function getCachedListing(listingId, fetchFn) {
+export async function getCachedListing<T>(listingId: number | string, fetchFn: () => Promise<T>): Promise<T> {
   const key = `${CACHE_PREFIX.LISTING}:${listingId}`;
   return cacheAside(key, fetchFn, CACHE_TTL.LISTING);
 }
 
 /**
  * Invalidate listing cache
- * @param {number} listingId - Listing ID
+ * @param listingId - Listing ID
  */
-export async function invalidateListingCache(listingId) {
+export async function invalidateListingCache(listingId: number | string): Promise<void> {
   const key = `${CACHE_PREFIX.LISTING}:${listingId}`;
   await cacheDel(key);
   // Also invalidate related search caches
@@ -146,30 +146,30 @@ export async function invalidateListingCache(listingId) {
 
 /**
  * Get availability from cache or database
- * @param {number} listingId - Listing ID
- * @param {string} startDate - Start date
- * @param {string} endDate - End date
- * @param {Function} fetchFn - Function to fetch from database
+ * @param listingId - Listing ID
+ * @param startDate - Start date
+ * @param endDate - End date
+ * @param fetchFn - Function to fetch from database
  */
-export async function getCachedAvailability(listingId, startDate, endDate, fetchFn) {
+export async function getCachedAvailability<T>(listingId: number | string, startDate: string, endDate: string, fetchFn: () => Promise<T>): Promise<T> {
   const key = `${CACHE_PREFIX.AVAILABILITY}:${listingId}:${startDate}:${endDate}`;
   return cacheAside(key, fetchFn, CACHE_TTL.AVAILABILITY);
 }
 
 /**
  * Invalidate availability cache for a listing
- * @param {number} listingId - Listing ID
+ * @param listingId - Listing ID
  */
-export async function invalidateAvailabilityCache(listingId) {
+export async function invalidateAvailabilityCache(listingId: number | string): Promise<void> {
   await cacheDelPattern(`${CACHE_PREFIX.AVAILABILITY}:${listingId}:*`);
 }
 
 /**
  * Get search results from cache
- * @param {string} searchParams - Serialized search parameters
- * @param {Function} fetchFn - Function to fetch from database
+ * @param searchParams - Search parameters object
+ * @param fetchFn - Function to fetch from database
  */
-export async function getCachedSearchResults(searchParams, fetchFn) {
+export async function getCachedSearchResults<T>(searchParams: Record<string, unknown>, fetchFn: () => Promise<T>): Promise<T> {
   // Create a hash of search params for the cache key
   const key = `${CACHE_PREFIX.SEARCH}:${Buffer.from(JSON.stringify(searchParams)).toString('base64').slice(0, 64)}`;
   return cacheAside(key, fetchFn, CACHE_TTL.SEARCH);
@@ -179,7 +179,7 @@ export async function getCachedSearchResults(searchParams, fetchFn) {
  * Update cache hit ratio metrics
  * Call this periodically to update the gauge
  */
-export async function updateCacheMetrics() {
+export async function updateCacheMetrics(): Promise<void> {
   try {
     const info = await redisClient.info('stats');
     const hitMatch = info.match(/keyspace_hits:(\d+)/);

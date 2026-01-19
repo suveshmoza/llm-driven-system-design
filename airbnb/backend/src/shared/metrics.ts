@@ -16,6 +16,7 @@
  */
 
 import client from 'prom-client';
+import type { Request, Response, NextFunction } from 'express';
 
 // Create a Registry
 const register = new client.Registry();
@@ -203,7 +204,7 @@ export const bookingNights = new client.Counter({
 /**
  * Express middleware to track HTTP request metrics
  */
-export function metricsMiddleware(req, res, next) {
+export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const start = process.hrtime.bigint();
 
   res.on('finish', () => {
@@ -226,14 +227,14 @@ export function metricsMiddleware(req, res, next) {
 /**
  * Get all metrics for Prometheus scraping
  */
-export async function getMetrics() {
+export async function getMetrics(): Promise<string> {
   return register.metrics();
 }
 
 /**
  * Get content type for metrics response
  */
-export function getMetricsContentType() {
+export function getMetricsContentType(): string {
   return register.contentType;
 }
 

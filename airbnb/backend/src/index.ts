@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction, type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
@@ -42,7 +42,7 @@ app.use(metricsMiddleware);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Health check endpoint with detailed status
-app.get('/health', async (req, res) => {
+app.get('/health', async (req: Request, res: Response) => {
   const startTime = Date.now();
 
   try {
@@ -66,7 +66,7 @@ app.get('/health', async (req, res) => {
 
     // Check RabbitMQ
     let queueStatus = 'healthy';
-    let queueStats = {};
+    let queueStats: Record<string, unknown> = {};
     try {
       queueStats = await getQueueStats();
     } catch {
@@ -103,13 +103,13 @@ app.get('/health', async (req, res) => {
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      error: error.message,
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
 
 // Readiness check (for Kubernetes)
-app.get('/ready', async (req, res) => {
+app.get('/ready', async (req: Request, res: Response) => {
   try {
     const { query } = await import('./db.js');
     await query('SELECT 1');
@@ -120,12 +120,12 @@ app.get('/ready', async (req, res) => {
 });
 
 // Liveness check (for Kubernetes)
-app.get('/live', (req, res) => {
+app.get('/live', (req: Request, res: Response) => {
   res.status(200).json({ alive: true });
 });
 
 // Prometheus metrics endpoint
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (req: Request, res: Response) => {
   try {
     // Update cache metrics before returning
     await updateCacheMetrics();
@@ -134,12 +134,12 @@ app.get('/metrics', async (req, res) => {
     res.end(await getMetrics());
   } catch (error) {
     log.error({ error }, 'Failed to get metrics');
-    res.status(500).end(error.message);
+    res.status(500).end(error instanceof Error ? error.message : 'Unknown error');
   }
 });
 
 // Circuit breaker status endpoint (for debugging)
-app.get('/debug/circuit-breakers', (req, res) => {
+app.get('/debug/circuit-breakers', (req: Request, res: Response) => {
   res.json(getAllCircuitBreakersStatus());
 });
 
@@ -152,7 +152,7 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/messages', messagesRoutes);
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   log.error({
     error: {
       name: err.name,
@@ -165,15 +165,16 @@ app.use((err, req, res, next) => {
   }, 'Unhandled error');
 
   res.status(500).json({ error: 'Internal server error' });
-});
+};
+app.use(errorHandler);
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
 // Graceful shutdown
-async function shutdown(signal) {
+async function shutdown(signal: string): Promise<void> {
   log.info({ signal }, 'Received shutdown signal');
 
   // Close RabbitMQ connection
@@ -198,7 +199,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Start server
-async function start() {
+async function start(): Promise<void> {
   try {
     // Connect to Redis
     await connectRedis();
@@ -209,7 +210,7 @@ async function start() {
       await initQueue();
       log.info('RabbitMQ connected');
     } catch (error) {
-      log.warn({ error: error.message }, 'RabbitMQ not available - async features disabled');
+      log.warn({ error: error instanceof Error ? error.message : 'Unknown error' }, 'RabbitMQ not available - async features disabled');
     }
 
     app.listen(PORT, () => {

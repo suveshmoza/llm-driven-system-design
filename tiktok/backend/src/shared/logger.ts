@@ -1,14 +1,30 @@
-import pino from 'pino';
+import pino, { Logger } from 'pino';
+import { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
+// Extend Express Request to include custom properties
+declare global {
+  namespace Express {
+    interface Request {
+      requestId?: string;
+      log?: Logger;
+    }
+  }
+}
+
+// Error with additional properties
+interface ExtendedError extends Error {
+  code?: string;
+}
+
 // Create structured JSON logger with pino
 // In production: JSON logs for machine parsing (ELK, Splunk, etc.)
 // In development: Pretty-printed logs for readability
-const logger = pino({
+const logger: Logger = pino({
   level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
   transport: isDevelopment
     ? {
@@ -31,14 +47,14 @@ const logger = pino({
 });
 
 // Create child logger for specific components
-export const createLogger = (component) => {
+export const createLogger = (component: string): Logger => {
   return logger.child({ component });
 };
 
 // Request logging middleware
-export const requestLogger = (req, res, next) => {
+export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
-  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
 
   // Attach request ID to request object
   req.requestId = requestId;
@@ -50,7 +66,7 @@ export const requestLogger = (req, res, next) => {
     method: req.method,
     url: req.url,
     userAgent: req.headers['user-agent'],
-    ip: req.ip || req.connection?.remoteAddress,
+    ip: req.ip || req.socket?.remoteAddress,
   });
 
   // Log request start
@@ -67,11 +83,11 @@ export const requestLogger = (req, res, next) => {
     };
 
     if (res.statusCode >= 500) {
-      req.log.error(logData, 'Request failed with server error');
+      req.log?.error(logData, 'Request failed with server error');
     } else if (res.statusCode >= 400) {
-      req.log.warn(logData, 'Request failed with client error');
+      req.log?.warn(logData, 'Request failed with client error');
     } else {
-      req.log.info(logData, 'Request completed');
+      req.log?.info(logData, 'Request completed');
     }
   });
 
@@ -79,7 +95,7 @@ export const requestLogger = (req, res, next) => {
 };
 
 // Error logging helper
-export const logError = (error, context = {}) => {
+export const logError = (error: ExtendedError, context: Record<string, unknown> = {}): void => {
   logger.error({
     err: {
       message: error.message,
@@ -92,7 +108,11 @@ export const logError = (error, context = {}) => {
 };
 
 // Audit log for sensitive operations
-export const auditLog = (action, userId, details = {}) => {
+export const auditLog = (
+  action: string,
+  userId: string | number | null,
+  details: Record<string, unknown> = {}
+): void => {
   logger.info({
     type: 'audit',
     action,

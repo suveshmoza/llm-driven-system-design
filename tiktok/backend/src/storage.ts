@@ -1,4 +1,10 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectCommandOutput,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import dotenv from 'dotenv';
 
@@ -16,7 +22,12 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-export const uploadFile = async (bucket, key, body, contentType) => {
+export const uploadFile = async (
+  bucket: string,
+  key: string,
+  body: Buffer | Uint8Array | string,
+  contentType: string
+): Promise<string> => {
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -28,7 +39,12 @@ export const uploadFile = async (bucket, key, body, contentType) => {
   return `${endpoint}/${bucket}/${key}`;
 };
 
-export const getPresignedUploadUrl = async (bucket, key, contentType, expiresIn = 3600) => {
+export const getPresignedUploadUrl = async (
+  bucket: string,
+  key: string,
+  contentType: string,
+  expiresIn: number = 3600
+): Promise<string> => {
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -38,7 +54,11 @@ export const getPresignedUploadUrl = async (bucket, key, contentType, expiresIn 
   return getSignedUrl(s3Client, command, { expiresIn });
 };
 
-export const getPresignedDownloadUrl = async (bucket, key, expiresIn = 3600) => {
+export const getPresignedDownloadUrl = async (
+  bucket: string,
+  key: string,
+  expiresIn: number = 3600
+): Promise<string> => {
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -47,7 +67,10 @@ export const getPresignedDownloadUrl = async (bucket, key, expiresIn = 3600) => 
   return getSignedUrl(s3Client, command, { expiresIn });
 };
 
-export const deleteFile = async (bucket, key) => {
+export const deleteFile = async (
+  bucket: string,
+  key: string
+): Promise<DeleteObjectCommandOutput> => {
   const command = new DeleteObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -56,7 +79,7 @@ export const deleteFile = async (bucket, key) => {
   return s3Client.send(command);
 };
 
-export const getPublicUrl = (bucket, key) => {
+export const getPublicUrl = (bucket: string, key: string): string => {
   return `${endpoint}/${bucket}/${key}`;
 };
 

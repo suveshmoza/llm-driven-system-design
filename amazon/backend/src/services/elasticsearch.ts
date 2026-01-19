@@ -1,36 +1,81 @@
 import { Client } from '@elastic/elasticsearch';
+import type {
+  SearchResponse,
+  ClusterHealthResponse,
+  IndicesExistsResponse,
+  BulkResponse
+} from '@elastic/elasticsearch/lib/api/types.js';
 
-let client = null;
+let client: Client | null = null;
 
 const INDEX_NAME = 'products';
 
-export async function initializeElasticsearch() {
+export interface Product {
+  id: number;
+  title: string;
+  slug?: string;
+  description?: string;
+  category_id?: number;
+  category_name?: string;
+  category_slug?: string;
+  seller_id?: number;
+  seller_name?: string;
+  price: string | number;
+  compare_at_price?: string | number | null;
+  rating?: string | number;
+  review_count?: number;
+  stock_quantity?: number;
+  in_stock?: boolean;
+  attributes?: Record<string, unknown>;
+  images?: string[];
+  created_at?: string | Date;
+}
+
+export interface SearchFilters {
+  category?: string;
+  minPrice?: string | number;
+  maxPrice?: string | number;
+  inStock?: boolean;
+  minRating?: string | number;
+  sortBy?: 'price_asc' | 'price_desc' | 'rating' | 'newest' | 'relevance';
+}
+
+export interface SearchResult {
+  products: Array<Product & { score?: number | null }>;
+  total: number;
+  aggregations: Record<string, unknown>;
+}
+
+export async function initializeElasticsearch(): Promise<Client | null> {
   client = new Client({
     node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200'
   });
 
   // Check connection
   try {
-    const health = await client.cluster.health();
+    const health: ClusterHealthResponse = await client.cluster.health();
     console.log('Elasticsearch connected:', health.status);
 
     // Create index if it doesn't exist
-    const indexExists = await client.indices.exists({ index: INDEX_NAME });
+    const indexExists: IndicesExistsResponse = await client.indices.exists({ index: INDEX_NAME });
     if (!indexExists) {
       await createProductIndex();
     }
   } catch (error) {
-    console.warn('Elasticsearch not available, search features disabled:', error.message);
+    const err = error as Error;
+    console.warn('Elasticsearch not available, search features disabled:', err.message);
   }
 
   return client;
 }
 
-export function getElasticsearch() {
+export function getElasticsearch(): Client | null {
   return client;
 }
 
-async function createProductIndex() {
+async function createProductIndex(): Promise<void> {
+  if (!client) return;
+
   await client.indices.create({
     index: INDEX_NAME,
     body: {
@@ -79,7 +124,7 @@ async function createProductIndex() {
   console.log('Products index created');
 }
 
-export async function indexProduct(product) {
+export async function indexProduct(product: Product): Promise<void> {
   if (!client) return;
 
   try {
@@ -95,11 +140,11 @@ export async function indexProduct(product) {
         category_slug: product.category_slug,
         seller_id: product.seller_id,
         seller_name: product.seller_name,
-        price: parseFloat(product.price),
-        compare_at_price: product.compare_at_price ? parseFloat(product.compare_at_price) : null,
-        rating: parseFloat(product.rating) || 0,
+        price: parseFloat(String(product.price)),
+        compare_at_price: product.compare_at_price ? parseFloat(String(product.compare_at_price)) : null,
+        rating: parseFloat(String(product.rating)) || 0,
         review_count: product.review_count || 0,
-        in_stock: product.stock_quantity > 0,
+        in_stock: (product.stock_quantity ?? 0) > 0,
         stock_quantity: product.stock_quantity || 0,
         attributes: product.attributes || {},
         images: product.images || [],
@@ -112,7 +157,7 @@ export async function indexProduct(product) {
   }
 }
 
-export async function deleteProductFromIndex(productId) {
+export async function deleteProductFromIndex(productId: string | number): Promise<void> {
   if (!client) return;
 
   try {
@@ -125,19 +170,24 @@ export async function deleteProductFromIndex(productId) {
   }
 }
 
-export async function searchProducts(query, filters = {}, page = 0, limit = 20) {
+export async function searchProducts(
+  queryText: string | undefined,
+  filters: SearchFilters = {},
+  page: number = 0,
+  limit: number = 20
+): Promise<SearchResult> {
   if (!client) {
     return { products: [], total: 0, aggregations: {} };
   }
 
-  const must = [];
-  const filter = [];
+  const must: Record<string, unknown>[] = [];
+  const filter: Record<string, unknown>[] = [];
 
   // Full-text search
-  if (query) {
+  if (queryText) {
     must.push({
       multi_match: {
-        query: query,
+        query: queryText,
         fields: ['title^3', 'description', 'category_name', 'seller_name'],
         type: 'best_fields',
         fuzziness: 'AUTO'
@@ -154,9 +204,9 @@ export async function searchProducts(query, filters = {}, page = 0, limit = 20) 
 
   // Price range filter
   if (filters.minPrice || filters.maxPrice) {
-    const rangeQuery = { range: { price: {} } };
-    if (filters.minPrice) rangeQuery.range.price.gte = parseFloat(filters.minPrice);
-    if (filters.maxPrice) rangeQuery.range.price.lte = parseFloat(filters.maxPrice);
+    const rangeQuery: { range: { price: { gte?: number; lte?: number } } } = { range: { price: {} } };
+    if (filters.minPrice) rangeQuery.range.price.gte = parseFloat(String(filters.minPrice));
+    if (filters.maxPrice) rangeQuery.range.price.lte = parseFloat(String(filters.maxPrice));
     filter.push(rangeQuery);
   }
 
@@ -167,11 +217,11 @@ export async function searchProducts(query, filters = {}, page = 0, limit = 20) 
 
   // Rating filter
   if (filters.minRating) {
-    filter.push({ range: { rating: { gte: parseFloat(filters.minRating) } } });
+    filter.push({ range: { rating: { gte: parseFloat(String(filters.minRating)) } } });
   }
 
   // Build sort
-  let sort = [];
+  let sort: Array<Record<string, string>> = [];
   switch (filters.sortBy) {
     case 'price_asc':
       sort = [{ price: 'asc' }];
@@ -190,7 +240,7 @@ export async function searchProducts(query, filters = {}, page = 0, limit = 20) 
   }
 
   try {
-    const result = await client.search({
+    const result: SearchResponse = await client.search({
       index: INDEX_NAME,
       body: {
         query: {
@@ -236,13 +286,17 @@ export async function searchProducts(query, filters = {}, page = 0, limit = 20) 
       }
     });
 
+    const total = typeof result.hits.total === 'number'
+      ? result.hits.total
+      : result.hits.total?.value ?? 0;
+
     return {
       products: result.hits.hits.map(hit => ({
-        ...hit._source,
+        ...(hit._source as Product),
         score: hit._score
       })),
-      total: result.hits.total.value,
-      aggregations: result.aggregations
+      total,
+      aggregations: result.aggregations as Record<string, unknown> || {}
     };
   } catch (error) {
     console.error('Elasticsearch search error:', error);
@@ -250,7 +304,7 @@ export async function searchProducts(query, filters = {}, page = 0, limit = 20) 
   }
 }
 
-export async function bulkIndexProducts(products) {
+export async function bulkIndexProducts(products: Product[]): Promise<void> {
   if (!client || products.length === 0) return;
 
   const operations = products.flatMap(product => [
@@ -264,11 +318,11 @@ export async function bulkIndexProducts(products) {
       category_slug: product.category_slug,
       seller_id: product.seller_id,
       seller_name: product.seller_name,
-      price: parseFloat(product.price),
-      compare_at_price: product.compare_at_price ? parseFloat(product.compare_at_price) : null,
-      rating: parseFloat(product.rating) || 0,
+      price: parseFloat(String(product.price)),
+      compare_at_price: product.compare_at_price ? parseFloat(String(product.compare_at_price)) : null,
+      rating: parseFloat(String(product.rating)) || 0,
       review_count: product.review_count || 0,
-      in_stock: product.stock_quantity > 0,
+      in_stock: (product.stock_quantity ?? 0) > 0,
       stock_quantity: product.stock_quantity || 0,
       attributes: product.attributes || {},
       images: product.images || [],
@@ -277,7 +331,7 @@ export async function bulkIndexProducts(products) {
   ]);
 
   try {
-    await client.bulk({ operations });
+    const result: BulkResponse = await client.bulk({ operations });
     await client.indices.refresh({ index: INDEX_NAME });
     console.log(`Indexed ${products.length} products`);
   } catch (error) {

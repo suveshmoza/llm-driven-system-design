@@ -1,11 +1,11 @@
-import pg from 'pg';
+import pg, { Pool, PoolClient, QueryResult } from 'pg';
 
-const { Pool } = pg;
+const { Pool: PgPool } = pg;
 
-let pool = null;
+let pool: Pool | null = null;
 
-export async function initializeDb() {
-  pool = new Pool({
+export async function initializeDb(): Promise<Pool> {
+  pool = new PgPool({
     connectionString: process.env.DATABASE_URL,
   });
 
@@ -18,16 +18,22 @@ export async function initializeDb() {
   return pool;
 }
 
-export function getDb() {
+export function getDb(): Pool {
   if (!pool) {
     throw new Error('Database not initialized');
   }
   return pool;
 }
 
-export async function query(text, params) {
+export async function query<T = Record<string, unknown>>(
+  text: string,
+  params?: unknown[]
+): Promise<QueryResult<T>> {
+  if (!pool) {
+    throw new Error('Database not initialized');
+  }
   const start = Date.now();
-  const result = await pool.query(text, params);
+  const result = await pool.query<T>(text, params);
   const duration = Date.now() - start;
   if (process.env.NODE_ENV === 'development' && duration > 100) {
     console.log('Slow query:', { text, duration, rows: result.rowCount });
@@ -35,7 +41,12 @@ export async function query(text, params) {
   return result;
 }
 
-export async function transaction(callback) {
+export async function transaction<T>(
+  callback: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  if (!pool) {
+    throw new Error('Database not initialized');
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

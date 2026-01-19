@@ -1,28 +1,44 @@
-export function errorHandler(err, req, res, next) {
+import { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+
+interface AppError extends Error {
+  status?: number;
+  code?: string;
+  details?: unknown;
+}
+
+export const errorHandler: ErrorRequestHandler = (
+  err: AppError,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
   console.error('Error:', err);
 
   if (err.name === 'ValidationError') {
-    return res.status(400).json({
+    res.status(400).json({
       error: 'Validation failed',
       details: err.details
     });
+    return;
   }
 
   if (err.code === '23505') {
     // PostgreSQL unique violation
-    return res.status(409).json({
+    res.status(409).json({
       error: 'Resource already exists'
     });
+    return;
   }
 
   if (err.code === '23503') {
     // PostgreSQL foreign key violation
-    return res.status(400).json({
+    res.status(400).json({
       error: 'Invalid reference to related resource'
     });
+    return;
   }
 
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error'
   });
-}
+};
