@@ -95,12 +95,12 @@ router.post('/login', async (req: Request<object, object, LoginBody>, res: Respo
 });
 
 // Get current user
-router.get('/me', authenticate as never, (req: AuthenticatedRequest, res: Response): void => {
+router.get('/me', authenticate as never, ((req: AuthenticatedRequest, res: Response): void => {
   res.json({ user: req.user });
-});
+}) as never);
 
 // Logout
-router.post('/logout', authenticate as never, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+router.post('/logout', authenticate as never, (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     await authService.logout(req.token);
     res.json({ success: true });
@@ -108,6 +108,6 @@ router.post('/logout', authenticate as never, async (req: AuthenticatedRequest, 
     console.error('Logout error:', error);
     res.status(500).json({ error: 'Logout failed' });
   }
-});
+}) as never);
 
 export default router;

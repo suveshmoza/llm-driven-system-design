@@ -1,4 +1,5 @@
-import pino from 'pino';
+import pino, { Logger } from 'pino';
+import { Request } from 'express';
 
 // Structured JSON logging with pino
 // In production, these logs can be shipped to ELK/Datadog/CloudWatch
@@ -25,7 +26,7 @@ const logger = pino({
 });
 
 // Create child logger with request context
-export function createRequestLogger(req) {
+export function createRequestLogger(req: Request): Logger {
   return logger.child({
     requestId: req.headers['x-request-id'] || crypto.randomUUID(),
     method: req.method,

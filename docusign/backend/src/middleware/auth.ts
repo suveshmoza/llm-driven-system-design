@@ -1,8 +1,10 @@
+import { Request, Response, NextFunction } from 'express';
 import { query } from '../utils/db.js';
 import { getSession, getSigningSession } from '../utils/redis.js';
+import '../types/express.js';
 
 // Authenticate logged-in users
-export async function authenticate(req, res, next) {
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
     const token = req.cookies.token || req.headers.authorization?.replace('Bearer ', '');
 
@@ -30,7 +32,7 @@ export async function authenticate(req, res, next) {
 }
 
 // Authenticate admin users
-export async function authenticateAdmin(req, res, next) {
+export async function authenticateAdmin(req: Request, res: Response, next: NextFunction) {
   try {
     await authenticate(req, res, () => {
       if (req.user.role !== 'admin') {
@@ -45,7 +47,7 @@ export async function authenticateAdmin(req, res, next) {
 }
 
 // Authenticate signing recipients via access token
-export async function authenticateSigner(req, res, next) {
+export async function authenticateSigner(req: Request, res: Response, next: NextFunction) {
   try {
     const accessToken = req.params.accessToken || req.query.accessToken || req.body.accessToken;
 
@@ -100,7 +102,7 @@ export async function authenticateSigner(req, res, next) {
 }
 
 // Optional authentication - proceeds even if not authenticated
-export async function optionalAuth(req, res, next) {
+export async function optionalAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const token = req.cookies.token || req.headers.authorization?.replace('Bearer ', '');
 

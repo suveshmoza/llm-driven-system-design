@@ -32,12 +32,43 @@ import {
 } from './shared/logger.js';
 import { requireAdminKey, getAdminConfig } from './shared/auth.js';
 import {
-  createCircuitBreaker,
   removeCircuitBreaker,
   getAllCircuitBreakerStatus,
   resetAllCircuitBreakers,
 } from './shared/circuit-breaker.js';
 import { createRebalanceManager } from './shared/rebalance.js';
+
+// Define interface for node stats
+interface NodeStats {
+  nodeUrl: string;
+  hits: number;
+  misses: number;
+  sets: number;
+  deletes: number;
+  evictions: number;
+  size: number;
+  memoryMB: string;
+  hotKeys?: Array<{ key: string; count: number }>;
+}
+
+// Define interface for hot key
+interface HotKey {
+  key: string;
+  count: number;
+  node?: string;
+}
+
+// Define interface for node hot keys result
+interface NodeHotKeysResult {
+  nodeUrl: string;
+  hotKeys: HotKey[];
+}
+
+// Define interface for keys result
+interface KeysResult {
+  nodeUrl: string;
+  keys: string[];
+}
 
 // Configuration
 const PORT = process.env.PORT || 3000;
@@ -77,7 +108,7 @@ app.use(createHttpLogger());
 /**
  * Make an HTTP request to a cache node with circuit breaker
  */
-async function nodeRequest(nodeUrl, path, options = {}) {
+async function nodeRequest(nodeUrl: string, path: string, options: RequestInit = {}) {
   const url = `${nodeUrl}${path}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -103,9 +134,9 @@ async function nodeRequest(nodeUrl, path, options = {}) {
 
     const data = await response.json();
     return { success: true, data, status: response.status };
-  } catch (error) {
+  } catch (error: unknown) {
     clearTimeout(timeout);
-    return { success: false, error: error.message };
+    return { success: false, error: (error as Error).message };
   }
 }
 
@@ -115,7 +146,7 @@ const rebalanceManager = createRebalanceManager(ring, nodeRequest);
 /**
  * Check health of a single node
  */
-async function checkNodeHealth(nodeUrl) {
+async function checkNodeHealth(nodeUrl: string) {
   const result = await nodeRequest(nodeUrl, '/health');
 
   if (result.success) {
@@ -191,7 +222,7 @@ async function checkAllNodesHealth() {
 /**
  * Get node for a key
  */
-function getNodeForKey(key) {
+function getNodeForKey(key: string) {
   const nodeUrl = ring.getNode(key);
   if (!nodeUrl) {
     throw new Error('No healthy nodes available');
@@ -206,7 +237,7 @@ function getNodeForKey(key) {
 /**
  * Coordinator health check
  */
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   const healthyNodes = Array.from(nodeStatus.values()).filter(
     (n) => n.healthy
   ).length;
@@ -225,20 +256,20 @@ app.get('/health', (req, res) => {
 /**
  * Prometheus metrics endpoint
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req, res) => {
   try {
     res.set('Content-Type', getContentType());
     res.end(await getMetrics());
-  } catch (error) {
-    logger.error({ error: error.message }, 'metrics_error');
-    res.status(500).end(error.message);
+  } catch (error: unknown) {
+    logger.error({ error: (error as Error).message }, 'metrics_error');
+    res.status(500).end((error as Error).message);
   }
 });
 
 /**
  * Cluster info
  */
-app.get('/cluster/info', (req, res) => {
+app.get('/cluster/info', (_req, res) => {
   res.json({
     coordinator: {
       port: PORT,
@@ -258,7 +289,7 @@ app.get('/cluster/info', (req, res) => {
 /**
  * Cluster stats - aggregate from all nodes
  */
-app.get('/cluster/stats', async (req, res) => {
+app.get('/cluster/stats', async (_req, res) => {
   const activeNodes = ring.getAllNodes();
   const statsPromises = activeNodes.map(async (nodeUrl) => {
     const result = await nodeRequest(nodeUrl, '/stats');
@@ -310,9 +341,9 @@ app.get('/cluster/locate/:key', (req, res) => {
       nodeUrl,
       allNodes: ring.getAllNodes(),
     });
-  } catch (error) {
+  } catch (error: unknown) {
     res.status(503).json({
-      error: error.message,
+      error: (error as Error).message,
     });
   }
 });
@@ -348,7 +379,7 @@ app.post('/cluster/distribution', (req, res) => {
 /**
  * Get hot keys across the cluster
  */
-app.get('/cluster/hot-keys', async (req, res) => {
+app.get('/cluster/hot-keys', async (_req, res) => {
   const activeNodes = ring.getAllNodes();
   const hotKeysPromises = activeNodes.map(async (nodeUrl) => {
     const result = await nodeRequest(nodeUrl, '/hot-keys');
@@ -390,8 +421,8 @@ app.get('/cache/:key', async (req, res) => {
     } else {
       res.status(result.status || 500).json(result.error);
     }
-  } catch (error) {
-    res.status(503).json({ error: error.message });
+  } catch (error: unknown) {
+    res.status(503).json({ error: (error as Error).message });
   }
 });
 
@@ -420,8 +451,8 @@ app.post('/cache/:key', async (req, res) => {
     } else {
       res.status(result.status || 500).json(result.error);
     }
-  } catch (error) {
-    res.status(503).json({ error: error.message });
+  } catch (error: unknown) {
+    res.status(503).json({ error: (error as Error).message });
   }
 });
 
@@ -450,8 +481,8 @@ app.put('/cache/:key', async (req, res) => {
     } else {
       res.status(result.status || 500).json(result.error);
     }
-  } catch (error) {
-    res.status(503).json({ error: error.message });
+  } catch (error: unknown) {
+    res.status(503).json({ error: (error as Error).message });
   }
 });
 
@@ -479,8 +510,8 @@ app.delete('/cache/:key', async (req, res) => {
     } else {
       res.status(result.status || 500).json(result.error);
     }
-  } catch (error) {
-    res.status(503).json({ error: error.message });
+  } catch (error: unknown) {
+    res.status(503).json({ error: (error as Error).message });
   }
 });
 
@@ -509,8 +540,8 @@ app.post('/cache/:key/incr', async (req, res) => {
     } else {
       res.status(result.status || 500).json(result.error);
     }
-  } catch (error) {
-    res.status(503).json({ error: error.message });
+  } catch (error: unknown) {
+    res.status(503).json({ error: (error as Error).message });
   }
 });
 
@@ -577,7 +608,7 @@ app.post('/flush', requireAdminKey, async (req, res) => {
 /**
  * GET /admin/config - Get admin configuration
  */
-app.get('/admin/config', (req, res) => {
+app.get('/admin/config', (_req, res) => {
   res.json(getAdminConfig());
 });
 
@@ -625,9 +656,9 @@ app.delete('/admin/node', requireAdminKey, async (req, res) => {
         { url, ...rebalanceResult },
         'graceful_removal_complete'
       );
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error(
-        { url, error: error.message },
+        { url, error: (error as Error).message },
         'graceful_removal_failed'
       );
     }
@@ -742,7 +773,7 @@ app.post('/admin/snapshot', requireAdminKey, async (req, res) => {
 /**
  * GET /admin/circuit-breakers - Get circuit breaker status
  */
-app.get('/admin/circuit-breakers', requireAdminKey, (req, res) => {
+app.get('/admin/circuit-breakers', requireAdminKey, (_req, res) => {
   res.json({
     circuitBreakers: getAllCircuitBreakerStatus(),
     timestamp: new Date().toISOString(),
@@ -752,7 +783,7 @@ app.get('/admin/circuit-breakers', requireAdminKey, (req, res) => {
 /**
  * POST /admin/circuit-breakers/reset - Reset all circuit breakers
  */
-app.post('/admin/circuit-breakers/reset', requireAdminKey, (req, res) => {
+app.post('/admin/circuit-breakers/reset', requireAdminKey, (_req, res) => {
   resetAllCircuitBreakers();
 
   logAdminOperation('reset_circuit_breakers', {});
@@ -767,7 +798,7 @@ app.post('/admin/circuit-breakers/reset', requireAdminKey, (req, res) => {
 // Error Handling
 // ======================
 
-app.use((err, req, res, next) => {
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error({ error: err.message, stack: err.stack }, 'unhandled_error');
   res.status(500).json({
     error: 'Internal server error',
@@ -815,7 +846,7 @@ const server = app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-async function shutdown(signal) {
+async function shutdown(signal: string) {
   logger.info({ signal }, 'shutdown_initiated');
 
   server.close(() => {

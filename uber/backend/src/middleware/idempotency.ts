@@ -92,7 +92,7 @@ export function idempotencyMiddleware(options: IdempotencyOptions = {}) {
       metrics.idempotencyMisses.inc({ operation });
 
       // Set pending marker to prevent concurrent duplicate requests
-      const acquired = await redis.set(cacheKey, PENDING_MARKER, 'NX', 'EX', PENDING_TTL);
+      const acquired = await redis.set(cacheKey, PENDING_MARKER, 'EX', PENDING_TTL, 'NX');
 
       if (!acquired) {
         // Another request with the same key started just now

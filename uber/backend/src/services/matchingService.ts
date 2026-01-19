@@ -91,6 +91,10 @@ interface RideWithDriverRow extends RideRow {
   driver_name?: string;
   current_lat?: string;
   current_lng?: string;
+  vehicle_make?: string;
+  vehicle_model?: string;
+  vehicle_color?: string;
+  license_plate?: string;
 }
 
 class MatchingService {
@@ -461,7 +465,7 @@ class MatchingService {
   // Driver accepts the ride
   async acceptRide(rideId: string, driverId: string): Promise<AcceptRideResult> {
     // Check if ride is still pending
-    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as RideData | null;
+    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as unknown as RideData | null;
     if (!rideData || rideData.status !== 'requested') {
       return { success: false, error: 'Ride no longer available' };
     }
@@ -570,7 +574,7 @@ class MatchingService {
 
     await redis.hset(`${RIDE_PREFIX}${rideId}`, 'status', 'driver_arrived');
 
-    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as RideData | null;
+    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as unknown as RideData | null;
 
     // Update metrics
     metrics.rideStatusGauge.dec({ status: 'matched' });
@@ -595,7 +599,7 @@ class MatchingService {
 
     await redis.hset(`${RIDE_PREFIX}${rideId}`, 'status', 'picked_up');
 
-    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as RideData | null;
+    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as unknown as RideData | null;
 
     // Update metrics
     metrics.rideStatusGauge.dec({ status: 'driver_arrived' });
@@ -798,7 +802,7 @@ class MatchingService {
       [rideId]
     );
 
-    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as RideData | null;
+    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as unknown as RideData | null;
 
     // Clean up Redis
     await redis.zrem(PENDING_REQUESTS_KEY, rideId);
@@ -835,7 +839,7 @@ class MatchingService {
   // Get ride status
   async getRideStatus(rideId: string): Promise<Ride | null> {
     // Try Redis first
-    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as RideData | null;
+    const rideData = await redis.hgetall(`${RIDE_PREFIX}${rideId}`) as unknown as RideData | null;
 
     if (rideData && rideData.status) {
       const driverLocation = rideData.driverId

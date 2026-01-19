@@ -2,9 +2,10 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 
-import { pool, initializeDatabase, query } from './utils/db.js';
+import './types/express.js';
+import { initializeDatabase, query } from './utils/db.js';
 import { redisClient, initializeRedis } from './utils/redis.js';
 import { minioClient, initializeMinio } from './utils/minio.js';
 import { initializeQueue, isQueueHealthy, getQueueHealth } from './shared/queue.js';
@@ -206,7 +207,7 @@ interface ErrorWithStatus extends Error {
   status?: number;
 }
 
-app.use((err: ErrorWithStatus, req: Request, res: Response, next: NextFunction) => {
+app.use((err: ErrorWithStatus, req: Request, res: Response, _next: NextFunction) => {
   const log = req.log || logger;
   log.error({
     error: err.message,

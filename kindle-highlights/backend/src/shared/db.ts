@@ -2,7 +2,7 @@
  * PostgreSQL database connection pool
  * @module shared/db
  */
-import pg from 'pg'
+import pg, { QueryResultRow } from 'pg'
 
 const { Pool } = pg
 
@@ -24,7 +24,7 @@ pool.on('error', (err) => {
  * @param params - Query parameters
  * @returns Query result
  */
-export async function query<T = any>(text: string, params?: any[]): Promise<pg.QueryResult<T>> {
+export async function query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<pg.QueryResult<T>> {
   const start = Date.now()
   const result = await pool.query<T>(text, params)
   const duration = Date.now() - start

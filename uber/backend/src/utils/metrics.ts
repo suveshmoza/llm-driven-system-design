@@ -245,17 +245,20 @@ export const metrics = {
 };
 
 // Extended request interface for route path
-interface RequestWithRoute extends Request {
+interface RequestWithRoute {
+  method: string;
+  path: string;
   route?: { path: string };
 }
 
 // Middleware to track HTTP metrics
-export const metricsMiddleware = (req: RequestWithRoute, res: Response, next: NextFunction): void => {
+export const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
+  const reqWithRoute = req as RequestWithRoute;
 
   res.on('finish', () => {
     const duration = (Date.now() - startTime) / 1000;
-    const path = req.route ? req.route.path : req.path;
+    const path = reqWithRoute.route ? reqWithRoute.route.path : reqWithRoute.path;
 
     httpRequestsTotal.inc({
       method: req.method,

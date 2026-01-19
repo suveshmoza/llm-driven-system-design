@@ -1,7 +1,9 @@
 // Authentication and authorization middleware with RBAC
+import { Request, Response, NextFunction } from 'express';
 import { pool } from '../db.js';
 import logger from '../shared/logger.js';
 import { authEventsTotal } from '../shared/metrics.js';
+import type { AuthenticatedRequest, RoleCacheEntry } from '../types.js';
 
 /**
  * User roles and their hierarchy.
@@ -29,13 +31,13 @@ const roleHierarchy = {
  * Cache for user roles (short TTL to avoid stale permissions).
  * In production, use Redis with proper invalidation.
  */
-const roleCache = new Map();
+const roleCache = new Map<string, RoleCacheEntry>();
 const ROLE_CACHE_TTL = 60000; // 1 minute
 
 /**
  * Get user role from database (with caching).
  */
-async function getUserRole(userId) {
+async function getUserRole(userId: string): Promise<string | null> {
   const cacheKey = `role:${userId}`;
   const cached = roleCache.get(cacheKey);
 
@@ -76,7 +78,7 @@ async function getUserRole(userId) {
 /**
  * Clear role cache for a user (call after role changes).
  */
-export function clearRoleCache(userId) {
+export function clearRoleCache(userId: string): void {
   roleCache.delete(`role:${userId}`);
 }
 
@@ -84,7 +86,7 @@ export function clearRoleCache(userId) {
  * Require authentication middleware.
  * Attaches user info to request.
  */
-export function requireAuth(req, res, next) {
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.session || !req.session.userId) {
     authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
     return res.status(401).json({ error: 'Authentication required' });
@@ -98,7 +100,7 @@ export function requireAuth(req, res, next) {
  * Optional authentication middleware.
  * Continues whether or not user is authenticated.
  */
-export function optionalAuth(req, res, next) {
+export function optionalAuth(req: Request, res: Response, next: NextFunction): void {
   // Just continue - session may or may not have userId
   next();
 }
@@ -109,8 +111,8 @@ export function optionalAuth(req, res, next) {
  *
  * @param {...string} roles - Required roles (user must have at least one)
  */
-export function requireRole(...roles) {
-  return async (req, res, next) => {
+export function requireRole(...roles: string[]) {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     // First check authentication
     if (!req.session || !req.session.userId) {
       authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
@@ -161,8 +163,8 @@ export function requireRole(...roles) {
  *
  * @param {string} minimumRole - Minimum required role level
  */
-export function requireMinRole(minimumRole) {
-  return async (req, res, next) => {
+export function requireMinRole(minimumRole: string) {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.session || !req.session.userId) {
       authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
       return res.status(401).json({ error: 'Authentication required' });
@@ -192,7 +194,7 @@ export function requireMinRole(minimumRole) {
  * Require admin role middleware.
  * Convenience wrapper for requireRole(Roles.ADMIN).
  */
-export function requireAdmin(req, res, next) {
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   return requireRole(Roles.ADMIN)(req, res, next);
 }
 
