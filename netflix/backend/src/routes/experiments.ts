@@ -238,7 +238,7 @@ router.get('/:id/allocation', authenticate, async (req: Request, res: Response) 
     }
 
     // Check for existing allocation
-    let allocation = await queryOne<AllocationRow>(
+    const allocation = await queryOne<AllocationRow>(
       'SELECT experiment_id, variant_id FROM experiment_allocations WHERE experiment_id = $1 AND profile_id = $2',
       [id, profileId]
     );
@@ -302,7 +302,7 @@ router.post('/allocations', authenticate, async (req: Request, res: Response) =>
 
     for (const exp of experiments) {
       // Check for existing allocation
-      let allocation = await queryOne<AllocationRow>(
+      const allocation = await queryOne<AllocationRow>(
         'SELECT variant_id FROM experiment_allocations WHERE experiment_id = $1 AND profile_id = $2',
         [exp.id, profileId]
       );

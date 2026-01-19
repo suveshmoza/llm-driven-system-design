@@ -16,13 +16,42 @@ const wsLogger = createServiceLogger('websocket-typing');
 /**
  * Typing Handler Module
  *
- * Handles typing indicators and read receipts.
- * Stores typing state in Redis with auto-expiry and broadcasts to participants.
+ * @description Handles typing indicators and read receipts for real-time chat features.
+ * Typing state is stored in Redis with auto-expiry and broadcast to all participants.
+ * Read receipts trigger database updates and sender notifications.
+ *
+ * @module typing-handler
  */
 
 /**
- * Handles typing indicator events.
- * Stores typing state in Redis with auto-expiry and broadcasts to participants.
+ * Handles typing indicator events from WebSocket clients.
+ *
+ * @description Processes typing start and stop events:
+ * 1. Stores typing state in Redis with 5-second auto-expiry (handles abandoned typing)
+ * 2. Broadcasts typing status to all other conversation participants
+ * 3. Routes to local connections or via Redis pub/sub for cross-server delivery
+ *
+ * Typing indicators are ephemeral and do not persist beyond the Redis TTL.
+ *
+ * @param socket - The authenticated WebSocket connection of the typing user
+ * @param message - The typing message containing conversationId and type (typing/stop_typing)
+ * @returns Promise that resolves when all participants are notified
+ * @throws Logs error but does not throw - typing failures are silently handled
+ *
+ * @example
+ * ```typescript
+ * // User starts typing
+ * await handleTyping(socket, {
+ *   type: 'typing',
+ *   payload: { conversationId: 'conv-123' }
+ * });
+ *
+ * // User stops typing
+ * await handleTyping(socket, {
+ *   type: 'stop_typing',
+ *   payload: { conversationId: 'conv-123' }
+ * });
+ * ```
  */
 export async function handleTyping(
   socket: AuthenticatedSocket,
@@ -78,9 +107,30 @@ export async function handleTyping(
 }
 
 /**
- * Handles read receipt events.
- * Marks messages as read in database and notifies senders.
- * Uses idempotent updates to prevent duplicate processing.
+ * Handles read receipt events from WebSocket clients.
+ *
+ * @description Processes read receipt requests:
+ * 1. Marks all unread messages in the conversation as read (idempotent)
+ * 2. Records read metrics for each marked message
+ * 3. Notifies all other participants about the read status
+ *
+ * Uses idempotent database updates to prevent duplicate processing.
+ * Only notifies senders if messages were actually newly marked as read.
+ *
+ * @param socket - The authenticated WebSocket connection of the reading user
+ * @param message - The read receipt message containing the conversationId
+ * @returns Promise that resolves when all updates and notifications are complete
+ * @throws Logs error but does not throw - failures are handled gracefully
+ *
+ * @example
+ * ```typescript
+ * // User opens a conversation (marks all messages as read)
+ * await handleReadReceipt(socket, {
+ *   type: 'read_receipt',
+ *   payload: { conversationId: 'conv-123' }
+ * });
+ * // All senders in conv-123 receive read receipts for their messages
+ * ```
  */
 export async function handleReadReceipt(
   socket: AuthenticatedSocket,

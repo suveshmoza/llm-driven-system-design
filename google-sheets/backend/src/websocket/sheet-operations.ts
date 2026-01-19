@@ -1,6 +1,9 @@
 /**
  * Sheet dimension and metadata operations.
- * Handles column/row resizing and sheet renaming.
+ *
+ * @description Handles sheet-level operations including column and row resizing,
+ * and sheet renaming. All changes are persisted to PostgreSQL and broadcast
+ * to collaborators in real-time. Includes metric tracking for performance monitoring.
  *
  * @module websocket/sheet-operations
  */
@@ -16,10 +19,25 @@ const sheetLogger = createChildLogger({ component: 'sheet-operations' });
 
 /**
  * Handles column resize operations from clients.
- * Persists the new width to the database and broadcasts to collaborators.
  *
- * @param ws - The WebSocket connection that resized the column
- * @param payload - Contains sheetId, col index, and new width
+ * @description Persists a column width change to the database using an upsert operation,
+ * then broadcasts the change to all collaborators in the room. Updates Prometheus
+ * metrics for database query duration and message counts.
+ *
+ * @param {ExtendedWebSocket} ws - The WebSocket connection that resized the column
+ * @param {ResizeColumnPayload} payload - Contains sheetId, column index, and new width in pixels
+ * @returns {Promise<void>} Resolves when the resize has been persisted and broadcast
+ *
+ * @example
+ * ```typescript
+ * // When receiving a RESIZE_COLUMN message from client
+ * await handleResizeColumn(ws, {
+ *   sheetId: 'sheet-abc',
+ *   col: 2,
+ *   width: 150
+ * });
+ * // Column width saved to DB and broadcast to all room members
+ * ```
  */
 export async function handleResizeColumn(
   ws: ExtendedWebSocket,
@@ -54,10 +72,25 @@ export async function handleResizeColumn(
 
 /**
  * Handles row resize operations from clients.
- * Persists the new height to the database and broadcasts to collaborators.
  *
- * @param ws - The WebSocket connection that resized the row
- * @param payload - Contains sheetId, row index, and new height
+ * @description Persists a row height change to the database using an upsert operation,
+ * then broadcasts the change to all collaborators in the room. Updates Prometheus
+ * metrics for database query duration and message counts.
+ *
+ * @param {ExtendedWebSocket} ws - The WebSocket connection that resized the row
+ * @param {ResizeRowPayload} payload - Contains sheetId, row index, and new height in pixels
+ * @returns {Promise<void>} Resolves when the resize has been persisted and broadcast
+ *
+ * @example
+ * ```typescript
+ * // When receiving a RESIZE_ROW message from client
+ * await handleResizeRow(ws, {
+ *   sheetId: 'sheet-abc',
+ *   row: 5,
+ *   height: 40
+ * });
+ * // Row height saved to DB and broadcast to all room members
+ * ```
  */
 export async function handleResizeRow(
   ws: ExtendedWebSocket,
@@ -92,10 +125,24 @@ export async function handleResizeRow(
 
 /**
  * Handles sheet rename operations from clients.
- * Updates the sheet name in the database and broadcasts to collaborators.
  *
- * @param ws - The WebSocket connection that renamed the sheet
- * @param payload - Contains sheetId and new name
+ * @description Updates a sheet's display name in the database and broadcasts
+ * the change to all collaborators in the room. The new name is shown in the
+ * sheet tabs UI.
+ *
+ * @param {ExtendedWebSocket} ws - The WebSocket connection that renamed the sheet
+ * @param {RenameSheetPayload} payload - Contains sheetId and the new name
+ * @returns {Promise<void>} Resolves when the rename has been persisted and broadcast
+ *
+ * @example
+ * ```typescript
+ * // When receiving a RENAME_SHEET message from client
+ * await handleRenameSheet(ws, {
+ *   sheetId: 'sheet-abc',
+ *   name: 'Q4 Budget'
+ * });
+ * // Sheet name updated in DB and broadcast to all room members
+ * ```
  */
 export async function handleRenameSheet(
   ws: ExtendedWebSocket,

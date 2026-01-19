@@ -1,5 +1,14 @@
 /**
  * Booking creation logic with double-booking prevention and idempotency handling.
+ *
+ * @description Core booking creation module that handles the complete workflow
+ * of creating a new booking. Implements several safety mechanisms:
+ * - Idempotency to prevent duplicate bookings from retries
+ * - Row-level locking to prevent double-booking race conditions
+ * - Buffer time enforcement for meeting type constraints
+ * - Daily booking limit enforcement
+ *
+ * @module services/booking/create
  */
 
 import { pool } from '../../db/index.js';
@@ -30,10 +39,50 @@ import {
 
 /**
  * Creates a new booking with double-booking prevention and idempotency handling.
- * @param input - Booking details including meeting type, time, and invitee info
- * @param idempotencyKey - Optional client-provided idempotency key
- * @returns The newly created booking or cached result
- * @throws Error if slot is unavailable, meeting type not found, or limit reached
+ *
+ * @description Creates a meeting booking with comprehensive safety measures:
+ *
+ * **Idempotency**: Checks for and returns cached results for duplicate requests.
+ * Uses either a client-provided key or generates one from booking parameters.
+ *
+ * **Double-booking Prevention**: Uses PostgreSQL row-level locking (SELECT FOR UPDATE)
+ * on the host's user row to serialize concurrent booking attempts. Then checks for
+ * overlapping confirmed bookings including buffer times.
+ *
+ * **Daily Limits**: Enforces max_bookings_per_day if configured on the meeting type.
+ *
+ * **Post-creation Actions** (async, fire-and-forget with error logging):
+ * - Publishes confirmation notification to RabbitMQ
+ * - Schedules reminder notifications
+ * - Sends confirmation emails to invitee and host
+ * - Invalidates availability cache
+ * - Updates Prometheus metrics
+ *
+ * @param {CreateBookingInput} input - Booking details
+ * @param {string} input.meeting_type_id - UUID of the meeting type to book
+ * @param {string} input.start_time - ISO 8601 start time (e.g., "2024-01-15T14:00:00Z")
+ * @param {string} input.invitee_name - Name of the person booking the meeting
+ * @param {string} input.invitee_email - Email of the person booking the meeting
+ * @param {string} input.invitee_timezone - IANA timezone of the invitee (e.g., "America/New_York")
+ * @param {string} [input.notes] - Optional notes or agenda for the meeting
+ * @param {string} [idempotencyKey] - Optional client-provided idempotency key
+ * @returns {Promise<CreateBookingResult>} The created/cached booking and whether it was cached
+ * @throws {Error} "Meeting type not found" if meeting_type_id is invalid
+ * @throws {Error} "Meeting type is not active" if meeting type is disabled
+ * @throws {Error} "Time slot is no longer available..." if double-booking detected
+ * @throws {Error} "Maximum bookings for this day has been reached." if daily limit exceeded
+ * @throws {Error} "Request is being processed..." if idempotency lock cannot be acquired
+ *
+ * @example
+ * const result = await createBooking({
+ *   meeting_type_id: 'uuid-here',
+ *   start_time: '2024-01-15T14:00:00Z',
+ *   invitee_name: 'Jane Doe',
+ *   invitee_email: 'jane@example.com',
+ *   invitee_timezone: 'America/New_York',
+ *   notes: 'Discuss project timeline'
+ * });
+ * console.log(`Booking created: ${result.booking.id}`);
  */
 export async function createBooking(
   input: CreateBookingInput,

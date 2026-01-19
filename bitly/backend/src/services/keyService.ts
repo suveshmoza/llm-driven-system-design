@@ -7,7 +7,7 @@ import logger from '../utils/logger.js';
  * Local key cache for this server instance.
  * Stores pre-allocated short codes to avoid database queries on every URL creation.
  */
-let localKeyCache: string[] = [];
+const localKeyCache: string[] = [];
 
 /**
  * Generates a random alphanumeric short code.

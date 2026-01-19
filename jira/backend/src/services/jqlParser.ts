@@ -426,7 +426,7 @@ export class JQLParser {
 
   private clauseToES(clause: JQLClause, context: { currentUserId?: string }): Record<string, unknown> {
     const field = this.esFieldName(clause.field);
-    let value = this.resolveValue(clause.value, context);
+    const value = this.resolveValue(clause.value, context);
 
     switch (clause.operator) {
       case '=':

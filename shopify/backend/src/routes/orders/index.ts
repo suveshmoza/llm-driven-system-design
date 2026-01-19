@@ -1,5 +1,16 @@
-// Re-export all order-related handlers from their respective modules
+/**
+ * Orders module - barrel export for order-related handlers and types.
+ *
+ * @description This module provides all order management functionality including:
+ * - Order retrieval and updates
+ * - Shopping cart operations
+ * - Checkout processing
+ * - Customer management
+ *
+ * @module routes/orders
+ */
 
+// Re-export all order-related handlers from their respective modules
 export { listOrders, getOrder } from './get.js';
 export { updateOrder } from './update.js';
 export { getCart, addToCart, updateCartItem } from './cart.js';

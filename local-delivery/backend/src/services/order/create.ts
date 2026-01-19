@@ -3,6 +3,9 @@
  * Handles creating new orders from customer cart data.
  *
  * @module services/order/create
+ * @description Processes customer order submissions by validating merchant and
+ * menu items, calculating pricing (subtotal, delivery fee, tip, total), and
+ * estimating delivery time based on preparation time and distance.
  */
 import { query, queryOne } from '../../utils/db.js';
 import { haversineDistance, calculateDeliveryFee, calculateETA } from '../../utils/geo.js';
@@ -16,13 +19,43 @@ import type {
 
 /**
  * Creates a new order from customer cart data.
- * Calculates subtotal, delivery fee, and estimated delivery time.
- * Validates merchant and menu items exist and are available.
  *
- * @param customerId - The ordering customer's UUID
- * @param input - Order details including items, delivery address, and tip
- * @returns Complete order with items and merchant info
- * @throws Error if merchant or items not found
+ * @description Performs the complete order creation workflow:
+ * 1. Validates merchant exists and is available
+ * 2. Validates all menu items exist
+ * 3. Calculates subtotal from item prices and quantities
+ * 4. Calculates delivery fee based on distance using Haversine formula
+ * 5. Computes total (subtotal + delivery fee + tip)
+ * 6. Estimates delivery time based on prep time + travel time
+ * 7. Creates order record with status 'pending'
+ * 8. Creates order item records linking to menu items
+ *
+ * @param {string} customerId - The ordering customer's UUID
+ * @param {CreateOrderInput} input - Order details including:
+ *   - merchant_id: UUID of the restaurant/store
+ *   - items: Array of {menu_item_id, quantity, special_instructions}
+ *   - delivery_address: Full delivery address string
+ *   - delivery_lat: Delivery latitude coordinate
+ *   - delivery_lng: Delivery longitude coordinate
+ *   - delivery_instructions: Optional delivery notes
+ *   - tip: Optional tip amount in dollars
+ * @returns {Promise<OrderWithDetails>} Complete order with items and merchant info
+ * @throws {Error} 'Merchant not found' if merchant_id is invalid
+ * @throws {Error} 'One or more menu items not found' if any menu_item_id is invalid
+ * @throws {Error} 'Failed to create order' if database insert fails
+ * @example
+ * const order = await createOrder(customerId, {
+ *   merchant_id: 'merchant-uuid',
+ *   items: [
+ *     { menu_item_id: 'item-1', quantity: 2 },
+ *     { menu_item_id: 'item-2', quantity: 1, special_instructions: 'No onions' }
+ *   ],
+ *   delivery_address: '123 Main St, San Francisco, CA 94102',
+ *   delivery_lat: 37.7749,
+ *   delivery_lng: -122.4194,
+ *   tip: 5.00
+ * });
+ * console.log(`Order ${order.id} total: $${order.total}`);
  */
 export async function createOrder(
   customerId: string,

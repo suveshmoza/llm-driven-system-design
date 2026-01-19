@@ -1,3 +1,11 @@
+/**
+ * Repository Settings Routes
+ *
+ * @description Handles webhook endpoints for repository events such as push notifications.
+ * These endpoints are typically called by Git hooks or external integrations.
+ *
+ * @module routes/repos/settings
+ */
 import { Router, Request, Response } from 'express';
 import { query } from '../../db/index.js';
 import { requireAuth } from '../../middleware/auth.js';
@@ -8,8 +16,31 @@ import { PushBody, sendRepoNotFound } from './types.js';
 const router = Router();
 
 /**
- * Handle push event (webhook endpoint for cache invalidation)
- * This would typically be called by git hooks
+ * POST /:owner/:repo/push - Handle push event webhook
+ *
+ * @description Receives push event notifications from Git hooks. Invalidates all relevant
+ * caches including repository caches and any open pull requests affected by the push.
+ * Updates push metrics for monitoring.
+ *
+ * @route POST /repos/:owner/:repo/push
+ * @authentication Required
+ *
+ * @param req.params.owner - The username of the repository owner
+ * @param req.params.repo - The name of the repository
+ * @param req.body.branch - The branch that was pushed to
+ * @param req.body.commits - Array of commit objects that were pushed
+ *
+ * @returns {Object} Push handling result
+ * @returns {boolean} success - true if push was processed successfully
+ * @returns {number} invalidatedPRs - Number of pull requests that had their caches invalidated
+ *
+ * @throws {401} Authentication required
+ * @throws {404} Repository not found
+ *
+ * @example
+ * // POST /repos/octocat/hello-world/push
+ * // Body: { branch: 'main', commits: [{...}] }
+ * // Response: { success: true, invalidatedPRs: 2 }
  */
 router.post('/:owner/:repo/push', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;

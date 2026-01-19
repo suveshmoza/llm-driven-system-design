@@ -11,12 +11,27 @@ const _wsLogger = createServiceLogger('websocket-redis');
 /**
  * Redis Message Handler Module
  *
- * Handles messages received from Redis pub/sub for cross-server communication.
- * Processes message delivery, typing events, and receipts.
+ * @description Handles messages received from Redis pub/sub for cross-server communication.
+ * This module processes incoming messages from other server instances and routes them
+ * to locally connected users. Supports message delivery, typing indicators, receipts,
+ * and reaction updates.
+ *
+ * @module redis-handler
  */
 
 /**
- * Data structure for Redis messages.
+ * Data structure for messages received from Redis pub/sub.
+ *
+ * @description Represents the parsed JSON structure of inter-server messages.
+ * Different message types populate different optional fields.
+ *
+ * @property type - The message type discriminator
+ * @property recipientId - The target user ID for this message
+ * @property senderId - Original sender's user ID (for deliver_message)
+ * @property senderServer - Server ID of the sender (for routing receipts back)
+ * @property messageId - The message ID (for deliver_message and receipts)
+ * @property sendStartTime - Unix timestamp when send started (for latency metrics)
+ * @property payload - The message content to deliver to the recipient
  */
 export interface RedisMessageData {
   type: string;
@@ -30,9 +45,26 @@ export interface RedisMessageData {
 
 /**
  * Handles messages received from Redis pub/sub.
- * Processes cross-server message delivery, typing events, and receipts.
  *
- * @param data - The parsed message from Redis
+ * @description Main entry point for processing cross-server messages. Routes messages
+ * to appropriate handlers based on the message type:
+ *
+ * - `deliver_message` - Delivers a chat message to a local user
+ * - `forward_typing` - Forwards typing indicator to a local user
+ * - `forward_receipt` - Forwards delivery/read receipt to a local user
+ * - `forward_reaction` - Forwards reaction update to a local user
+ *
+ * @param data - The parsed message from Redis pub/sub
+ * @returns Promise that resolves when the message is processed
+ *
+ * @example
+ * ```typescript
+ * redisSub.on('message', async (channel, message) => {
+ *   if (channel === KEYS.serverChannel(config.serverId)) {
+ *     await handleRedisMessage(JSON.parse(message));
+ *   }
+ * });
+ * ```
  */
 export async function handleRedisMessage(data: RedisMessageData): Promise<void> {
   switch (data.type) {
@@ -50,6 +82,17 @@ export async function handleRedisMessage(data: RedisMessageData): Promise<void> 
 
 /**
  * Handles cross-server message delivery.
+ *
+ * @description Delivers a message to a locally connected recipient and handles
+ * delivery receipt generation. After successful delivery:
+ * 1. Sends the message to the recipient's WebSocket
+ * 2. Updates message status to 'delivered' (idempotent)
+ * 3. Records delivery metrics and duration
+ * 4. Publishes delivery receipt back to sender's server via Redis
+ *
+ * @param data - The Redis message data containing recipient and message info
+ * @returns Promise that resolves when delivery and receipt are complete
+ * @internal
  */
 async function handleDeliverMessage(data: RedisMessageData): Promise<void> {
   const socket = getConnection(data.recipientId);
@@ -95,7 +138,14 @@ async function handleDeliverMessage(data: RedisMessageData): Promise<void> {
 }
 
 /**
- * Handles forwarding typing indicators, receipts, and reactions.
+ * Handles forwarding of typing indicators, receipts, and reactions.
+ *
+ * @description Delivers forwarded messages directly to locally connected recipients.
+ * These message types don't require acknowledgment or tracking - they are
+ * fire-and-forget notifications.
+ *
+ * @param data - The Redis message data containing recipient and payload
+ * @internal
  */
 function handleForwardMessage(data: RedisMessageData): void {
   const socket = getConnection(data.recipientId);

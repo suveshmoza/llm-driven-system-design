@@ -35,6 +35,33 @@ const fraudService = new FraudService();
 
 /**
  * Creates a new payment with idempotency support.
+ *
+ * @description Entry point for creating a new payment transaction. Wraps the core
+ * payment processing logic with idempotency protection to prevent duplicate charges
+ * when clients retry failed network requests. Cached responses are returned for
+ * duplicate idempotency keys.
+ *
+ * @param merchantId - UUID of the merchant creating the payment
+ * @param merchantAccountId - UUID of the merchant's ledger account for settlements
+ * @param request - Payment request containing amount, currency, payment method, etc.
+ * @param clientInfo - Optional client info for audit logging (IP, user agent)
+ * @param capturePaymentFn - Function to capture the payment if capture=true
+ * @returns Payment response with transaction ID, status, amounts, and timestamps
+ *
+ * @example
+ * const response = await createPayment(
+ *   'merchant_123',
+ *   'acct_xyz789',
+ *   {
+ *     amount: 10000,
+ *     currency: 'USD',
+ *     payment_method: { type: 'card', last_four: '4242', card_brand: 'visa' },
+ *     idempotency_key: 'order-12345',
+ *     capture: true
+ *   },
+ *   { ipAddress: '192.168.1.1' },
+ *   capturePaymentFn
+ * );
  */
 export async function createPayment(
   merchantId: string,
@@ -65,6 +92,24 @@ export async function createPayment(
   return result;
 }
 
+/**
+ * Core payment processing logic.
+ *
+ * @description Executes the full payment flow:
+ * 1. Calculates fees and generates transaction ID
+ * 2. Creates transaction record in database
+ * 3. Runs synchronous fraud scoring
+ * 4. Authorizes with payment processor
+ * 5. Optionally captures if capture=true
+ * 6. Publishes async fraud check for deep analysis
+ *
+ * @param merchantId - UUID of the merchant
+ * @param merchantAccountId - UUID of merchant's ledger account
+ * @param request - Payment request details
+ * @param clientInfo - Optional client info for audit
+ * @param capturePaymentFn - Function to capture if auto-capture enabled
+ * @returns Payment response with final status
+ */
 async function processPayment(
   merchantId: string,
   merchantAccountId: string,
@@ -139,6 +184,19 @@ async function processPayment(
   return buildResponse(transactionId, 'authorized', transaction, feeAmount, netAmount);
 }
 
+/**
+ * Handles payment decline due to high fraud risk score.
+ *
+ * @description Updates transaction to 'failed' status, records audit log,
+ * and increments fraud decline metrics.
+ *
+ * @param transactionId - UUID of the transaction
+ * @param merchantId - UUID of the merchant
+ * @param transaction - Transaction object
+ * @param riskScore - Fraud risk score (0-100)
+ * @param clientInfo - Optional client info for audit
+ * @returns Failed payment response
+ */
 async function handleFraudDecline(
   transactionId: string,
   merchantId: string,
@@ -156,6 +214,20 @@ async function handleFraudDecline(
   return buildResponse(transactionId, 'failed', transaction, transaction.fee_amount, transaction.net_amount);
 }
 
+/**
+ * Handles payment decline from the payment processor.
+ *
+ * @description Updates transaction to 'failed' status with the processor's
+ * decline reason, records audit log, and increments failure metrics.
+ *
+ * @param transactionId - UUID of the transaction
+ * @param merchantId - UUID of the merchant
+ * @param transaction - Transaction object
+ * @param riskScore - Fraud risk score (for record keeping)
+ * @param reason - Decline reason from processor
+ * @param clientInfo - Optional client info for audit
+ * @returns Failed payment response
+ */
 async function handleProcessorDecline(
   transactionId: string,
   merchantId: string,
@@ -170,6 +242,19 @@ async function handleProcessorDecline(
   return buildResponse(transactionId, 'failed', transaction, transaction.fee_amount, transaction.net_amount);
 }
 
+/**
+ * Builds a standardized payment response object.
+ *
+ * @description Constructs the CreatePaymentResponse object returned to clients.
+ * Extracts relevant fields from the transaction and includes calculated amounts.
+ *
+ * @param id - Transaction UUID
+ * @param status - Final transaction status
+ * @param transaction - Transaction object for amount/currency
+ * @param fee_amount - Calculated fee amount in cents
+ * @param net_amount - Net amount for merchant in cents
+ * @returns Standardized payment response
+ */
 function buildResponse(
   id: string,
   status: CreatePaymentResponse['status'],

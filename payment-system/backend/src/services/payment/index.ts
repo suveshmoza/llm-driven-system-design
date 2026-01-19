@@ -27,21 +27,92 @@ import { voidPayment as voidPaymentInternal } from './refund.js';
 
 /**
  * PaymentService class that provides the public API for payment operations.
+ *
+ * @description Main entry point for all payment operations. Provides methods for:
+ * - Creating new payments with fraud detection and optional auto-capture
+ * - Capturing authorized payments
+ * - Voiding authorized payments before capture
+ * - Retrieving transaction details and history
+ * - Accessing ledger entries for reconciliation
+ *
+ * CRITICAL FEATURES:
+ * - Idempotency: Prevents double-charging on network retries
+ * - Circuit Breaker: Protects against payment processor outages
+ * - Audit Logging: Required for PCI-DSS compliance
+ * - Metrics: Enables fraud detection and SLO monitoring
+ * - Async Webhooks: Notifies merchants of payment events via RabbitMQ
+ *
+ * @example
+ * const paymentService = new PaymentService();
+ *
+ * // Create a payment
+ * const response = await paymentService.createPayment(
+ *   'merchant_123',
+ *   'acct_xyz',
+ *   { amount: 10000, currency: 'USD', payment_method: {...}, idempotency_key: 'order-1' }
+ * );
+ *
+ * // Capture an authorized payment
+ * const captured = await paymentService.capturePayment('txn_abc', 'acct_xyz');
  */
 export class PaymentService {
   private feeConfig = getDefaultFeeConfig();
 
-  /** Calculates the platform fee for a given transaction amount. */
+  /**
+   * Calculates the platform fee for a given transaction amount.
+   *
+   * @description Computes the platform fee using percentage + fixed fee model.
+   *
+   * @param amount - Transaction amount in cents
+   * @returns Fee amount in cents
+   *
+   * @example
+   * const fee = paymentService.calculateFee(10000); // Returns 320 for 2.9% + $0.30
+   */
   calculateFee(amount: number): number {
     return calculateFee(amount, this.feeConfig).feeAmount;
   }
 
-  /** @deprecated Use withIdempotency from shared/idempotency.ts instead */
+  /**
+   * Checks if a payment was already processed using its idempotency key.
+   *
+   * @description Looks up existing transaction by idempotency key in cache and database.
+   *
+   * @param key - Idempotency key to check
+   * @returns Existing transaction if found, null otherwise
+   *
+   * @deprecated Use withIdempotency from shared/idempotency.ts instead for new code.
+   */
   async checkIdempotency(key: string): Promise<Transaction | null> {
     return checkIdempotency(key);
   }
 
-  /** Creates a new payment transaction with fraud detection and optional capture. */
+  /**
+   * Creates a new payment transaction with fraud detection and optional capture.
+   *
+   * @description Processes a new payment through fraud scoring, processor authorization,
+   * and optional capture. Supports idempotency to prevent duplicate charges.
+   *
+   * @param merchantId - UUID of the merchant creating the payment
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @param request - Payment request with amount, currency, payment method, etc.
+   * @param clientInfo - Optional client info for audit logging (IP, user agent)
+   * @returns Payment response with transaction ID, status, and amounts
+   * @throws Error if payment processing fails unexpectedly
+   *
+   * @example
+   * const response = await paymentService.createPayment(
+   *   'merchant_123',
+   *   'acct_xyz',
+   *   {
+   *     amount: 10000,
+   *     currency: 'USD',
+   *     payment_method: { type: 'card', last_four: '4242', card_brand: 'visa' },
+   *     idempotency_key: 'order-12345',
+   *     capture: true
+   *   }
+   * );
+   */
   async createPayment(
     merchantId: string,
     merchantAccountId: string,
@@ -54,7 +125,21 @@ export class PaymentService {
     );
   }
 
-  /** Captures funds from an authorized payment. */
+  /**
+   * Captures funds from an authorized payment.
+   *
+   * @description Finalizes an authorized transaction, moving funds to the merchant's
+   * account. Creates double-entry ledger entries and publishes webhook notification.
+   *
+   * @param transactionId - UUID of the authorized transaction to capture
+   * @param merchantAccountId - UUID of the merchant's ledger account
+   * @param clientInfo - Optional client info for audit logging
+   * @returns Updated transaction with 'captured' status
+   * @throws Error if transaction not found or not in 'authorized' status
+   *
+   * @example
+   * const captured = await paymentService.capturePayment('txn_abc123', 'acct_xyz789');
+   */
   async capturePayment(
     transactionId: string,
     merchantAccountId: string,

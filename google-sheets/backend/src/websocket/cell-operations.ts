@@ -1,6 +1,10 @@
 /**
  * Cell edit operations handler.
- * Handles cell value updates with idempotency and caching.
+ *
+ * @description Handles cell value updates with idempotency support, caching, and
+ * real-time synchronization. Implements the core editing flow: validate, persist,
+ * cache, broadcast, and acknowledge. Uses circuit breaker pattern for Redis pub/sub
+ * to gracefully handle Redis outages.
  *
  * @module websocket/cell-operations
  */
@@ -31,6 +35,10 @@ const cellLogger = createChildLogger({ component: 'cell-operations' });
 
 /**
  * Circuit breaker for Redis pub/sub operations.
+ *
+ * @description Wraps Redis publish calls with circuit breaker pattern to prevent
+ * cascading failures when Redis is unavailable. Falls back to single-server mode
+ * when the circuit is open.
  */
 const pubSubBreaker = createPubSubBreaker(
   async (channel: string, message: string) => redis.publish(channel, message)
@@ -38,11 +46,32 @@ const pubSubBreaker = createPubSubBreaker(
 
 /**
  * Handles cell edit operations from clients.
- * Implements idempotency to prevent duplicate writes from retries.
- * Persists the change to the database and broadcasts to all room members.
  *
- * @param ws - The WebSocket connection that made the edit
- * @param payload - Contains sheetId, row, col, value, and optional requestId
+ * @description Processes cell value changes with the following flow:
+ * 1. Check idempotency cache for duplicate requests
+ * 2. Evaluate formulas in the new value
+ * 3. Persist the change to PostgreSQL
+ * 4. Update the Redis cache
+ * 5. Broadcast to room members
+ * 6. Publish to Redis for multi-server sync
+ * 7. Store idempotency result and send acknowledgment
+ *
+ * @param {ExtendedWebSocket} ws - The WebSocket connection that made the edit
+ * @param {CellEditPayload} payload - Contains sheetId, row, col, value, and optional requestId
+ * @returns {Promise<void>} Resolves when the edit has been fully processed
+ *
+ * @example
+ * ```typescript
+ * // When receiving a CELL_EDIT message from client
+ * await handleCellEdit(ws, {
+ *   sheetId: 'sheet-abc',
+ *   row: 5,
+ *   col: 2,
+ *   value: '=SUM(A1:A5)',
+ *   requestId: 'req-123'
+ * });
+ * // Cell saved, cached, broadcast, and ACK sent to client
+ * ```
  */
 export async function handleCellEdit(
   ws: ExtendedWebSocket,
@@ -123,6 +152,17 @@ export async function handleCellEdit(
 
 /**
  * Checks for a replay of a previous cell edit operation.
+ *
+ * @description Looks up the idempotency cache to determine if this request
+ * has already been processed. Used to handle client retries without
+ * duplicating the edit.
+ *
+ * @param {string} spreadsheetId - The spreadsheet containing the cell
+ * @param {string} sheetId - The sheet containing the cell
+ * @param {number} row - The row index of the cell
+ * @param {number} col - The column index of the cell
+ * @param {string} requestId - The client-provided request identifier
+ * @returns {Promise<any | null>} The cached result if found, null otherwise
  */
 async function checkForReplay(
   spreadsheetId: string,
@@ -144,6 +184,17 @@ async function checkForReplay(
 
 /**
  * Persists a cell edit to the database.
+ *
+ * @description Performs an upsert operation to save the cell's raw and computed
+ * values to PostgreSQL. Uses ON CONFLICT to handle both insert and update cases.
+ * Records database query duration for monitoring.
+ *
+ * @param {string} sheetId - The sheet containing the cell
+ * @param {number} row - The row index of the cell
+ * @param {number} col - The column index of the cell
+ * @param {string} value - The raw value entered by the user
+ * @param {string} computedValue - The computed result after formula evaluation
+ * @returns {Promise<void>} Resolves when the database write completes
  */
 async function persistCellEdit(
   sheetId: string,
@@ -164,6 +215,14 @@ async function persistCellEdit(
 
 /**
  * Publishes a cell update to Redis for multi-server sync.
+ *
+ * @description Publishes the cell update message to a Redis pub/sub channel
+ * so that other server instances can broadcast to their local WebSocket clients.
+ * Uses circuit breaker to gracefully degrade when Redis is unavailable.
+ *
+ * @param {string} spreadsheetId - The spreadsheet being edited
+ * @param {any} message - The update message to publish
+ * @returns {Promise<void>} Resolves when publish completes or circuit is open
  */
 async function publishCellUpdate(spreadsheetId: string, message: any): Promise<void> {
   const pubSubState = getCircuitState(pubSubBreaker);
