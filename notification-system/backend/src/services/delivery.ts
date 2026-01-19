@@ -54,7 +54,7 @@ interface DeliveryStatsRow {
   count: string;
 }
 
-interface NotificationWithDeliveryStatus {
+export interface NotificationWithDeliveryStatus {
   id: string;
   user_id: string;
   template_id: string | null;

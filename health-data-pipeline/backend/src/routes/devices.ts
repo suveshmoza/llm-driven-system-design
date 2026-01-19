@@ -68,7 +68,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // Supports idempotency via X-Idempotency-Key header or auto-generated key
 router.post('/:deviceId/sync', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { deviceId } = req.params;
+    const deviceId = req.params.deviceId as string;
     const { samples } = req.body as { samples?: HealthSampleData[] };
 
     if (!Array.isArray(samples)) {
@@ -103,7 +103,7 @@ router.post('/:deviceId/sync', async (req: Request, res: Response): Promise<void
 
     const result = await deviceSyncService.syncFromDevice(
       req.user!.id,
-      deviceId,
+      deviceId as string,
       samples
     );
 

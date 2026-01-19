@@ -1,5 +1,5 @@
-import rateLimit from 'express-rate-limit';
-import type { Request, Response, Options } from 'express-rate-limit';
+import rateLimit, { type Options } from 'express-rate-limit';
+import type { Request, Response } from 'express';
 import { createModuleLogger } from './logger.js';
 import { metrics } from './metrics.js';
 

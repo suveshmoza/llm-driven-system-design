@@ -15,7 +15,7 @@ import config from './shared/config.js';
 // Routes
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
-import activityRoutes from './routes/activities.js';
+import activityRoutes from './routes/activities/index.js';
 import segmentRoutes from './routes/segments.js';
 import feedRoutes from './routes/feed.js';
 import statsRoutes from './routes/stats.js';

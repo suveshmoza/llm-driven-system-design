@@ -84,8 +84,8 @@ router.get('/', async (req: Request<unknown, unknown, unknown, ListQuery>, res: 
         `SELECT problem_id, status FROM user_problem_status WHERE user_id = $1`,
         [req.session.userId]
       );
-      const statusMap = new Map(statusResult.rows.map(r => [r.problem_id, r.status]));
-      problems = problems.map(p => ({
+      const statusMap = new Map(statusResult.rows.map((r: { problem_id: string; status: string }) => [r.problem_id, r.status]));
+      problems = problems.map((p: { id: string; title: string; slug: string; difficulty: string; created_at: string }) => ({
         ...p,
         userStatus: statusMap.get(p.id) || 'unsolved'
       }));
@@ -174,6 +174,7 @@ router.get('/:slug', async (req: Request<ProblemParams>, res: Response): Promise
 });
 
 // Get user's submissions for a problem
+// @ts-expect-error - Express type inference issue with generic params
 router.get('/:slug/submissions', requireAuth, async (req: Request<ProblemParams, unknown, unknown, SubmissionsQuery>, res: Response): Promise<void> => {
   try {
     const { slug } = req.params;

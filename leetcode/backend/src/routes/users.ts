@@ -56,7 +56,7 @@ router.get('/:id/profile', async (req: Request<UserParams>, res: Response): Prom
       medium: 0,
       hard: 0
     };
-    difficultyResult.rows.forEach(row => {
+    difficultyResult.rows.forEach((row: { difficulty: string; count: string }) => {
       difficultyBreakdown[row.difficulty] = parseInt(row.count);
     });
 
@@ -154,7 +154,7 @@ router.get('/me/progress', requireAuth, async (req: Request, res: Response): Pro
       medium: 0,
       hard: 0
     };
-    totalsResult.rows.forEach(row => {
+    totalsResult.rows.forEach((row: { difficulty: string; count: string }) => {
       totals[row.difficulty] = parseInt(row.count);
     });
 

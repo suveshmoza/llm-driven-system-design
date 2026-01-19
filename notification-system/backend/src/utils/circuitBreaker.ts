@@ -1,4 +1,4 @@
-import { CircuitBreakerPolicy, ConsecutiveBreaker } from 'cockatiel';
+import { circuitBreaker, handleAll, ConsecutiveBreaker, CircuitBreakerPolicy, CircuitState, FailureReason } from 'cockatiel';
 import { createLogger } from './logger.js';
 import { circuitBreakerState, circuitBreakerStateChanges } from './metrics.js';
 import { Logger } from 'pino';
@@ -6,10 +6,19 @@ import { Logger } from 'pino';
 const log: Logger = createLogger('circuit-breaker');
 
 // Circuit breaker states as numbers for Prometheus
-const STATES: Record<string, number> = {
-  closed: 0,
-  open: 1,
-  halfOpen: 2,
+const STATES: Record<CircuitState, number> = {
+  [CircuitState.Closed]: 0,
+  [CircuitState.Open]: 1,
+  [CircuitState.HalfOpen]: 2,
+  [CircuitState.Isolated]: 3,
+};
+
+// Map CircuitState enum to string names for logging
+const STATE_NAMES: Record<CircuitState, string> = {
+  [CircuitState.Closed]: 'closed',
+  [CircuitState.Open]: 'open',
+  [CircuitState.HalfOpen]: 'halfOpen',
+  [CircuitState.Isolated]: 'isolated',
 };
 
 export interface CircuitBreakerOptions {
@@ -19,7 +28,7 @@ export interface CircuitBreakerOptions {
 
 interface CircuitBreakerEntry {
   policy: CircuitBreakerPolicy;
-  lastState: string;
+  lastState: CircuitState;
   options: CircuitBreakerOptions;
 }
 
@@ -46,29 +55,31 @@ export function createCircuitBreaker(
   // Use consecutive breaker strategy - opens after N consecutive failures
   const breaker = new ConsecutiveBreaker(consecutiveFailures);
 
-  const policy = CircuitBreakerPolicy.create({
+  const policy = circuitBreaker(handleAll, {
     halfOpenAfter,
     breaker,
   });
 
   // Set initial state
-  circuitBreakerState.labels(channel).set(STATES.closed);
+  circuitBreakerState.labels(channel).set(STATES[CircuitState.Closed]);
 
   // Listen to state changes for logging and metrics
-  policy.onStateChange((state: string) => {
-    const previousState = circuitBreakers.get(channel)?.lastState || 'closed';
+  policy.onStateChange((state: CircuitState) => {
+    const previousState = circuitBreakers.get(channel)?.lastState ?? CircuitState.Closed;
     const newState = state;
+    const previousStateName = STATE_NAMES[previousState];
+    const newStateName = STATE_NAMES[newState];
 
     log.warn({
       channel,
-      previousState,
-      newState,
+      previousState: previousStateName,
+      newState: newStateName,
       timestamp: new Date().toISOString(),
-    }, `Circuit breaker state changed: ${previousState} -> ${newState}`);
+    }, `Circuit breaker state changed: ${previousStateName} -> ${newStateName}`);
 
     // Update Prometheus metrics
     circuitBreakerState.labels(channel).set(STATES[newState] ?? 0);
-    circuitBreakerStateChanges.labels(channel, previousState, newState).inc();
+    circuitBreakerStateChanges.labels(channel, previousStateName, newStateName).inc();
 
     // Store last known state
     const entry = circuitBreakers.get(channel);
@@ -78,10 +89,11 @@ export function createCircuitBreaker(
   });
 
   // Listen to circuit break events
-  policy.onBreak((result) => {
+  policy.onBreak((result: FailureReason<unknown> | { isolated: true }) => {
+    const errorMessage = 'error' in result ? result.error?.message : 'Unknown error';
     log.error({
       channel,
-      error: (result.reason as Error)?.message || 'Unknown error',
+      error: errorMessage,
     }, `Circuit breaker opened for channel: ${channel}`);
   });
 
@@ -102,7 +114,7 @@ export function createCircuitBreaker(
   // Store the circuit breaker
   circuitBreakers.set(channel, {
     policy,
-    lastState: 'closed',
+    lastState: CircuitState.Closed,
     options,
   });
 
@@ -152,7 +164,7 @@ export function getCircuitBreakerState(channel: string): string {
   if (!circuitBreakers.has(channel)) {
     return 'closed';
   }
-  return circuitBreakers.get(channel)!.lastState;
+  return STATE_NAMES[circuitBreakers.get(channel)!.lastState];
 }
 
 /**
@@ -161,7 +173,7 @@ export function getCircuitBreakerState(channel: string): string {
 export function getAllCircuitBreakerStates(): Record<string, string> {
   const states: Record<string, string> = {};
   for (const [channel, cb] of circuitBreakers) {
-    states[channel] = cb.lastState;
+    states[channel] = STATE_NAMES[cb.lastState];
   }
   return states;
 }

@@ -136,9 +136,9 @@ function simpleHash(str: string): string {
   return Math.abs(hash).toString(36);
 }
 
-interface ExtendedResponse extends Response {
+type ExtendedResponse = Response & {
   json: (data: unknown) => Response;
-}
+};
 
 /**
  * Express middleware for idempotent POST requests.

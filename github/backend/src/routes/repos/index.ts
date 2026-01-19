@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import listRoutes from './list.js';
+import readRoutes from './read.js';
 import crudRoutes from './crud.js';
 import collaboratorsRoutes from './collaborators.js';
 import branchesRoutes from './branches.js';
@@ -12,7 +13,10 @@ const router = Router();
 // List repositories (GET /)
 router.use(listRoutes);
 
-// CRUD operations (get, create, update, delete)
+// Get single repository (GET /:owner/:repo)
+router.use(readRoutes);
+
+// CRUD operations (create, update, delete)
 router.use(crudRoutes);
 
 // Collaborator operations (star, unstar, check starred)

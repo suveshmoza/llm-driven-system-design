@@ -2,7 +2,7 @@ import { Client } from '@elastic/elasticsearch';
 import type {
   SearchHit,
   SearchTotalHits,
-} from '@elastic/elasticsearch/lib/api/types.js';
+} from '@elastic/elasticsearch/lib/api/types';
 
 export const elasticsearch: Client = new Client({
   node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',

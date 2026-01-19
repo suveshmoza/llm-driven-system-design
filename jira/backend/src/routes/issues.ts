@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import * as issueService from '../services/issueService.js';
+import * as issueService from '../services/issue/index.js';
 import * as workflowService from '../services/workflowService.js';
 import * as projectService from '../services/projectService.js';
 import { requireAuth } from '../middleware/auth.js';

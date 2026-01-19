@@ -117,7 +117,7 @@ router.post('/', authenticate, async (req: Request, res: Response): Promise<void
 });
 
 // Confirm booking (after payment)
-router.post('/:bookingId/confirm', authenticate, async (req: Request<BookingParams, unknown, ConfirmBody>, res: Response): Promise<void> => {
+router.post('/:bookingId/confirm', authenticate, async (req: Request<{ bookingId: string }, unknown, ConfirmBody>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -137,7 +137,7 @@ router.post('/:bookingId/confirm', authenticate, async (req: Request<BookingPara
 });
 
 // Cancel booking
-router.post('/:bookingId/cancel', authenticate, async (req: Request<BookingParams>, res: Response): Promise<void> => {
+router.post('/:bookingId/cancel', authenticate, async (req: Request<{ bookingId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -156,7 +156,7 @@ router.post('/:bookingId/cancel', authenticate, async (req: Request<BookingParam
 });
 
 // Get booking by ID
-router.get('/:bookingId', authenticate, async (req: Request<BookingParams>, res: Response): Promise<void> => {
+router.get('/:bookingId', authenticate, async (req: Request<{ bookingId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -193,7 +193,7 @@ router.get('/', authenticate, async (req: Request<object, unknown, unknown, Book
 });
 
 // Submit review for a booking
-router.post('/:bookingId/review', authenticate, async (req: Request<BookingParams, unknown, ReviewBody>, res: Response): Promise<void> => {
+router.post('/:bookingId/review', authenticate, async (req: Request<{ bookingId: string }, unknown, ReviewBody>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -232,7 +232,7 @@ router.post('/:bookingId/review', authenticate, async (req: Request<BookingParam
 });
 
 // Hotel admin: Get bookings for a hotel
-router.get('/hotel/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<HotelParams, unknown, unknown, HotelBookingsQuery>, res: Response): Promise<void> => {
+router.get('/hotel/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ hotelId: string }, unknown, unknown, HotelBookingsQuery>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });

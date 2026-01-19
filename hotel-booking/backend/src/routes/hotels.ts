@@ -104,7 +104,7 @@ router.get('/search', optionalAuth, async (req: Request<object, unknown, unknown
 });
 
 // Get hotel by ID with availability (public)
-router.get('/:hotelId', optionalAuth, async (req: Request<HotelParams, unknown, unknown, HotelDetailQuery>, res: Response): Promise<void> => {
+router.get('/:hotelId', optionalAuth, async (req: Request<{ hotelId: string }, unknown, unknown, HotelDetailQuery>, res: Response): Promise<void> => {
   try {
     const { hotelId } = req.params;
     const { checkIn, checkOut, guests } = req.query;
@@ -144,7 +144,7 @@ router.post('/', authenticate, requireRole('hotel_admin', 'admin'), async (req: 
 });
 
 // Update hotel (hotel admin only, must own)
-router.put('/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<HotelParams>, res: Response): Promise<void> => {
+router.put('/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ hotelId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -163,7 +163,7 @@ router.put('/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async
 });
 
 // Delete hotel (hotel admin only, must own)
-router.delete('/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<HotelParams>, res: Response): Promise<void> => {
+router.delete('/:hotelId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ hotelId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -198,7 +198,7 @@ router.get('/admin/my-hotels', authenticate, requireRole('hotel_admin', 'admin')
 
 // Room types routes
 // Get room types for a hotel (public)
-router.get('/:hotelId/rooms', async (req: Request<HotelParams>, res: Response): Promise<void> => {
+router.get('/:hotelId/rooms', async (req: Request<{ hotelId: string }>, res: Response): Promise<void> => {
   try {
     const rooms = await roomService.getRoomTypesByHotel(req.params.hotelId);
     res.json(rooms);
@@ -209,7 +209,7 @@ router.get('/:hotelId/rooms', async (req: Request<HotelParams>, res: Response): 
 });
 
 // Create room type (hotel admin)
-router.post('/:hotelId/rooms', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<HotelParams>, res: Response): Promise<void> => {
+router.post('/:hotelId/rooms', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ hotelId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -228,7 +228,7 @@ router.post('/:hotelId/rooms', authenticate, requireRole('hotel_admin', 'admin')
 });
 
 // Update room type (hotel admin)
-router.put('/rooms/:roomTypeId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<RoomTypeParams>, res: Response): Promise<void> => {
+router.put('/rooms/:roomTypeId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ roomTypeId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -247,7 +247,7 @@ router.put('/rooms/:roomTypeId', authenticate, requireRole('hotel_admin', 'admin
 });
 
 // Delete room type (hotel admin)
-router.delete('/rooms/:roomTypeId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<RoomTypeParams>, res: Response): Promise<void> => {
+router.delete('/rooms/:roomTypeId', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ roomTypeId: string }>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -266,7 +266,7 @@ router.delete('/rooms/:roomTypeId', authenticate, requireRole('hotel_admin', 'ad
 });
 
 // Set price override (hotel admin)
-router.post('/rooms/:roomTypeId/pricing', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<RoomTypeParams, unknown, PricingBody>, res: Response): Promise<void> => {
+router.post('/rooms/:roomTypeId/pricing', authenticate, requireRole('hotel_admin', 'admin'), async (req: Request<{ roomTypeId: string }, unknown, PricingBody>, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' });
@@ -286,7 +286,7 @@ router.post('/rooms/:roomTypeId/pricing', authenticate, requireRole('hotel_admin
 });
 
 // Get prices for date range
-router.get('/rooms/:roomTypeId/pricing', async (req: Request<RoomTypeParams, unknown, unknown, PricingQuery>, res: Response): Promise<void> => {
+router.get('/rooms/:roomTypeId/pricing', async (req: Request<{ roomTypeId: string }, unknown, unknown, PricingQuery>, res: Response): Promise<void> => {
   try {
     const { checkIn, checkOut } = req.query;
     if (!checkIn || !checkOut) {
@@ -303,7 +303,7 @@ router.get('/rooms/:roomTypeId/pricing', async (req: Request<RoomTypeParams, unk
 
 // Reviews routes
 // Get reviews for a hotel (public)
-router.get('/:hotelId/reviews', async (req: Request<HotelParams, unknown, unknown, PaginationQuery>, res: Response): Promise<void> => {
+router.get('/:hotelId/reviews', async (req: Request<{ hotelId: string }, unknown, unknown, PaginationQuery>, res: Response): Promise<void> => {
   try {
     const { page, limit } = req.query;
     const reviews = await reviewService.getReviewsByHotel(
@@ -319,7 +319,7 @@ router.get('/:hotelId/reviews', async (req: Request<HotelParams, unknown, unknow
 });
 
 // Get review stats for a hotel (public)
-router.get('/:hotelId/reviews/stats', async (req: Request<HotelParams>, res: Response): Promise<void> => {
+router.get('/:hotelId/reviews/stats', async (req: Request<{ hotelId: string }>, res: Response): Promise<void> => {
   try {
     const stats = await reviewService.getReviewStats(req.params.hotelId);
     res.json(stats);

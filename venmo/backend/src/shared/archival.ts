@@ -130,7 +130,7 @@ export async function archiveOldTransfers(): Promise<ArchivalResult> {
         [cutoffDate, RETENTION_CONFIG.archivalBatchSize]
       );
 
-      if (result.rowCount === 0) {
+      if (!result.rowCount || result.rowCount === 0) {
         break;
       }
 

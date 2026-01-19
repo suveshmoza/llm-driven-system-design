@@ -117,7 +117,7 @@ router.get('/latest', async (req: Request, res: Response): Promise<void> => {
 // Get historical data for a specific metric
 router.get('/history/:type', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { type } = req.params;
+    const type = req.params.type as string;
     const { days } = req.query as { days?: string };
 
     const history = await healthQueryService.getHistoricalData(
@@ -164,7 +164,7 @@ router.post('/insights/analyze', async (req: Request, res: Response): Promise<vo
 // Acknowledge an insight
 router.post('/insights/:insightId/acknowledge', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { insightId } = req.params;
+    const insightId = req.params.insightId as string;
     await insightsService.acknowledgeInsight(req.user!.id, insightId);
     res.json({ message: 'Insight acknowledged' });
   } catch (error) {

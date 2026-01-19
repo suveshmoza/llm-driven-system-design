@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "dev:api": "PORT=3001 ts-node-dev --respawn --transpile-only src/api/server.ts",
+    "dev:api": "PORT=3001 ts-node-dev --respawn --transpile-only src/api/index.ts",
     "dev:scheduler": "ts-node-dev --respawn --transpile-only src/scheduler/index.ts",
     "dev:worker1": "WORKER_ID=worker-1 ts-node-dev --respawn --transpile-only src/worker/index.ts",
     "dev:worker2": "WORKER_ID=worker-2 ts-node-dev --respawn --transpile-only src/worker/index.ts",

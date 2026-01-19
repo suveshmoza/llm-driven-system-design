@@ -30,7 +30,7 @@ let isShuttingDown = false;
 // ============================================================================
 
 // Reject requests during shutdown
-app.use((req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+app.use((_req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
   if (isShuttingDown) {
     res.set('Connection', 'close');
     res.status(503).json({

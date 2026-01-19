@@ -1,4 +1,5 @@
-import amqp, { Connection, Channel, ConsumeMessage } from 'amqplib';
+import amqp, { Channel, ConsumeMessage } from 'amqplib';
+import type { ChannelModel } from 'amqplib';
 import { logger } from './logger.js';
 
 /**
@@ -32,7 +33,7 @@ interface ConsumeOptions {
 }
 
 // Connection state
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 let isShuttingDown = false;
 let hasEverConnected = false;
@@ -67,7 +68,7 @@ export async function connectQueue(): Promise<Channel> {
       { component: 'queue', url: RABBITMQ_URL.replace(/:[^:@]+@/, ':****@') },
       'RabbitMQ connected'
     );
-    return channel;
+    return channel!;
   } catch (err) {
     logger.error({ err, component: 'queue' }, 'Failed to connect to RabbitMQ');
     throw err;

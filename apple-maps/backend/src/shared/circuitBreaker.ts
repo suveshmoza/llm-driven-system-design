@@ -72,9 +72,10 @@ function createCircuitBreaker<T extends unknown[], R>(
     circuitBreakerState.set({ name }, 0); // CLOSED = 0
   });
 
-  breaker.on('failure', (error: Error) => {
+  breaker.on('failure', (error: unknown) => {
     circuitBreakerFailures.inc({ name });
-    logger.warn({ circuit: name, error: error.message }, 'Circuit breaker recorded failure');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn({ circuit: name, error: errorMessage }, 'Circuit breaker recorded failure');
   });
 
   breaker.on('open', () => {

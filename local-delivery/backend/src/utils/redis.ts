@@ -1,5 +1,7 @@
 import Redis from 'ioredis';
 
+const RedisClient = Redis.default ?? Redis;
+
 const redisHost = process.env.REDIS_HOST || 'localhost';
 const redisPort = parseInt(process.env.REDIS_PORT || '6379');
 
@@ -7,7 +9,7 @@ const redisPort = parseInt(process.env.REDIS_PORT || '6379');
  * Main Redis client for general operations (caching, geo-indexing, etc.).
  * Uses lazy connection to defer connecting until first use.
  */
-export const redis = new Redis({
+export const redis = new RedisClient({
   host: redisHost,
   port: redisPort,
   maxRetriesPerRequest: 3,
@@ -19,7 +21,7 @@ export const redis = new Redis({
  * Separate from main client because subscribed clients cannot publish.
  * Used to broadcast real-time updates (driver locations, order status changes).
  */
-export const publisher = new Redis({
+export const publisher = new RedisClient({
   host: redisHost,
   port: redisPort,
   maxRetriesPerRequest: 3,
@@ -33,15 +35,15 @@ export const publisher = new Redis({
  *
  * @returns A new Redis client configured for subscription use
  */
-export function createSubscriber(): Redis {
-  return new Redis({
+export function createSubscriber(): InstanceType<typeof RedisClient> {
+  return new RedisClient({
     host: redisHost,
     port: redisPort,
     maxRetriesPerRequest: 3,
   });
 }
 
-redis.on('error', (err) => {
+redis.on('error', (err: Error) => {
   console.error('Redis connection error:', err);
 });
 
@@ -49,7 +51,7 @@ redis.on('connect', () => {
   console.log('Connected to Redis');
 });
 
-publisher.on('error', (err) => {
+publisher.on('error', (err: Error) => {
   console.error('Redis publisher connection error:', err);
 });
 
@@ -148,8 +150,8 @@ export async function findNearbyDrivers(
     limit
   );
 
-  return results.map((result) => {
-    const [id, distance] = result as [string, string];
+  return (results as [string, string][]).map((result) => {
+    const [id, distance] = result;
     return {
       id,
       distance: parseFloat(distance),

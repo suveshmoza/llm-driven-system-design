@@ -192,7 +192,7 @@ router.get('/users/:userId', async (req: Request, res: Response): Promise<void> 
 // Trigger re-aggregation for a user
 router.post('/users/:userId/reaggregate', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId } = req.params;
+    const userId = req.params.userId as string;
     const { startDate, endDate } = req.body as { startDate?: string; endDate?: string };
 
     const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

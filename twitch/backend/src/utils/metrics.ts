@@ -146,7 +146,7 @@ register.registerMetric(moderationActionsTotal);
 // ===================
 
 interface RouteRequest extends Request {
-  route?: { path: string };
+  route: { path: string };
 }
 
 function metricsMiddleware(req: RouteRequest, res: Response, next: NextFunction): void {

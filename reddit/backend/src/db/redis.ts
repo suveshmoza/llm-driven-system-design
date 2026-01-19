@@ -1,9 +1,11 @@
-import Redis from 'ioredis';
+import RedisLib from 'ioredis';
 import dotenv from 'dotenv';
 import logger from '../shared/logger.js';
 import { cacheHits, cacheMisses } from '../shared/metrics.js';
 
 dotenv.config();
+
+const Redis = RedisLib.default ?? RedisLib;
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: 3,

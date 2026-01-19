@@ -2,7 +2,7 @@ import type { Response, NextFunction } from 'express';
 import { getSession, findUserById } from '../models/user.js';
 import type { AuthenticatedRequest } from '../shared/logger.js';
 
-export const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+export const authenticate = async (req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> => {
   const sessionId = req.cookies?.session || req.headers['x-session-id'];
 
   if (!sessionId || typeof sessionId !== 'string') {

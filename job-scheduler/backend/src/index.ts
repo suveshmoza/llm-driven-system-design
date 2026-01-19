@@ -27,7 +27,7 @@ async function start() {
 
   switch (mode) {
     case 'api':
-      await import('./api/server');
+      await import('./api/index');
       break;
     case 'scheduler':
       await import('./scheduler/index');
@@ -39,7 +39,7 @@ async function start() {
     default:
       // Start all services
       logger.info('Starting all services...');
-      await import('./api/server');
+      await import('./api/index');
 
       // Delay scheduler and worker start slightly
       setTimeout(async () => {

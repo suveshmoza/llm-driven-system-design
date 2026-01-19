@@ -12,8 +12,16 @@ export default tseslint.config(
       globals: globals.node,
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }],
       '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-namespace': 'off', // Allow namespace for Express type augmentation
+      '@typescript-eslint/no-require-imports': 'off', // Allow require for dynamic imports
+      'no-case-declarations': 'off', // Allow declarations in case blocks
     },
   },
 )

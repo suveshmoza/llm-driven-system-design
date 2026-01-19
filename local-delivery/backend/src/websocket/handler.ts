@@ -17,7 +17,9 @@ import {
   unsubscribeFromOrderTracking,
 } from '../utils/redis.js';
 import { haversineDistance, calculateETA } from '../utils/geo.js';
-import type Redis from 'ioredis';
+
+/** Type for Redis subscriber client */
+type RedisSubscriber = ReturnType<typeof createSubscriber>;
 
 /**
  * Represents a connected WebSocket client with its subscriptions and state.
@@ -29,7 +31,7 @@ interface WSClient {
   userRole: string;
   orderId?: string;
   driverId?: string;
-  subscriber?: Redis;
+  subscriber?: RedisSubscriber;
 }
 
 /** Map of all active WebSocket connections by client ID. */
@@ -211,7 +213,7 @@ async function handleSubscribeOrder(
   await subscribeToOrderTracking(order_id, client.id);
 
   // Handle incoming messages
-  subscriber.on('message', async (channel, message) => {
+  subscriber.on('message', async (channel: string, message: string) => {
     try {
       const data = JSON.parse(message);
 
@@ -308,7 +310,7 @@ async function handleSubscribeDriverOffers(client: WSClient): Promise<void> {
   // Subscribe to driver offers
   await subscriber.subscribe(`driver:${client.userId}:offers`);
 
-  subscriber.on('message', async (channel, message) => {
+  subscriber.on('message', async (channel: string, message: string) => {
     try {
       const data = JSON.parse(message);
 

@@ -111,8 +111,9 @@ router.get(
   optionalAuth as any,
   async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
     try {
-      const { idOrSlug } = req.params;
-      const cacheKey = `business:${idOrSlug}`;
+      const idOrSlug = req.params.idOrSlug;
+      const identifier = Array.isArray(idOrSlug) ? idOrSlug[0] : idOrSlug;
+      const cacheKey = `business:${identifier}`;
 
       // Try cache first
       const cached = await cache.get<BusinessRow>(cacheKey);
@@ -123,7 +124,7 @@ router.get(
       // Check if it's a UUID or slug
       const isUUID =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          idOrSlug
+          identifier
         );
 
       const query = `
@@ -138,7 +139,7 @@ router.get(
       GROUP BY b.id, u.name
     `;
 
-      const result = await pool.query<BusinessRow>(query, [idOrSlug]);
+      const result = await pool.query<BusinessRow>(query, [identifier]);
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: { message: 'Business not found' } });

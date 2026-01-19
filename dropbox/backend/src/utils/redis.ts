@@ -12,8 +12,6 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 /** Primary Redis client for standard get/set operations */
 export const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 3,
-  retryDelayOnFailover: 100,
-  retryDelayOnClusterDown: 100,
 });
 
 redis.on('error', (err) => {

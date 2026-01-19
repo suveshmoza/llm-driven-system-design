@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
 import { pool } from '../db/pool.js';
 import { authMiddleware, type AuthenticatedRequest } from '../middleware/auth.js';
 import { idempotencyMiddleware, STATUS } from '../shared/idempotency.js';
@@ -35,7 +36,7 @@ interface CommentRow {
  * sending money twice. The idempotency key ensures each logical payment intent
  * is only processed once, even if the request is received multiple times.
  */
-router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (req: Request<object, unknown, SendRequest>, res: Response): Promise<void> => {
+router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (req: Request<ParamsDictionary, unknown, SendRequest>, res: Response): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const log = logger.child({
     operation: 'send_transfer',

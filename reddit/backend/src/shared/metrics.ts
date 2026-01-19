@@ -164,12 +164,12 @@ export const auditEventsTotal = new client.Counter({
   registers: [register],
 });
 
-// Extended request interface for metrics middleware
-interface MetricsRequest extends Request {
+// Extended request type for metrics middleware
+type MetricsRequest = Request & {
   route?: {
     path: string;
   };
-}
+};
 
 // ============================================================================
 // Express Middleware for Request Metrics

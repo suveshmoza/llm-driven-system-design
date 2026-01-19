@@ -34,7 +34,6 @@ import { pool } from '../db/pool.js';
 import { logger } from './logger.js';
 import { auditEventsTotal } from './metrics.js';
 import type { Request } from 'express';
-import type { Socket } from 'net';
 
 // Audit action types
 export const AUDIT_ACTIONS = {
@@ -94,9 +93,11 @@ export type AuditAction = typeof AUDIT_ACTIONS[keyof typeof AUDIT_ACTIONS];
 export type ActorType = typeof ACTOR_TYPES[keyof typeof ACTOR_TYPES];
 export type Outcome = typeof OUTCOMES[keyof typeof OUTCOMES];
 
-interface AuditRequest extends Request {
+interface AuditRequest {
+  ip?: string;
+  headers: Record<string, string | string[] | undefined>;
   requestId?: string;
-  connection?: Socket & { remoteAddress?: string };
+  socket?: { remoteAddress?: string };
 }
 
 export interface AuditLogParams {
@@ -171,7 +172,7 @@ export async function createAuditLog({
     // Extract request context
     const requestContext = request
       ? {
-          ip: request.ip || request.headers['x-forwarded-for'] || request.connection?.remoteAddress,
+          ip: request.ip || request.headers['x-forwarded-for'] || request.socket?.remoteAddress,
           userAgent: request.headers['user-agent'],
           requestId: request.requestId || request.headers['x-request-id'],
         }

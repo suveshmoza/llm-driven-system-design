@@ -148,12 +148,11 @@ export const idempotencyOperations: Counter<string> = new promClient.Counter({
 
 // ----- Express Middleware -----
 
-interface RouteRequest extends Request {
+type RouteRequest = Request & {
   route?: {
     path?: string;
   };
-  baseUrl?: string;
-}
+};
 
 /**
  * Middleware to record HTTP metrics.

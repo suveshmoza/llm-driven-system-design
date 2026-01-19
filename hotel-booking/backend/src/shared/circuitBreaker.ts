@@ -54,13 +54,13 @@ export interface AvailabilityFallbackResult {
  * @param fallback - Optional fallback function
  * @returns CircuitBreaker instance
  */
-export function createCircuitBreaker<T extends (...args: unknown[]) => unknown>(
+export function createCircuitBreaker<TArgs extends unknown[], TResult>(
   name: string,
-  fn: T,
+  fn: (...args: TArgs) => TResult,
   options: CircuitBreakerOptions = {},
-  fallback: ((...args: Parameters<T>) => ReturnType<T>) | null = null
-): CircuitBreaker<Parameters<T>, ReturnType<T>> {
-  const breaker = new CircuitBreaker<Parameters<T>, ReturnType<T>>(fn, {
+  fallback: ((...args: TArgs) => TResult) | null = null
+): CircuitBreaker<TArgs, TResult> {
+  const breaker = new CircuitBreaker<TArgs, TResult>(fn, {
     ...DEFAULT_OPTIONS,
     ...options,
     name,
@@ -105,7 +105,7 @@ export function createCircuitBreaker<T extends (...args: unknown[]) => unknown>(
 
   // Set fallback if provided
   if (fallback) {
-    breaker.fallback(fallback as (...args: unknown[]) => unknown);
+    breaker.fallback(fallback);
   }
 
   return breaker;
@@ -118,15 +118,15 @@ export function createCircuitBreaker<T extends (...args: unknown[]) => unknown>(
  * @param options - Options
  * @returns Wrapped function
  */
-export function withCircuitBreaker<T extends (...args: unknown[]) => Promise<unknown>>(
+export function withCircuitBreaker<TArgs extends unknown[], TResult>(
   name: string,
-  fn: T,
+  fn: (...args: TArgs) => Promise<TResult>,
   options: CircuitBreakerOptions = {}
-): (...args: Parameters<T>) => Promise<ReturnType<T>> {
+): (...args: TArgs) => Promise<TResult> {
   const breaker = createCircuitBreaker(name, fn, options);
 
-  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
-    return breaker.fire(...args) as ReturnType<T>;
+  return async (...args: TArgs): Promise<TResult> => {
+    return breaker.fire(...args) as TResult;
   };
 }
 

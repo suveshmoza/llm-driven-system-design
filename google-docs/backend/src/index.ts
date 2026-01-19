@@ -16,7 +16,7 @@ import documentsRoutes from './routes/documents.js';
 import versionsRoutes from './routes/versions.js';
 import commentsRoutes from './routes/comments.js';
 import suggestionsRoutes from './routes/suggestions.js';
-import { initWebSocket, getCollaborationStats } from './services/collaboration.js';
+import { initWebSocket, getCollaborationStats } from './services/collaboration/index.js';
 import logger from './shared/logger.js';
 import { register, httpRequestDurationHistogram, httpRequestsCounter } from './shared/metrics.js';
 import pool from './utils/db.js';

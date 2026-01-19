@@ -398,7 +398,7 @@ class CodeExecutor {
     }
 
     return {
-      status: this.circuitBreaker.status.name,
+      status: String(this.circuitBreaker.status),
       stats: {
         fires: this.circuitBreaker.stats.fires,
         successes: this.circuitBreaker.stats.successes,

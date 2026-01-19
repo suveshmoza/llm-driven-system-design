@@ -18,7 +18,7 @@ import categoryRoutes from './routes/categories.js';
 import streamRoutes from './routes/streams.js';
 import userRoutes from './routes/users.js';
 import emoteRoutes from './routes/emotes.js';
-import moderationRoutes from './routes/moderation.js';
+import moderationRoutes from './routes/moderation/index.js';
 
 // Import shared utilities
 import { logger, requestLogger } from './utils/logger.js';

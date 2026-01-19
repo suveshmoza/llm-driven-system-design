@@ -1,6 +1,6 @@
-import amqplib, { Connection, Channel, ConsumeMessage } from 'amqplib';
+import amqplib, { ChannelModel, Channel, ConsumeMessage } from 'amqplib';
 
-let connection: Connection | null = null;
+let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
 
 export const QUEUES: Record<string, string> = {

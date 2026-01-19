@@ -166,11 +166,11 @@ export const idempotencyHits = new promClient.Counter({
   registers: [register],
 });
 
-interface RouteRequest extends Request {
+type RouteRequest = Request & {
   route?: {
     path?: string;
   };
-}
+};
 
 /**
  * Express middleware for collecting HTTP metrics
