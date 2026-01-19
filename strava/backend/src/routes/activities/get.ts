@@ -135,7 +135,8 @@ router.get('/:id/gps', optionalAuth, async (req: AuthenticatedRequest, res: Resp
     );
 
     if (activityResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Activity not found' });
+      res.status(404).json({ error: 'Activity not found' });
+      return;
     }
 
     const activity = activityResult.rows[0];
