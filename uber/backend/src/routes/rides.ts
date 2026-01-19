@@ -74,7 +74,7 @@ router.post(
   '/estimate',
   authenticate as never,
   requireRider as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body as EstimateBody;
 
@@ -115,7 +115,7 @@ router.post(
       logger.error({ error: err.message, stack: err.stack }, 'Estimate error');
       res.status(500).json({ error: 'Failed to get fare estimate' });
     }
-  }
+  }) as never
 );
 
 // Request a ride - with idempotency to prevent duplicate bookings
@@ -124,7 +124,7 @@ router.post(
   authenticate as never,
   requireRider as never,
   idempotencyMiddleware({ operation: 'ride_request', ttl: 86400 }) as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { pickupLat, pickupLng, dropoffLat, dropoffLng, vehicleType, pickupAddress, dropoffAddress } = req.body as RequestRideBody;
 
@@ -176,14 +176,14 @@ router.post(
       logger.error({ error: err.message, stack: err.stack }, 'Request ride error');
       res.status(500).json({ error: 'Failed to request ride' });
     }
-  }
+  }) as never
 );
 
 // Get ride status
 router.get(
   '/:rideId',
   authenticate as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { rideId } = req.params as unknown as RideParams;
       const ride = await matchingService.getRideStatus(rideId);
@@ -199,7 +199,7 @@ router.get(
       logger.error({ error: err.message }, 'Get ride error');
       res.status(500).json({ error: 'Failed to get ride status' });
     }
-  }
+  }) as never
 );
 
 // Cancel ride - with idempotency to prevent double-cancel
@@ -207,7 +207,7 @@ router.post(
   '/:rideId/cancel',
   authenticate as never,
   idempotencyMiddleware({ operation: 'ride_cancel', ttl: 3600 }) as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { rideId } = req.params as unknown as RideParams;
       const { reason } = req.body as CancelBody;
@@ -225,7 +225,7 @@ router.post(
       logger.error({ error: err.message }, 'Cancel ride error');
       res.status(500).json({ error: 'Failed to cancel ride' });
     }
-  }
+  }) as never
 );
 
 // Rate the ride - with idempotency to prevent duplicate ratings
@@ -233,7 +233,7 @@ router.post(
   '/:rideId/rate',
   authenticate as never,
   idempotencyMiddleware({ operation: 'ride_rate', ttl: 86400 }) as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { rideId } = req.params as unknown as RideParams;
       const { rating } = req.body as RateBody;
@@ -308,16 +308,16 @@ router.post(
       logger.error({ error: err.message }, 'Rate ride error');
       res.status(500).json({ error: 'Failed to rate ride' });
     }
-  }
+  }) as never
 );
 
 // Get ride history
 router.get(
   '/',
   authenticate as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { limit = '20', offset = '0' } = req.query as RideHistoryQuery;
+      const { limit = '20', offset = '0' } = req.query as unknown as RideHistoryQuery;
 
       let queryText: string;
       let queryParams: unknown[];
@@ -380,7 +380,7 @@ router.get(
       logger.error({ error: err.message }, 'Get rides error');
       res.status(500).json({ error: 'Failed to get ride history' });
     }
-  }
+  }) as never
 );
 
 // Get nearby drivers (for map display)
@@ -388,9 +388,9 @@ router.get(
   '/nearby/drivers',
   authenticate as never,
   requireRider as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { lat, lng, radius = '5' } = req.query as NearbyQuery;
+      const { lat, lng, radius = '5' } = req.query as unknown as NearbyQuery;
 
       if (!lat || !lng) {
         res.status(400).json({ error: 'Location coordinates are required' });
@@ -417,16 +417,16 @@ router.get(
       logger.error({ error: err.message }, 'Get nearby drivers error');
       res.status(500).json({ error: 'Failed to get nearby drivers' });
     }
-  }
+  }) as never
 );
 
 // Get surge info
 router.get(
   '/surge/info',
   authenticate as never,
-  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  (async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const { lat, lng } = req.query as SurgeQuery;
+      const { lat, lng } = req.query as unknown as SurgeQuery;
 
       if (!lat || !lng) {
         res.status(400).json({ error: 'Location coordinates are required' });
@@ -441,7 +441,7 @@ router.get(
       logger.error({ error: err.message }, 'Get surge info error');
       res.status(500).json({ error: 'Failed to get surge info' });
     }
-  }
+  }) as never
 );
 
 export default router;

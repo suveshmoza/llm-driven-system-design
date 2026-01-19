@@ -111,71 +111,78 @@ INSERT INTO dashboards (id, name, description, layout, is_public) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- CPU Usage Panel (line chart)
-INSERT INTO panels (dashboard_id, title, panel_type, query, position, options) VALUES
-  ('11111111-1111-1111-1111-111111111111',
+INSERT INTO panels (id, dashboard_id, title, panel_type, query, position, options) VALUES
+  ('22222222-2222-2222-2222-222222222201',
+   '11111111-1111-1111-1111-111111111111',
    'CPU Usage',
    'line_chart',
    '{"metric_name": "cpu.usage", "tags": {"environment": "production"}, "aggregation": "avg", "interval": "1m", "group_by": ["host"]}',
    '{"x": 0, "y": 0, "width": 6, "height": 2}',
    '{"unit": "%", "decimals": 1, "thresholds": [{"value": 70, "color": "#ffa500"}, {"value": 90, "color": "#ff0000"}]}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- Memory Usage Panel (line chart)
-INSERT INTO panels (dashboard_id, title, panel_type, query, position, options) VALUES
-  ('11111111-1111-1111-1111-111111111111',
+INSERT INTO panels (id, dashboard_id, title, panel_type, query, position, options) VALUES
+  ('22222222-2222-2222-2222-222222222202',
+   '11111111-1111-1111-1111-111111111111',
    'Memory Usage',
    'line_chart',
    '{"metric_name": "memory.usage", "tags": {"environment": "production"}, "aggregation": "avg", "interval": "1m", "group_by": ["host"]}',
    '{"x": 6, "y": 0, "width": 6, "height": 2}',
    '{"unit": "%", "decimals": 1, "thresholds": [{"value": 75, "color": "#ffa500"}, {"value": 85, "color": "#ff0000"}]}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- Request Rate Panel (area chart)
-INSERT INTO panels (dashboard_id, title, panel_type, query, position, options) VALUES
-  ('11111111-1111-1111-1111-111111111111',
+INSERT INTO panels (id, dashboard_id, title, panel_type, query, position, options) VALUES
+  ('22222222-2222-2222-2222-222222222203',
+   '11111111-1111-1111-1111-111111111111',
    'Request Rate',
    'area_chart',
    '{"metric_name": "network.requests_per_second", "tags": {"environment": "production"}, "aggregation": "sum", "interval": "1m"}',
    '{"x": 0, "y": 2, "width": 4, "height": 2}',
    '{"unit": "req/s", "decimals": 0}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- Response Time Panel (stat)
-INSERT INTO panels (dashboard_id, title, panel_type, query, position, options) VALUES
-  ('11111111-1111-1111-1111-111111111111',
+INSERT INTO panels (id, dashboard_id, title, panel_type, query, position, options) VALUES
+  ('22222222-2222-2222-2222-222222222204',
+   '11111111-1111-1111-1111-111111111111',
    'Response Time (Avg)',
    'stat',
    '{"metric_name": "http.response_time_ms", "tags": {"environment": "production"}, "aggregation": "avg", "interval": "5m"}',
    '{"x": 4, "y": 2, "width": 4, "height": 2}',
    '{"unit": "ms", "decimals": 1, "thresholds": [{"value": 50, "color": "#00ff00"}, {"value": 100, "color": "#ffa500"}, {"value": 200, "color": "#ff0000"}]}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- Error Rate Panel (gauge)
-INSERT INTO panels (dashboard_id, title, panel_type, query, position, options) VALUES
-  ('11111111-1111-1111-1111-111111111111',
+INSERT INTO panels (id, dashboard_id, title, panel_type, query, position, options) VALUES
+  ('22222222-2222-2222-2222-222222222205',
+   '11111111-1111-1111-1111-111111111111',
    'Error Rate',
    'gauge',
    '{"metric_name": "http.error_rate", "tags": {"environment": "production"}, "aggregation": "avg", "interval": "5m"}',
    '{"x": 8, "y": 2, "width": 4, "height": 2}',
    '{"unit": "%", "decimals": 2, "thresholds": [{"value": 1, "color": "#00ff00"}, {"value": 2, "color": "#ffa500"}, {"value": 5, "color": "#ff0000"}]}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- Disk Usage Panel (bar chart)
-INSERT INTO panels (dashboard_id, title, panel_type, query, position, options) VALUES
-  ('11111111-1111-1111-1111-111111111111',
+INSERT INTO panels (id, dashboard_id, title, panel_type, query, position, options) VALUES
+  ('22222222-2222-2222-2222-222222222206',
+   '11111111-1111-1111-1111-111111111111',
    'Disk Usage',
    'bar_chart',
    '{"metric_name": "disk.usage", "tags": {"environment": "production"}, "aggregation": "max", "interval": "5m", "group_by": ["host"]}',
    '{"x": 0, "y": 4, "width": 12, "height": 2}',
    '{"unit": "%", "decimals": 1}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- Sample Alert Rules
 -- ============================================================================
 
-INSERT INTO alert_rules (name, description, metric_name, tags, condition, window_seconds, severity, notifications, enabled) VALUES
-  ('High CPU Usage',
+INSERT INTO alert_rules (id, name, description, metric_name, tags, condition, window_seconds, severity, notifications, enabled) VALUES
+  ('33333333-3333-3333-3333-333333333301',
+   'High CPU Usage',
    'Alert when CPU usage exceeds 90% for 5 minutes',
    'cpu.usage',
    '{"environment": "production"}',
@@ -184,7 +191,8 @@ INSERT INTO alert_rules (name, description, metric_name, tags, condition, window
    'critical',
    '[{"channel": "console", "target": "default"}]',
    true),
-  ('High Memory Usage',
+  ('33333333-3333-3333-3333-333333333302',
+   'High Memory Usage',
    'Alert when memory usage exceeds 85% for 5 minutes',
    'memory.usage',
    '{"environment": "production"}',
@@ -193,7 +201,8 @@ INSERT INTO alert_rules (name, description, metric_name, tags, condition, window
    'warning',
    '[{"channel": "console", "target": "default"}]',
    true),
-  ('High Error Rate',
+  ('33333333-3333-3333-3333-333333333303',
+   'High Error Rate',
    'Alert when error rate exceeds 5% for 2 minutes',
    'http.error_rate',
    '{"environment": "production"}',
@@ -202,4 +211,4 @@ INSERT INTO alert_rules (name, description, metric_name, tags, condition, window
    'critical',
    '[{"channel": "console", "target": "default"}]',
    true)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
