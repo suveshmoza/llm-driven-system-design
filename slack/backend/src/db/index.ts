@@ -4,7 +4,7 @@
  * along with helper functions for executing queries and transactions.
  */
 
-import pg from 'pg';
+import pg, { QueryResultRow } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -27,7 +27,7 @@ export const pool = new Pool({
  * @param params - Array of parameter values to substitute into the query
  * @returns Promise resolving to the query result with typed rows
  */
-export async function query<T>(text: string, params?: unknown[]): Promise<pg.QueryResult<T>> {
+export async function query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<pg.QueryResult<T>> {
   const start = Date.now();
   const result = await pool.query<T>(text, params);
   const duration = Date.now() - start;

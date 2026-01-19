@@ -5,6 +5,7 @@
  */
 
 import { Client } from '@elastic/elasticsearch';
+import type { QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -180,12 +181,12 @@ export async function searchMessages(
   limit: number = 50
 ): Promise<SearchResult[]> {
   try {
-    const mustClauses: unknown[] = [
+    const mustClauses: QueryDslQueryContainer[] = [
       { term: { workspace_id: workspaceId } },
       { match: { content: query } },
     ];
 
-    const filterClauses: unknown[] = [];
+    const filterClauses: QueryDslQueryContainer[] = [];
 
     if (filters.channel_id) {
       filterClauses.push({ term: { channel_id: filters.channel_id } });

@@ -562,7 +562,7 @@ router.post('/:id/share', optionalAuth, async (req: Request, res: Response): Pro
 // Get similar videos using embedding similarity
 router.get('/:id/similar', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
     const userId = req.session?.userId;
 

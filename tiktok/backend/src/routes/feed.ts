@@ -72,7 +72,8 @@ const formatVideo = (
 // Circuit breaker for recommendation service
 const recommendationBreaker = createCircuitBreaker(
   'recommendation',
-  async (userId: number, limit: number, offset: number): Promise<VideoRow[]> => {
+  async (...args: unknown[]): Promise<VideoRow[]> => {
+    const [userId, limit, offset] = args as [number, number, number];
     return await getPersonalizedFeedInternal(userId, limit, offset);
   },
   {
@@ -110,7 +111,7 @@ async function handleFYP(req: Request, res: Response, _next: NextFunction): Prom
     if (userId) {
       // Personalized feed with circuit breaker
       try {
-        videos = await recommendationBreaker.fire(userId, limit, offset);
+        videos = await recommendationBreaker.fire(userId, limit, offset) as VideoRow[];
       } catch (error) {
         if ((error as Error).message === 'Breaker is open') {
           logger.warn({ userId }, 'Recommendation circuit open, falling back to trending');
@@ -249,7 +250,7 @@ async function handleTrending(req: Request, res: Response, _next: NextFunction):
 // Hashtag feed
 router.get('/hashtag/:tag', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { tag } = req.params;
+    const tag = req.params.tag as string;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
     const offset = parseInt(req.query.offset as string) || 0;
     const userId = req.session?.userId;

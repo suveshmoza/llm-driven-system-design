@@ -368,8 +368,7 @@ Projects have both frontend and backend implementations following the standard `
 
 | Language | Runner | Example Projects |
 |----------|--------|------------------|
-| TypeScript | `tsx` | scale-ai, web-crawler, ad-click-aggregator, discord |
-| JavaScript | `node --watch` | instagram, uber, twitter, airbnb |
+| TypeScript | `tsx` | All backend projects (scale-ai, web-crawler, ad-click-aggregator, discord, twitter, airbnb, instagram, uber, icloud, apple-tv, youtube) |
 
 Check each project's `package.json` for available scripts.
 

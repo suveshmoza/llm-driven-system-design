@@ -11,6 +11,32 @@ import { query } from '../db/index.js';
 
 const router = Router();
 
+/** Row type for user info query */
+interface UserRow {
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+/** Row type for channel info query */
+interface ChannelRow {
+  name: string;
+}
+
+/** Row type for the PostgreSQL fallback search query */
+interface SearchResultRow {
+  id: string;
+  channel_id: string;
+  user_id: string;
+  content: string;
+  created_at: Date;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  channel_name: string;
+  highlight: string | null;
+}
+
 /**
  * GET /search - Search messages in the current workspace.
  * Supports filtering by channel, user, and date range.
@@ -43,12 +69,12 @@ router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Respons
       // Enrich results with user info
       const enrichedResults = await Promise.all(
         results.map(async (result) => {
-          const userResult = await query(
+          const userResult = await query<UserRow>(
             'SELECT username, display_name, avatar_url FROM users WHERE id = $1',
             [result.user_id]
           );
 
-          const channelResult = await query(
+          const channelResult = await query<ChannelRow>(
             'SELECT name FROM channels WHERE id = $1',
             [result.channel_id]
           );
@@ -110,7 +136,7 @@ router.get('/', requireAuth, requireWorkspace, async (req: Request, res: Respons
     searchQuery += ` ORDER BY m.created_at DESC LIMIT $${paramIndex}`;
     params.push(parseInt(limit as string, 10));
 
-    const result = await query(searchQuery, params);
+    const result = await query<SearchResultRow>(searchQuery, params);
 
     res.json(result.rows.map(row => ({
       id: row.id,

@@ -90,7 +90,7 @@ export const createCircuitBreaker = <T extends (...args: unknown[]) => Promise<u
   // Store breaker
   breakers.set(name, breaker);
 
-  return breaker;
+  return breaker as CircuitBreaker<Parameters<T>, Awaited<ReturnType<T>>>;
 };
 
 /**
