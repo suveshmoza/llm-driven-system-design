@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { pushService } from "../services/pushService.js";
-import { tokenRegistry } from "../services/tokenRegistry.js";
+import { _tokenRegistry } from "../services/tokenRegistry.js";
 import {
   validateDeviceToken,
   validatePayload,

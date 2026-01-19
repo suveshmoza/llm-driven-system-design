@@ -43,17 +43,21 @@ const DEFAULT_OPTIONS: CircuitBreakerOptions = {
 };
 
 // Store all circuit breakers for health checks
-const circuitBreakers: Map<string, CircuitBreaker> = new Map();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const circuitBreakers: Map<string, CircuitBreaker<any[], any>> = new Map();
 
 /**
  * Create a circuit breaker for a given function
+ * Note: TReturn should be the Promise type (e.g., Promise<SearchResult>), not the unwrapped type
  */
-export function createCircuitBreaker<T extends (...args: unknown[]) => unknown>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createCircuitBreaker<TArgs extends any[], TReturn>(
   name: string,
-  fn: T,
+  fn: (...args: TArgs) => TReturn,
   options: CircuitBreakerOptions = {}
-): CircuitBreaker<T> {
-  const breaker = new CircuitBreaker(fn, {
+): CircuitBreaker<TArgs, Awaited<TReturn>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const breaker = new CircuitBreaker<TArgs, Awaited<TReturn>>(fn as any, {
     ...DEFAULT_OPTIONS,
     ...options,
     name,
@@ -110,7 +114,7 @@ export function createCircuitBreaker<T extends (...args: unknown[]) => unknown>(
   // Store for health checks
   circuitBreakers.set(name, breaker);
 
-  return breaker as CircuitBreaker<T>;
+  return breaker;
 }
 
 /**
@@ -134,11 +138,13 @@ export function getCircuitBreakerStatus(): Record<string, CircuitBreakerStatusEn
 /**
  * Create Elasticsearch search circuit breaker
  */
-let esSearchBreaker: CircuitBreaker | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let esSearchBreaker: CircuitBreaker<any[], any> | null = null;
 
-export function getElasticsearchSearchBreaker<T extends (...args: unknown[]) => unknown>(
-  searchFn: T
-): CircuitBreaker<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getElasticsearchSearchBreaker<TArgs extends any[], TReturn>(
+  searchFn: (...args: TArgs) => TReturn
+): CircuitBreaker<TArgs, Awaited<TReturn>> {
   if (!esSearchBreaker) {
     esSearchBreaker = createCircuitBreaker('elasticsearch_search', searchFn, {
       timeout: 3000, // 3 second timeout for search
@@ -146,17 +152,19 @@ export function getElasticsearchSearchBreaker<T extends (...args: unknown[]) => 
       resetTimeout: 30000,
     });
   }
-  return esSearchBreaker as CircuitBreaker<T>;
+  return esSearchBreaker as CircuitBreaker<TArgs, Awaited<TReturn>>;
 }
 
 /**
  * Create Elasticsearch autocomplete circuit breaker
  */
-let esAutocompleteBreaker: CircuitBreaker | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let esAutocompleteBreaker: CircuitBreaker<any[], any> | null = null;
 
-export function getElasticsearchAutocompleteBreaker<T extends (...args: unknown[]) => unknown>(
-  autocompleteFn: T
-): CircuitBreaker<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getElasticsearchAutocompleteBreaker<TArgs extends any[], TReturn>(
+  autocompleteFn: (...args: TArgs) => TReturn
+): CircuitBreaker<TArgs, Awaited<TReturn>> {
   if (!esAutocompleteBreaker) {
     esAutocompleteBreaker = createCircuitBreaker(
       'elasticsearch_autocomplete',
@@ -168,17 +176,19 @@ export function getElasticsearchAutocompleteBreaker<T extends (...args: unknown[
       }
     );
   }
-  return esAutocompleteBreaker as CircuitBreaker<T>;
+  return esAutocompleteBreaker as CircuitBreaker<TArgs, Awaited<TReturn>>;
 }
 
 /**
  * Create PostgreSQL geo query circuit breaker
  */
-let pgGeoBreaker: CircuitBreaker | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let pgGeoBreaker: CircuitBreaker<any[], any> | null = null;
 
-export function getPostgresGeoBreaker<T extends (...args: unknown[]) => unknown>(
-  geoQueryFn: T
-): CircuitBreaker<T> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getPostgresGeoBreaker<TArgs extends any[], TReturn>(
+  geoQueryFn: (...args: TArgs) => TReturn
+): CircuitBreaker<TArgs, Awaited<TReturn>> {
   if (!pgGeoBreaker) {
     pgGeoBreaker = createCircuitBreaker('postgres_geo', geoQueryFn, {
       timeout: 5000, // 5 second timeout for geo queries
@@ -186,22 +196,23 @@ export function getPostgresGeoBreaker<T extends (...args: unknown[]) => unknown>
       resetTimeout: 30000,
     });
   }
-  return pgGeoBreaker as CircuitBreaker<T>;
+  return pgGeoBreaker as CircuitBreaker<TArgs, Awaited<TReturn>>;
 }
 
 /**
  * Wrap a function with circuit breaker protection
  */
-export function withCircuitBreaker<T extends (...args: unknown[]) => Promise<unknown>>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withCircuitBreaker<TArgs extends any[], TReturn>(
   name: string,
-  fn: T,
+  fn: (...args: TArgs) => Promise<TReturn>,
   options: CircuitBreakerOptions = {}
-): (...args: Parameters<T>) => Promise<ReturnType<T>> {
+): (...args: TArgs) => Promise<TReturn> {
   const breaker = createCircuitBreaker(name, fn, options);
 
-  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+  return async (...args: TArgs): Promise<TReturn> => {
     try {
-      return (await breaker.fire(...args)) as ReturnType<T>;
+      return (await breaker.fire(...args)) as TReturn;
     } catch (error) {
       if ((error as Error).message === 'Breaker is open') {
         // Circuit is open, provide fallback behavior
@@ -215,9 +226,10 @@ export function withCircuitBreaker<T extends (...args: unknown[]) => Promise<unk
 /**
  * Create a fallback handler for circuit breaker
  */
-export function setFallback<T>(
-  breaker: CircuitBreaker,
-  fallbackFn: (...args: unknown[]) => T | Promise<T>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function setFallback<TArgs extends any[], TReturn>(
+  breaker: CircuitBreaker<TArgs, TReturn>,
+  fallbackFn: (...args: TArgs) => TReturn | Promise<TReturn>
 ): void {
   breaker.fallback(fallbackFn);
 }

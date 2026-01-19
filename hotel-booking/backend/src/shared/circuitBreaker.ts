@@ -49,16 +49,16 @@ export interface AvailabilityFallbackResult {
 /**
  * Create a circuit breaker for a service
  * @param name - Service name for logging and metrics
- * @param fn - The function to wrap
+ * @param fn - The async function to wrap
  * @param options - Circuit breaker options
  * @param fallback - Optional fallback function
  * @returns CircuitBreaker instance
  */
 export function createCircuitBreaker<TArgs extends unknown[], TResult>(
   name: string,
-  fn: (...args: TArgs) => TResult,
+  fn: (...args: TArgs) => Promise<TResult>,
   options: CircuitBreakerOptions = {},
-  fallback: ((...args: TArgs) => TResult) | null = null
+  fallback: ((...args: TArgs) => Promise<TResult>) | null = null
 ): CircuitBreaker<TArgs, TResult> {
   const breaker = new CircuitBreaker<TArgs, TResult>(fn, {
     ...DEFAULT_OPTIONS,

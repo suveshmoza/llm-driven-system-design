@@ -140,8 +140,8 @@ setFallback(
   esAutocompleteBreaker,
   async (
     prefix: string,
-    latitude?: number | null,
-    longitude?: number | null
+    _latitude?: number | null,
+    _longitude?: number | null
   ): Promise<AutocompleteResult[]> => {
     logger.warn(
       { component: 'search' },

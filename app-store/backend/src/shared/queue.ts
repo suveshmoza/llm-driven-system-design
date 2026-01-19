@@ -377,7 +377,7 @@ export async function consumeMessages<T>(
             );
             channel.ack(msg);
             mqMessagesConsumed.inc({ queue, event_type: envelope.eventType, status: 'requeued' });
-          } catch (requeueError) {
+          } catch (_requeueError) {
             // Failed to requeue, send to DLQ
             channel.nack(msg, false, false);
             mqMessagesConsumed.inc({ queue, event_type: envelope.eventType, status: 'failure' });

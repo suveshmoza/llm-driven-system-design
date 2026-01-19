@@ -6,6 +6,7 @@ import {
   closeQueue,
   consumeQueue,
   QUEUES,
+  QueueMessage,
 } from '../utils/queue.js';
 import {
   elasticsearch,
@@ -26,14 +27,6 @@ import {
  * - reindex: Full reindex of a business from PostgreSQL
  * - delete: Remove business from Elasticsearch index
  */
-
-// Message interface for queue messages
-interface IndexMessage {
-  type: 'update' | 'reindex' | 'delete';
-  businessId: string;
-  updates?: Record<string, unknown>;
-  timestamp?: string;
-}
 
 // Business row interface for PostgreSQL result
 interface BusinessForIndex {
@@ -95,8 +88,32 @@ async function fetchBusinessForIndex(
 /**
  * Handle incoming index messages.
  */
-async function handleIndexMessage(message: IndexMessage): Promise<void> {
+async function handleIndexMessage(message: QueueMessage): Promise<void> {
   const { type, businessId, updates, timestamp } = message;
+
+  // Validate message type
+  if (type !== 'update' && type !== 'reindex' && type !== 'delete') {
+    logger.warn(
+      {
+        component: 'indexWorker',
+        type,
+        businessId,
+      },
+      'Unknown message type'
+    );
+    return;
+  }
+
+  if (!businessId) {
+    logger.warn(
+      {
+        component: 'indexWorker',
+        type,
+      },
+      'Missing businessId in message'
+    );
+    return;
+  }
 
   logger.debug(
     {
@@ -169,16 +186,6 @@ async function handleIndexMessage(message: IndexMessage): Promise<void> {
       }
       break;
     }
-
-    default:
-      logger.warn(
-        {
-          component: 'indexWorker',
-          type,
-          businessId,
-        },
-        'Unknown message type'
-      );
   }
 }
 

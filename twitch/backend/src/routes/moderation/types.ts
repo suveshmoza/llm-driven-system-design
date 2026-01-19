@@ -1,24 +1,28 @@
 /**
  * Shared types and interfaces for moderation routes
  */
+import type { ParamsDictionary } from 'express-serve-static-core';
 
 // ===================
 // Request Params
 // ===================
 
-export interface ChannelParams {
+export interface ChannelParams extends ParamsDictionary {
   channelId: string;
 }
 
-export interface UserBanParams extends ChannelParams {
+export interface UserBanParams extends ParamsDictionary {
+  channelId: string;
   userId: string;
 }
 
-export interface MessageParams extends ChannelParams {
+export interface MessageParams extends ParamsDictionary {
+  channelId: string;
   messageId: string;
 }
 
-export interface ModeratorParams extends ChannelParams {
+export interface ModeratorParams extends ParamsDictionary {
+  channelId: string;
   userId: string;
 }
 

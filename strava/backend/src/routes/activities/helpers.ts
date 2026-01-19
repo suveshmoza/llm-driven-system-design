@@ -35,7 +35,7 @@ export function triggerSegmentMatching(
   activityId: string,
   points: GpsPoint[],
   activityType: string,
-  bbox: BoundingBox
+  bbox: BoundingBox | null
 ): void {
   matchActivityToSegments(activityId, points, activityType, bbox).catch(err => {
     logError(log, err as ErrorWithCode, 'Segment matching error', { activityId });

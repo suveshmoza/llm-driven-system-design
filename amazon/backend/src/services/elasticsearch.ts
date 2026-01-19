@@ -330,7 +330,7 @@ export async function bulkIndexProducts(products: Product[]): Promise<void> {
   ]);
 
   try {
-    const result: BulkResponse = await client.bulk({ operations });
+    const _result: BulkResponse = await client.bulk({ operations });
     await client.indices.refresh({ index: INDEX_NAME });
     console.log(`Indexed ${products.length} products`);
   } catch (error) {

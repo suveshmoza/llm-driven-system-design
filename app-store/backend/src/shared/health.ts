@@ -54,7 +54,7 @@ interface HealthCheckResponse {
 async function checkPostgres(): Promise<ComponentHealth> {
   const start = Date.now();
   try {
-    const result = await pool.query('SELECT 1 as health_check');
+    const _result = await pool.query('SELECT 1 as health_check');
     const latencyMs = Date.now() - start;
 
     // Also check pool status
@@ -285,7 +285,7 @@ export async function readinessProbe(req: Request, res: Response): Promise<void>
  * GET /health
  */
 export async function healthCheck(req: Request, res: Response): Promise<void> {
-  const startTime = Date.now();
+  const _startTime = Date.now();
 
   // Run all checks in parallel
   const [postgres, redisHealth, elasticsearch, rabbitmq] = await Promise.all([

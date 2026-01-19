@@ -376,7 +376,7 @@ class RoutingService {
           return route;
         }
 
-        const currentNode = nodes.get(currentId);
+        const _currentNode = nodes.get(currentId);
         const currentEdges = edges.get(currentId) || [];
 
         for (const edge of currentEdges) {

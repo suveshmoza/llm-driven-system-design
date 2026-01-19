@@ -43,7 +43,7 @@ export async function query(text: string, params?: unknown[]) {
  */
 export async function getClient() {
   const client = await pool.connect();
-  const originalQuery = client.query.bind(client);
+  const _originalQuery = client.query.bind(client);
   const release = client.release.bind(client);
 
   const timeout = setTimeout(() => {

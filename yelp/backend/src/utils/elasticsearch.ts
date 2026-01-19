@@ -1,8 +1,10 @@
 import { Client } from '@elastic/elasticsearch';
-import type {
-  SearchHit,
-  SearchTotalHits,
-} from '@elastic/elasticsearch/lib/api/types';
+
+// Types for SearchTotalHits
+interface SearchTotalHits {
+  value: number;
+  relation: string;
+}
 
 export const elasticsearch: Client = new Client({
   node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
@@ -386,7 +388,7 @@ export async function searchBusinesses(
     return {
       total,
       businesses: result.hits.hits.map(
-        (hit: SearchHit<BusinessDocument>) => ({
+        (hit) => ({
           ...(hit._source as BusinessDocument),
           score: hit._score,
           distance: (hit.fields?.distance as number[] | undefined)?.[0],
@@ -427,8 +429,9 @@ export async function autocompleteBusiness(
       return [];
     }
 
-    return suggestions[0].options.map(
-      (opt: { _source?: BusinessDocument }) => ({
+    const options = suggestions[0].options as Array<{ _source?: BusinessDocument }>;
+    return options.map(
+      (opt) => ({
         id: opt._source?.id ?? '',
         name: opt._source?.name ?? '',
         city: opt._source?.city ?? '',

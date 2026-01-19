@@ -20,7 +20,7 @@ export const QUEUES = {
 } as const;
 
 // Message types
-interface QueueMessage {
+export interface QueueMessage {
   type: string;
   businessId?: string;
   updates?: Record<string, unknown>;

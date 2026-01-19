@@ -13,7 +13,8 @@ router.patch(
   authenticate as any,
   async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
     try {
-      const { id } = req.params;
+      const paramId = req.params.id;
+      const id = Array.isArray(paramId) ? paramId[0] : paramId;
       const body = req.body as UpdateBusinessBody;
 
       // Check ownership

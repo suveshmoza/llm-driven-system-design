@@ -335,7 +335,7 @@ router.post("/broadcast", async (req: Request, res: Response) => {
           expiration,
         });
         sentCount++;
-      } catch (error) {
+      } catch (_error) {
         failedCount++;
       }
     }

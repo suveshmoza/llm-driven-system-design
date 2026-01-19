@@ -10,7 +10,7 @@ const router = Router();
 // Trigger sync with external service
 router.post('/sync/:service', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { service } = req.params;
+    const service = req.params.service as string;
     const userId = req.session.userId!;
 
     // Validate service

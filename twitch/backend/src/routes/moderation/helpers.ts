@@ -1,7 +1,7 @@
 /**
  * Shared helper functions for moderation routes
  */
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { query } from '../../services/database.js';
 import { getSession } from '../../services/redis.js';
 import type { ModeratorAccessResult, UserRow, RoleRow } from './types.js';
