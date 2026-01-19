@@ -11,7 +11,7 @@ import { createChargeEntries, calculateFee } from '../../services/ledger.js';
 import { capture, CaptureParams } from '../../services/cardNetwork.js';
 import { sendWebhook } from '../../services/webhooks.js';
 import logger from '../../shared/logger.js';
-import { auditLogger } from '../../shared/audit.js';
+import { auditLogger, PaymentIntentRow as AuditPaymentIntentRow } from '../../shared/audit.js';
 import { activePaymentIntents } from '../../shared/metrics.js';
 import type { PoolClient } from 'pg';
 import type { PaymentIntentRow, CapturePaymentIntentBody, CardNetworkError } from './types.js';
@@ -140,7 +140,7 @@ export async function capturePaymentIntent(
     activePaymentIntents.inc({ status: 'succeeded' });
 
     // Audit log: Payment captured
-    await auditLogger.logPaymentIntentCaptured(intent, captureAmount, {
+    await auditLogger.logPaymentIntentCaptured(intent as AuditPaymentIntentRow, captureAmount, {
       ipAddress: req.ip,
       traceId: req.headers['x-trace-id'] as string,
       metadata: { charge_id: result.chargeId },

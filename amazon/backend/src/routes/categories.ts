@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { QueryResult } from 'pg';
 import { query } from '../services/database.js';
 import { cacheGet, cacheSet } from '../services/redis.js';
 import { requireAdmin } from '../middleware/auth.js';
@@ -119,7 +120,7 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction): Pr
     while (current) {
       breadcrumbs.unshift({ name: current.name, slug: current.slug });
       if (current.parent_id) {
-        const parentResult = await query<CategoryRow>(
+        const parentResult: QueryResult<CategoryRow> = await query<CategoryRow>(
           'SELECT id, name, slug, parent_id FROM categories WHERE id = $1',
           [current.parent_id]
         );

@@ -16,7 +16,8 @@ import { getOrderWithDetails, calculateMatchScore } from './helpers.js';
 async function findNearbyDrivers(lat: number, lon: number, radiusKm: number): Promise<NearbyDriver[]> {
   try {
     // Use Redis GEOSEARCH
-    const results = await redisClient.geoSearch(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = await (redisClient as any).geoSearch(
       'driver_locations',
       { longitude: lon, latitude: lat },
       {
@@ -28,11 +29,11 @@ async function findNearbyDrivers(lat: number, lon: number, radiusKm: number): Pr
         SORT: 'ASC',
         COUNT: 20,
       }
-    );
+    ) as Array<{ member: string; distance: number }>;
 
     // Filter by availability from database
     const availableDrivers: NearbyDriver[] = [];
-    for (const result of results as Array<{ member: string; distance: number }>) {
+    for (const result of results) {
       const driverId = parseInt(result.member);
       const check = await query(
         'SELECT id FROM drivers WHERE id = $1 AND is_active = true AND is_available = true',
