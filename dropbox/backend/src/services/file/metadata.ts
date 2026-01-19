@@ -27,6 +27,13 @@ import {
 /**
  * Retrieves a single file or folder by ID.
  * Only returns items owned by the specified user.
+ *
+ * @description Fetches metadata for a single file or folder, ensuring
+ * the user has ownership. Excludes soft-deleted items.
+ *
+ * @param {string} userId - The ID of the user requesting the file
+ * @param {string} fileId - The ID of the file or folder to retrieve
+ * @returns {Promise<FileItem | null>} The file/folder metadata, or null if not found
  */
 export async function getFile(userId: string, fileId: string): Promise<FileItem | null> {
   return queryOne<FileItem>(
@@ -40,6 +47,16 @@ export async function getFile(userId: string, fileId: string): Promise<FileItem 
 
 /**
  * Creates a new folder in the file hierarchy.
+ *
+ * @description Creates a folder with the specified name under the given parent.
+ * Validates that no duplicate name exists in the same location. Publishes
+ * a sync event and invalidates relevant caches.
+ *
+ * @param {string} userId - The ID of the user creating the folder
+ * @param {string} name - The name of the new folder
+ * @param {string | null} parentId - The ID of the parent folder, or null for root
+ * @returns {Promise<FileItem>} The newly created folder metadata
+ * @throws {Error} If a file or folder with the same name already exists
  */
 export async function createFolder(
   userId: string,
@@ -90,6 +107,17 @@ export async function createFolder(
  * Retrieves the contents of a folder for the file browser.
  * Returns items sorted with folders first, then files alphabetically.
  * Builds breadcrumb trail for navigation.
+ *
+ * @description Fetches all items within a folder along with navigation
+ * breadcrumbs. Items are sorted with folders appearing before files,
+ * and each group sorted alphabetically by name.
+ *
+ * @param {string} userId - The ID of the user requesting folder contents
+ * @param {string | null} folderId - The ID of the folder to list, or null for root
+ * @returns {Promise<{ folder: FileItem | null; items: FileItem[]; breadcrumbs: Array<{ id: string; name: string }> }>}
+ *   Object containing the current folder metadata (null for root), list of items,
+ *   and breadcrumb navigation trail from root to current folder
+ * @throws {Error} If specified folder is not found
  */
 export async function getFolderContents(
   userId: string,
@@ -144,6 +172,17 @@ export async function getFolderContents(
 
 /**
  * Renames a file or folder.
+ *
+ * @description Updates the name of an existing file or folder. Validates
+ * that no duplicate name exists in the same parent folder. Publishes
+ * a sync event and invalidates relevant caches.
+ *
+ * @param {string} userId - The ID of the user performing the rename
+ * @param {string} itemId - The ID of the file or folder to rename
+ * @param {string} newName - The new name for the item
+ * @returns {Promise<FileItem>} The renamed item metadata
+ * @throws {Error} If item is not found
+ * @throws {Error} If a file or folder with the new name already exists
  */
 export async function renameItem(userId: string, itemId: string, newName: string): Promise<FileItem> {
   const item = await getFile(userId, itemId);

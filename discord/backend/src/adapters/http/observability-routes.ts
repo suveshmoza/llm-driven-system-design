@@ -1,7 +1,10 @@
 /**
  * Observability Routes
  *
- * Handles health checks, metrics, and storage statistics endpoints.
+ * @description Handles health checks, Prometheus metrics, and storage statistics endpoints.
+ * Provides critical infrastructure endpoints for monitoring, load balancer health probes,
+ * and operational visibility into the chat server state.
+ * @module adapters/http/observability-routes
  */
 
 import type { Request, Response, Router } from 'express';
@@ -21,9 +24,21 @@ import { getStorageStats, isCleanupRunning } from '../../utils/cleanup.js';
 import type { SSEManager } from './types.js';
 
 /**
- * Create observability routes (mounted at root, not /api)
+ * Creates an Express router with observability endpoints mounted at root level.
  *
- * @param sseManager - SSE manager for connection counts
+ * @description Sets up infrastructure routes for monitoring:
+ * - GET /metrics: Prometheus-formatted metrics for scraping
+ * - GET /health: Comprehensive health check with database, Redis, and connection status
+ *
+ * These routes are mounted at the root level (not under /api) to follow standard
+ * conventions for infrastructure endpoints.
+ *
+ * @param {SSEManager} sseManager - SSE manager for tracking active connection counts
+ * @returns {Router} Express router configured with observability routes
+ *
+ * @example
+ * // Mount at root level for standard /metrics and /health paths
+ * app.use('/', createObservabilityRoutes(sseManager));
  */
 export function createObservabilityRoutes(sseManager: SSEManager): Router {
   const router = express.Router();
@@ -109,9 +124,21 @@ export function createObservabilityRoutes(sseManager: SSEManager): Router {
 }
 
 /**
- * Create API health and storage routes
+ * Creates an Express router with API-level health and storage endpoints.
  *
- * @param sseManager - SSE manager for connection counts
+ * @description Sets up additional observability routes under the /api prefix:
+ * - GET /api/health: Legacy health check endpoint for backwards compatibility
+ * - GET /api/storage: Storage statistics for monitoring database and message counts
+ *
+ * These are separate from the root-level observability routes to maintain
+ * API versioning and backwards compatibility with existing clients.
+ *
+ * @param {SSEManager} sseManager - SSE manager for tracking active connection counts
+ * @returns {Router} Express router configured with API health and storage routes
+ *
+ * @example
+ * // Mount under /api for API-level health checks
+ * app.use('/api', createApiHealthRoutes(sseManager));
  */
 export function createApiHealthRoutes(sseManager: SSEManager): Router {
   const router = express.Router();

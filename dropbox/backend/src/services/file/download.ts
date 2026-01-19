@@ -22,6 +22,12 @@ import { getFile } from './metadata.js';
 
 /**
  * Retrieves the ordered list of chunks that make up a file.
+ *
+ * @description Queries the database for all chunks associated with a file,
+ * returning them in the correct order for reassembly.
+ *
+ * @param {string} fileId - The ID of the file to get chunks for
+ * @returns {Promise<FileChunk[]>} Array of chunk metadata ordered by chunk index
  */
 export async function getFileChunks(fileId: string): Promise<FileChunk[]> {
   return query<FileChunk>(
@@ -35,6 +41,16 @@ export async function getFileChunks(fileId: string): Promise<FileChunk[]> {
 /**
  * Downloads a complete file by reassembling its chunks.
  * Retrieves each chunk from object storage and concatenates them.
+ *
+ * @description Fetches a file's metadata and all associated chunks from
+ * MinIO storage, then concatenates them into a single buffer. Tracks
+ * download metrics and logs the operation.
+ *
+ * @param {string} userId - The ID of the user requesting the download
+ * @param {string} fileId - The ID of the file to download
+ * @returns {Promise<{ data: Buffer; file: FileItem }>} Object containing
+ *   the file data as a buffer and the file metadata
+ * @throws {Error} If file is not found or if the item is a folder
  */
 export async function downloadFile(
   userId: string,

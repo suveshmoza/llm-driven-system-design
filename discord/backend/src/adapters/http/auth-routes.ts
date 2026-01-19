@@ -1,7 +1,10 @@
 /**
  * Authentication Routes
  *
- * Handles user authentication endpoints including connect and disconnect.
+ * @description Handles user authentication endpoints including connect and disconnect.
+ * Provides REST API endpoints for establishing and terminating user sessions
+ * in the chat system.
+ * @module adapters/http/auth-routes
  */
 
 import type { Request, Response, Router } from 'express';
@@ -15,9 +18,19 @@ import { recordConnection } from '../../shared/metrics.js';
 import type { SSEHandler } from './sse-handler.js';
 
 /**
- * Create authentication routes
+ * Creates an Express router with authentication endpoints.
  *
- * @param sseHandler - SSE handler for managing SSE connections
+ * @description Sets up routes for user session management:
+ * - POST /connect: Authenticates a user with a nickname and creates a new session
+ * - POST /disconnect: Terminates an existing user session and closes associated SSE connections
+ *
+ * @param {SSEHandler} sseHandler - SSE handler instance for managing real-time message connections.
+ *                                   Used to close SSE connections when a user disconnects.
+ * @returns {Router} Express router configured with authentication routes
+ *
+ * @example
+ * // Mount auth routes on the API path
+ * app.use('/api', createAuthRoutes(sseHandler));
  */
 export function createAuthRoutes(sseHandler: SSEHandler): Router {
   const router = express.Router();

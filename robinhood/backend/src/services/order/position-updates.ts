@@ -3,12 +3,21 @@ import type { Position } from './types.js';
 
 /**
  * Updates or creates a position after a buy order fill.
- * Calculates new average cost basis when adding to existing position.
- * @param client - Database client within transaction
- * @param userId - ID of the position owner
- * @param symbol - Stock ticker symbol
- * @param quantity - Number of shares purchased
- * @param price - Purchase price per share
+ *
+ * @description Handles position management for buy order executions. If the user
+ * already has a position in the symbol, calculates and updates the new average
+ * cost basis using the formula: (oldQty * oldCost + newQty * newPrice) / totalQty.
+ * If no position exists, creates a new position record with the fill price as the
+ * initial cost basis.
+ *
+ * Uses FOR UPDATE lock to prevent race conditions during concurrent fills.
+ *
+ * @param client - PostgreSQL database client within an active transaction
+ * @param userId - Unique identifier of the position owner
+ * @param symbol - Stock ticker symbol (e.g., 'AAPL', 'GOOGL')
+ * @param quantity - Number of shares purchased in this fill
+ * @param price - Purchase price per share for this fill
+ * @returns Promise that resolves when position is updated or created
  */
 export async function updatePositionForBuy(
   client: PoolClient,
@@ -48,12 +57,21 @@ export async function updatePositionForBuy(
 
 /**
  * Updates a position after a sell order fill.
- * Decreases quantity and reserved shares; removes position if fully sold.
- * @param client - Database client within transaction
- * @param userId - ID of the position owner
- * @param symbol - Stock ticker symbol
- * @param quantity - Number of shares sold
- * @param _price - Sale price per share (unused, for signature consistency)
+ *
+ * @description Handles position management for sell order executions. Decreases
+ * the position quantity and reserved quantity by the sold amount. If the position
+ * is fully sold (quantity reaches zero or below), removes the position record
+ * entirely from the database.
+ *
+ * Uses FOR UPDATE lock to prevent race conditions during concurrent fills.
+ *
+ * @param client - PostgreSQL database client within an active transaction
+ * @param userId - Unique identifier of the position owner
+ * @param symbol - Stock ticker symbol (e.g., 'AAPL', 'GOOGL')
+ * @param quantity - Number of shares sold in this fill
+ * @param _price - Sale price per share (unused, included for signature consistency with buy)
+ * @returns Promise that resolves when position is updated or removed
+ * @throws {Error} 'Position not found' - If user has no position in the specified symbol
  */
 export async function updatePositionForSell(
   client: PoolClient,

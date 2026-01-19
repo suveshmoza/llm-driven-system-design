@@ -24,6 +24,14 @@ import { getFile } from './metadata.js';
 
 /**
  * Retrieves version history for a file.
+ *
+ * @description Fetches all saved versions of a file from the database,
+ * ordered by version number in descending order (newest first).
+ *
+ * @param {string} userId - The ID of the user requesting the version history
+ * @param {string} fileId - The ID of the file to get versions for
+ * @returns {Promise<FileVersion[]>} Array of file versions ordered by version number descending
+ * @throws {Error} If file is not found
  */
 export async function getFileVersions(userId: string, fileId: string): Promise<FileVersion[]> {
   const file = await getFile(userId, fileId);
@@ -44,6 +52,18 @@ export async function getFileVersions(userId: string, fileId: string): Promise<F
  * Restores a file to a previous version.
  * Saves the current version to history before restoring.
  * Updates user's storage usage based on size difference.
+ *
+ * @description Reverts a file to a previously saved version. The current
+ * state is saved as a new version before restoration, preserving the
+ * complete version history. Storage quota is adjusted based on the
+ * size difference between versions.
+ *
+ * @param {string} userId - The ID of the user performing the restore
+ * @param {string} fileId - The ID of the file to restore
+ * @param {string} versionId - The ID of the version to restore to
+ * @returns {Promise<FileItem>} The restored file metadata with updated version number
+ * @throws {Error} If file is not found
+ * @throws {Error} If specified version is not found
  */
 export async function restoreFileVersion(
   userId: string,

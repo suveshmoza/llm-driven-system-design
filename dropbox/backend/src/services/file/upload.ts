@@ -37,6 +37,20 @@ import {
  * Creates a new upload session for chunked file uploads.
  * Checks which chunks already exist in storage for deduplication,
  * allowing clients to skip uploading duplicate chunks.
+ *
+ * @description Initializes a new upload session and determines which chunks
+ * need to be uploaded based on existing chunk hashes in the database.
+ * This enables deduplication by identifying chunks that already exist.
+ *
+ * @param {string} userId - The ID of the user initiating the upload
+ * @param {string} fileName - The name of the file being uploaded
+ * @param {number} fileSize - The total size of the file in bytes
+ * @param {string | null} parentId - The ID of the parent folder, or null for root
+ * @param {string[]} chunkHashes - Array of SHA-256 hashes for each chunk of the file
+ * @returns {Promise<{ uploadSessionId: string; chunksNeeded: string[]; totalChunks: number }>}
+ *   Object containing the session ID, list of chunk hashes that need to be uploaded,
+ *   and total number of chunks
+ * @throws {Error} If database operations fail
  */
 export async function createUploadSession(
   userId: string,
@@ -102,6 +116,19 @@ export async function createUploadSession(
  * Uploads a single chunk of a file.
  * Verifies the chunk hash matches the data for integrity.
  * Increments reference count for existing chunks (deduplication).
+ *
+ * @description Handles the upload of an individual file chunk, performing
+ * hash verification for data integrity and managing reference counting
+ * for chunk deduplication.
+ *
+ * @param {string} userId - The ID of the user uploading the chunk
+ * @param {string} uploadSessionId - The ID of the upload session this chunk belongs to
+ * @param {number} chunkIndex - The zero-based index of this chunk within the file
+ * @param {string} chunkHash - The expected SHA-256 hash of the chunk data
+ * @param {Buffer} data - The raw chunk data to upload
+ * @returns {Promise<{ uploaded: boolean }>} Object indicating upload success
+ * @throws {Error} If upload session is not found
+ * @throws {Error} If chunk hash does not match the provided data (integrity failure)
  */
 export async function uploadFileChunk(
   userId: string,
@@ -180,6 +207,17 @@ export async function uploadFileChunk(
  * Completes an upload session and creates or updates the file record.
  * Handles versioning by saving current file state before updating.
  * Updates user storage quota and notifies connected clients.
+ *
+ * @description Finalizes a chunked upload by creating the file record,
+ * linking all uploaded chunks, and handling version history for existing files.
+ * Also updates the user's storage quota and publishes sync events.
+ *
+ * @param {string} userId - The ID of the user completing the upload
+ * @param {string} uploadSessionId - The ID of the upload session to complete
+ * @param {string[]} chunkHashes - Ordered array of chunk hashes that make up the file
+ * @returns {Promise<FileItem>} The created or updated file metadata
+ * @throws {Error} If upload session is not found
+ * @throws {Error} If chunk count does not match the expected total
  */
 export async function completeUpload(
   userId: string,

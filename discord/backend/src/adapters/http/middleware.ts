@@ -1,7 +1,9 @@
 /**
  * HTTP Middleware
  *
- * Provides Express middleware for request logging and connection draining.
+ * @description Provides Express middleware for request logging, CORS handling,
+ * JSON parsing, and connection draining during graceful shutdown.
+ * @module adapters/http/middleware
  */
 
 import type { Request, Response, NextFunction } from 'express';
@@ -12,21 +14,37 @@ import { createRequestLogger, generateRequestId } from '../../utils/logger.js';
 import type { RequestWithId, SSEManager } from './types.js';
 
 /**
- * Create CORS middleware
+ * Creates CORS (Cross-Origin Resource Sharing) middleware.
+ *
+ * @description Enables cross-origin requests from any origin. This is necessary
+ * for the browser frontend to communicate with the API when served from different ports.
+ *
+ * @returns {ReturnType<typeof cors>} Express middleware function for CORS handling
  */
 export function createCorsMiddleware() {
   return cors();
 }
 
 /**
- * Create JSON body parser middleware
+ * Creates JSON body parser middleware.
+ *
+ * @description Parses incoming requests with JSON payloads and makes the parsed
+ * data available on req.body.
+ *
+ * @returns {ReturnType<typeof express.json>} Express middleware function for JSON parsing
  */
 export function createJsonMiddleware() {
   return express.json();
 }
 
 /**
- * Create request logging middleware with request ID generation
+ * Creates request logging middleware with request ID generation.
+ *
+ * @description Generates a unique request ID for each incoming request and attaches
+ * it to the request object for distributed tracing. Also logs the incoming request
+ * details (method, path, body) at debug level.
+ *
+ * @returns {Function} Express middleware function that logs requests and adds request IDs
  */
 export function createRequestLoggingMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -39,9 +57,15 @@ export function createRequestLoggingMiddleware() {
 }
 
 /**
- * Create connection draining middleware for graceful shutdown
+ * Creates connection draining middleware for graceful shutdown.
  *
- * @param sseManager - Manager containing draining state
+ * @description When the server is in draining mode (preparing to shut down),
+ * this middleware rejects new requests with a 503 status code while still
+ * allowing health and metrics endpoints to respond. This enables load balancers
+ * to detect the shutdown and route traffic elsewhere.
+ *
+ * @param {SSEManager} sseManager - Manager containing the draining state flag
+ * @returns {Function} Express middleware function that blocks requests during drain
  */
 export function createDrainingMiddleware(sseManager: SSEManager) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -61,10 +85,14 @@ export function createDrainingMiddleware(sseManager: SSEManager) {
 }
 
 /**
- * Apply all standard middleware to an Express app
+ * Applies all standard middleware to an Express application.
  *
- * @param app - Express application
- * @param sseManager - Manager containing draining state
+ * @description Convenience function that sets up the complete middleware stack
+ * in the correct order: CORS, JSON parsing, request logging, and connection draining.
+ *
+ * @param {express.Application} app - Express application instance to configure
+ * @param {SSEManager} sseManager - Manager containing the draining state for shutdown handling
+ * @returns {void}
  */
 export function applyMiddleware(
   app: express.Application,

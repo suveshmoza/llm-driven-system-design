@@ -2,7 +2,21 @@ import { query } from '../../db.js';
 import { Order } from './types.js';
 
 /**
- * Get order with full details including restaurant, driver, and items
+ * Retrieves a complete order with all related details including restaurant, driver, and items.
+ * @description Fetches an order by ID and enriches it with associated restaurant data,
+ * driver information (if assigned), and all order items. This is the primary method
+ * for getting full order details for display or processing.
+ *
+ * @param orderId - The unique identifier of the order to retrieve
+ * @returns The complete order object with all related data, or null if not found
+ *
+ * @example
+ * ```typescript
+ * const order = await getOrderWithDetails(123);
+ * if (order) {
+ *   console.log(`Order from ${order.restaurant?.name}: ${order.items?.length} items`);
+ * }
+ * ```
  */
 export async function getOrderWithDetails(orderId: number): Promise<Order | null> {
   const orderResult = await query(
@@ -56,7 +70,29 @@ export async function getOrderWithDetails(orderId: number): Promise<Order | null
 }
 
 /**
- * Calculate match score for driver based on distance, rating, and experience
+ * Calculates a match score for a driver based on multiple factors.
+ * @description Uses a weighted scoring algorithm to determine how well-suited a driver
+ * is for a particular order. Higher scores indicate better matches. The algorithm considers:
+ * - Distance to restaurant (primary factor, closer is better)
+ * - Driver rating (higher ratings score better)
+ * - Experience level (more deliveries indicate reliability)
+ *
+ * @param driver - The driver to score, containing rating and delivery count
+ * @param driver.rating - Driver's rating (number or string, defaults to 5 if not provided)
+ * @param driver.total_deliveries - Total number of completed deliveries
+ * @param _order - The order being matched (reserved for future order-specific matching)
+ * @param distance - Distance from driver to restaurant in kilometers
+ * @returns A numeric score where higher values indicate better matches
+ *
+ * @example
+ * ```typescript
+ * const score = calculateMatchScore(
+ *   { rating: 4.8, total_deliveries: 150 },
+ *   order,
+ *   2.5 // 2.5 km away
+ * );
+ * // Returns approximately: 75 (distance) + 24 (rating) + 15 (experience) = 114
+ * ```
  */
 export function calculateMatchScore(
   driver: { rating?: number | string; total_deliveries: number },

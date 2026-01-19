@@ -1,7 +1,10 @@
 /**
  * Payment Intents Router
+ * @module paymentIntents
  *
- * This module combines all payment intent handlers into a single router.
+ * @description This module combines all payment intent handlers into a single Express router.
+ * It provides a complete API for managing the payment intent lifecycle.
+ *
  * Endpoints:
  *   POST   /v1/payment_intents           - Create a payment intent
  *   GET    /v1/payment_intents           - List payment intents

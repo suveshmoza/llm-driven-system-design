@@ -27,32 +27,91 @@ const callCreationTimes = new Map<string, number>();
 
 // --- Client Management ---
 
+/**
+ * Retrieves a connected client by their unique client ID.
+ *
+ * @description Looks up a client in the active connections map.
+ *
+ * @param clientId - The unique identifier for the WebSocket connection
+ * @returns The ConnectedClient if found, undefined otherwise
+ */
 export function getClient(clientId: string): ConnectedClient | undefined {
   return clients.get(clientId);
 }
 
+/**
+ * Registers a new connected client in the tracking map.
+ *
+ * @description Stores the client information for later lookups and message routing.
+ *
+ * @param clientId - The unique identifier for the WebSocket connection
+ * @param client - The connected client data to store
+ * @returns void
+ */
 export function setClient(clientId: string, client: ConnectedClient): void {
   clients.set(clientId, client);
 }
 
+/**
+ * Removes a client from the tracking map.
+ *
+ * @description Called during client disconnection cleanup.
+ *
+ * @param clientId - The unique identifier for the WebSocket connection to remove
+ * @returns true if the client was found and removed, false otherwise
+ */
 export function deleteClient(clientId: string): boolean {
   return clients.delete(clientId);
 }
 
+/**
+ * Returns the complete map of all connected clients.
+ *
+ * @description Used for operations that need to iterate over all connections,
+ * such as heartbeat checking.
+ *
+ * @returns Map of clientId to ConnectedClient for all active connections
+ */
 export function getAllClients(): Map<string, ConnectedClient> {
   return clients;
 }
 
+/**
+ * Returns the total number of connected clients.
+ *
+ * @description Useful for monitoring and stats endpoints.
+ *
+ * @returns The count of active WebSocket connections
+ */
 export function getClientCount(): number {
   return clients.size;
 }
 
 // --- User-Client Lookup ---
 
+/**
+ * Gets all client IDs associated with a specific user.
+ *
+ * @description A user can be connected from multiple devices simultaneously.
+ * This returns all active connection IDs for a given user.
+ *
+ * @param userId - The user ID to look up
+ * @returns Set of clientIds for this user, or undefined if user has no connections
+ */
 export function getUserClientIds(userId: string): Set<string> | undefined {
   return userClients.get(userId);
 }
 
+/**
+ * Associates a client connection with a user.
+ *
+ * @description Called during registration to enable user-based message routing.
+ * Creates a new Set if this is the user's first connection.
+ *
+ * @param userId - The user ID to associate
+ * @param clientId - The client connection ID to add
+ * @returns void
+ */
 export function addUserClient(userId: string, clientId: string): void {
   if (!userClients.has(userId)) {
     userClients.set(userId, new Set());
@@ -60,6 +119,16 @@ export function addUserClient(userId: string, clientId: string): void {
   userClients.get(userId)!.add(clientId);
 }
 
+/**
+ * Removes a client connection from a user's connection set.
+ *
+ * @description Called during disconnection. If this was the user's last
+ * connection, removes the user from the map entirely.
+ *
+ * @param userId - The user ID to update
+ * @param clientId - The client connection ID to remove
+ * @returns void
+ */
 export function removeUserClient(userId: string, clientId: string): void {
   const clientIds = userClients.get(userId);
   if (clientIds) {
@@ -70,20 +139,54 @@ export function removeUserClient(userId: string, clientId: string): void {
   }
 }
 
+/**
+ * Returns the complete user-to-clients mapping.
+ *
+ * @description Used for debugging and monitoring purposes.
+ *
+ * @returns Map of userId to Set of clientIds
+ */
 export function getAllUserClients(): Map<string, Set<string>> {
   return userClients;
 }
 
 // --- Ring Timeout Management ---
 
+/**
+ * Stores a ring timeout for a call.
+ *
+ * @description When a call is initiated, a timeout is set. If no callee
+ * answers within the timeout period, the call is marked as missed.
+ *
+ * @param callId - The unique identifier of the call
+ * @param timeout - The NodeJS Timeout handle to store
+ * @returns void
+ */
 export function setRingTimeout(callId: string, timeout: NodeJS.Timeout): void {
   ringTimeouts.set(callId, timeout);
 }
 
+/**
+ * Retrieves the ring timeout for a call.
+ *
+ * @description Used to check if a timeout exists for a specific call.
+ *
+ * @param callId - The unique identifier of the call
+ * @returns The timeout handle if found, undefined otherwise
+ */
 export function getRingTimeout(callId: string): NodeJS.Timeout | undefined {
   return ringTimeouts.get(callId);
 }
 
+/**
+ * Clears and removes the ring timeout for a call.
+ *
+ * @description Called when a call is answered, declined, or ended to prevent
+ * the timeout from firing. Safely handles cases where no timeout exists.
+ *
+ * @param callId - The unique identifier of the call
+ * @returns void
+ */
 export function clearRingTimeout(callId: string): void {
   const timeout = ringTimeouts.get(callId);
   if (timeout) {
@@ -94,14 +197,41 @@ export function clearRingTimeout(callId: string): void {
 
 // --- Call Creation Time Tracking ---
 
+/**
+ * Stores the creation timestamp for a call.
+ *
+ * @description Used to calculate call setup latency when the call is answered.
+ * The latency metric helps monitor system performance.
+ *
+ * @param callId - The unique identifier of the call
+ * @param time - Unix timestamp in milliseconds when the call was created
+ * @returns void
+ */
 export function setCallCreationTime(callId: string, time: number): void {
   callCreationTimes.set(callId, time);
 }
 
+/**
+ * Retrieves the creation timestamp for a call.
+ *
+ * @description Used when a call is answered to calculate setup latency.
+ *
+ * @param callId - The unique identifier of the call
+ * @returns The creation timestamp in milliseconds, or undefined if not found
+ */
 export function getCallCreationTime(callId: string): number | undefined {
   return callCreationTimes.get(callId);
 }
 
+/**
+ * Removes the creation timestamp for a call.
+ *
+ * @description Called after latency is calculated or when a call ends
+ * without being answered.
+ *
+ * @param callId - The unique identifier of the call
+ * @returns true if the entry was found and removed, false otherwise
+ */
 export function deleteCallCreationTime(callId: string): boolean {
   return callCreationTimes.delete(callId);
 }

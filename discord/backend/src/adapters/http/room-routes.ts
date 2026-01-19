@@ -1,7 +1,10 @@
 /**
  * Room Management Routes
  *
- * Handles room-related endpoints including listing rooms and message history.
+ * @description Handles room-related endpoints including listing rooms and retrieving
+ * message history. Provides REST API endpoints for room discovery and historical
+ * message access using the in-memory ring buffer cache.
+ * @module adapters/http/room-routes
  */
 
 import type { Request, Response, Router } from 'express';
@@ -17,7 +20,20 @@ import {
 import { server } from '../../shared/config.js';
 
 /**
- * Create room management routes
+ * Creates an Express router with room management endpoints.
+ *
+ * @description Sets up routes for room-related operations:
+ * - GET /rooms: Lists all available chat rooms
+ * - GET /rooms/:room/history: Retrieves the last 10 messages from a room's history buffer
+ *
+ * The history endpoint uses an in-memory ring buffer cache for fast access,
+ * and tracks cache hits/misses via Prometheus metrics.
+ *
+ * @returns {Router} Express router configured with room management routes
+ *
+ * @example
+ * // Mount room routes on the API path
+ * app.use('/api', createRoomRoutes());
  */
 export function createRoomRoutes(): Router {
   const router = express.Router();

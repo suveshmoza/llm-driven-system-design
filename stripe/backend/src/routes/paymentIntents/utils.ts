@@ -1,11 +1,17 @@
 /**
  * Utility functions for payment intents
+ * @module paymentIntents/utils
  */
 
 import type { PaymentIntentRow, PaymentIntentResponse } from './types.js';
 
 /**
- * Format payment intent row from database for API response
+ * @description Transforms a database payment intent row into an API response format
+ * @param {PaymentIntentRow} row - The database row to format
+ * @returns {PaymentIntentResponse} Formatted payment intent for API response
+ * @example
+ * const dbRow = await query('SELECT * FROM payment_intents WHERE id = $1', [id]);
+ * const response = formatPaymentIntent(dbRow.rows[0]);
  */
 export function formatPaymentIntent(row: PaymentIntentRow): PaymentIntentResponse {
   const response: PaymentIntentResponse = {
@@ -34,7 +40,12 @@ export function formatPaymentIntent(row: PaymentIntentRow): PaymentIntentRespons
 }
 
 /**
- * Get human-readable decline message for a decline code
+ * @description Returns a human-readable error message for a given decline code
+ * @param {string} declineCode - The machine-readable decline code from the card network
+ * @returns {string} A user-friendly message explaining the decline reason
+ * @example
+ * const message = getDeclineMessage('insufficient_funds');
+ * // Returns: 'The card has insufficient funds to complete the purchase.'
  */
 export function getDeclineMessage(declineCode: string): string {
   const messages: Record<string, string> = {
@@ -50,12 +61,14 @@ export function getDeclineMessage(declineCode: string): string {
 }
 
 /**
- * Valid currencies supported by the platform
+ * @description List of valid ISO 4217 currency codes supported by the platform
+ * @constant {string[]}
  */
 export const VALID_CURRENCIES = ['usd', 'eur', 'gbp', 'cad', 'aud'];
 
 /**
- * Statuses that allow cancellation
+ * @description Payment intent statuses that allow cancellation
+ * @constant {string[]}
  */
 export const CANCELABLE_STATUSES = [
   'requires_payment_method',
@@ -65,11 +78,13 @@ export const CANCELABLE_STATUSES = [
 ];
 
 /**
- * Statuses that allow updates
+ * @description Payment intent statuses that allow updates to amount, currency, description, or metadata
+ * @constant {string[]}
  */
 export const UPDATABLE_STATUSES = ['requires_payment_method', 'requires_confirmation'];
 
 /**
- * Statuses that allow confirmation
+ * @description Payment intent statuses that allow confirmation
+ * @constant {string[]}
  */
 export const CONFIRMABLE_STATUSES = ['requires_payment_method', 'requires_confirmation'];

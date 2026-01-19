@@ -13,11 +13,17 @@ import { updatePositionForBuy, updatePositionForSell } from './position-updates.
 import type { Order, Execution, OrderContext, OrderResult } from './types.js';
 
 /**
- * Executes a market order immediately at current market price.
- * @param order - Order to execute
- * @param context - Order context for tracing
- * @returns Promise resolving to order result with execution
- * @throws Error if quote is not available
+ * Executes a market order immediately at the current market price.
+ *
+ * @description Retrieves the current quote for the order's symbol and executes
+ * the order at the ask price (for buys) or bid price (for sells). This function
+ * is used for market orders that should be filled immediately at the best
+ * available price.
+ *
+ * @param order - The order to execute (must be a market order)
+ * @param context - Optional order context for request tracing and idempotency
+ * @returns Promise resolving to the order result with execution details
+ * @throws {Error} 'Quote not available' - If no quote exists for the order's symbol
  */
 export async function executeOrderImmediately(
   order: Order,
