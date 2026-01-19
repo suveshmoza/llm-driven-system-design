@@ -249,7 +249,7 @@ export class StorageCircuitBreakers {
     const health: StorageHealth = {};
     for (const [name, breaker] of Object.entries(this.breakers)) {
       health[name] = {
-        state: breaker.status.name,
+        state: breaker.opened ? 'open' : 'closed',
         stats: {
           fires: breaker.stats.fires,
           failures: breaker.stats.failures,

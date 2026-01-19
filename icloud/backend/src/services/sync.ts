@@ -1,11 +1,57 @@
 import { pool } from '../db.js';
 
+type VersionVector = Record<string, number>;
+
+interface SyncChange {
+  fileId: string;
+  operation: string;
+  path?: string;
+  name?: string;
+  contentHash?: string;
+  versionVector?: VersionVector;
+  mimeType?: string;
+  size?: number;
+  data?: unknown;
+}
+
+interface ServerFile {
+  id: string;
+  version_vector: VersionVector | null;
+  content_hash: string | null;
+  is_deleted: boolean;
+}
+
+interface ApplyChangeResult {
+  applied?: boolean;
+  conflict?: boolean;
+  conflictType?: string;
+  serverVersion?: VersionVector;
+  localVersion?: VersionVector;
+  versionVector?: VersionVector;
+  reason?: string;
+  file?: {
+    id: string;
+    name?: string;
+    path?: string;
+    versionVector?: VersionVector;
+    modifiedAt?: Date;
+    deleted?: boolean;
+  };
+}
+
+interface FileRow {
+  id: string;
+  name: string;
+  path: string;
+  version_vector: VersionVector;
+}
+
 export class SyncService {
   /**
    * Compare two version vectors
    * Returns: 'local-newer', 'server-newer', 'equal', or 'conflict'
    */
-  compareVersions(localVersion, serverVersion) {
+  compareVersions(localVersion: VersionVector | null | undefined, serverVersion: VersionVector | null | undefined): 'local-newer' | 'server-newer' | 'equal' | 'conflict' {
     let localNewer = false;
     let serverNewer = false;
 
@@ -31,8 +77,8 @@ export class SyncService {
   /**
    * Merge version vectors (take max of each component)
    */
-  mergeVersions(v1, v2) {
-    const merged = { ...v1 };
+  mergeVersions(v1: VersionVector | null | undefined, v2: VersionVector | null | undefined): VersionVector {
+    const merged: VersionVector = { ...(v1 || {}) };
 
     for (const [device, seq] of Object.entries(v2 || {})) {
       merged[device] = Math.max(merged[device] || 0, seq);
@@ -44,11 +90,11 @@ export class SyncService {
   /**
    * Apply a change from a device
    */
-  async applyChange(userId, deviceId, change) {
-    const { fileId, operation, path, name, contentHash, versionVector, data } = change;
+  async applyChange(userId: string, deviceId: string | undefined, change: SyncChange): Promise<ApplyChangeResult> {
+    const { fileId, operation } = change;
 
     // Get current server state
-    const serverFile = await pool.query(
+    const serverFile = await pool.query<ServerFile>(
       `SELECT id, version_vector, content_hash, is_deleted
        FROM files WHERE id = $1 AND user_id = $2`,
       [fileId, userId]
@@ -69,7 +115,7 @@ export class SyncService {
       case 'delete':
         if (serverFile.rows.length === 0) {
           // Already deleted or doesn't exist
-          return { applied: true, versionVector: {} };
+          return { applied: true, versionVector: {}, file: { id: fileId, deleted: true } };
         }
         return this.handleDelete(userId, deviceId, serverFile.rows[0], change);
 
@@ -81,11 +127,11 @@ export class SyncService {
   /**
    * Handle file creation
    */
-  async handleCreate(userId, deviceId, change) {
+  async handleCreate(userId: string, deviceId: string | undefined, change: SyncChange): Promise<ApplyChangeResult> {
     const { path, name, contentHash, mimeType, size } = change;
 
     // Check if file already exists at path
-    const existing = await pool.query(
+    const existing = await pool.query<{ id: string; version_vector: VersionVector }>(
       `SELECT id, version_vector FROM files
        WHERE user_id = $1 AND path = $2 AND is_deleted = FALSE`,
       [userId, path]
@@ -93,13 +139,13 @@ export class SyncService {
 
     if (existing.rows.length > 0) {
       // File exists, this is actually an update
-      return this.handleUpdate(userId, deviceId, existing.rows[0], change);
+      return this.handleUpdate(userId, deviceId, existing.rows[0] as ServerFile, change);
     }
 
     // Create version vector
-    const versionVector = { [deviceId]: 1 };
+    const versionVector: VersionVector = deviceId ? { [deviceId]: 1 } : {};
 
-    const result = await pool.query(
+    const result = await pool.query<{ id: string; name: string; path: string; version_vector: VersionVector; modified_at: Date }>(
       `INSERT INTO files (user_id, name, path, mime_type, size, content_hash,
                           version_vector, last_modified_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -133,7 +179,7 @@ export class SyncService {
   /**
    * Handle file update with conflict detection
    */
-  async handleUpdate(userId, deviceId, serverFile, change) {
+  async handleUpdate(_userId: string, deviceId: string | undefined, serverFile: ServerFile, change: SyncChange): Promise<ApplyChangeResult> {
     const { fileId, contentHash, versionVector: localVersion, size, mimeType } = change;
     const serverVersion = serverFile.version_vector || {};
 
@@ -170,7 +216,9 @@ export class SyncService {
 
     // Local is newer, apply update
     const mergedVersion = this.mergeVersions(localVersion, serverVersion);
-    mergedVersion[deviceId] = (mergedVersion[deviceId] || 0) + 1;
+    if (deviceId) {
+      mergedVersion[deviceId] = (mergedVersion[deviceId] || 0) + 1;
+    }
 
     await pool.query(
       `UPDATE files
@@ -201,7 +249,7 @@ export class SyncService {
   /**
    * Handle file deletion
    */
-  async handleDelete(userId, deviceId, serverFile, change) {
+  async handleDelete(_userId: string, deviceId: string | undefined, serverFile: ServerFile, change: SyncChange): Promise<ApplyChangeResult> {
     const { fileId, versionVector: localVersion } = change;
     const serverVersion = serverFile.version_vector || {};
 
@@ -214,12 +262,15 @@ export class SyncService {
         conflict: true,
         conflictType: 'delete-conflict',
         serverVersion,
+        file: { id: fileId },
       };
     }
 
     // Perform soft delete
     const mergedVersion = this.mergeVersions(localVersion, serverVersion);
-    mergedVersion[deviceId] = (mergedVersion[deviceId] || 0) + 1;
+    if (deviceId) {
+      mergedVersion[deviceId] = (mergedVersion[deviceId] || 0) + 1;
+    }
 
     await pool.query(
       `UPDATE files
@@ -238,8 +289,14 @@ export class SyncService {
   /**
    * Resolve a conflict
    */
-  async resolveConflict(userId, deviceId, fileId, resolution, keepBoth) {
-    const file = await pool.query(
+  async resolveConflict(
+    userId: string,
+    deviceId: string | undefined,
+    fileId: string,
+    resolution: string,
+    keepBoth?: boolean
+  ): Promise<{ resolved: boolean; fileId: string }> {
+    const file = await pool.query<FileRow>(
       `SELECT id, name, path, version_vector FROM files
        WHERE id = $1 AND user_id = $2`,
       [fileId, userId]
@@ -253,14 +310,14 @@ export class SyncService {
 
     if (keepBoth) {
       // Create conflict copy
-      const conflictPath = this.generateConflictPath(currentFile.path, deviceId);
+      const conflictPath = this.generateConflictPath(currentFile.path, deviceId || 'unknown');
 
       await pool.query(
         `INSERT INTO files (user_id, name, path, mime_type, size, content_hash, version_vector, last_modified_by)
          SELECT user_id, $1, $2, mime_type, size, content_hash, version_vector, $3
          FROM files WHERE id = $4`,
         [
-          this.generateConflictName(currentFile.name, deviceId),
+          this.generateConflictName(currentFile.name, deviceId || 'unknown'),
           conflictPath,
           deviceId,
           fileId,
@@ -271,8 +328,10 @@ export class SyncService {
     // Mark conflict as resolved
     if (resolution === 'use-local') {
       // Client will upload the local version
-      const newVersion = { ...currentFile.version_vector };
-      newVersion[deviceId] = (newVersion[deviceId] || 0) + 1;
+      const newVersion: VersionVector = { ...currentFile.version_vector };
+      if (deviceId) {
+        newVersion[deviceId] = (newVersion[deviceId] || 0) + 1;
+      }
 
       await pool.query(
         `UPDATE files SET version_vector = $1, modified_at = NOW() WHERE id = $2`,
@@ -294,8 +353,8 @@ export class SyncService {
   /**
    * Get next version number for a file
    */
-  async getNextVersionNumber(fileId) {
-    const result = await pool.query(
+  async getNextVersionNumber(fileId: string): Promise<number> {
+    const result = await pool.query<{ next: number }>(
       `SELECT COALESCE(MAX(version_number), 0) + 1 as next
        FROM file_versions WHERE file_id = $1`,
       [fileId]
@@ -306,7 +365,7 @@ export class SyncService {
   /**
    * Generate conflict file name
    */
-  generateConflictName(originalName, deviceId) {
+  generateConflictName(originalName: string, deviceId: string): string {
     const ext = originalName.includes('.')
       ? '.' + originalName.split('.').pop()
       : '';
@@ -323,9 +382,9 @@ export class SyncService {
   /**
    * Generate conflict file path
    */
-  generateConflictPath(originalPath, deviceId) {
+  generateConflictPath(originalPath: string, deviceId: string): string {
     const parts = originalPath.split('/');
-    const name = parts.pop();
+    const name = parts.pop() || '';
     const conflictName = this.generateConflictName(name, deviceId);
     return [...parts, conflictName].join('/');
   }

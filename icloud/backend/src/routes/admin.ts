@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { pool, redis } from '../db.js';
+import { pool } from '../db.js';
 import { ChunkService } from '../services/chunks.js';
-import { getUserConnectionCount, getConnectedDevices } from '../services/websocket.js';
+import { getConnectedDevices } from '../services/websocket.js';
 
 const router = Router();
 const chunkService = new ChunkService();

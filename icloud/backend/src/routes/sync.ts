@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { pool, redis } from '../db.js';
+import { pool } from '../db.js';
 import { SyncService } from '../services/sync.js';
 import { broadcastToUser } from '../services/websocket.js';
-import logger, { Logger } from '../shared/logger.js';
+import logger from '../shared/logger.js';
+import type { Logger } from 'pino';
 import { syncDuration, syncOperationsTotal, conflictsTotal, startTimer, bytesDownloaded } from '../shared/metrics.js';
 import { withIdempotency } from '../shared/idempotency.js';
 
@@ -155,18 +156,6 @@ router.get('/changes', async (req: Request<object, unknown, unknown, GetChangesQ
     const deleted: FileRow[] = [];
 
     for (const file of changes.rows) {
-      const fileData = {
-        id: file.id,
-        name: file.name,
-        path: file.path,
-        mimeType: file.mime_type,
-        size: file.size,
-        contentHash: file.content_hash,
-        versionVector: file.version_vector,
-        isFolder: file.is_folder,
-        modifiedAt: file.modified_at,
-      };
-
       if (file.is_deleted) {
         deleted.push(file);
       } else if (file.created_at && file.created_at.getTime() === file.modified_at.getTime()) {

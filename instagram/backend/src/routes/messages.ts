@@ -77,7 +77,7 @@ interface CreateConversationBody {
  */
 router.post('/conversations', requireAuth, requireCassandra, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.session.userId;
+    const userId = req.session.userId!;
     const { recipientId } = req.body as CreateConversationBody;
 
     if (!recipientId) {
@@ -164,7 +164,7 @@ interface SendMessageBody {
  */
 router.post('/conversations/:conversationId', requireAuth, requireCassandra, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.session.userId;
+    const userId = req.session.userId!;
     const { conversationId } = req.params;
     const { content, contentType = 'text', mediaUrl, replyToMessageId } = req.body as SendMessageBody;
 
@@ -177,7 +177,7 @@ router.post('/conversations/:conversationId', requireAuth, requireCassandra, asy
       conversationId,
       senderId: userId,
       content: content || '',
-      contentType,
+      contentType: contentType || 'text',
       mediaUrl,
       replyToMessageId,
     });
@@ -200,7 +200,7 @@ interface MarkReadBody {
  */
 router.post('/conversations/:conversationId/read', requireAuth, requireCassandra, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.session.userId;
+    const userId = req.session.userId!;
     const { conversationId } = req.params;
     const { lastMessageId } = req.body as MarkReadBody;
 
@@ -225,7 +225,7 @@ router.post('/conversations/:conversationId/read', requireAuth, requireCassandra
  */
 router.post('/conversations/:conversationId/typing', requireAuth, requireCassandra, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.session.userId;
+    const userId = req.session.userId!;
     const { conversationId } = req.params;
 
     await setTypingIndicator(conversationId, userId);
@@ -270,7 +270,7 @@ router.post(
   requireCassandra,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.userId;
+      const userId = req.session.userId!;
       const { conversationId, messageId } = req.params;
       const { reaction } = req.body as AddReactionBody;
 
@@ -305,7 +305,7 @@ router.delete(
   requireCassandra,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.userId;
+      const userId = req.session.userId!;
       const { conversationId, messageId } = req.params;
 
       await removeReaction(conversationId, messageId, userId);

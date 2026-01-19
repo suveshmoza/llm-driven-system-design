@@ -28,33 +28,32 @@ const logger = pino({
 });
 
 interface PinoRequest extends IncomingMessage {
-  id?: string;
+  id?: string | number;
   method?: string;
   url?: string;
   query?: { q?: string };
-  headers: IncomingMessage['headers'] & { 'x-request-id'?: string; 'x-user-id'?: string };
 }
 
 /**
  * HTTP request logging middleware.
  * Logs request/response with timing and correlation ID.
  */
-export const httpLogger = pinoHttp({
+export const httpLogger = (pinoHttp as unknown as typeof pinoHttp.default)({
   logger,
-  genReqId: (req: PinoRequest) =>
+  genReqId: (req: IncomingMessage) =>
     (req.headers['x-request-id'] as string) || crypto.randomUUID(),
-  customProps: (req: PinoRequest) => ({
+  customProps: (req: IncomingMessage & { id?: string | number }) => ({
     requestId: req.id,
   }),
-  customLogLevel: (_req: PinoRequest, res: ServerResponse, err?: Error) => {
+  customLogLevel: (_req: IncomingMessage, res: ServerResponse, err?: Error) => {
     if (res.statusCode >= 500 || err) return 'error';
     if (res.statusCode >= 400) return 'warn';
     return 'info';
   },
-  customSuccessMessage: (req: PinoRequest) => {
+  customSuccessMessage: (req: IncomingMessage) => {
     return `${req.method} ${req.url} completed`;
   },
-  customErrorMessage: (req: PinoRequest, _res: ServerResponse, err?: Error) => {
+  customErrorMessage: (req: IncomingMessage, _res: ServerResponse, err?: Error) => {
     return `${req.method} ${req.url} failed: ${err?.message || 'unknown error'}`;
   },
   serializers: {
@@ -62,8 +61,8 @@ export const httpLogger = pinoHttp({
       id: req.id,
       method: req.method,
       url: req.url,
-      query: req.query?.q ? req.query.q.substring(0, 50) : undefined, // Truncate for privacy
-      userId: req.headers['x-user-id'] || 'anonymous',
+      query: req.query?.q ? req.query.q.substring(0, 50) : undefined,
+      userId: req.headers?.['x-user-id'] || 'anonymous',
     }),
     res: (res: ServerResponse) => ({
       statusCode: res.statusCode,

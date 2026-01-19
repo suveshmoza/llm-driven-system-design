@@ -1,11 +1,15 @@
 import { query } from './pool.js';
 import { v4 as uuidv4 } from 'uuid';
-import { generateApiKey, hashApiKey, generateWebhookSecret, generateCardToken } from '../utils/helpers.js';
+import { hashApiKey, generateWebhookSecret, generateCardToken } from '../utils/helpers.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-async function seed() {
+interface MerchantRow {
+  id: string;
+}
+
+async function seed(): Promise<void> {
   console.log('Seeding database...');
 
   try {
@@ -27,7 +31,7 @@ async function seed() {
     console.log(`  Webhook Secret: ${webhookSecret}`);
 
     // Get merchant ID (in case it already existed)
-    const merchantResult = await query(`SELECT id FROM merchants WHERE email = 'demo@example.com'`);
+    const merchantResult = await query<MerchantRow>(`SELECT id FROM merchants WHERE email = 'demo@example.com'`);
     const actualMerchantId = merchantResult.rows[0].id;
 
     // Create demo customers
@@ -37,7 +41,7 @@ async function seed() {
       { name: 'Bob Wilson', email: 'bob@example.com' },
     ];
 
-    const customerIds = [];
+    const customerIds: string[] = [];
     for (const customer of customers) {
       const customerId = uuidv4();
       await query(`
@@ -56,7 +60,7 @@ async function seed() {
       { number: '378282246310005', brand: 'amex', last4: '0005' },
     ];
 
-    const paymentMethodIds = [];
+    const paymentMethodIds: string[] = [];
     for (let i = 0; i < testCards.length; i++) {
       const card = testCards[i];
       const pmId = uuidv4();

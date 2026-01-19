@@ -1,6 +1,9 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import type { Server } from 'http';
+import type { Pool } from 'pg';
+import type { Redis } from 'ioredis';
 
 // Load environment variables first
 dotenv.config();
@@ -30,6 +33,42 @@ import { startWebhookWorker } from './services/webhooks.js';
 import redis from './db/redis.js';
 import pool from './db/pool.js';
 
+// Extend Express Request type
+declare global {
+  namespace Express {
+    interface Request {
+      logger?: ReturnType<typeof createRequestLogger>;
+    }
+  }
+}
+
+interface HealthCheck {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  uptime_seconds?: number;
+  version?: string;
+  environment?: string;
+  checks: Record<string, HealthCheckResult>;
+}
+
+interface HealthCheckResult {
+  status: 'healthy' | 'unhealthy';
+  latency_ms?: number;
+  pool?: {
+    total: number;
+    idle: number;
+    waiting: number;
+  };
+  memory_bytes?: number;
+  error?: string;
+}
+
+interface AppError extends Error {
+  statusCode?: number;
+  code?: string;
+  name: string;
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -50,7 +89,7 @@ app.use(express.json());
 app.use(metricsMiddleware);
 
 // Request logging middleware with structured logging
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   const startTime = process.hrtime();
   req.logger = createRequestLogger(req);
 
@@ -76,11 +115,11 @@ app.use((req, res, next) => {
     };
 
     if (res.statusCode >= 500) {
-      req.logger.error(logData);
+      req.logger!.error(logData);
     } else if (res.statusCode >= 400) {
-      req.logger.warn(logData);
+      req.logger!.warn(logData);
     } else {
-      req.logger.info(logData);
+      req.logger!.info(logData);
     }
   });
 
@@ -95,7 +134,7 @@ app.use((req, res, next) => {
  * Basic health check - for load balancer probes
  * Returns 200 if server is running
  */
-app.get('/health', async (req, res) => {
+app.get('/health', async (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -106,8 +145,8 @@ app.get('/health', async (req, res) => {
  * Detailed health check - for monitoring dashboards
  * Checks all dependencies and returns their status
  */
-app.get('/health/detailed', async (req, res) => {
-  const health = {
+app.get('/health/detailed', async (_req: Request, res: Response) => {
+  const health: HealthCheck = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime_seconds: process.uptime(),
@@ -119,15 +158,16 @@ app.get('/health/detailed', async (req, res) => {
   // Check PostgreSQL
   try {
     const start = process.hrtime();
-    await pool.query('SELECT 1');
+    await (pool as unknown as Pool).query('SELECT 1');
     const [s, ns] = process.hrtime(start);
     const latencyMs = (s * 1000 + ns / 1e6).toFixed(2);
 
     // Get pool stats
+    const poolTyped = pool as unknown as Pool;
     const poolStats = {
-      total: pool.totalCount,
-      idle: pool.idleCount,
-      waiting: pool.waitingCount,
+      total: poolTyped.totalCount,
+      idle: poolTyped.idleCount,
+      waiting: poolTyped.waitingCount,
     };
 
     // Update metrics
@@ -141,30 +181,31 @@ app.get('/health/detailed', async (req, res) => {
       pool: poolStats,
     };
   } catch (error) {
+    const err = error as Error;
     health.status = 'unhealthy';
     health.checks.database = {
       status: 'unhealthy',
-      error: error.message,
+      error: err.message,
     };
   }
 
   // Check Redis
   try {
     const start = process.hrtime();
-    await redis.ping();
+    await (redis as unknown as Redis).ping();
     const [s, ns] = process.hrtime(start);
     const latencyMs = (s * 1000 + ns / 1e6).toFixed(2);
 
     // Get Redis memory info
     let memoryBytes = 0;
     try {
-      const info = await redis.info('memory');
+      const info = await (redis as unknown as Redis).info('memory');
       const match = info.match(/used_memory:(\d+)/);
       if (match) {
         memoryBytes = parseInt(match[1]);
         redisMemoryBytes.set(memoryBytes);
       }
-    } catch (e) {
+    } catch {
       // Memory info not critical
     }
 
@@ -174,10 +215,11 @@ app.get('/health/detailed', async (req, res) => {
       memory_bytes: memoryBytes,
     };
   } catch (error) {
+    const err = error as Error;
     health.status = 'unhealthy';
     health.checks.redis = {
       status: 'unhealthy',
-      error: error.message,
+      error: err.message,
     };
   }
 
@@ -199,19 +241,23 @@ app.get('/health/detailed', async (req, res) => {
  * Readiness check - for Kubernetes readiness probes
  * Returns 200 only when all dependencies are ready
  */
-app.get('/ready', async (req, res) => {
+app.get('/ready', async (_req: Request, res: Response) => {
   try {
     // Check both critical dependencies
-    await Promise.all([pool.query('SELECT 1'), redis.ping()]);
+    await Promise.all([
+      (pool as unknown as Pool).query('SELECT 1'),
+      (redis as unknown as Redis).ping()
+    ]);
 
     res.json({
       ready: true,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    const err = error as Error;
     res.status(503).json({
       ready: false,
-      error: error.message,
+      error: err.message,
       timestamp: new Date().toISOString(),
     });
   }
@@ -221,7 +267,7 @@ app.get('/ready', async (req, res) => {
  * Liveness check - for Kubernetes liveness probes
  * Returns 200 if the process is running (doesn't check dependencies)
  */
-app.get('/live', (req, res) => {
+app.get('/live', (_req: Request, res: Response) => {
   res.json({
     alive: true,
     timestamp: new Date().toISOString(),
@@ -237,15 +283,16 @@ app.get('/live', (req, res) => {
  * Prometheus metrics endpoint
  * Exposes all collected metrics in Prometheus format
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response) => {
   try {
     const metrics = await getMetrics();
     res.set('Content-Type', getMetricsContentType());
     res.send(metrics);
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'metrics_error',
-      error_message: error.message,
+      error_message: err.message,
     });
     res.status(500).json({ error: 'Failed to collect metrics' });
   }
@@ -274,7 +321,7 @@ app.use('/v1', apiRouter);
 // Root and Documentation
 // ========================
 
-app.get('/', (req, res) => {
+app.get('/', (_req: Request, res: Response) => {
   res.json({
     name: 'Stripe-like Payment API',
     version: '1.0.0',
@@ -299,7 +346,7 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/docs', (req, res) => {
+app.get('/docs', (_req: Request, res: Response) => {
   res.json({
     title: 'Stripe-like Payment API Documentation',
     authentication: {
@@ -378,7 +425,7 @@ app.get('/docs', (req, res) => {
 // ========================
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: {
       type: 'invalid_request_error',
@@ -388,7 +435,7 @@ app.use((req, res) => {
 });
 
 // Global error handler
-app.use((err, req, res, next) => {
+app.use((err: AppError, req: Request, res: Response, _next: NextFunction) => {
   const reqLogger = req.logger || logger;
 
   reqLogger.error({
@@ -401,7 +448,7 @@ app.use((err, req, res, next) => {
 
   // Handle specific error types
   if (err.name === 'CardNetworkUnavailableError') {
-    return res.status(503).json({
+    res.status(503).json({
       error: {
         type: 'api_error',
         code: 'payment_processor_unavailable',
@@ -409,6 +456,7 @@ app.use((err, req, res, next) => {
           'Payment processor is temporarily unavailable. Please try again.',
       },
     });
+    return;
   }
 
   res.status(err.statusCode || 500).json({
@@ -428,7 +476,7 @@ app.use((err, req, res, next) => {
 
 let isShuttingDown = false;
 
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string): Promise<void> {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
@@ -451,20 +499,21 @@ async function gracefulShutdown(signal) {
 
   try {
     // Close database pool
-    await pool.end();
+    await (pool as unknown as Pool).end();
     logger.info({ event: 'database_pool_closed' });
 
     // Close Redis connection
-    await redis.quit();
+    await (redis as unknown as Redis).quit();
     logger.info({ event: 'redis_connection_closed' });
 
     clearTimeout(shutdownTimeout);
     logger.info({ event: 'shutdown_complete' });
     process.exit(0);
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'shutdown_error',
-      error_message: error.message,
+      error_message: err.message,
     });
     process.exit(1);
   }
@@ -477,12 +526,12 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Server Startup
 // ========================
 
-let server;
+let server: Server;
 
-async function start() {
+async function start(): Promise<void> {
   try {
     // Connect to Redis
-    await redis.connect();
+    await (redis as { connect: () => Promise<void> }).connect();
     logger.info({ event: 'redis_connected' });
 
     // Start webhook worker
@@ -505,10 +554,11 @@ async function start() {
       });
     });
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'startup_failed',
-      error_message: error.message,
-      stack: error.stack,
+      error_message: err.message,
+      stack: err.stack,
     });
     process.exit(1);
   }

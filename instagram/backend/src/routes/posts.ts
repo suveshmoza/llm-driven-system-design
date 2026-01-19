@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import multer from 'multer';
 import { query, getClient } from '../services/db.js';
 import { storeOriginalImage, FILTERS } from '../services/storage.js';
@@ -61,7 +61,7 @@ interface CachedPost {
  */
 router.post(
   '/',
-  requireAuth as express.RequestHandler,
+  requireAuth as RequestHandler,
   postRateLimiter,
   upload.array('media', 10),
   async (req: Request, res: Response): Promise<void> => {
@@ -245,7 +245,7 @@ router.get('/:postId', optionalAuth as express.RequestHandler, async (req: Reque
       likeCount: post.like_count,
       commentCount: post.comment_count,
       createdAt: post.created_at,
-      media: mediaResult.rows.map((m) => ({
+      media: mediaResult.rows.map((m: MediaRow) => ({
         id: m.id,
         mediaType: m.media_type,
         mediaUrl: m.media_url,
@@ -291,7 +291,7 @@ router.get('/:postId', optionalAuth as express.RequestHandler, async (req: Reque
 });
 
 // Delete post
-router.delete('/:postId', requireAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.delete('/:postId', requireAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { postId } = req.params;
     const authReq = req as AuthenticatedRequest;
@@ -353,7 +353,7 @@ router.delete('/:postId', requireAuth as express.RequestHandler, async (req: Req
  */
 router.post(
   '/:postId/like',
-  requireAuth as express.RequestHandler,
+  requireAuth as RequestHandler,
   likeRateLimiter,
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -431,7 +431,7 @@ router.post(
 /**
  * Unlike post - IDEMPOTENT operation
  */
-router.delete('/:postId/like', requireAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.delete('/:postId/like', requireAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { postId } = req.params;
     const authReq = req as AuthenticatedRequest;
@@ -489,7 +489,7 @@ router.delete('/:postId/like', requireAuth as express.RequestHandler, async (req
 });
 
 // Save post
-router.post('/:postId/save', requireAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.post('/:postId/save', requireAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { postId } = req.params;
     const authReq = req as AuthenticatedRequest;
@@ -513,7 +513,7 @@ router.post('/:postId/save', requireAuth as express.RequestHandler, async (req: 
 });
 
 // Unsave post
-router.delete('/:postId/save', requireAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.delete('/:postId/save', requireAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { postId } = req.params;
     const authReq = req as AuthenticatedRequest;
@@ -565,7 +565,7 @@ router.get('/:postId/likes', async (req: Request, res: Response): Promise<void> 
     const likes = result.rows.slice(0, limitNum);
 
     res.json({
-      likes: likes.map((l) => ({
+      likes: likes.map((l: LikeUserRow) => ({
         id: l.id,
         username: l.username,
         displayName: l.display_name,

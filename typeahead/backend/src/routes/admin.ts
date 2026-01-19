@@ -1,6 +1,6 @@
 import express, { Router, Request, Response } from 'express';
 import type { Pool } from 'pg';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import { adminRateLimiter } from '../shared/rate-limiter.js';
 import { idempotencyMiddleware, generateIdempotencyKey, RedisIdempotencyHandler } from '../shared/idempotency.js';
 import logger, { auditLogger } from '../shared/logger.js';

@@ -2,7 +2,7 @@
  * AggregationService processes query logs and updates the trie.
  * Implements buffered writes and periodic flushing for efficiency.
  */
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import type { Trie } from '../data-structures/trie.js';
 

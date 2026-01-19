@@ -135,7 +135,7 @@ export class Trie {
     let node: TrieNode | undefined = this.root;
 
     for (const char of normalizedPrefix) {
-      if (!node.children.has(char)) {
+      if (!node || !node.children.has(char)) {
         return []; // No matches for this prefix
       }
       node = node.children.get(char);

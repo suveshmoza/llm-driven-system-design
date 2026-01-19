@@ -104,16 +104,16 @@ export class IdempotencyHandler {
       };
     }
 
-    // Try to acquire lock
+    // Try to acquire lock using SET with NX and EX options
     const lockAcquired = await this.redis.set(
       this.lockKey,
       JSON.stringify({
         requestId: crypto.randomUUID(),
         startedAt: new Date().toISOString(),
       }),
-      'NX', // Only set if not exists
       'EX',
-      300 // 5 minute lock timeout
+      300,
+      'NX'
     );
 
     if (!lockAcquired) {

@@ -1,14 +1,33 @@
-import amqp from 'amqplib';
+import amqp, { Connection, Channel, ConsumeMessage } from 'amqplib';
 import config from '../config/index.js';
 import logger from './logger.js';
 
-let connection = null;
-let channel = null;
+// ============ Type Definitions ============
+
+export interface TranscodeJob {
+  videoId: string;
+  sourceKey: string;
+  userId: string;
+  createdAt?: string;
+}
+
+export interface QueueStats {
+  queue: string;
+  messageCount: number;
+  consumerCount: number;
+}
+
+type TranscodeJobHandler = (job: TranscodeJob) => Promise<void>;
+
+// ============ Module State ============
+
+let connection: Connection | null = null;
+let channel: Channel | null = null;
 
 /**
  * Connect to RabbitMQ and setup channel
  */
-export const connectQueue = async () => {
+export const connectQueue = async (): Promise<{ connection: Connection; channel: Channel }> => {
   if (connection && channel) {
     return { connection, channel };
   }
@@ -25,17 +44,23 @@ export const connectQueue = async () => {
     // Prefetch 1 message at a time for fair dispatch
     await channel.prefetch(1);
 
-    logger.info({
-      event: 'rabbitmq_connected',
-      queue: config.rabbitmq.queues.transcode,
-    }, 'Connected to RabbitMQ');
+    logger.info(
+      {
+        event: 'rabbitmq_connected',
+        queue: config.rabbitmq.queues.transcode,
+      },
+      'Connected to RabbitMQ'
+    );
 
     // Handle connection errors
-    connection.on('error', (err) => {
-      logger.error({
-        event: 'rabbitmq_error',
-        error: err.message,
-      }, 'RabbitMQ connection error');
+    connection.on('error', (err: Error) => {
+      logger.error(
+        {
+          event: 'rabbitmq_error',
+          error: err.message,
+        },
+        'RabbitMQ connection error'
+      );
     });
 
     connection.on('close', () => {
@@ -46,26 +71,29 @@ export const connectQueue = async () => {
 
     return { connection, channel };
   } catch (error) {
-    logger.error({
-      event: 'rabbitmq_connect_failed',
-      error: error.message,
-    }, 'Failed to connect to RabbitMQ');
+    logger.error(
+      {
+        event: 'rabbitmq_connect_failed',
+        error: (error as Error).message,
+      },
+      'Failed to connect to RabbitMQ'
+    );
     throw error;
   }
 };
 
 /**
  * Publish a transcode job to the queue
- * @param {string} videoId - Video ID to transcode
- * @param {string} sourceKey - S3/MinIO key for the source video
- * @param {string} userId - User who uploaded the video
- * @returns {Promise<boolean>} True if message was sent
  */
-export const publishTranscodeJob = async (videoId, sourceKey, userId) => {
+export const publishTranscodeJob = async (
+  videoId: string,
+  sourceKey: string,
+  userId: string
+): Promise<boolean> => {
   try {
     const { channel: ch } = await connectQueue();
 
-    const job = {
+    const job: TranscodeJob = {
       videoId,
       sourceKey,
       userId,
@@ -74,80 +102,91 @@ export const publishTranscodeJob = async (videoId, sourceKey, userId) => {
 
     const message = Buffer.from(JSON.stringify(job));
 
-    const sent = ch.sendToQueue(
-      config.rabbitmq.queues.transcode,
-      message,
-      {
-        persistent: true, // Message survives broker restarts
-        contentType: 'application/json',
-      }
-    );
+    const sent = ch.sendToQueue(config.rabbitmq.queues.transcode, message, {
+      persistent: true, // Message survives broker restarts
+      contentType: 'application/json',
+    });
 
     if (sent) {
-      logger.info({
-        event: 'transcode_job_published',
-        videoId,
-        userId,
-      }, `Transcode job published for video ${videoId}`);
+      logger.info(
+        {
+          event: 'transcode_job_published',
+          videoId,
+          userId,
+        },
+        `Transcode job published for video ${videoId}`
+      );
     }
 
     return sent;
   } catch (error) {
-    logger.error({
-      event: 'transcode_job_publish_failed',
-      videoId,
-      error: error.message,
-    }, 'Failed to publish transcode job');
+    logger.error(
+      {
+        event: 'transcode_job_publish_failed',
+        videoId,
+        error: (error as Error).message,
+      },
+      'Failed to publish transcode job'
+    );
     throw error;
   }
 };
 
 /**
  * Consume transcode jobs from the queue
- * @param {Function} handler - Async function to process each job
- *                             Signature: handler(job) => Promise<void>
- *                             Throw error to reject message, return to ack
  */
-export const consumeTranscodeJobs = async (handler) => {
+export const consumeTranscodeJobs = async (handler: TranscodeJobHandler): Promise<void> => {
   const { channel: ch } = await connectQueue();
 
-  logger.info({
-    event: 'transcode_consumer_started',
-    queue: config.rabbitmq.queues.transcode,
-  }, 'Started consuming transcode jobs');
+  logger.info(
+    {
+      event: 'transcode_consumer_started',
+      queue: config.rabbitmq.queues.transcode,
+    },
+    'Started consuming transcode jobs'
+  );
 
   await ch.consume(
     config.rabbitmq.queues.transcode,
-    async (msg) => {
+    async (msg: ConsumeMessage | null) => {
       if (!msg) {
         return;
       }
 
-      let job;
+      let job: TranscodeJob | undefined;
       try {
-        job = JSON.parse(msg.content.toString());
+        job = JSON.parse(msg.content.toString()) as TranscodeJob;
 
-        logger.info({
-          event: 'transcode_job_received',
-          videoId: job.videoId,
-        }, `Processing transcode job for video ${job.videoId}`);
+        logger.info(
+          {
+            event: 'transcode_job_received',
+            videoId: job.videoId,
+          },
+          `Processing transcode job for video ${job.videoId}`
+        );
 
         await handler(job);
 
         // Acknowledge successful processing
         ch.ack(msg);
 
-        logger.info({
-          event: 'transcode_job_completed',
-          videoId: job.videoId,
-        }, `Transcode job completed for video ${job.videoId}`);
+        logger.info(
+          {
+            event: 'transcode_job_completed',
+            videoId: job.videoId,
+          },
+          `Transcode job completed for video ${job.videoId}`
+        );
       } catch (error) {
-        logger.error({
-          event: 'transcode_job_failed',
-          videoId: job?.videoId,
-          error: error.message,
-          stack: error.stack,
-        }, `Transcode job failed: ${error.message}`);
+        logger.error(
+          {
+            event: 'transcode_job_failed',
+            videoId: job?.videoId,
+            error: (error as Error).message,
+            stack: (error as Error).stack,
+          },
+          `Transcode job failed: ${(error as Error).message}`
+        );
 
         // Reject the message without requeue (goes to dead-letter if configured)
         // Set requeue to true if you want to retry
@@ -163,7 +202,7 @@ export const consumeTranscodeJobs = async (handler) => {
 /**
  * Close RabbitMQ connection
  */
-export const closeQueue = async () => {
+export const closeQueue = async (): Promise<void> => {
   if (channel) {
     await channel.close();
     channel = null;
@@ -178,7 +217,7 @@ export const closeQueue = async () => {
 /**
  * Get queue statistics
  */
-export const getQueueStats = async () => {
+export const getQueueStats = async (): Promise<QueueStats | null> => {
   try {
     const { channel: ch } = await connectQueue();
     const queue = await ch.checkQueue(config.rabbitmq.queues.transcode);
@@ -188,10 +227,13 @@ export const getQueueStats = async () => {
       consumerCount: queue.consumerCount,
     };
   } catch (error) {
-    logger.error({
-      event: 'queue_stats_failed',
-      error: error.message,
-    }, 'Failed to get queue stats');
+    logger.error(
+      {
+        event: 'queue_stats_failed',
+        error: (error as Error).message,
+      },
+      'Failed to get queue stats'
+    );
     return null;
   }
 };

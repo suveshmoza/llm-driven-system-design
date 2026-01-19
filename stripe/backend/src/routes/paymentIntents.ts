@@ -1,11 +1,11 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query, transaction } from '../db/pool.js';
-import { authenticateApiKey } from '../middleware/auth.js';
+import { authenticateApiKey, AuthenticatedRequest } from '../middleware/auth.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.js';
-import { assessRisk, getRiskAssessment } from '../services/fraud.js';
-import { createChargeEntries, calculateFee, getMerchantBalance } from '../services/ledger.js';
-import { authorize, capture } from '../services/cardNetwork.js';
+import { assessRisk, getRiskAssessment, RiskAssessmentResult, RiskAssessmentRow } from '../services/fraud.js';
+import { createChargeEntries, calculateFee } from '../services/ledger.js';
+import { authorize, capture, AuthorizeParams, CaptureParams } from '../services/cardNetwork.js';
 import { sendWebhook } from '../services/webhooks.js';
 
 // Import shared modules for observability
@@ -14,12 +14,106 @@ import { auditLogger } from '../shared/audit.js';
 import {
   paymentAmountCents,
   activePaymentIntents,
-  fraudScoreDistribution,
   fraudBlockedTotal,
   recordFraudCheck,
 } from '../shared/metrics.js';
+import type { PoolClient } from 'pg';
 
 const router = Router();
+
+// Interfaces
+interface PaymentIntentRow {
+  id: string;
+  merchant_id: string;
+  customer_id: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  payment_method_id: string | null;
+  capture_method: string;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  idempotency_key: string | null;
+  auth_code: string | null;
+  decline_code: string | null;
+  error_message: string | null;
+  created_at: Date;
+}
+
+interface PaymentMethodRow {
+  id: string;
+  card_token: string;
+  card_last4: string;
+  card_brand: string;
+  card_exp_month: number;
+  card_exp_year: number;
+}
+
+interface PaymentIntentResponse {
+  id: string;
+  object: 'payment_intent';
+  amount: number;
+  currency: string;
+  status: string;
+  customer: string | null;
+  payment_method: string | null;
+  capture_method: string;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  created: number;
+  livemode: boolean;
+  last_payment_error?: {
+    decline_code: string;
+    message: string | null;
+  };
+  risk_assessment?: {
+    risk_score: number;
+    risk_level: string;
+    decision: string;
+  };
+  next_action?: {
+    type: string;
+    redirect_url: string;
+  };
+}
+
+interface CreatePaymentIntentBody {
+  amount?: number;
+  currency?: string;
+  customer?: string;
+  payment_method?: string;
+  capture_method?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface ConfirmPaymentIntentBody {
+  payment_method?: string;
+}
+
+interface CapturePaymentIntentBody {
+  amount_to_capture?: number;
+}
+
+interface CancelPaymentIntentBody {
+  cancellation_reason?: string;
+}
+
+interface UpdatePaymentIntentBody {
+  amount?: number;
+  currency?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface DatabaseError extends Error {
+  code?: string;
+  constraint?: string;
+}
+
+interface CardNetworkError extends Error {
+  name: string;
+}
 
 // All routes require authentication
 router.use(authenticateApiKey);
@@ -28,7 +122,7 @@ router.use(authenticateApiKey);
  * Create a payment intent
  * POST /v1/payment_intents
  */
-router.post('/', idempotencyMiddleware, async (req, res) => {
+router.post('/', idempotencyMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const startTime = process.hrtime();
 
   try {
@@ -40,32 +134,34 @@ router.post('/', idempotencyMiddleware, async (req, res) => {
       capture_method = 'automatic',
       description,
       metadata = {},
-    } = req.body;
+    } = req.body as CreatePaymentIntentBody;
 
     // Validate required fields
     if (!amount || typeof amount !== 'number' || amount <= 0) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Amount is required and must be a positive integer (in cents)',
           param: 'amount',
         },
       });
+      return;
     }
 
     // Validate currency
     const validCurrencies = ['usd', 'eur', 'gbp', 'cad', 'aud'];
     if (!validCurrencies.includes(currency.toLowerCase())) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: `Invalid currency. Supported: ${validCurrencies.join(', ')}`,
           param: 'currency',
         },
       });
+      return;
     }
 
-    const idempotencyKey = req.headers['idempotency-key'] || null;
+    const idempotencyKey = (req.headers['idempotency-key'] as string) || null;
     const id = uuidv4();
 
     // Determine initial status
@@ -75,7 +171,7 @@ router.post('/', idempotencyMiddleware, async (req, res) => {
     }
 
     // Create payment intent
-    const result = await query(`
+    const result = await query<PaymentIntentRow>(`
       INSERT INTO payment_intents
         (id, merchant_id, customer_id, amount, currency, status, payment_method_id,
          capture_method, description, metadata, idempotency_key)
@@ -104,8 +200,8 @@ router.post('/', idempotencyMiddleware, async (req, res) => {
     // Audit log: Payment intent created
     await auditLogger.logPaymentIntentCreated(result.rows[0], {
       ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-      traceId: req.headers['x-trace-id'],
+      userAgent: req.headers['user-agent'] as string,
+      traceId: req.headers['x-trace-id'] as string,
       metadata: { idempotency_key: idempotencyKey },
     });
 
@@ -125,20 +221,22 @@ router.post('/', idempotencyMiddleware, async (req, res) => {
 
     res.status(201).json(paymentIntent);
   } catch (error) {
+    const dbError = error as DatabaseError;
     logger.error({
       event: 'payment_intent_create_error',
-      error_message: error.message,
+      error_message: dbError.message,
       merchant_id: req.merchantId,
     });
 
     // Handle unique constraint violation for idempotency key
-    if (error.code === '23505' && error.constraint?.includes('idempotency')) {
-      return res.status(409).json({
+    if (dbError.code === '23505' && dbError.constraint?.includes('idempotency')) {
+      res.status(409).json({
         error: {
           type: 'idempotency_error',
           message: 'An idempotent request with this key already exists',
         },
       });
+      return;
     }
 
     res.status(500).json({
@@ -154,20 +252,21 @@ router.post('/', idempotencyMiddleware, async (req, res) => {
  * Get a payment intent
  * GET /v1/payment_intents/:id
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const result = await query(`
+    const result = await query<PaymentIntentRow>(`
       SELECT * FROM payment_intents
       WHERE id = $1 AND merchant_id = $2
     `, [req.params.id, req.merchantId]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment intent not found',
         },
       });
+      return;
     }
 
     const paymentIntent = formatPaymentIntent(result.rows[0]);
@@ -184,10 +283,11 @@ router.get('/:id', async (req, res) => {
 
     res.json(paymentIntent);
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'payment_intent_get_error',
       intent_id: req.params.id,
-      error_message: error.message,
+      error_message: err.message,
     });
     res.status(500).json({
       error: {
@@ -202,15 +302,20 @@ router.get('/:id', async (req, res) => {
  * List payment intents
  * GET /v1/payment_intents
  */
-router.get('/', async (req, res) => {
+router.get('/', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { limit = 10, offset = 0, status, customer } = req.query;
+    const { limit = '10', offset = '0', status, customer } = req.query as {
+      limit?: string;
+      offset?: string;
+      status?: string;
+      customer?: string;
+    };
 
     let queryText = `
       SELECT * FROM payment_intents
       WHERE merchant_id = $1
     `;
-    const params = [req.merchantId];
+    const params: unknown[] = [req.merchantId];
     let paramIndex = 2;
 
     if (status) {
@@ -228,18 +333,18 @@ router.get('/', async (req, res) => {
     queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(parseInt(limit), parseInt(offset));
 
-    const result = await query(queryText, params);
+    const result = await query<PaymentIntentRow>(queryText, params);
 
     // Get total count
     let countQuery = `SELECT COUNT(*) FROM payment_intents WHERE merchant_id = $1`;
-    const countParams = [req.merchantId];
+    const countParams: unknown[] = [req.merchantId];
 
     if (status) {
       countQuery += ` AND status = $2`;
       countParams.push(status);
     }
 
-    const countResult = await query(countQuery, countParams);
+    const countResult = await query<{ count: string }>(countQuery, countParams);
 
     res.json({
       object: 'list',
@@ -248,9 +353,10 @@ router.get('/', async (req, res) => {
       total_count: parseInt(countResult.rows[0].count),
     });
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'payment_intents_list_error',
-      error_message: error.message,
+      error_message: err.message,
     });
     res.status(500).json({
       error: {
@@ -265,25 +371,26 @@ router.get('/', async (req, res) => {
  * Confirm a payment intent
  * POST /v1/payment_intents/:id/confirm
  */
-router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
+router.post('/:id/confirm', idempotencyMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const startTime = process.hrtime();
 
   try {
-    const { payment_method } = req.body;
+    const { payment_method } = req.body as ConfirmPaymentIntentBody;
 
     // Get payment intent
-    const intentResult = await query(`
+    const intentResult = await query<PaymentIntentRow>(`
       SELECT * FROM payment_intents
       WHERE id = $1 AND merchant_id = $2
     `, [req.params.id, req.merchantId]);
 
     if (intentResult.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment intent not found',
         },
       });
+      return;
     }
 
     const intent = intentResult.rows[0];
@@ -291,40 +398,43 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
 
     // Validate state
     if (!['requires_payment_method', 'requires_confirmation'].includes(intent.status)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: `Cannot confirm payment intent in status: ${intent.status}`,
         },
       });
+      return;
     }
 
     // Get payment method
-    let paymentMethodId = payment_method || intent.payment_method_id;
+    const paymentMethodId = payment_method || intent.payment_method_id;
 
     if (!paymentMethodId) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment method is required',
           param: 'payment_method',
         },
       });
+      return;
     }
 
-    const pmResult = await query(`
+    const pmResult = await query<PaymentMethodRow>(`
       SELECT * FROM payment_methods
       WHERE id = $1 AND merchant_id = $2
     `, [paymentMethodId, req.merchantId]);
 
     if (pmResult.rows.length === 0) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment method not found',
           param: 'payment_method',
         },
       });
+      return;
     }
 
     const paymentMethod = pmResult.rows[0];
@@ -333,7 +443,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
     const riskResult = await assessRisk({
       paymentIntent: intent,
       paymentMethod,
-      merchantId: req.merchantId,
+      merchantId: req.merchantId!,
       ipAddress: req.ip,
     });
 
@@ -348,7 +458,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
       riskResult.rules || [],
       {
         ipAddress: req.ip,
-        traceId: req.headers['x-trace-id'],
+        traceId: req.headers['x-trace-id'] as string,
       }
     );
 
@@ -368,7 +478,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
       // Audit log: Payment blocked
       await auditLogger.logPaymentIntentFailed(intent, 'fraudulent', {
         ipAddress: req.ip,
-        traceId: req.headers['x-trace-id'],
+        traceId: req.headers['x-trace-id'] as string,
         metadata: { fraud_score: riskResult.score },
       });
 
@@ -378,7 +488,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
         risk_score: riskResult.score,
       });
 
-      return res.status(402).json({
+      res.status(402).json({
         error: {
           type: 'card_error',
           code: 'fraudulent',
@@ -386,6 +496,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
           decline_code: 'fraudulent',
         },
       });
+      return;
     }
 
     // Require 3DS for review decisions
@@ -399,7 +510,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
       activePaymentIntents.dec({ status: previousStatus });
       activePaymentIntents.inc({ status: 'requires_action' });
 
-      const updatedIntent = await query(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
+      const updatedIntent = await query<PaymentIntentRow>(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
       const formatted = formatPaymentIntent(updatedIntent.rows[0]);
       formatted.next_action = {
         type: 'redirect_to_3ds',
@@ -412,16 +523,18 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
         risk_score: riskResult.score,
       });
 
-      return res.json(formatted);
+      res.json(formatted);
+      return;
     }
 
     // Authorize with card network (protected by circuit breaker)
-    const authResult = await authorize({
+    const authParams: AuthorizeParams = {
       amount: intent.amount,
       currency: intent.currency,
       cardToken: paymentMethod.card_token,
-      merchantId: req.merchantId,
-    });
+      merchantId: req.merchantId!,
+    };
+    const authResult = await authorize(authParams);
 
     if (!authResult.approved) {
       await query(`
@@ -435,13 +548,13 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
       activePaymentIntents.inc({ status: 'failed' });
 
       // Audit log: Payment failed
-      await auditLogger.logPaymentIntentFailed(intent, authResult.declineCode, {
+      await auditLogger.logPaymentIntentFailed(intent, authResult.declineCode || 'card_declined', {
         ipAddress: req.ip,
-        traceId: req.headers['x-trace-id'],
+        traceId: req.headers['x-trace-id'] as string,
       });
 
       // Send webhook
-      await sendWebhook(req.merchantId, 'payment_intent.payment_failed', {
+      await sendWebhook(req.merchantId!, 'payment_intent.payment_failed', {
         id: intent.id,
         decline_code: authResult.declineCode,
       });
@@ -452,20 +565,21 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
         decline_code: authResult.declineCode,
       });
 
-      return res.status(402).json({
+      res.status(402).json({
         error: {
           type: 'card_error',
           code: authResult.declineCode,
-          message: getDeclineMessage(authResult.declineCode),
+          message: getDeclineMessage(authResult.declineCode || 'card_declined'),
           decline_code: authResult.declineCode,
         },
       });
+      return;
     }
 
     // Process successful authorization
     if (intent.capture_method === 'automatic') {
       // Automatic capture - create charge and ledger entries
-      const result = await transaction(async (client) => {
+      const result = await transaction(async (client: PoolClient) => {
         // Update intent to succeeded
         await client.query(`
           UPDATE payment_intents
@@ -488,7 +602,7 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
           chargeId,
           paymentIntentId: intent.id,
           amount: intent.amount,
-          merchantId: req.merchantId,
+          merchantId: req.merchantId!,
         });
 
         return { chargeId, fee };
@@ -504,13 +618,13 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
         previousStatus,
         {
           ipAddress: req.ip,
-          traceId: req.headers['x-trace-id'],
+          traceId: req.headers['x-trace-id'] as string,
           metadata: { charge_id: result.chargeId, fee: result.fee },
         }
       );
 
       // Send webhook
-      await sendWebhook(req.merchantId, 'payment_intent.succeeded', {
+      await sendWebhook(req.merchantId!, 'payment_intent.succeeded', {
         id: intent.id,
         amount: intent.amount,
         currency: intent.currency,
@@ -545,32 +659,34 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
     }
 
     // Get updated intent
-    const updatedResult = await query(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
+    const updatedResult = await query<PaymentIntentRow>(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
     const paymentIntent = formatPaymentIntent(updatedResult.rows[0]);
 
     res.json(paymentIntent);
   } catch (error) {
+    const err = error as CardNetworkError;
     // Check for circuit breaker errors
-    if (error.name === 'CardNetworkUnavailableError') {
+    if (err.name === 'CardNetworkUnavailableError') {
       logger.warn({
         event: 'payment_processor_unavailable',
         intent_id: req.params.id,
-        error_message: error.message,
+        error_message: err.message,
       });
 
-      return res.status(503).json({
+      res.status(503).json({
         error: {
           type: 'api_error',
           code: 'payment_processor_unavailable',
           message: 'Payment processor is temporarily unavailable. Please try again.',
         },
       });
+      return;
     }
 
     logger.error({
       event: 'payment_intent_confirm_error',
       intent_id: req.params.id,
-      error_message: error.message,
+      error_message: err.message,
     });
 
     res.status(500).json({
@@ -586,70 +702,75 @@ router.post('/:id/confirm', idempotencyMiddleware, async (req, res) => {
  * Capture a payment intent
  * POST /v1/payment_intents/:id/capture
  */
-router.post('/:id/capture', idempotencyMiddleware, async (req, res) => {
+router.post('/:id/capture', idempotencyMiddleware, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const startTime = process.hrtime();
 
   try {
-    const { amount_to_capture } = req.body;
+    const { amount_to_capture } = req.body as CapturePaymentIntentBody;
 
     // Get payment intent
-    const intentResult = await query(`
+    const intentResult = await query<PaymentIntentRow>(`
       SELECT * FROM payment_intents
       WHERE id = $1 AND merchant_id = $2
     `, [req.params.id, req.merchantId]);
 
     if (intentResult.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment intent not found',
         },
       });
+      return;
     }
 
     const intent = intentResult.rows[0];
 
     // Validate state
     if (intent.status !== 'requires_capture') {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: `Cannot capture payment intent in status: ${intent.status}`,
         },
       });
+      return;
     }
 
     // Determine capture amount
     const captureAmount = amount_to_capture || intent.amount;
     if (captureAmount > intent.amount) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Capture amount cannot exceed authorized amount',
           param: 'amount_to_capture',
         },
       });
+      return;
     }
 
     // Capture with card network
-    const captureResult = await capture({
-      authCode: intent.auth_code,
+    const captureParams: CaptureParams = {
+      authCode: intent.auth_code!,
       amount: captureAmount,
       currency: intent.currency,
-    });
+    };
+    const captureResult = await capture(captureParams);
 
     if (!captureResult.captured) {
-      return res.status(402).json({
+      res.status(402).json({
         error: {
           type: 'card_error',
           code: 'capture_failed',
           message: 'Failed to capture payment',
         },
       });
+      return;
     }
 
     // Process capture
-    const result = await transaction(async (client) => {
+    const result = await transaction(async (client: PoolClient) => {
       // Update intent
       await client.query(`
         UPDATE payment_intents
@@ -672,7 +793,7 @@ router.post('/:id/capture', idempotencyMiddleware, async (req, res) => {
         chargeId,
         paymentIntentId: intent.id,
         amount: captureAmount,
-        merchantId: req.merchantId,
+        merchantId: req.merchantId!,
       });
 
       return { chargeId, fee };
@@ -685,12 +806,12 @@ router.post('/:id/capture', idempotencyMiddleware, async (req, res) => {
     // Audit log: Payment captured
     await auditLogger.logPaymentIntentCaptured(intent, captureAmount, {
       ipAddress: req.ip,
-      traceId: req.headers['x-trace-id'],
+      traceId: req.headers['x-trace-id'] as string,
       metadata: { charge_id: result.chargeId },
     });
 
     // Send webhook
-    await sendWebhook(req.merchantId, 'payment_intent.succeeded', {
+    await sendWebhook(req.merchantId!, 'payment_intent.succeeded', {
       id: intent.id,
       amount: captureAmount,
       currency: intent.currency,
@@ -705,23 +826,25 @@ router.post('/:id/capture', idempotencyMiddleware, async (req, res) => {
     });
 
     // Get updated intent
-    const updatedResult = await query(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
+    const updatedResult = await query<PaymentIntentRow>(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
     res.json(formatPaymentIntent(updatedResult.rows[0]));
   } catch (error) {
-    if (error.name === 'CardNetworkUnavailableError') {
-      return res.status(503).json({
+    const err = error as CardNetworkError;
+    if (err.name === 'CardNetworkUnavailableError') {
+      res.status(503).json({
         error: {
           type: 'api_error',
           code: 'payment_processor_unavailable',
           message: 'Payment processor is temporarily unavailable. Please try again.',
         },
       });
+      return;
     }
 
     logger.error({
       event: 'payment_intent_capture_error',
       intent_id: req.params.id,
-      error_message: error.message,
+      error_message: err.message,
     });
 
     res.status(500).json({
@@ -737,23 +860,24 @@ router.post('/:id/capture', idempotencyMiddleware, async (req, res) => {
  * Cancel a payment intent
  * POST /v1/payment_intents/:id/cancel
  */
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { cancellation_reason } = req.body;
+    const { cancellation_reason } = req.body as CancelPaymentIntentBody;
 
     // Get payment intent
-    const intentResult = await query(`
+    const intentResult = await query<PaymentIntentRow>(`
       SELECT * FROM payment_intents
       WHERE id = $1 AND merchant_id = $2
     `, [req.params.id, req.merchantId]);
 
     if (intentResult.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment intent not found',
         },
       });
+      return;
     }
 
     const intent = intentResult.rows[0];
@@ -762,12 +886,13 @@ router.post('/:id/cancel', async (req, res) => {
     // Validate state
     const cancelableStatuses = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'requires_capture'];
     if (!cancelableStatuses.includes(intent.status)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: `Cannot cancel payment intent in status: ${intent.status}`,
         },
       });
+      return;
     }
 
     // Update intent
@@ -782,7 +907,7 @@ router.post('/:id/cancel', async (req, res) => {
     activePaymentIntents.inc({ status: 'canceled' });
 
     // Send webhook
-    await sendWebhook(req.merchantId, 'payment_intent.canceled', {
+    await sendWebhook(req.merchantId!, 'payment_intent.canceled', {
       id: intent.id,
       cancellation_reason,
     });
@@ -795,13 +920,14 @@ router.post('/:id/cancel', async (req, res) => {
     });
 
     // Get updated intent
-    const updatedResult = await query(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
+    const updatedResult = await query<PaymentIntentRow>(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
     res.json(formatPaymentIntent(updatedResult.rows[0]));
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'payment_intent_cancel_error',
       intent_id: req.params.id,
-      error_message: error.message,
+      error_message: err.message,
     });
     res.status(500).json({
       error: {
@@ -816,23 +942,24 @@ router.post('/:id/cancel', async (req, res) => {
  * Update a payment intent
  * POST /v1/payment_intents/:id
  */
-router.post('/:id', async (req, res) => {
+router.post('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { amount, currency, description, metadata } = req.body;
+    const { amount, currency, description, metadata } = req.body as UpdatePaymentIntentBody;
 
     // Get payment intent
-    const intentResult = await query(`
+    const intentResult = await query<PaymentIntentRow>(`
       SELECT * FROM payment_intents
       WHERE id = $1 AND merchant_id = $2
     `, [req.params.id, req.merchantId]);
 
     if (intentResult.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Payment intent not found',
         },
       });
+      return;
     }
 
     const intent = intentResult.rows[0];
@@ -840,17 +967,18 @@ router.post('/:id', async (req, res) => {
     // Only allow updates for certain states
     const updatableStatuses = ['requires_payment_method', 'requires_confirmation'];
     if (!updatableStatuses.includes(intent.status)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: `Cannot update payment intent in status: ${intent.status}`,
         },
       });
+      return;
     }
 
     // Build update query
-    const updates = [];
-    const params = [intent.id];
+    const updates: string[] = [];
+    const params: unknown[] = [intent.id];
     let paramIndex = 2;
 
     if (amount !== undefined) {
@@ -874,7 +1002,8 @@ router.post('/:id', async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.json(formatPaymentIntent(intent));
+      res.json(formatPaymentIntent(intent));
+      return;
     }
 
     await query(`
@@ -890,13 +1019,14 @@ router.post('/:id', async (req, res) => {
     });
 
     // Get updated intent
-    const updatedResult = await query(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
+    const updatedResult = await query<PaymentIntentRow>(`SELECT * FROM payment_intents WHERE id = $1`, [intent.id]);
     res.json(formatPaymentIntent(updatedResult.rows[0]));
   } catch (error) {
+    const err = error as Error;
     logger.error({
       event: 'payment_intent_update_error',
       intent_id: req.params.id,
-      error_message: error.message,
+      error_message: err.message,
     });
     res.status(500).json({
       error: {
@@ -910,8 +1040,8 @@ router.post('/:id', async (req, res) => {
 /**
  * Format payment intent for API response
  */
-function formatPaymentIntent(row) {
-  return {
+function formatPaymentIntent(row: PaymentIntentRow): PaymentIntentResponse {
+  const response: PaymentIntentResponse = {
     id: row.id,
     object: 'payment_intent',
     amount: row.amount,
@@ -924,19 +1054,27 @@ function formatPaymentIntent(row) {
     metadata: row.metadata || {},
     created: Math.floor(new Date(row.created_at).getTime() / 1000),
     livemode: false,
-    ...(row.decline_code && { last_payment_error: { decline_code: row.decline_code, message: row.error_message } }),
   };
+
+  if (row.decline_code) {
+    response.last_payment_error = {
+      decline_code: row.decline_code,
+      message: row.error_message,
+    };
+  }
+
+  return response;
 }
 
 /**
  * Get human-readable decline message
  */
-function getDeclineMessage(declineCode) {
-  const messages = {
+function getDeclineMessage(declineCode: string): string {
+  const messages: Record<string, string> = {
     insufficient_funds: 'The card has insufficient funds to complete the purchase.',
     card_declined: 'The card was declined.',
     expired_card: 'The card has expired.',
-    incorrect_cvc: 'The card\'s security code is incorrect.',
+    incorrect_cvc: "The card's security code is incorrect.",
     processing_error: 'An error occurred while processing the card.',
     fraudulent: 'The payment was declined due to suspected fraud.',
   };

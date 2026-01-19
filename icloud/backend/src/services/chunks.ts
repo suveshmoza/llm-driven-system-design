@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { pool, minioClient } from '../db.js';
 import logger from '../shared/logger.js';
 import { chunkOperationDuration, dedupHitsTotal, bytesUploaded, startTimer } from '../shared/metrics.js';
-import { StorageCircuitBreakers } from '../shared/circuitBreaker.js';
+import { StorageCircuitBreakers, StorageHealth } from '../shared/circuitBreaker.js';
 
 const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
 const CHUNKS_BUCKET = 'icloud-chunks';
@@ -10,8 +10,42 @@ const CHUNKS_BUCKET = 'icloud-chunks';
 // Create storage circuit breakers for resilient storage operations
 const storageBreakers = new StorageCircuitBreakers(minioClient);
 
+interface ChunkInfo {
+  chunkIndex: number;
+  chunkHash: string;
+  chunkSize: number;
+  storageKey: string;
+}
+
+interface ChunkRow {
+  chunk_hash: string;
+  storage_key: string;
+}
+
+interface FileChunkRow {
+  chunk_index: number;
+  chunk_hash: string;
+  chunk_size: number;
+  storage_key: string;
+}
+
+interface DeltaChunkResult {
+  missingChunks: {
+    chunkIndex: number;
+    chunkHash: string;
+    chunkSize: number;
+    storageKey: string;
+  }[];
+  existingChunks: {
+    chunkIndex: number;
+    chunkHash: string;
+  }[];
+}
+
 export class ChunkService {
-  constructor(chunkSize = CHUNK_SIZE) {
+  private chunkSize: number;
+
+  constructor(chunkSize: number = CHUNK_SIZE) {
     this.chunkSize = chunkSize;
   }
 
@@ -21,8 +55,8 @@ export class ChunkService {
    *
    * Uses circuit breaker to protect against MinIO failures
    */
-  async storeFile(fileId, fileBuffer) {
-    const chunks = [];
+  async storeFile(fileId: string, fileBuffer: Buffer): Promise<ChunkInfo[]> {
+    const chunks: ChunkInfo[] = [];
     const totalChunks = Math.ceil(fileBuffer.length / this.chunkSize);
 
     for (let i = 0; i < totalChunks; i++) {
@@ -37,7 +71,7 @@ export class ChunkService {
       const storageKey = `chunks/${chunkHash.slice(0, 2)}/${chunkHash}`;
 
       // Check if chunk already exists (deduplication)
-      const existingChunk = await pool.query(
+      const existingChunk = await pool.query<ChunkRow>(
         'SELECT chunk_hash FROM chunk_store WHERE chunk_hash = $1',
         [chunkHash]
       );
@@ -71,7 +105,7 @@ export class ChunkService {
         } catch (error) {
           timer.end();
           logger.error({
-            error: error.message,
+            error: (error as Error).message,
             chunkHash: chunkHash.slice(0, 16),
           }, 'Failed to upload chunk');
           throw error;
@@ -123,8 +157,8 @@ export class ChunkService {
    * Assemble a file from its chunks
    * Uses circuit breaker for resilient downloads
    */
-  async assembleFile(chunks) {
-    const buffers = [];
+  async assembleFile(chunks: { chunk_hash: string; storage_key: string }[]): Promise<Buffer> {
+    const buffers: Buffer[] = [];
 
     for (const chunk of chunks) {
       const timer = startTimer(chunkOperationDuration, { operation: 'download' });
@@ -133,9 +167,9 @@ export class ChunkService {
         const dataStream = await storageBreakers.getObject(CHUNKS_BUCKET, chunk.storage_key);
 
         // Collect stream data
-        const chunkBuffers = [];
+        const chunkBuffers: Buffer[] = [];
         for await (const data of dataStream) {
-          chunkBuffers.push(data);
+          chunkBuffers.push(data as Buffer);
         }
 
         const chunkBuffer = Buffer.concat(chunkBuffers);
@@ -151,7 +185,7 @@ export class ChunkService {
       } catch (error) {
         timer.end();
         logger.error({
-          error: error.message,
+          error: (error as Error).message,
           chunkHash: chunk.chunk_hash?.slice(0, 16),
         }, 'Failed to download chunk');
         throw error;
@@ -165,8 +199,8 @@ export class ChunkService {
    * Get chunks that differ between local and server versions
    * Used for delta sync
    */
-  async getDeltaChunks(fileId, localChunkHashes) {
-    const serverChunks = await pool.query(
+  async getDeltaChunks(fileId: string, localChunkHashes: string[]): Promise<DeltaChunkResult> {
+    const serverChunks = await pool.query<FileChunkRow>(
       `SELECT chunk_index, chunk_hash, chunk_size, storage_key
        FROM file_chunks
        WHERE file_id = $1
@@ -175,8 +209,8 @@ export class ChunkService {
     );
 
     const localHashSet = new Set(localChunkHashes);
-    const missingChunks = [];
-    const existingChunks = [];
+    const missingChunks: DeltaChunkResult['missingChunks'] = [];
+    const existingChunks: DeltaChunkResult['existingChunks'] = [];
 
     for (const chunk of serverChunks.rows) {
       if (localHashSet.has(chunk.chunk_hash)) {
@@ -201,10 +235,10 @@ export class ChunkService {
    * Download a specific chunk
    * Uses circuit breaker for resilient downloads
    */
-  async downloadChunk(chunkHash) {
+  async downloadChunk(chunkHash: string): Promise<Buffer> {
     const timer = startTimer(chunkOperationDuration, { operation: 'download_single' });
 
-    const chunkInfo = await pool.query(
+    const chunkInfo = await pool.query<{ storage_key: string }>(
       'SELECT storage_key FROM chunk_store WHERE chunk_hash = $1',
       [chunkHash]
     );
@@ -220,9 +254,9 @@ export class ChunkService {
         chunkInfo.rows[0].storage_key
       );
 
-      const buffers = [];
+      const buffers: Buffer[] = [];
       for await (const data of dataStream) {
-        buffers.push(data);
+        buffers.push(data as Buffer);
       }
 
       timer.end();
@@ -230,7 +264,7 @@ export class ChunkService {
     } catch (error) {
       timer.end();
       logger.error({
-        error: error.message,
+        error: (error as Error).message,
         chunkHash: chunkHash.slice(0, 16),
       }, 'Failed to download chunk via circuit breaker');
       throw error;
@@ -241,9 +275,9 @@ export class ChunkService {
    * Delete chunks that are no longer referenced
    * Uses circuit breaker for resilient deletes
    */
-  async cleanupOrphanedChunks() {
+  async cleanupOrphanedChunks(): Promise<number> {
     // Find chunks with zero references
-    const orphanedChunks = await pool.query(
+    const orphanedChunks = await pool.query<ChunkRow>(
       'SELECT chunk_hash, storage_key FROM chunk_store WHERE reference_count <= 0'
     );
 
@@ -261,7 +295,7 @@ export class ChunkService {
         });
       } catch (error) {
         logger.error({
-          error: error.message,
+          error: (error as Error).message,
           chunkHash: chunk.chunk_hash.slice(0, 16),
         }, 'Failed to cleanup chunk');
       }
@@ -279,7 +313,7 @@ export class ChunkService {
   /**
    * Get storage circuit breaker health status
    */
-  getStorageHealth() {
+  getStorageHealth(): StorageHealth {
     return storageBreakers.getHealth();
   }
 }

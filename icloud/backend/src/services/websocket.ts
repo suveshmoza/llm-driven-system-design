@@ -1,14 +1,40 @@
+import type { IncomingMessage } from 'http';
+import type { WebSocket as WsWebSocket, WebSocketServer } from 'ws';
 import { redis } from '../db.js';
 
-// Store active WebSocket connections by user
-const userConnections = new Map(); // userId -> Set<WebSocket>
+// Extended WebSocket type with custom properties
+interface ExtendedWebSocket extends WsWebSocket {
+  userId?: string;
+  deviceId?: string;
+  isAlive?: boolean;
+  subscribedFiles?: Set<string>;
+}
 
-export function setupWebSocket(wss) {
-  wss.on('connection', async (ws, req) => {
+interface SessionData {
+  user: {
+    id: string;
+    email: string;
+    role: string;
+  };
+  deviceId?: string;
+}
+
+interface WebSocketMessage {
+  type: string;
+  data?: {
+    fileId?: string;
+  };
+}
+
+// Store active WebSocket connections by user
+const userConnections = new Map<string, Set<ExtendedWebSocket>>();
+
+export function setupWebSocket(wss: WebSocketServer): void {
+  wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
     console.log('WebSocket connection attempt');
 
     // Extract token from query string
-    const url = new URL(req.url, 'http://localhost');
+    const url = new URL(req.url || '', 'http://localhost');
     const token = url.searchParams.get('token');
 
     if (!token) {
@@ -24,7 +50,7 @@ export function setupWebSocket(wss) {
       return;
     }
 
-    const session = JSON.parse(sessionData);
+    const session: SessionData = JSON.parse(sessionData);
     const userId = session.user.id;
     const deviceId = session.deviceId;
 
@@ -32,7 +58,7 @@ export function setupWebSocket(wss) {
     if (!userConnections.has(userId)) {
       userConnections.set(userId, new Set());
     }
-    userConnections.get(userId).add(ws);
+    userConnections.get(userId)!.add(ws);
 
     // Add metadata to connection
     ws.userId = userId;
@@ -48,13 +74,13 @@ export function setupWebSocket(wss) {
     }));
 
     // Handle messages
-    ws.on('message', async (data) => {
+    ws.on('message', async (data: Buffer | ArrayBuffer | Buffer[]) => {
       try {
-        const message = JSON.parse(data.toString());
+        const message: WebSocketMessage = JSON.parse(data.toString());
         await handleMessage(ws, message);
       } catch (error) {
         console.error('WebSocket message error:', error);
-        ws.send(JSON.stringify({ type: 'error', message: error.message }));
+        ws.send(JSON.stringify({ type: 'error', message: (error as Error).message }));
       }
     });
 
@@ -71,7 +97,7 @@ export function setupWebSocket(wss) {
     });
 
     // Handle errors
-    ws.on('error', (error) => {
+    ws.on('error', (error: Error) => {
       console.error(`WebSocket error for user=${userId}:`, error);
     });
 
@@ -85,11 +111,12 @@ export function setupWebSocket(wss) {
   // Heartbeat interval
   const heartbeatInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
-      if (!ws.isAlive) {
-        return ws.terminate();
+      const extWs = ws as ExtendedWebSocket;
+      if (!extWs.isAlive) {
+        return extWs.terminate();
       }
-      ws.isAlive = false;
-      ws.ping();
+      extWs.isAlive = false;
+      extWs.ping();
     });
   }, 30000);
 
@@ -101,7 +128,7 @@ export function setupWebSocket(wss) {
 /**
  * Handle incoming WebSocket messages
  */
-async function handleMessage(ws, message) {
+async function handleMessage(ws: ExtendedWebSocket, message: WebSocketMessage): Promise<void> {
   const { type, data } = message;
 
   switch (type) {
@@ -139,7 +166,7 @@ async function handleMessage(ws, message) {
 /**
  * Broadcast a message to all connections for a specific user
  */
-export function broadcastToUser(userId, message, excludeDeviceId = null) {
+export function broadcastToUser(userId: string, message: unknown, excludeDeviceId: string | null = null): void {
   const connections = userConnections.get(userId);
 
   if (!connections) return;
@@ -161,10 +188,10 @@ export function broadcastToUser(userId, message, excludeDeviceId = null) {
 /**
  * Broadcast to all subscribers of a specific file
  */
-export function broadcastToFileSubscribers(fileId, message, excludeDeviceId = null) {
+export function broadcastToFileSubscribers(fileId: string, message: unknown, excludeDeviceId: string | null = null): void {
   const messageStr = JSON.stringify(message);
 
-  for (const [userId, connections] of userConnections) {
+  for (const [_userId, connections] of userConnections) {
     for (const ws of connections) {
       if (
         ws.subscribedFiles?.has(fileId) &&
@@ -180,16 +207,18 @@ export function broadcastToFileSubscribers(fileId, message, excludeDeviceId = nu
 /**
  * Get count of active connections for a user
  */
-export function getUserConnectionCount(userId) {
+export function getUserConnectionCount(userId: string): number {
   return userConnections.get(userId)?.size || 0;
 }
 
 /**
  * Get all connected devices for a user
  */
-export function getConnectedDevices(userId) {
+export function getConnectedDevices(userId: string): string[] {
   const connections = userConnections.get(userId);
   if (!connections) return [];
 
-  return Array.from(connections).map(ws => ws.deviceId).filter(Boolean);
+  return Array.from(connections)
+    .map(ws => ws.deviceId)
+    .filter((id): id is string => Boolean(id));
 }

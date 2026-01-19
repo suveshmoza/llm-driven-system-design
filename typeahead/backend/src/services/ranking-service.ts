@@ -2,7 +2,7 @@
  * RankingService implements multi-factor scoring for suggestions.
  * Combines popularity, recency, personalization, and trending signals.
  */
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Suggestion } from '../data-structures/trie.js';
 
 export interface RankingContext {

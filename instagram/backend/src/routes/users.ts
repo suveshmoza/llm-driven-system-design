@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import multer from 'multer';
 import { query } from '../services/db.js';
 import { uploadProfilePicture } from '../services/storage.js';
@@ -46,17 +46,18 @@ interface FollowUserRow {
 }
 
 // Get user profile
-router.get('/:username', optionalAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.get('/:username', optionalAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.params;
     const authReq = req as AuthenticatedRequest;
     const currentUserId = authReq.session?.userId;
+    const usernameStr = typeof username === 'string' ? username : username[0];
 
     const result = await query<UserRow>(
       `SELECT id, username, display_name, bio, profile_picture_url,
               follower_count, following_count, post_count, is_private, created_at
        FROM users WHERE username = $1`,
-      [username.toLowerCase()]
+      [usernameStr.toLowerCase()]
     );
 
     if (result.rows.length === 0) {
@@ -106,7 +107,7 @@ router.get('/:username', optionalAuth as express.RequestHandler, async (req: Req
 // Update user profile
 router.put(
   '/me',
-  requireAuth as express.RequestHandler,
+  requireAuth as RequestHandler,
   upload.single('profilePicture'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -201,17 +202,18 @@ router.put(
 );
 
 // Get user posts
-router.get('/:username/posts', optionalAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.get('/:username/posts', optionalAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.params;
     const { cursor, limit = '12' } = req.query as { cursor?: string; limit?: string };
     const limitNum = parseInt(limit, 10);
     const authReq = req as AuthenticatedRequest;
+    const usernameStr = typeof username === 'string' ? username : username[0];
 
     // Get user
     const userResult = await query<{ id: string; is_private: boolean }>(
       'SELECT id, is_private FROM users WHERE username = $1',
-      [username.toLowerCase()]
+      [usernameStr.toLowerCase()]
     );
 
     if (userResult.rows.length === 0) {
@@ -256,7 +258,7 @@ router.get('/:username/posts', optionalAuth as express.RequestHandler, async (re
     const posts = result.rows.slice(0, limitNum);
 
     res.json({
-      posts: posts.map((p) => ({
+      posts: posts.map((p: PostRow) => ({
         id: p.id,
         thumbnail: p.thumbnail,
         likeCount: p.like_count,
@@ -281,7 +283,7 @@ router.get('/:username/posts', optionalAuth as express.RequestHandler, async (re
 });
 
 // Get user's saved posts
-router.get('/me/saved', requireAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.get('/me/saved', requireAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const authReq = req as AuthenticatedRequest;
     const userId = authReq.session.userId!;
@@ -312,7 +314,7 @@ router.get('/me/saved', requireAuth as express.RequestHandler, async (req: Reque
     const posts = result.rows.slice(0, limitNum);
 
     res.json({
-      posts: posts.map((p) => ({
+      posts: posts.map((p: PostRow) => ({
         id: p.id,
         thumbnail: p.thumbnail,
         likeCount: p.like_count,
@@ -342,7 +344,7 @@ router.get('/me/saved', requireAuth as express.RequestHandler, async (req: Reque
  */
 router.post(
   '/:userId/follow',
-  requireAuth as express.RequestHandler,
+  requireAuth as RequestHandler,
   followRateLimitMiddleware,
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -416,7 +418,7 @@ router.post(
 );
 
 // Unfollow user
-router.delete('/:userId/follow', requireAuth as express.RequestHandler, async (req: Request, res: Response): Promise<void> => {
+router.delete('/:userId/follow', requireAuth as RequestHandler, async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId: targetUserId } = req.params;
     const authReq = req as AuthenticatedRequest;
@@ -466,8 +468,9 @@ router.get('/:username/followers', async (req: Request, res: Response): Promise<
     const { username } = req.params;
     const { cursor, limit = '20' } = req.query as { cursor?: string; limit?: string };
     const limitNum = parseInt(limit, 10);
+    const usernameStr = typeof username === 'string' ? username : username[0];
 
-    const userResult = await query<{ id: string }>('SELECT id FROM users WHERE username = $1', [username.toLowerCase()]);
+    const userResult = await query<{ id: string }>('SELECT id FROM users WHERE username = $1', [usernameStr.toLowerCase()]);
     if (userResult.rows.length === 0) {
       res.status(404).json({ error: 'User not found' });
       return;
@@ -497,7 +500,7 @@ router.get('/:username/followers', async (req: Request, res: Response): Promise<
     const followers = result.rows.slice(0, limitNum);
 
     res.json({
-      followers: followers.map((f) => ({
+      followers: followers.map((f: FollowUserRow) => ({
         id: f.id,
         username: f.username,
         displayName: f.display_name,
@@ -525,8 +528,9 @@ router.get('/:username/following', async (req: Request, res: Response): Promise<
     const { username } = req.params;
     const { cursor, limit = '20' } = req.query as { cursor?: string; limit?: string };
     const limitNum = parseInt(limit, 10);
+    const usernameStr = typeof username === 'string' ? username : username[0];
 
-    const userResult = await query<{ id: string }>('SELECT id FROM users WHERE username = $1', [username.toLowerCase()]);
+    const userResult = await query<{ id: string }>('SELECT id FROM users WHERE username = $1', [usernameStr.toLowerCase()]);
     if (userResult.rows.length === 0) {
       res.status(404).json({ error: 'User not found' });
       return;

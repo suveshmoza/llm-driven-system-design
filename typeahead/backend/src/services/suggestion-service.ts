@@ -3,7 +3,7 @@
  * In a distributed system, this would route to different sharded trie servers.
  * For local development, it uses a single trie with Redis caching.
  */
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { Trie, Suggestion } from '../data-structures/trie.js';
 import type { RankingService, RankedSuggestion } from './ranking-service.js';
 

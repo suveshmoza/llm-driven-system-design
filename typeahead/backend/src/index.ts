@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import Redis from 'ioredis';
+import IORedis from 'ioredis';
 import pg from 'pg';
 
 import { Trie } from './data-structures/trie.js';
@@ -33,6 +33,7 @@ app.use(httpLogger); // Structured request logging
 app.use(globalRateLimiter); // Global rate limiting
 
 // Database connections
+const Redis = IORedis.default || IORedis;
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),

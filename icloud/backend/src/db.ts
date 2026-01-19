@@ -1,6 +1,5 @@
 import pg from 'pg';
 import Redis from 'ioredis';
-import type { Redis as RedisType } from 'ioredis';
 import * as Minio from 'minio';
 
 const { Pool } = pg;
@@ -17,8 +16,8 @@ export const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Redis client
-export const redis: RedisType = new Redis({
+// Redis client - use default export from ioredis
+export const redis = new Redis.default({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
   maxRetriesPerRequest: 3,

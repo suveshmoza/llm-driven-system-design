@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import crypto from 'crypto';
-import { pool, redis, minioClient } from '../db.js';
+import { pool } from '../db.js';
 import { ChunkService } from '../services/chunks.js';
 import { broadcastToUser } from '../services/websocket.js';
 
