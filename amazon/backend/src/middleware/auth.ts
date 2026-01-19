@@ -47,7 +47,13 @@ export async function authMiddleware(
       return next();
     }
 
-    req.user = result.rows[0];
+    const row = result.rows[0];
+    req.user = {
+      id: row.id as number,
+      email: row.email as string,
+      name: row.name as string,
+      role: row.role as 'user' | 'admin' | 'seller'
+    };
     req.sessionId = sessionId;
     next();
   } catch (error) {

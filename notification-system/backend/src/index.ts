@@ -70,7 +70,7 @@ app.get('/metrics', getMetrics);
  * - Load balancer health checks
  * - Monitoring dashboards
  */
-app.get('/health', async (req: Request, res: Response): Promise<void> => {
+app.get('/health', async (_req: Request, res: Response): Promise<void> => {
   const components: Record<string, ComponentStatus> = {};
   let overallStatus: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
 
@@ -157,7 +157,7 @@ app.get('/health', async (req: Request, res: Response): Promise<void> => {
  * Liveness probe - simple check that the process is running
  * Use for Kubernetes liveness probes
  */
-app.get('/health/live', (req: Request, res: Response): void => {
+app.get('/health/live', (_req: Request, res: Response): void => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
@@ -165,7 +165,7 @@ app.get('/health/live', (req: Request, res: Response): void => {
  * Readiness probe - checks if the service can accept traffic
  * Use for Kubernetes readiness probes and load balancer health checks
  */
-app.get('/health/ready', async (req: Request, res: Response): Promise<void> => {
+app.get('/health/ready', async (_req: Request, res: Response): Promise<void> => {
   try {
     // Quick checks only - must be fast
     await Promise.all([

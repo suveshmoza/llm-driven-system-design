@@ -64,7 +64,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 // Get notification by ID
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const notification = await notificationService.getNotificationById(req.params.id);
+    const notification = await notificationService.getNotificationById(req.params.id as string);
 
     if (!notification) {
       res.status(404).json({ error: 'Notification not found' });
@@ -88,7 +88,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const cancelled = await notificationService.cancelNotification(
-      req.params.id,
+      req.params.id as string,
       req.user!.id
     );
 
@@ -126,7 +126,7 @@ router.post('/:id/events', async (req: Request, res: Response): Promise<void> =>
     }
 
     await deliveryTracker.trackEvent(
-      req.params.id,
+      req.params.id as string,
       channel || 'push',
       eventType,
       metadata || {}

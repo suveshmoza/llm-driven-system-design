@@ -203,7 +203,7 @@ router.get('/offers/pending', authenticate, requireDriver, async (req: Request, 
 // Accept offer
 router.post('/offers/:id/accept', authenticate, requireDriver, async (req: Request, res: Response) => {
   try {
-    const order = await acceptDriverOffer(req.params.id, req.userId!);
+    const order = await acceptDriverOffer(req.params.id as string, req.userId!);
 
     if (!order) {
       res.status(400).json({
@@ -232,7 +232,7 @@ router.post('/offers/:id/accept', authenticate, requireDriver, async (req: Reque
 // Reject offer
 router.post('/offers/:id/reject', authenticate, requireDriver, async (req: Request, res: Response) => {
   try {
-    const success = await rejectDriverOffer(req.params.id, req.userId!);
+    const success = await rejectDriverOffer(req.params.id as string, req.userId!);
 
     if (!success) {
       res.status(400).json({
@@ -258,7 +258,7 @@ router.post('/offers/:id/reject', authenticate, requireDriver, async (req: Reque
 // Mark order as picked up
 router.post('/orders/:id/picked-up', authenticate, requireDriver, async (req: Request, res: Response) => {
   try {
-    const order = await getOrderWithDetails(req.params.id);
+    const order = await getOrderWithDetails(req.params.id as string);
 
     if (!order) {
       res.status(404).json({
@@ -284,7 +284,7 @@ router.post('/orders/:id/picked-up', authenticate, requireDriver, async (req: Re
       return;
     }
 
-    const updatedOrder = await updateOrderStatus(req.params.id, 'picked_up');
+    const updatedOrder = await updateOrderStatus(req.params.id as string, 'picked_up');
 
     res.json({
       success: true,
@@ -303,7 +303,7 @@ router.post('/orders/:id/picked-up', authenticate, requireDriver, async (req: Re
 // Mark order as in transit
 router.post('/orders/:id/in-transit', authenticate, requireDriver, async (req: Request, res: Response) => {
   try {
-    const order = await getOrderWithDetails(req.params.id);
+    const order = await getOrderWithDetails(req.params.id as string);
 
     if (!order) {
       res.status(404).json({
@@ -329,7 +329,7 @@ router.post('/orders/:id/in-transit', authenticate, requireDriver, async (req: R
       return;
     }
 
-    const updatedOrder = await updateOrderStatus(req.params.id, 'in_transit');
+    const updatedOrder = await updateOrderStatus(req.params.id as string, 'in_transit');
 
     res.json({
       success: true,
@@ -348,7 +348,7 @@ router.post('/orders/:id/in-transit', authenticate, requireDriver, async (req: R
 // Mark order as delivered
 router.post('/orders/:id/delivered', authenticate, requireDriver, async (req: Request, res: Response) => {
   try {
-    const order = await getOrderWithDetails(req.params.id);
+    const order = await getOrderWithDetails(req.params.id as string);
 
     if (!order) {
       res.status(404).json({
@@ -374,7 +374,7 @@ router.post('/orders/:id/delivered', authenticate, requireDriver, async (req: Re
       return;
     }
 
-    const updatedOrder = await completeDelivery(req.params.id);
+    const updatedOrder = await completeDelivery(req.params.id as string);
 
     res.json({
       success: true,

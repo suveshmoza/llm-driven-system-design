@@ -111,7 +111,7 @@ router.get('/', async (req: Request, res: Response) => {
 // Get merchant by ID
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const merchant = await getMerchantById(req.params.id);
+    const merchant = await getMerchantById(req.params.id as string);
 
     if (!merchant) {
       res.status(404).json({
@@ -137,7 +137,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // Get merchant menu
 router.get('/:id/menu', async (req: Request, res: Response) => {
   try {
-    const merchant = await getMerchantById(req.params.id);
+    const merchant = await getMerchantById(req.params.id as string);
 
     if (!merchant) {
       res.status(404).json({
@@ -147,7 +147,7 @@ router.get('/:id/menu', async (req: Request, res: Response) => {
       return;
     }
 
-    const menu = await getMerchantMenu(req.params.id);
+    const menu = await getMerchantMenu(req.params.id as string);
 
     res.json({
       success: true,

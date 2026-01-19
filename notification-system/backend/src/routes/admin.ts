@@ -208,7 +208,7 @@ router.patch('/users/:id/role', async (req: Request, res: Response): Promise<voi
 // Reset user rate limits
 router.post('/users/:id/reset-rate-limit', async (req: Request, res: Response): Promise<void> => {
   try {
-    await rateLimiter.resetUserLimit(req.params.id);
+    await rateLimiter.resetUserLimit(req.params.id as string);
     res.json({ message: 'Rate limits reset' });
   } catch (error) {
     console.error('Reset rate limit error:', error);
@@ -267,7 +267,7 @@ router.get('/analytics/events', async (req: Request, res: Response): Promise<voi
 });
 
 // Get failed notifications for retry
-router.get('/failed-notifications', async (req: Request, res: Response): Promise<void> => {
+router.get('/failed-notifications', async (_req: Request, res: Response): Promise<void> => {
   try {
     const result = await query<FailedNotificationRow>(
       `SELECT n.*, ds.channel, ds.details, ds.attempts
