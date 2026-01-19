@@ -177,8 +177,14 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
       return;
     }
 
+    const updatedReview = result.rows[0];
+    if (!updatedReview) {
+      res.status(404).json({ error: 'Review not found' });
+      return;
+    }
+
     // Invalidate product cache
-    await cacheDel(`product:${result.rows[0].product_id}`);
+    await cacheDel(`product:${updatedReview.product_id}`);
 
     res.json({ review: result.rows[0] });
   } catch (error) {
@@ -203,6 +209,10 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response, next: Nex
     }
 
     const review = reviewResult.rows[0];
+    if (!review) {
+      res.status(404).json({ error: 'Review not found' });
+      return;
+    }
 
     // Check if user owns the review or is admin
     if (review.user_id !== req.user!.id && req.user!.role !== 'admin') {

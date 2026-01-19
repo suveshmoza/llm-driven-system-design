@@ -14,7 +14,6 @@
  * - System debugging
  */
 import { Request } from 'express';
-import { Socket } from 'net';
 import { query } from '../services/database.js';
 import logger from './logger.js';
 import { auditEventsTotal } from './metrics.js';
@@ -22,7 +21,6 @@ import { auditEventsTotal } from './metrics.js';
 // Extended Request for audit context
 interface ExtendedRequest extends Request {
   correlationId?: string;
-  connection?: Socket & { remoteAddress?: string };
 }
 
 // Audit event types
@@ -217,7 +215,8 @@ export async function createAuditLog(entry: AuditEntry): Promise<number | null> 
     // Update metrics
     auditEventsTotal.inc({ action, resource_type: resource.type });
 
-    return result.rows[0].id;
+    const insertedRow = result.rows[0];
+    return insertedRow ? insertedRow.id : null;
   } catch (error) {
     const err = error as Error;
     // Audit logging should never break the main flow
@@ -231,7 +230,7 @@ export async function createAuditLog(entry: AuditEntry): Promise<number | null> 
  */
 export function createAuditContext(req: ExtendedRequest): AuditContext {
   return {
-    ip: req.ip || (req.headers['x-forwarded-for'] as string) || req.connection?.remoteAddress,
+    ip: req.ip || (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress,
     userAgent: req.headers['user-agent'],
     correlationId: req.correlationId || (req.headers['x-correlation-id'] as string)
   };
@@ -544,9 +543,10 @@ export async function queryAuditLogs(filters: AuditQueryFilters = {}): Promise<{
     params
   );
 
+  const countRow = countResult.rows[0];
   return {
     logs: result.rows,
-    total: parseInt(countResult.rows[0].total),
+    total: countRow ? parseInt(countRow.total) : 0,
     page,
     limit
   };

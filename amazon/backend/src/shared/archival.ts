@@ -146,7 +146,8 @@ export type ArchiveStatusType = (typeof ArchiveStatus)[keyof typeof ArchiveStatu
  */
 export async function getOrdersForArchival(limit: number = 1000): Promise<OrderForArchival[]> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.ORDERS.hotStorageDays || 730));
+  const policy = RetentionPolicies.ORDERS;
+  cutoffDate.setDate(cutoffDate.getDate() - (policy?.hotStorageDays ?? 730));
 
   const result = await query<OrderForArchival>(
     `SELECT o.id, o.user_id, o.created_at, o.status
@@ -192,6 +193,9 @@ export async function archiveOrders(orderIds: number[]): Promise<ArchiveResult> 
         }
 
         const order = orderResult.rows[0];
+        if (!order) {
+          throw new Error(`Order ${orderId} not found`);
+        }
 
         // Create archive record
         const archiveData = JSON.stringify({
@@ -261,6 +265,9 @@ export async function retrieveArchivedOrder(orderId: number): Promise<unknown | 
   }
 
   const order = orderCheck.rows[0];
+  if (!order) {
+    return null;
+  }
 
   if (order.archive_status !== 'archived' && order.archive_status !== 'anonymized') {
     // Order is still in hot storage - return from main table
@@ -286,7 +293,12 @@ export async function retrieveArchivedOrder(orderId: number): Promise<unknown | 
     return null;
   }
 
-  return JSON.parse(archiveResult.rows[0].archive_data);
+  const archiveRow = archiveResult.rows[0];
+  if (!archiveRow) {
+    return null;
+  }
+
+  return JSON.parse(archiveRow.archive_data);
 }
 
 /**
@@ -294,7 +306,8 @@ export async function retrieveArchivedOrder(orderId: number): Promise<unknown | 
  */
 export async function anonymizeOldOrders(limit: number = 500): Promise<number> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.ORDERS.anonymizeAfterDays || 2555));
+  const ordersPolicy = RetentionPolicies.ORDERS;
+  cutoffDate.setDate(cutoffDate.getDate() - (ordersPolicy?.anonymizeAfterDays ?? 2555));
 
   const result = await query(
     `UPDATE orders
@@ -353,7 +366,8 @@ export async function cleanupExpiredCartItems(): Promise<number> {
  */
 export async function cleanupSearchLogs(): Promise<number> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.SEARCH_LOGS.retentionDays || 90));
+  const searchLogsPolicy = RetentionPolicies.SEARCH_LOGS;
+  cutoffDate.setDate(cutoffDate.getDate() - (searchLogsPolicy?.retentionDays ?? 90));
 
   const result = await query(
     'DELETE FROM search_logs WHERE created_at < $1',
@@ -372,7 +386,8 @@ export async function cleanupSearchLogs(): Promise<number> {
  */
 export async function archiveOldAuditLogs(): Promise<number> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.AUDIT_LOGS.hotStorageDays || 365));
+  const auditLogsPolicy = RetentionPolicies.AUDIT_LOGS;
+  cutoffDate.setDate(cutoffDate.getDate() - (auditLogsPolicy?.hotStorageDays ?? 365));
 
   // For now, just log - in production would move to cold storage
   const countResult = await query<{ count: string }>(
@@ -380,7 +395,8 @@ export async function archiveOldAuditLogs(): Promise<number> {
     [cutoffDate]
   );
 
-  const count = parseInt(countResult.rows[0].count);
+  const countRow = countResult.rows[0];
+  const count = countRow ? parseInt(countRow.count) : 0;
   if (count > 0) {
     logger.info({ count, cutoffDate }, 'Audit logs eligible for archival');
     // In production: Move to S3/MinIO cold storage
@@ -393,7 +409,8 @@ export async function archiveOldAuditLogs(): Promise<number> {
  * Clean up expired idempotency keys
  */
 export async function cleanupIdempotencyKeys(): Promise<number> {
-  const cutoffDate = new Date(Date.now() - (RetentionPolicies.IDEMPOTENCY_KEYS.ttlSeconds || 86400) * 1000);
+  const idempotencyPolicy = RetentionPolicies.IDEMPOTENCY_KEYS;
+  const cutoffDate = new Date(Date.now() - (idempotencyPolicy?.ttlSeconds ?? 86400) * 1000);
 
   const result = await query(
     'DELETE FROM idempotency_keys WHERE created_at < $1',
