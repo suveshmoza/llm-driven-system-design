@@ -2,7 +2,8 @@
  * RabbitMQ integration for async image processing.
  * Provides queue management for image processing jobs.
  */
-import amqp, { Connection, Channel, ConsumeMessage } from 'amqplib';
+import amqp from 'amqplib';
+import type { Connection, Channel, ConsumeMessage } from 'amqplib';
 import logger from './logger.js';
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://instagram:instagram123@localhost:5672';

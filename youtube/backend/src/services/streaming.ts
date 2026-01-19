@@ -1,18 +1,79 @@
 import { query } from '../utils/db.js';
-import { getPublicUrl, getPresignedDownloadUrl } from '../utils/storage.js';
+import { getPublicUrl } from '../utils/storage.js';
 import { cacheGet, cacheSet, incrementViewCount } from '../utils/redis.js';
 import config from '../config/index.js';
 
+// ============ Type Definitions ============
+
+interface VideoRow {
+  id: string;
+  title: string;
+  description: string;
+  duration_seconds: number;
+  thumbnail_url: string;
+  channel_id: string;
+  view_count: number;
+  like_count: number;
+  dislike_count: number;
+  published_at: string;
+  username?: string;
+  channel_name?: string;
+  avatar_url?: string;
+}
+
+interface ResolutionRow {
+  resolution: string;
+  manifest_url: string;
+  video_url: string;
+  bitrate: number;
+  width: number;
+  height: number;
+}
+
+interface Resolution {
+  resolution: string;
+  manifestUrl: string;
+  videoUrl: string;
+  bitrate: number;
+  width: number;
+  height: number;
+}
+
+interface StreamingInfo {
+  videoId: string;
+  title: string;
+  description: string;
+  duration: number;
+  thumbnailUrl: string;
+  channel: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl: string;
+  };
+  masterManifestUrl: string;
+  resolutions: Resolution[];
+  viewCount: number;
+  likeCount: number;
+  dislikeCount: number;
+  publishedAt: string;
+}
+
+interface WatchProgress {
+  position: number;
+  percentage: number;
+}
+
 // Get video streaming info (manifest URLs)
-export const getStreamingInfo = async (videoId) => {
+export const getStreamingInfo = async (videoId: string): Promise<StreamingInfo | null> => {
   // Check cache first
-  const cached = await cacheGet(`stream:${videoId}`);
+  const cached = await cacheGet<StreamingInfo>(`stream:${videoId}`);
   if (cached) {
     return cached;
   }
 
   // Get video and resolutions from database
-  const videoResult = await query(
+  const videoResult = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
      FROM videos v
      JOIN users u ON v.channel_id = u.id
@@ -26,7 +87,7 @@ export const getStreamingInfo = async (videoId) => {
 
   const video = videoResult.rows[0];
 
-  const resolutionsResult = await query(
+  const resolutionsResult = await query<ResolutionRow>(
     'SELECT * FROM video_resolutions WHERE video_id = $1 ORDER BY bitrate DESC',
     [videoId]
   );
@@ -36,7 +97,7 @@ export const getStreamingInfo = async (videoId) => {
     `videos/${videoId}/master.m3u8`
   );
 
-  const streamingInfo = {
+  const streamingInfo: StreamingInfo = {
     videoId,
     title: video.title,
     description: video.description,
@@ -44,12 +105,12 @@ export const getStreamingInfo = async (videoId) => {
     thumbnailUrl: video.thumbnail_url,
     channel: {
       id: video.channel_id,
-      name: video.channel_name,
-      username: video.username,
-      avatarUrl: video.avatar_url,
+      name: video.channel_name || '',
+      username: video.username || '',
+      avatarUrl: video.avatar_url || '',
     },
     masterManifestUrl,
-    resolutions: resolutionsResult.rows.map(r => ({
+    resolutions: resolutionsResult.rows.map((r) => ({
       resolution: r.resolution,
       manifestUrl: r.manifest_url,
       videoUrl: r.video_url,
@@ -70,15 +131,18 @@ export const getStreamingInfo = async (videoId) => {
 };
 
 // Get direct video URL for a specific resolution
-export const getVideoUrl = async (videoId, resolution = '720p') => {
-  const result = await query(
+export const getVideoUrl = async (
+  videoId: string,
+  resolution: string = '720p'
+): Promise<string | null> => {
+  const result = await query<{ video_url: string }>(
     'SELECT video_url FROM video_resolutions WHERE video_id = $1 AND resolution = $2',
     [videoId, resolution]
   );
 
   if (result.rows.length === 0) {
     // Fallback to any available resolution
-    const fallbackResult = await query(
+    const fallbackResult = await query<{ video_url: string }>(
       'SELECT video_url FROM video_resolutions WHERE video_id = $1 ORDER BY bitrate DESC LIMIT 1',
       [videoId]
     );
@@ -94,7 +158,12 @@ export const getVideoUrl = async (videoId, resolution = '720p') => {
 };
 
 // Record a video view
-export const recordView = async (videoId, userId = null, watchDuration = 0, watchPercentage = 0) => {
+export const recordView = async (
+  videoId: string,
+  userId: string | null = null,
+  watchDuration: number = 0,
+  watchPercentage: number = 0
+): Promise<{ success: boolean }> => {
   // Increment buffered view count in Redis
   await incrementViewCount(videoId);
 
@@ -112,7 +181,12 @@ export const recordView = async (videoId, userId = null, watchDuration = 0, watc
 };
 
 // Update watch progress
-export const updateWatchProgress = async (userId, videoId, position, duration) => {
+export const updateWatchProgress = async (
+  userId: string | null,
+  videoId: string,
+  position: number,
+  duration: number
+): Promise<{ success: boolean }> => {
   if (!userId) {
     return { success: false };
   }
@@ -135,12 +209,15 @@ export const updateWatchProgress = async (userId, videoId, position, duration) =
 };
 
 // Get watch progress for a user
-export const getWatchProgress = async (userId, videoId) => {
+export const getWatchProgress = async (
+  userId: string | null,
+  videoId: string
+): Promise<WatchProgress | null> => {
   if (!userId) {
     return null;
   }
 
-  const result = await query(
+  const result = await query<{ last_position_seconds: number; watch_percentage: number }>(
     'SELECT last_position_seconds, watch_percentage FROM watch_history WHERE user_id = $1 AND video_id = $2',
     [userId, videoId]
   );
@@ -156,7 +233,10 @@ export const getWatchProgress = async (userId, videoId) => {
 };
 
 // Generate adaptive bitrate selection based on bandwidth
-export const selectResolution = (availableResolutions, bandwidthKbps) => {
+export const selectResolution = (
+  availableResolutions: Resolution[],
+  bandwidthKbps: number
+): Resolution | undefined => {
   const bandwidthBps = bandwidthKbps * 1000;
 
   // Sort by bitrate ascending

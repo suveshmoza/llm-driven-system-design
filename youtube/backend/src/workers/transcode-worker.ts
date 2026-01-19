@@ -81,7 +81,11 @@ const processTranscodingJob = async (job: TranscodeJob): Promise<void> => {
 
   for (let i = 0; i < totalResolutions; i++) {
     const resolution = config.transcoding.resolutions[i];
+    if (!resolution) continue;
+
     const resConfig = RESOLUTIONS[resolution];
+    if (!resConfig) continue;
+
     const resolutionStartTime = Date.now();
 
     logger.debug(
@@ -292,6 +296,8 @@ const generateMasterPlaylist = (_videoId: string, resolutions: string[]): string
 
   for (const resolution of resolutions) {
     const resConfig = RESOLUTIONS[resolution];
+    if (!resConfig) continue;
+
     playlist += `#EXT-X-STREAM-INF:BANDWIDTH=${resConfig.bitrate},RESOLUTION=${resConfig.width}x${resConfig.height}
 ${resolution}/playlist.m3u8
 `;

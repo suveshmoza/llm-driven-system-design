@@ -55,7 +55,8 @@ const createRateLimiter = (options: RateLimiterOptions): RateLimitRequestHandler
   return rateLimit({
     store: new RedisStore({
       // Use the existing ioredis client
-      sendCommand: (...args: string[]) => redis.call(...args),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sendCommand: (...args: string[]) => redis.call(...args) as any,
       prefix: `ratelimit:${keyPrefix}:`,
     }),
     max,

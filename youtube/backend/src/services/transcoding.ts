@@ -5,14 +5,37 @@ import config from '../config/index.js';
 import logger from '../shared/logger.js';
 import { transcodeQueueDepth } from '../shared/metrics.js';
 
+// ============ Type Definitions ============
+
+interface TranscodeJob {
+  videoId: string;
+  sourceKey: string;
+  userId: string;
+  createdAt: string;
+  status: string;
+}
+
+interface TranscodeStatus {
+  videoId: string;
+  status: string;
+}
+
+interface VideoRow {
+  status: string;
+}
+
 /**
  * Queue a transcoding job via RabbitMQ
  */
-export const queueTranscodingJob = async (videoId, sourceKey, userId) => {
+export const queueTranscodingJob = async (
+  videoId: string,
+  sourceKey: string,
+  userId: string
+): Promise<TranscodeJob> => {
   // Publish to RabbitMQ queue
   await publishTranscodeJob(videoId, sourceKey, userId);
 
-  const job = {
+  const job: TranscodeJob = {
     videoId,
     sourceKey,
     userId,
@@ -42,8 +65,8 @@ export const queueTranscodingJob = async (videoId, sourceKey, userId) => {
 /**
  * Get transcoding status
  */
-export const getTranscodingStatus = async (videoId) => {
-  const cached = await cacheGet(`transcode:${videoId}`);
+export const getTranscodingStatus = async (videoId: string): Promise<TranscodeStatus | TranscodeJob | null> => {
+  const cached = await cacheGet<TranscodeJob>(`transcode:${videoId}`);
   if (cached) {
     return cached;
   }
@@ -54,13 +77,14 @@ export const getTranscodingStatus = async (videoId) => {
     [videoId]
   );
 
-  if (result.rows.length === 0) {
+  const row = result.rows[0] as VideoRow | undefined;
+  if (!row) {
     return null;
   }
 
   return {
     videoId,
-    status: result.rows[0].status,
+    status: row.status,
   };
 };
 

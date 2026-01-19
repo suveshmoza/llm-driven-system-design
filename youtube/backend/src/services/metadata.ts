@@ -1,16 +1,173 @@
+import { PoolClient } from 'pg';
 import { query, transaction } from '../utils/db.js';
 import { cacheGet, cacheSet, cacheDelete, updateTrendingScore } from '../utils/redis.js';
+
+// ============ Type Definitions ============
+
+interface VideoRow {
+  id: string;
+  title: string;
+  description: string;
+  duration_seconds: number;
+  status: string;
+  visibility: string;
+  thumbnail_url: string;
+  view_count: number;
+  like_count: number;
+  dislike_count: number;
+  comment_count: number;
+  categories: string[];
+  tags: string[];
+  published_at: string;
+  created_at: string;
+  channel_id: string;
+  raw_video_key?: string;
+  username?: string;
+  channel_name?: string;
+  avatar_url?: string;
+  subscriber_count?: number;
+}
+
+interface ChannelRow {
+  id: string;
+  username: string;
+  email?: string;
+  channel_name: string;
+  channel_description: string;
+  avatar_url: string;
+  subscriber_count: number;
+  created_at: string;
+}
+
+interface CommentRow {
+  id: string;
+  user_id: string;
+  video_id: string;
+  text: string;
+  parent_id: string | null;
+  like_count: number;
+  is_edited: boolean;
+  created_at: string;
+  username?: string;
+  avatar_url?: string;
+  reply_count?: string;
+}
+
+interface VideoResponse {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+  status: string;
+  visibility: string;
+  thumbnailUrl: string;
+  viewCount: number;
+  likeCount: number;
+  dislikeCount: number;
+  commentCount: number;
+  categories: string[];
+  tags: string[];
+  publishedAt: string;
+  createdAt: string;
+  channel?: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl: string;
+    subscriberCount: number;
+  };
+}
+
+interface ChannelResponse {
+  id: string;
+  username: string;
+  name: string;
+  description: string;
+  avatarUrl: string;
+  subscriberCount: number;
+  createdAt: string;
+  videoCount?: number;
+}
+
+interface CommentResponse {
+  id: string;
+  text: string;
+  likeCount: number;
+  isEdited: boolean;
+  createdAt: string;
+  replyCount?: number;
+  user: {
+    id: string;
+    username: string;
+    avatarUrl: string;
+  };
+  parentId: string | null;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+interface GetVideosOptions {
+  page?: number;
+  limit?: number;
+  channelId?: string | null;
+  status?: string;
+  visibility?: string;
+  search?: string | null;
+  category?: string | null;
+  orderBy?: string;
+  order?: string;
+}
+
+interface VideoUpdates {
+  title?: string;
+  description?: string;
+  categories?: string[];
+  tags?: string[];
+  visibility?: string;
+}
+
+interface ChannelUpdates {
+  channelName?: string;
+  channelDescription?: string;
+  avatarUrl?: string;
+}
+
+interface SubscriptionResult {
+  subscribed: boolean;
+  alreadySubscribed?: boolean;
+}
+
+interface UnsubscriptionResult {
+  unsubscribed: boolean;
+}
+
+interface ReactionResult {
+  reaction: string | null;
+}
+
+interface CommentLikeResult {
+  liked: boolean;
+}
+
+interface DatabaseError extends Error {
+  code?: string;
+}
 
 // ============ Video Operations ============
 
 // Get video by ID
-export const getVideo = async (videoId) => {
-  const cached = await cacheGet(`video:${videoId}`);
+export const getVideo = async (videoId: string): Promise<VideoResponse | null> => {
+  const cached = await cacheGet<VideoResponse>(`video:${videoId}`);
   if (cached) {
     return cached;
   }
 
-  const result = await query(
+  const result = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url, u.subscriber_count
      FROM videos v
      JOIN users u ON v.channel_id = u.id
@@ -31,7 +188,9 @@ export const getVideo = async (videoId) => {
 };
 
 // Get videos with pagination
-export const getVideos = async (options = {}) => {
+export const getVideos = async (
+  options: GetVideosOptions = {}
+): Promise<{ videos: VideoResponse[]; pagination: Pagination }> => {
   const {
     page = 1,
     limit = 20,
@@ -45,7 +204,7 @@ export const getVideos = async (options = {}) => {
   } = options;
 
   const offset = (page - 1) * limit;
-  const params = [];
+  const params: unknown[] = [];
   let whereClause = 'WHERE 1=1';
   let paramIndex = 1;
 
@@ -80,7 +239,7 @@ export const getVideos = async (options = {}) => {
   const orderColumn = validOrderColumns.includes(orderBy) ? orderBy : 'published_at';
   const orderDirection = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     `SELECT COUNT(*) FROM videos v ${whereClause}`,
     params
   );
@@ -89,7 +248,7 @@ export const getVideos = async (options = {}) => {
 
   params.push(limit, offset);
 
-  const result = await query(
+  const result = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
      FROM videos v
      JOIN users u ON v.channel_id = u.id
@@ -111,10 +270,14 @@ export const getVideos = async (options = {}) => {
 };
 
 // Update video
-export const updateVideo = async (videoId, userId, updates) => {
+export const updateVideo = async (
+  videoId: string,
+  userId: string,
+  updates: VideoUpdates
+): Promise<VideoResponse | null> => {
   const { title, description, categories, tags, visibility } = updates;
 
-  const result = await query(
+  const result = await query<VideoRow>(
     `UPDATE videos
      SET title = COALESCE($1, title),
          description = COALESCE($2, description),
@@ -138,8 +301,8 @@ export const updateVideo = async (videoId, userId, updates) => {
 };
 
 // Delete video
-export const deleteVideo = async (videoId, userId) => {
-  const result = await query(
+export const deleteVideo = async (videoId: string, userId: string): Promise<boolean> => {
+  const result = await query<{ id: string }>(
     'DELETE FROM videos WHERE id = $1 AND channel_id = $2 RETURNING id',
     [videoId, userId]
   );
@@ -158,15 +321,15 @@ export const deleteVideo = async (videoId, userId) => {
 // ============ Channel Operations ============
 
 // Get channel by ID or username
-export const getChannel = async (identifier) => {
-  const cached = await cacheGet(`channel:${identifier}`);
+export const getChannel = async (identifier: string): Promise<ChannelResponse | null> => {
+  const cached = await cacheGet<ChannelResponse>(`channel:${identifier}`);
   if (cached) {
     return cached;
   }
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
 
-  const result = await query(
+  const result = await query<ChannelRow>(
     `SELECT id, username, email, channel_name, channel_description, avatar_url, subscriber_count, created_at
      FROM users
      WHERE ${isUuid ? 'id' : 'username'} = $1`,
@@ -180,7 +343,7 @@ export const getChannel = async (identifier) => {
   const channel = formatChannelResponse(result.rows[0]);
 
   // Get video count
-  const videoCountResult = await query(
+  const videoCountResult = await query<{ count: string }>(
     "SELECT COUNT(*) FROM videos WHERE channel_id = $1 AND status = 'ready' AND visibility = 'public'",
     [channel.id]
   );
@@ -194,10 +357,13 @@ export const getChannel = async (identifier) => {
 };
 
 // Update channel
-export const updateChannel = async (userId, updates) => {
+export const updateChannel = async (
+  userId: string,
+  updates: ChannelUpdates
+): Promise<ChannelResponse | null> => {
   const { channelName, channelDescription, avatarUrl } = updates;
 
-  const result = await query(
+  const result = await query<ChannelRow>(
     `UPDATE users
      SET channel_name = COALESCE($1, channel_name),
          channel_description = COALESCE($2, channel_description),
@@ -220,23 +386,27 @@ export const updateChannel = async (userId, updates) => {
 // ============ Subscription Operations ============
 
 // Subscribe to channel
-export const subscribe = async (subscriberId, channelId) => {
+export const subscribe = async (
+  subscriberId: string,
+  channelId: string
+): Promise<SubscriptionResult> => {
   if (subscriberId === channelId) {
     throw new Error('Cannot subscribe to your own channel');
   }
 
   try {
-    await query(
-      'INSERT INTO subscriptions (subscriber_id, channel_id) VALUES ($1, $2)',
-      [subscriberId, channelId]
-    );
+    await query('INSERT INTO subscriptions (subscriber_id, channel_id) VALUES ($1, $2)', [
+      subscriberId,
+      channelId,
+    ]);
 
     // Invalidate cache
     await cacheDelete(`channel:${channelId}`);
 
     return { subscribed: true };
   } catch (error) {
-    if (error.code === '23505') {
+    const dbError = error as DatabaseError;
+    if (dbError.code === '23505') {
       // Already subscribed
       return { subscribed: true, alreadySubscribed: true };
     }
@@ -245,8 +415,11 @@ export const subscribe = async (subscriberId, channelId) => {
 };
 
 // Unsubscribe from channel
-export const unsubscribe = async (subscriberId, channelId) => {
-  const result = await query(
+export const unsubscribe = async (
+  subscriberId: string,
+  channelId: string
+): Promise<UnsubscriptionResult> => {
+  const result = await query<{ subscriber_id: string }>(
     'DELETE FROM subscriptions WHERE subscriber_id = $1 AND channel_id = $2 RETURNING subscriber_id',
     [subscriberId, channelId]
   );
@@ -258,7 +431,7 @@ export const unsubscribe = async (subscriberId, channelId) => {
 };
 
 // Check subscription status
-export const isSubscribed = async (subscriberId, channelId) => {
+export const isSubscribed = async (subscriberId: string, channelId: string): Promise<boolean> => {
   const result = await query(
     'SELECT 1 FROM subscriptions WHERE subscriber_id = $1 AND channel_id = $2',
     [subscriberId, channelId]
@@ -268,17 +441,21 @@ export const isSubscribed = async (subscriberId, channelId) => {
 };
 
 // Get user's subscriptions
-export const getSubscriptions = async (userId, page = 1, limit = 20) => {
+export const getSubscriptions = async (
+  userId: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<{ subscriptions: ChannelResponse[]; pagination: Pagination }> => {
   const offset = (page - 1) * limit;
 
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     'SELECT COUNT(*) FROM subscriptions WHERE subscriber_id = $1',
     [userId]
   );
 
   const total = parseInt(countResult.rows[0].count, 10);
 
-  const result = await query(
+  const result = await query<ChannelRow>(
     `SELECT u.id, u.username, u.channel_name, u.avatar_url, u.subscriber_count
      FROM subscriptions s
      JOIN users u ON s.channel_id = u.id
@@ -302,14 +479,18 @@ export const getSubscriptions = async (userId, page = 1, limit = 20) => {
 // ============ Reaction Operations ============
 
 // Like/dislike video
-export const reactToVideo = async (userId, videoId, reactionType) => {
+export const reactToVideo = async (
+  userId: string,
+  videoId: string,
+  reactionType: string
+): Promise<ReactionResult> => {
   if (!['like', 'dislike'].includes(reactionType)) {
     throw new Error('Invalid reaction type');
   }
 
-  await transaction(async (client) => {
+  await transaction(async (client: PoolClient) => {
     // Check existing reaction
-    const existing = await client.query(
+    const existing = await client.query<{ reaction_type: string }>(
       'SELECT reaction_type FROM video_reactions WHERE user_id = $1 AND video_id = $2',
       [userId, videoId]
     );
@@ -319,16 +500,15 @@ export const reactToVideo = async (userId, videoId, reactionType) => {
 
       if (oldReaction === reactionType) {
         // Remove reaction
-        await client.query(
-          'DELETE FROM video_reactions WHERE user_id = $1 AND video_id = $2',
-          [userId, videoId]
-        );
+        await client.query('DELETE FROM video_reactions WHERE user_id = $1 AND video_id = $2', [
+          userId,
+          videoId,
+        ]);
 
         const countColumn = reactionType === 'like' ? 'like_count' : 'dislike_count';
-        await client.query(
-          `UPDATE videos SET ${countColumn} = ${countColumn} - 1 WHERE id = $1`,
-          [videoId]
-        );
+        await client.query(`UPDATE videos SET ${countColumn} = ${countColumn} - 1 WHERE id = $1`, [
+          videoId,
+        ]);
 
         return { reaction: null };
       } else {
@@ -354,10 +534,9 @@ export const reactToVideo = async (userId, videoId, reactionType) => {
       );
 
       const countColumn = reactionType === 'like' ? 'like_count' : 'dislike_count';
-      await client.query(
-        `UPDATE videos SET ${countColumn} = ${countColumn} + 1 WHERE id = $1`,
-        [videoId]
-      );
+      await client.query(`UPDATE videos SET ${countColumn} = ${countColumn} + 1 WHERE id = $1`, [
+        videoId,
+      ]);
     }
   });
 
@@ -375,8 +554,11 @@ export const reactToVideo = async (userId, videoId, reactionType) => {
 };
 
 // Get user's reaction to video
-export const getUserReaction = async (userId, videoId) => {
-  const result = await query(
+export const getUserReaction = async (
+  userId: string,
+  videoId: string
+): Promise<string | null> => {
+  const result = await query<{ reaction_type: string }>(
     'SELECT reaction_type FROM video_reactions WHERE user_id = $1 AND video_id = $2',
     [userId, videoId]
   );
@@ -387,9 +569,14 @@ export const getUserReaction = async (userId, videoId) => {
 // ============ Comment Operations ============
 
 // Add comment
-export const addComment = async (userId, videoId, text, parentId = null) => {
-  const result = await transaction(async (client) => {
-    const commentResult = await client.query(
+export const addComment = async (
+  userId: string,
+  videoId: string,
+  text: string,
+  parentId: string | null = null
+): Promise<CommentResponse> => {
+  const result = await transaction(async (client: PoolClient) => {
+    const commentResult = await client.query<CommentRow>(
       `INSERT INTO comments (user_id, video_id, text, parent_id)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
@@ -397,16 +584,15 @@ export const addComment = async (userId, videoId, text, parentId = null) => {
     );
 
     // Update comment count
-    await client.query(
-      'UPDATE videos SET comment_count = comment_count + 1 WHERE id = $1',
-      [videoId]
-    );
+    await client.query('UPDATE videos SET comment_count = comment_count + 1 WHERE id = $1', [
+      videoId,
+    ]);
 
     return commentResult.rows[0];
   });
 
   // Get user info for response
-  const userResult = await query(
+  const userResult = await query<{ username: string; avatar_url: string }>(
     'SELECT username, avatar_url FROM users WHERE id = $1',
     [userId]
   );
@@ -430,16 +616,21 @@ export const addComment = async (userId, videoId, text, parentId = null) => {
 };
 
 // Get comments for video
-export const getComments = async (videoId, page = 1, limit = 20, parentId = null) => {
+export const getComments = async (
+  videoId: string,
+  page: number = 1,
+  limit: number = 20,
+  parentId: string | null = null
+): Promise<{ comments: CommentResponse[]; pagination: Pagination }> => {
   const offset = (page - 1) * limit;
 
   const whereClause = parentId
     ? 'WHERE c.video_id = $1 AND c.parent_id = $2'
     : 'WHERE c.video_id = $1 AND c.parent_id IS NULL';
 
-  const params = parentId ? [videoId, parentId] : [videoId];
+  const params: unknown[] = parentId ? [videoId, parentId] : [videoId];
 
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     `SELECT COUNT(*) FROM comments c ${whereClause}`,
     params
   );
@@ -448,7 +639,7 @@ export const getComments = async (videoId, page = 1, limit = 20, parentId = null
 
   params.push(limit, offset);
 
-  const result = await query(
+  const result = await query<CommentRow>(
     `SELECT c.*, u.username, u.avatar_url,
             (SELECT COUNT(*) FROM comments WHERE parent_id = c.id) as reply_count
      FROM comments c
@@ -460,17 +651,17 @@ export const getComments = async (videoId, page = 1, limit = 20, parentId = null
   );
 
   return {
-    comments: result.rows.map(c => ({
+    comments: result.rows.map((c) => ({
       id: c.id,
       text: c.text,
       likeCount: c.like_count,
       isEdited: c.is_edited,
       createdAt: c.created_at,
-      replyCount: parseInt(c.reply_count, 10),
+      replyCount: parseInt(c.reply_count || '0', 10),
       user: {
         id: c.user_id,
-        username: c.username,
-        avatarUrl: c.avatar_url,
+        username: c.username || '',
+        avatarUrl: c.avatar_url || '',
       },
       parentId: c.parent_id,
     })),
@@ -484,9 +675,9 @@ export const getComments = async (videoId, page = 1, limit = 20, parentId = null
 };
 
 // Delete comment
-export const deleteComment = async (commentId, userId) => {
-  const result = await transaction(async (client) => {
-    const comment = await client.query(
+export const deleteComment = async (commentId: string, userId: string): Promise<boolean> => {
+  const result = await transaction(async (client: PoolClient) => {
+    const comment = await client.query<{ video_id: string }>(
       'SELECT video_id FROM comments WHERE id = $1 AND user_id = $2',
       [commentId, userId]
     );
@@ -499,10 +690,9 @@ export const deleteComment = async (commentId, userId) => {
 
     await client.query('DELETE FROM comments WHERE id = $1', [commentId]);
 
-    await client.query(
-      'UPDATE videos SET comment_count = comment_count - 1 WHERE id = $1',
-      [videoId]
-    );
+    await client.query('UPDATE videos SET comment_count = comment_count - 1 WHERE id = $1', [
+      videoId,
+    ]);
 
     return videoId;
   });
@@ -515,31 +705,29 @@ export const deleteComment = async (commentId, userId) => {
 };
 
 // Like comment
-export const likeComment = async (userId, commentId) => {
+export const likeComment = async (
+  userId: string,
+  commentId: string
+): Promise<CommentLikeResult> => {
   try {
-    await query(
-      'INSERT INTO comment_likes (user_id, comment_id) VALUES ($1, $2)',
-      [userId, commentId]
-    );
+    await query('INSERT INTO comment_likes (user_id, comment_id) VALUES ($1, $2)', [
+      userId,
+      commentId,
+    ]);
 
-    await query(
-      'UPDATE comments SET like_count = like_count + 1 WHERE id = $1',
-      [commentId]
-    );
+    await query('UPDATE comments SET like_count = like_count + 1 WHERE id = $1', [commentId]);
 
     return { liked: true };
   } catch (error) {
-    if (error.code === '23505') {
+    const dbError = error as DatabaseError;
+    if (dbError.code === '23505') {
       // Already liked, unlike
-      await query(
-        'DELETE FROM comment_likes WHERE user_id = $1 AND comment_id = $2',
-        [userId, commentId]
-      );
+      await query('DELETE FROM comment_likes WHERE user_id = $1 AND comment_id = $2', [
+        userId,
+        commentId,
+      ]);
 
-      await query(
-        'UPDATE comments SET like_count = like_count - 1 WHERE id = $1',
-        [commentId]
-      );
+      await query('UPDATE comments SET like_count = like_count - 1 WHERE id = $1', [commentId]);
 
       return { liked: false };
     }
@@ -549,7 +737,7 @@ export const likeComment = async (userId, commentId) => {
 
 // ============ Helper Functions ============
 
-const formatVideoResponse = (row) => ({
+const formatVideoResponse = (row: VideoRow): VideoResponse => ({
   id: row.id,
   title: row.title,
   description: row.description,
@@ -565,16 +753,18 @@ const formatVideoResponse = (row) => ({
   tags: row.tags,
   publishedAt: row.published_at,
   createdAt: row.created_at,
-  channel: row.username ? {
-    id: row.channel_id,
-    name: row.channel_name,
-    username: row.username,
-    avatarUrl: row.avatar_url,
-    subscriberCount: row.subscriber_count,
-  } : undefined,
+  channel: row.username
+    ? {
+        id: row.channel_id,
+        name: row.channel_name || '',
+        username: row.username,
+        avatarUrl: row.avatar_url || '',
+        subscriberCount: row.subscriber_count || 0,
+      }
+    : undefined,
 });
 
-const formatChannelResponse = (row) => ({
+const formatChannelResponse = (row: ChannelRow): ChannelResponse => ({
   id: row.id,
   username: row.username,
   name: row.channel_name,
@@ -584,13 +774,12 @@ const formatChannelResponse = (row) => ({
   createdAt: row.created_at,
 });
 
-const calculateTrendingScore = (video) => {
+const calculateTrendingScore = (video: VideoResponse): number => {
   const ageHours = (Date.now() - new Date(video.publishedAt).getTime()) / (1000 * 60 * 60);
   const decayFactor = Math.exp(-ageHours / 48); // Decay over 48 hours
 
-  const engagementScore = (video.viewCount * 1) +
-    (video.likeCount * 10) +
-    (video.commentCount * 20);
+  const engagementScore =
+    video.viewCount * 1 + video.likeCount * 10 + video.commentCount * 20;
 
   return engagementScore * decayFactor;
 };

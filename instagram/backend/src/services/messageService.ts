@@ -79,7 +79,7 @@ export async function getOrCreateConversation(
   const lookupQuery = 'SELECT conversation_id FROM user_conversation_lookup WHERE user_id_pair = ?';
   const lookupResult = await client.execute(lookupQuery, [userPairKey], { prepare: true });
 
-  if (lookupResult.rowCount && lookupResult.rowCount > 0) {
+  if (lookupResult.rows.length > 0) {
     return lookupResult.rows[0].conversation_id.toString();
   }
 
@@ -216,7 +216,7 @@ export async function sendMessage({
     `;
     const oldEntry = await client.execute(findOldQuery, [row.user_id, toUuid(conversationId)], { prepare: true });
 
-    if (oldEntry.rowCount && oldEntry.rowCount > 0) {
+    if (oldEntry.rows.length > 0) {
       const deleteOld = `
         DELETE FROM conversations_by_user
         WHERE user_id = ? AND last_message_at = ? AND conversation_id = ?

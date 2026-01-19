@@ -309,8 +309,9 @@ export const requireOwnership = (resourceType: string) => {
             'SELECT channel_id FROM videos WHERE id = $1',
             [resourceId]
           );
-          if (result.rows.length > 0) {
-            isOwner = result.rows[0].channel_id === req.user!.id;
+          const row = result.rows[0] as { channel_id?: string } | undefined;
+          if (row) {
+            isOwner = row.channel_id === req.user!.id;
           }
           break;
         }
@@ -320,8 +321,9 @@ export const requireOwnership = (resourceType: string) => {
             'SELECT user_id FROM comments WHERE id = $1',
             [resourceId]
           );
-          if (result.rows.length > 0) {
-            isOwner = result.rows[0].user_id === req.user!.id;
+          const row = result.rows[0] as { user_id?: string } | undefined;
+          if (row) {
+            isOwner = row.user_id === req.user!.id;
           }
           break;
         }
