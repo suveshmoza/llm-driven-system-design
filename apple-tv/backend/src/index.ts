@@ -1,35 +1,48 @@
-const express = require('express');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const session = require('express-session');
-const RedisStore = require('connect-redis').default;
+import express, { Application, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
+import RedisStore from 'connect-redis';
 
-const config = require('./config');
-const db = require('./db');
-const { client: redisClient, connect: connectRedis } = require('./db/redis');
-const { initBuckets } = require('./db/minio');
+import config from './config/index.js';
+import * as db from './db/index.js';
+import { client as redisClient, connect as connectRedis } from './db/redis.js';
+import { initBuckets } from './db/minio.js';
 
 // Shared modules for observability and resilience
-const {
+import {
   logger,
   requestLoggerMiddleware,
   metricsMiddleware,
   metricsHandler,
   idempotencyMiddleware,
   getCircuitBreakerHealth
-} = require('./shared');
+} from './shared/index.js';
 
 // Routes
-const authRoutes = require('./routes/auth');
-const contentRoutes = require('./routes/content');
-const streamingRoutes = require('./routes/streaming');
-const watchProgressRoutes = require('./routes/watchProgress');
-const watchlistRoutes = require('./routes/watchlist');
-const subscriptionRoutes = require('./routes/subscription');
-const recommendationsRoutes = require('./routes/recommendations');
-const adminRoutes = require('./routes/admin');
+import authRoutes from './routes/auth.js';
+import contentRoutes from './routes/content.js';
+import streamingRoutes from './routes/streaming.js';
+import watchProgressRoutes from './routes/watchProgress.js';
+import watchlistRoutes from './routes/watchlist.js';
+import subscriptionRoutes from './routes/subscription.js';
+import recommendationsRoutes from './routes/recommendations.js';
+import adminRoutes from './routes/admin.js';
 
-const app = express();
+const app: Application = express();
+
+interface HealthCheck {
+  status: string;
+  timestamp: string;
+  uptime: number;
+  version: string;
+  responseTime?: number;
+  checks: {
+    database?: { status: string; latency?: number; error?: string };
+    redis?: { status: string; latency?: number; error?: string };
+    circuitBreakers?: Record<string, unknown>;
+  };
+}
 
 // Middleware - order matters
 app.use(cors({
@@ -46,7 +59,7 @@ app.use(metricsMiddleware);
 app.use(requestLoggerMiddleware);
 
 // Initialize function
-async function init() {
+async function init(): Promise<void> {
   // Connect to Redis
   await connectRedis();
   logger.info('Connected to Redis');
@@ -56,7 +69,7 @@ async function init() {
     await initBuckets();
     logger.info('MinIO buckets initialized');
   } catch (error) {
-    logger.warn({ error: error.message }, 'MinIO initialization warning');
+    logger.warn({ error: (error as Error).message }, 'MinIO initialization warning');
   }
 
   // Session middleware with Redis store
@@ -81,9 +94,9 @@ async function init() {
   app.get('/metrics', metricsHandler);
 
   // Enhanced health check with detailed status
-  app.get('/health', async (req, res) => {
+  app.get('/health', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
-    const health = {
+    const health: HealthCheck = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
@@ -103,7 +116,7 @@ async function init() {
       health.status = 'unhealthy';
       health.checks.database = {
         status: 'unhealthy',
-        error: error.message
+        error: (error as Error).message
       };
     }
 
@@ -119,7 +132,7 @@ async function init() {
       health.status = 'unhealthy';
       health.checks.redis = {
         status: 'unhealthy',
-        error: error.message
+        error: (error as Error).message
       };
     }
 
@@ -134,18 +147,18 @@ async function init() {
   });
 
   // Liveness probe (simple check that server is running)
-  app.get('/health/live', (req, res) => {
+  app.get('/health/live', (req: Request, res: Response): void => {
     res.json({ status: 'alive', timestamp: new Date().toISOString() });
   });
 
   // Readiness probe (check if server is ready to accept traffic)
-  app.get('/health/ready', async (req, res) => {
+  app.get('/health/ready', async (req: Request, res: Response): Promise<void> => {
     try {
       await db.query('SELECT 1');
       await redisClient.ping();
       res.json({ status: 'ready', timestamp: new Date().toISOString() });
     } catch (error) {
-      res.status(503).json({ status: 'not_ready', error: error.message });
+      res.status(503).json({ status: 'not_ready', error: (error as Error).message });
     }
   });
 
@@ -160,7 +173,7 @@ async function init() {
   app.use('/api/admin', adminRoutes);
 
   // Error handling middleware with structured logging
-  app.use((err, req, res, next) => {
+  app.use((err: Error, req: Request, res: Response, _next: NextFunction): void => {
     const errorLog = {
       error: err.message,
       stack: err.stack,
@@ -191,21 +204,21 @@ async function init() {
 }
 
 // Handle graceful shutdown
-async function shutdown(signal) {
+async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutdown signal received');
 
   try {
     await redisClient.quit();
     logger.info('Redis connection closed');
   } catch (error) {
-    logger.error({ error: error.message }, 'Error closing Redis connection');
+    logger.error({ error: (error as Error).message }, 'Error closing Redis connection');
   }
 
   try {
     await db.pool.end();
     logger.info('Database pool closed');
   } catch (error) {
-    logger.error({ error: error.message }, 'Error closing database pool');
+    logger.error({ error: (error as Error).message }, 'Error closing database pool');
   }
 
   logger.info('Graceful shutdown complete');
@@ -216,7 +229,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Start the server
-init().catch((err) => {
+init().catch((err: Error) => {
   logger.error({ error: err.message, stack: err.stack }, 'Failed to start server');
   process.exit(1);
 });

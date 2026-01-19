@@ -15,16 +15,76 @@
  */
 import { query, transaction } from '../services/database.js';
 import logger from './logger.js';
+import type { PoolClient } from 'pg';
 
 // ============================================================
 // Configuration
 // ============================================================
 
+interface RetentionPolicy {
+  hotStorageDays?: number;
+  archiveRetentionDays?: number;
+  anonymizeAfterDays?: number;
+  reservationMinutes?: number;
+  cleanupIntervalMinutes?: number;
+  ttlSeconds?: number;
+  retentionDays?: number;
+}
+
+interface OrderForArchival {
+  id: number;
+  user_id: number;
+  created_at: Date;
+  status: string;
+}
+
+interface OrderWithItems {
+  id: number;
+  user_id: number;
+  status: string;
+  subtotal: string;
+  tax: string;
+  shipping_cost: string;
+  total: string;
+  payment_method: string;
+  payment_status: string;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+  items: unknown[];
+}
+
+interface ArchiveResult {
+  archived: number;
+  errors: Array<{ orderId: number; error: string }>;
+}
+
+interface RetentionStats {
+  orders: {
+    active_orders: string;
+    archived_orders: string;
+    anonymized_orders: string;
+    oldest_active_order: Date | null;
+  };
+  cartItems: {
+    total_items: string;
+    expired_items: string;
+  };
+  auditLogs: {
+    total_logs: string;
+    oldest_log: Date | null;
+  };
+  sessions: {
+    total_sessions: string;
+    expired_sessions: string;
+  };
+}
+
 /**
  * Retention policies by data type
  * All durations in days
  */
-export const RetentionPolicies = {
+export const RetentionPolicies: Record<string, RetentionPolicy> = {
   // Orders - keep in hot storage for 2 years, archive for 7 years total
   ORDERS: {
     hotStorageDays: 730,        // 2 years - quick access for customer support
@@ -73,7 +133,9 @@ export const ArchiveStatus = {
   PENDING_ARCHIVE: 'pending_archive',
   ARCHIVED: 'archived',
   ANONYMIZED: 'anonymized'
-};
+} as const;
+
+export type ArchiveStatusType = (typeof ArchiveStatus)[keyof typeof ArchiveStatus];
 
 // ============================================================
 // Archival Functions
@@ -81,14 +143,12 @@ export const ArchiveStatus = {
 
 /**
  * Get orders eligible for archival
- * @param {number} limit - Maximum number of orders to return
- * @returns {Promise<Object[]>} Orders to archive
  */
-export async function getOrdersForArchival(limit = 1000) {
+export async function getOrdersForArchival(limit: number = 1000): Promise<OrderForArchival[]> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - RetentionPolicies.ORDERS.hotStorageDays);
+  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.ORDERS.hotStorageDays || 730));
 
-  const result = await query(
+  const result = await query<OrderForArchival>(
     `SELECT o.id, o.user_id, o.created_at, o.status
      FROM orders o
      WHERE o.created_at < $1
@@ -105,22 +165,20 @@ export async function getOrdersForArchival(limit = 1000) {
 /**
  * Archive a batch of orders
  * Moves data to cold storage and marks as archived
- * @param {number[]} orderIds - Order IDs to archive
- * @returns {Promise<Object>} Archive results
  */
-export async function archiveOrders(orderIds) {
+export async function archiveOrders(orderIds: number[]): Promise<ArchiveResult> {
   if (orderIds.length === 0) {
     return { archived: 0, errors: [] };
   }
 
   let archived = 0;
-  const errors = [];
+  const errors: Array<{ orderId: number; error: string }> = [];
 
   for (const orderId of orderIds) {
     try {
-      await transaction(async (client) => {
+      await transaction(async (client: PoolClient) => {
         // Get full order data for archival
-        const orderResult = await client.query(
+        const orderResult = await client.query<OrderWithItems>(
           `SELECT o.*, json_agg(oi.*) as items
            FROM orders o
            LEFT JOIN order_items oi ON o.id = oi.order_id
@@ -177,8 +235,9 @@ export async function archiveOrders(orderIds) {
         archived++;
       });
     } catch (error) {
-      logger.error({ orderId, error: error.message }, 'Failed to archive order');
-      errors.push({ orderId, error: error.message });
+      const err = error as Error;
+      logger.error({ orderId, error: err.message }, 'Failed to archive order');
+      errors.push({ orderId, error: err.message });
     }
   }
 
@@ -189,12 +248,10 @@ export async function archiveOrders(orderIds) {
 /**
  * Retrieve archived order data
  * For customer support or legal requests
- * @param {number} orderId - Order ID
- * @returns {Promise<Object|null>} Archived order data
  */
-export async function retrieveArchivedOrder(orderId) {
+export async function retrieveArchivedOrder(orderId: number): Promise<unknown | null> {
   // First check if order is archived
-  const orderCheck = await query(
+  const orderCheck = await query<{ id: number; archive_status: string }>(
     'SELECT id, archive_status FROM orders WHERE id = $1',
     [orderId]
   );
@@ -207,7 +264,7 @@ export async function retrieveArchivedOrder(orderId) {
 
   if (order.archive_status !== 'archived' && order.archive_status !== 'anonymized') {
     // Order is still in hot storage - return from main table
-    const result = await query(
+    const result = await query<OrderWithItems>(
       `SELECT o.*, json_agg(oi.*) as items
        FROM orders o
        LEFT JOIN order_items oi ON o.id = oi.order_id
@@ -219,7 +276,7 @@ export async function retrieveArchivedOrder(orderId) {
   }
 
   // Retrieve from archive
-  const archiveResult = await query(
+  const archiveResult = await query<{ archive_data: string }>(
     'SELECT * FROM orders_archive WHERE order_id = $1',
     [orderId]
   );
@@ -234,12 +291,10 @@ export async function retrieveArchivedOrder(orderId) {
 
 /**
  * Anonymize old orders for GDPR/CCPA compliance
- * @param {number} limit - Maximum orders to process
- * @returns {Promise<number>} Number of orders anonymized
  */
-export async function anonymizeOldOrders(limit = 500) {
+export async function anonymizeOldOrders(limit: number = 500): Promise<number> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - RetentionPolicies.ORDERS.anonymizeAfterDays);
+  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.ORDERS.anonymizeAfterDays || 2555));
 
   const result = await query(
     `UPDATE orders
@@ -254,7 +309,7 @@ export async function anonymizeOldOrders(limit = 500) {
     [cutoffDate]
   );
 
-  const count = result.rowCount;
+  const count = result.rowCount || 0;
   if (count > 0) {
     logger.info({ count }, 'Anonymized old orders');
   }
@@ -268,16 +323,15 @@ export async function anonymizeOldOrders(limit = 500) {
 
 /**
  * Clean up expired cart reservations
- * @returns {Promise<number>} Number of cart items cleaned
  */
-export async function cleanupExpiredCartItems() {
-  const result = await query(
+export async function cleanupExpiredCartItems(): Promise<number> {
+  const result = await query<{ product_id: number; quantity: number }>(
     `DELETE FROM cart_items
      WHERE reserved_until IS NOT NULL AND reserved_until < NOW()
      RETURNING product_id, quantity`
   );
 
-  const count = result.rowCount;
+  const count = result.rowCount || 0;
   if (count > 0) {
     logger.info({ count }, 'Cleaned up expired cart reservations');
 
@@ -296,18 +350,17 @@ export async function cleanupExpiredCartItems() {
 
 /**
  * Clean up old search logs
- * @returns {Promise<number>} Number of logs deleted
  */
-export async function cleanupSearchLogs() {
+export async function cleanupSearchLogs(): Promise<number> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - RetentionPolicies.SEARCH_LOGS.retentionDays);
+  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.SEARCH_LOGS.retentionDays || 90));
 
   const result = await query(
     'DELETE FROM search_logs WHERE created_at < $1',
     [cutoffDate]
   );
 
-  if (result.rowCount > 0) {
+  if ((result.rowCount || 0) > 0) {
     logger.info({ count: result.rowCount }, 'Cleaned up old search logs');
   }
 
@@ -316,14 +369,13 @@ export async function cleanupSearchLogs() {
 
 /**
  * Clean up old audit logs (move to archive)
- * @returns {Promise<number>} Number of logs archived
  */
-export async function archiveOldAuditLogs() {
+export async function archiveOldAuditLogs(): Promise<number> {
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - RetentionPolicies.AUDIT_LOGS.hotStorageDays);
+  cutoffDate.setDate(cutoffDate.getDate() - (RetentionPolicies.AUDIT_LOGS.hotStorageDays || 365));
 
   // For now, just log - in production would move to cold storage
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     'SELECT COUNT(*) as count FROM audit_logs WHERE created_at < $1',
     [cutoffDate]
   );
@@ -339,17 +391,16 @@ export async function archiveOldAuditLogs() {
 
 /**
  * Clean up expired idempotency keys
- * @returns {Promise<number>} Number of keys deleted
  */
-export async function cleanupIdempotencyKeys() {
-  const cutoffDate = new Date(Date.now() - RetentionPolicies.IDEMPOTENCY_KEYS.ttlSeconds * 1000);
+export async function cleanupIdempotencyKeys(): Promise<number> {
+  const cutoffDate = new Date(Date.now() - (RetentionPolicies.IDEMPOTENCY_KEYS.ttlSeconds || 86400) * 1000);
 
   const result = await query(
     'DELETE FROM idempotency_keys WHERE created_at < $1',
     [cutoffDate]
   );
 
-  if (result.rowCount > 0) {
+  if ((result.rowCount || 0) > 0) {
     logger.info({ count: result.rowCount }, 'Cleaned up expired idempotency keys');
   }
 
@@ -358,14 +409,13 @@ export async function cleanupIdempotencyKeys() {
 
 /**
  * Clean up expired sessions
- * @returns {Promise<number>} Number of sessions deleted
  */
-export async function cleanupExpiredSessions() {
+export async function cleanupExpiredSessions(): Promise<number> {
   const result = await query(
     'DELETE FROM sessions WHERE expires_at < NOW()'
   );
 
-  if (result.rowCount > 0) {
+  if ((result.rowCount || 0) > 0) {
     logger.info({ count: result.rowCount }, 'Cleaned up expired sessions');
   }
 
@@ -380,7 +430,7 @@ export async function cleanupExpiredSessions() {
  * Run all archival and cleanup jobs
  * Should be called periodically (e.g., daily)
  */
-export async function runArchivalJobs() {
+export async function runArchivalJobs(): Promise<void> {
   logger.info('Starting archival jobs');
 
   try {
@@ -404,19 +454,24 @@ export async function runArchivalJobs() {
 
     logger.info('Archival jobs completed');
   } catch (error) {
-    logger.error({ error: error.message }, 'Archival jobs failed');
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Archival jobs failed');
   }
 }
 
 /**
  * Get data retention statistics
- * @returns {Promise<Object>} Retention stats
  */
-export async function getRetentionStats() {
-  const stats = {};
+export async function getRetentionStats(): Promise<RetentionStats> {
+  const stats: Partial<RetentionStats> = {};
 
   // Orders by status
-  const orderStats = await query(`
+  const orderStats = await query<{
+    active_orders: string;
+    archived_orders: string;
+    anonymized_orders: string;
+    oldest_active_order: Date | null;
+  }>(`
     SELECT
       COUNT(*) FILTER (WHERE archive_status IS NULL OR archive_status = 'active') as active_orders,
       COUNT(*) FILTER (WHERE archive_status = 'archived') as archived_orders,
@@ -427,7 +482,10 @@ export async function getRetentionStats() {
   stats.orders = orderStats.rows[0];
 
   // Cart items
-  const cartStats = await query(`
+  const cartStats = await query<{
+    total_items: string;
+    expired_items: string;
+  }>(`
     SELECT
       COUNT(*) as total_items,
       COUNT(*) FILTER (WHERE reserved_until < NOW()) as expired_items
@@ -436,7 +494,10 @@ export async function getRetentionStats() {
   stats.cartItems = cartStats.rows[0];
 
   // Audit logs
-  const auditStats = await query(`
+  const auditStats = await query<{
+    total_logs: string;
+    oldest_log: Date | null;
+  }>(`
     SELECT
       COUNT(*) as total_logs,
       MIN(created_at) as oldest_log
@@ -445,7 +506,10 @@ export async function getRetentionStats() {
   stats.auditLogs = auditStats.rows[0];
 
   // Sessions
-  const sessionStats = await query(`
+  const sessionStats = await query<{
+    total_sessions: string;
+    expired_sessions: string;
+  }>(`
     SELECT
       COUNT(*) as total_sessions,
       COUNT(*) FILTER (WHERE expires_at < NOW()) as expired_sessions
@@ -453,7 +517,7 @@ export async function getRetentionStats() {
   `);
   stats.sessions = sessionStats.rows[0];
 
-  return stats;
+  return stats as RetentionStats;
 }
 
 export default {

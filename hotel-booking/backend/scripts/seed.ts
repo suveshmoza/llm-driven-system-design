@@ -1,13 +1,48 @@
-const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+import bcrypt from 'bcryptjs';
+import 'dotenv/config';
 
-// Load environment
-require('dotenv').config();
+import { query, pool } from '../src/models/db.js';
+import * as elasticsearch from '../src/models/elasticsearch.js';
 
-const db = require('../src/models/db');
-const elasticsearch = require('../src/models/elasticsearch');
+interface SampleRoomType {
+  name: string;
+  description: string;
+  capacity: number;
+  bedType: string;
+  totalCount: number;
+  basePrice: number;
+  amenities: string[];
+  sizeSqm: number;
+}
 
-const sampleHotels = [
+interface SampleHotel {
+  name: string;
+  description: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  latitude: number;
+  longitude: number;
+  starRating: number;
+  amenities: string[];
+  checkInTime: string;
+  checkOutTime: string;
+  cancellationPolicy: string;
+  images: string[];
+  roomTypes: SampleRoomType[];
+}
+
+interface InsertedRoomType {
+  id: string;
+  name: string;
+  capacity: number;
+  base_price: string;
+  amenities: string[];
+}
+
+const sampleHotels: SampleHotel[] = [
   {
     name: 'Grand Plaza Hotel',
     description: 'A luxurious 5-star hotel in the heart of downtown with stunning city views and world-class amenities.',
@@ -132,13 +167,13 @@ const sampleHotels = [
   },
 ];
 
-async function seed() {
+async function seed(): Promise<void> {
   console.log('Starting database seed...');
 
   try {
     // Create admin user
     const adminPassword = await bcrypt.hash('admin123', 12);
-    const adminResult = await db.query(
+    await query(
       `INSERT INTO users (email, password_hash, first_name, last_name, role)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (email) DO UPDATE SET password_hash = $2
@@ -149,19 +184,22 @@ async function seed() {
 
     // Create hotel admin user
     const hotelAdminPassword = await bcrypt.hash('hoteladmin123', 12);
-    const hotelAdminResult = await db.query(
+    const hotelAdminResult = await query<{ id: string }>(
       `INSERT INTO users (email, password_hash, first_name, last_name, role)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (email) DO UPDATE SET password_hash = $2
        RETURNING id`,
       ['hotel@hotel-booking.com', hotelAdminPassword, 'Hotel', 'Manager', 'hotel_admin']
     );
-    const hotelAdminId = hotelAdminResult.rows[0].id;
+    const hotelAdminId = hotelAdminResult.rows[0]?.id;
+    if (!hotelAdminId) {
+      throw new Error('Failed to create hotel admin user');
+    }
     console.log('Hotel admin user created');
 
     // Create regular user
     const userPassword = await bcrypt.hash('user123', 12);
-    await db.query(
+    await query(
       `INSERT INTO users (email, password_hash, first_name, last_name, role)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (email) DO UPDATE SET password_hash = $2
@@ -179,7 +217,7 @@ async function seed() {
       const { roomTypes, ...hotel } = hotelData;
 
       // Insert hotel
-      const hotelResult = await db.query(
+      const hotelResult = await query<{ id: string }>(
         `INSERT INTO hotels
          (owner_id, name, description, address, city, state, country, postal_code,
           latitude, longitude, star_rating, amenities, check_in_time, check_out_time,
@@ -206,13 +244,16 @@ async function seed() {
         ]
       );
 
-      const hotelId = hotelResult.rows[0].id;
+      const hotelId = hotelResult.rows[0]?.id;
+      if (!hotelId) {
+        throw new Error(`Failed to create hotel: ${hotel.name}`);
+      }
       console.log(`Created hotel: ${hotel.name}`);
 
       // Insert room types
-      const insertedRoomTypes = [];
+      const insertedRoomTypes: InsertedRoomType[] = [];
       for (const room of roomTypes) {
-        const roomResult = await db.query(
+        const roomResult = await query<InsertedRoomType>(
           `INSERT INTO room_types
            (hotel_id, name, description, capacity, bed_type, total_count, base_price, amenities, size_sqm)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -229,12 +270,15 @@ async function seed() {
             room.sizeSqm,
           ]
         );
-        insertedRoomTypes.push(roomResult.rows[0]);
+        const insertedRoom = roomResult.rows[0];
+        if (insertedRoom) {
+          insertedRoomTypes.push(insertedRoom);
+        }
         console.log(`  Created room type: ${room.name}`);
       }
 
       // Index hotel in Elasticsearch
-      const esDoc = {
+      const esDoc: elasticsearch.HotelDocument = {
         hotel_id: hotelId,
         name: hotel.name,
         description: hotel.description,
@@ -272,9 +316,11 @@ async function seed() {
     console.log('  Hotel Admin: hotel@hotel-booking.com / hoteladmin123');
     console.log('  User: user@hotel-booking.com / user123');
 
+    await pool.end();
     process.exit(0);
   } catch (error) {
     console.error('Seed failed:', error);
+    await pool.end();
     process.exit(1);
   }
 }

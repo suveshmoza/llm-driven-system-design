@@ -1,11 +1,29 @@
-const express = require('express');
-const { pool } = require('../db/pool');
-const { authMiddleware } = require('../middleware/auth');
-const { idempotencyMiddleware, STATUS } = require('../shared/idempotency');
-const { logger } = require('../shared/logger');
-const { executeTransfer, getTransferById, MAX_TRANSFER_AMOUNT } = require('../services/transfer');
+import express, { type Request, type Response } from 'express';
+import { pool } from '../db/pool.js';
+import { authMiddleware, type AuthenticatedRequest } from '../middleware/auth.js';
+import { idempotencyMiddleware, STATUS } from '../shared/idempotency.js';
+import { logger } from '../shared/logger.js';
+import { executeTransfer, getTransferById, MAX_TRANSFER_AMOUNT } from '../services/transfer.js';
 
 const router = express.Router();
+
+interface SendRequest {
+  recipientUsername: string;
+  amount: number | string;
+  note?: string;
+  visibility?: 'public' | 'friends' | 'private';
+}
+
+interface CommentRow {
+  id: string;
+  user_id: string;
+  transfer_id: string;
+  content: string;
+  created_at: Date;
+  username: string;
+  name: string | null;
+  avatar_url: string | null;
+}
 
 /**
  * Send money to another user
@@ -17,52 +35,57 @@ const router = express.Router();
  * sending money twice. The idempotency key ensures each logical payment intent
  * is only processed once, even if the request is received multiple times.
  */
-router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (req, res) => {
+router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (req: Request<object, unknown, SendRequest>, res: Response): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
   const log = logger.child({
     operation: 'send_transfer',
-    userId: req.user.id,
-    requestId: req.requestId,
+    userId: authReq.user.id,
+    requestId: authReq.requestId,
   });
 
   try {
     const { recipientUsername, amount, note, visibility = 'public' } = req.body;
 
     if (!recipientUsername || !amount) {
-      return res.status(400).json({ error: 'Recipient and amount are required' });
+      res.status(400).json({ error: 'Recipient and amount are required' });
+      return;
     }
 
     // Convert amount to cents
-    const amountCents = Math.round(parseFloat(amount) * 100);
+    const amountCents = Math.round(parseFloat(String(amount)) * 100);
 
     if (isNaN(amountCents) || amountCents <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
+      res.status(400).json({ error: 'Invalid amount' });
+      return;
     }
 
     if (amountCents > MAX_TRANSFER_AMOUNT) {
-      return res.status(400).json({ error: `Maximum transfer amount is $${MAX_TRANSFER_AMOUNT / 100}` });
+      res.status(400).json({ error: `Maximum transfer amount is $${MAX_TRANSFER_AMOUNT / 100}` });
+      return;
     }
 
     // Look up recipient by username
-    const recipientResult = await pool.query(
+    const recipientResult = await pool.query<{ id: string }>(
       'SELECT id FROM users WHERE username = $1',
       [recipientUsername.toLowerCase()]
     );
 
     if (recipientResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Recipient not found' });
+      res.status(404).json({ error: 'Recipient not found' });
+      return;
     }
 
     const recipientId = recipientResult.rows[0].id;
 
     // Execute the transfer with idempotency key and request context
     const transfer = await executeTransfer(
-      req.user.id,
+      authReq.user.id,
       recipientId,
       amountCents,
       note || '',
       visibility,
       {
-        idempotencyKey: req.idempotencyKey, // From idempotency middleware
+        idempotencyKey: authReq.idempotencyKey, // From idempotency middleware
         request: req, // For audit logging (IP, user agent)
       }
     );
@@ -71,8 +94,8 @@ router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (r
     const fullTransfer = await getTransferById(transfer.id);
 
     // Store success in idempotency cache (if middleware is active)
-    if (req.storeIdempotencyResult && !transfer._cached) {
-      await req.storeIdempotencyResult(STATUS.COMPLETED, fullTransfer);
+    if (authReq.storeIdempotencyResult && !transfer._cached) {
+      await authReq.storeIdempotencyResult(STATUS.COMPLETED, fullTransfer);
     }
 
     log.info({
@@ -87,39 +110,42 @@ router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (r
   } catch (error) {
     log.error({
       event: 'transfer_failed',
-      error: error.message,
+      error: (error as Error).message,
     });
 
     // Store failure in idempotency cache
-    if (req.storeIdempotencyResult) {
-      await req.storeIdempotencyResult(STATUS.FAILED, {
-        error: error.message,
+    if (authReq.storeIdempotencyResult) {
+      await authReq.storeIdempotencyResult(STATUS.FAILED, {
+        error: (error as Error).message,
         statusCode: 400,
       });
     }
 
-    res.status(400).json({ error: error.message || 'Transfer failed' });
+    res.status(400).json({ error: (error as Error).message || 'Transfer failed' });
   }
 });
 
 // Get transfer by ID
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const transfer = await getTransferById(req.params.id);
 
     if (!transfer) {
-      return res.status(404).json({ error: 'Transfer not found' });
+      res.status(404).json({ error: 'Transfer not found' });
+      return;
     }
 
     // Check if user is participant or can see based on visibility
-    const isParticipant = transfer.sender_id === req.user.id || transfer.receiver_id === req.user.id;
+    const isParticipant = transfer.sender_id === authReq.user.id || transfer.receiver_id === authReq.user.id;
 
     if (!isParticipant && transfer.visibility === 'private') {
-      return res.status(403).json({ error: 'Access denied' });
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
 
     // Get likes count
-    const likesResult = await pool.query(
+    const likesResult = await pool.query<{ count: string }>(
       'SELECT COUNT(*) as count FROM transfer_likes WHERE transfer_id = $1',
       [req.params.id]
     );
@@ -127,11 +153,11 @@ router.get('/:id', authMiddleware, async (req, res) => {
     // Check if current user liked
     const userLikedResult = await pool.query(
       'SELECT 1 FROM transfer_likes WHERE user_id = $1 AND transfer_id = $2',
-      [req.user.id, req.params.id]
+      [authReq.user.id, req.params.id]
     );
 
     // Get comments
-    const commentsResult = await pool.query(
+    const commentsResult = await pool.query<CommentRow>(
       `SELECT c.*, u.username, u.name, u.avatar_url
        FROM transfer_comments c
        JOIN users u ON c.user_id = u.id
@@ -149,7 +175,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     logger.error({
       event: 'get_transfer_error',
-      error: error.message,
+      error: (error as Error).message,
       transferId: req.params.id,
     });
     res.status(500).json({ error: 'Failed to get transfer' });
@@ -157,16 +183,17 @@ router.get('/:id', authMiddleware, async (req, res) => {
 });
 
 // Like a transfer
-router.post('/:id/like', authMiddleware, async (req, res) => {
+router.post('/:id/like', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     await pool.query(
       `INSERT INTO transfer_likes (user_id, transfer_id)
        VALUES ($1, $2)
        ON CONFLICT DO NOTHING`,
-      [req.user.id, req.params.id]
+      [authReq.user.id, req.params.id]
     );
 
-    const countResult = await pool.query(
+    const countResult = await pool.query<{ count: string }>(
       'SELECT COUNT(*) as count FROM transfer_likes WHERE transfer_id = $1',
       [req.params.id]
     );
@@ -175,7 +202,7 @@ router.post('/:id/like', authMiddleware, async (req, res) => {
   } catch (error) {
     logger.error({
       event: 'like_transfer_error',
-      error: error.message,
+      error: (error as Error).message,
       transferId: req.params.id,
     });
     res.status(500).json({ error: 'Failed to like transfer' });
@@ -183,14 +210,15 @@ router.post('/:id/like', authMiddleware, async (req, res) => {
 });
 
 // Unlike a transfer
-router.delete('/:id/like', authMiddleware, async (req, res) => {
+router.delete('/:id/like', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    const authReq = req as AuthenticatedRequest;
     await pool.query(
       'DELETE FROM transfer_likes WHERE user_id = $1 AND transfer_id = $2',
-      [req.user.id, req.params.id]
+      [authReq.user.id, req.params.id]
     );
 
-    const countResult = await pool.query(
+    const countResult = await pool.query<{ count: string }>(
       'SELECT COUNT(*) as count FROM transfer_likes WHERE transfer_id = $1',
       [req.params.id]
     );
@@ -199,7 +227,7 @@ router.delete('/:id/like', authMiddleware, async (req, res) => {
   } catch (error) {
     logger.error({
       event: 'unlike_transfer_error',
-      error: error.message,
+      error: (error as Error).message,
       transferId: req.params.id,
     });
     res.status(500).json({ error: 'Failed to unlike transfer' });
@@ -207,35 +235,37 @@ router.delete('/:id/like', authMiddleware, async (req, res) => {
 });
 
 // Add comment to transfer
-router.post('/:id/comments', authMiddleware, async (req, res) => {
+router.post('/:id/comments', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { content } = req.body;
+    const authReq = req as AuthenticatedRequest;
+    const { content } = req.body as { content?: string };
 
     if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'Comment content is required' });
+      res.status(400).json({ error: 'Comment content is required' });
+      return;
     }
 
-    const result = await pool.query(
+    const result = await pool.query<{ id: string; user_id: string; transfer_id: string; content: string; created_at: Date }>(
       `INSERT INTO transfer_comments (user_id, transfer_id, content)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [req.user.id, req.params.id, content.trim()]
+      [authReq.user.id, req.params.id, content.trim()]
     );
 
     res.status(201).json({
       ...result.rows[0],
-      username: req.user.username,
-      name: req.user.name,
-      avatar_url: req.user.avatar_url,
+      username: authReq.user.username,
+      name: authReq.user.name,
+      avatar_url: authReq.user.avatar_url,
     });
   } catch (error) {
     logger.error({
       event: 'add_comment_error',
-      error: error.message,
+      error: (error as Error).message,
       transferId: req.params.id,
     });
     res.status(500).json({ error: 'Failed to add comment' });
   }
 });
 
-module.exports = router;
+export default router;

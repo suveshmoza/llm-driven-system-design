@@ -122,7 +122,7 @@ router.get(
   '/:id',
   optionalAuth as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     try {
       const auctionResult = await query(
@@ -254,7 +254,7 @@ router.put(
   authenticate as express.RequestHandler,
   upload.single('image'),
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { title, description, reserve_price, snipe_protection_minutes } = req.body;
 
     try {
@@ -310,7 +310,7 @@ router.delete(
   '/:id',
   authenticate as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     try {
       const auctionResult = await query('SELECT * FROM auctions WHERE id = $1', [id]);
@@ -357,7 +357,7 @@ router.post(
   '/:id/watch',
   authenticate as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     try {
       await query('INSERT INTO watchlist (user_id, auction_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [
@@ -378,7 +378,7 @@ router.delete(
   '/:id/watch',
   authenticate as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     try {
       await query('DELETE FROM watchlist WHERE user_id = $1 AND auction_id = $2', [req.user?.id, id]);

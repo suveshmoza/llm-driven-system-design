@@ -80,6 +80,7 @@ interface Booking {
   total_price: number;
   nights: number;
   guests: number;
+  status?: string;
 }
 
 interface Listing {

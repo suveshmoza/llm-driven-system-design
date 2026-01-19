@@ -1,16 +1,31 @@
-const express = require('express');
-const authService = require('../services/authService');
-const { authenticate } = require('../middleware/auth');
+import { Router, Request, Response } from 'express';
+import authService from '../services/authService.js';
+import { authenticate } from '../middleware/auth.js';
 
-const router = express.Router();
+const router = Router();
+
+interface RegisterBody {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  role?: string;
+}
+
+interface LoginBody {
+  email: string;
+  password: string;
+}
 
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request<object, unknown, RegisterBody>, res: Response): Promise<void> => {
   try {
     const { email, password, firstName, lastName, phone, role } = req.body;
 
     if (!email || !password || !firstName || !lastName) {
-      return res.status(400).json({ error: 'Missing required fields' });
+      res.status(400).json({ error: 'Missing required fields' });
+      return;
     }
 
     // Only allow 'user' role for public registration
@@ -28,37 +43,42 @@ router.post('/register', async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     console.error('Registration error:', error);
-    if (error.message === 'Email already registered') {
-      return res.status(409).json({ error: error.message });
+    if (error instanceof Error && error.message === 'Email already registered') {
+      res.status(409).json({ error: error.message });
+      return;
     }
     res.status(500).json({ error: 'Registration failed' });
   }
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request<object, unknown, LoginBody>, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+      res.status(400).json({ error: 'Email and password required' });
+      return;
     }
 
     const result = await authService.login(email, password);
     res.json(result);
   } catch (error) {
     console.error('Login error:', error);
-    if (error.message === 'Invalid credentials') {
-      return res.status(401).json({ error: error.message });
+    if (error instanceof Error && error.message === 'Invalid credentials') {
+      res.status(401).json({ error: error.message });
+      return;
     }
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
 // Logout
-router.post('/logout', authenticate, async (req, res) => {
+router.post('/logout', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
-    await authService.logout(req.token);
+    if (req.token) {
+      await authService.logout(req.token);
+    }
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
@@ -67,7 +87,7 @@ router.post('/logout', authenticate, async (req, res) => {
 });
 
 // Get current user
-router.get('/me', authenticate, async (req, res) => {
+router.get('/me', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     res.json({ user: req.user });
   } catch (error) {
@@ -76,4 +96,4 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

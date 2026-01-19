@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../db/index.js';
 import * as gitService from '../services/git.js';
 import * as searchService from '../services/search.js';
@@ -27,16 +27,68 @@ import { pushesTotal } from '../shared/metrics.js';
 
 const router = Router();
 
+interface Repository {
+  id: number;
+  owner_id: number;
+  name: string;
+  description: string | null;
+  is_private: boolean;
+  default_branch: string;
+  storage_path: string;
+  stars_count: number;
+  forks_count: number;
+  created_at: Date;
+  updated_at: Date;
+  owner_name?: string;
+  owner_avatar?: string;
+  owner_display_name?: string;
+}
+
+interface ListQueryParams {
+  owner?: string;
+  page?: string;
+  limit?: string;
+  sort?: string;
+}
+
+interface TreeQueryParams {
+  path?: string;
+}
+
+interface CommitsQueryParams {
+  branch?: string;
+  page?: string;
+  limit?: string;
+}
+
+interface PushBody {
+  branch?: string;
+  commits?: unknown[];
+}
+
+interface CreateRepoBody {
+  name?: string;
+  description?: string;
+  isPrivate?: boolean;
+  initWithReadme?: boolean;
+}
+
+interface UpdateRepoBody {
+  description?: string;
+  isPrivate?: boolean;
+  defaultBranch?: string;
+}
+
 /**
  * List repositories
  */
-router.get('/', async (req, res) => {
-  const { owner, page = 1, limit = 20, sort = 'updated_at' } = req.query;
+router.get('/', async (req: Request, res: Response): Promise<void> => {
+  const { owner, page = '1', limit = '20', sort = 'updated_at' } = req.query as ListQueryParams;
 
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
   let whereClause = 'WHERE r.is_private = FALSE';
-  const params = [];
+  const params: unknown[] = [];
 
   if (owner) {
     params.push(owner);
@@ -70,7 +122,7 @@ router.get('/', async (req, res) => {
 
   res.json({
     repos: result.rows,
-    total: parseInt(countResult.rows[0].count),
+    total: parseInt(countResult.rows[0].count as string),
     page: parseInt(page),
     limit: parseInt(limit),
   });
@@ -79,7 +131,7 @@ router.get('/', async (req, res) => {
 /**
  * Get single repository (with caching)
  */
-router.get('/:owner/:repo', async (req, res) => {
+router.get('/:owner/:repo', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   // First, get repo ID for cache lookup
@@ -91,13 +143,14 @@ router.get('/:owner/:repo', async (req, res) => {
   );
 
   if (repoIdResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoIdResult.rows[0].id;
+  const repoId = repoIdResult.rows[0].id as number;
 
   // Try cache first
-  let repoData = await getRepoFromCache(repoId);
+  let repoData = await getRepoFromCache<Repository>(repoId);
 
   if (!repoData) {
     // Cache miss - fetch from database
@@ -111,10 +164,11 @@ router.get('/:owner/:repo', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Repository not found' });
+      res.status(404).json({ error: 'Repository not found' });
+      return;
     }
 
-    repoData = result.rows[0];
+    repoData = result.rows[0] as Repository;
 
     // Store in cache
     await setRepoInCache(repoId, repoData);
@@ -122,7 +176,8 @@ router.get('/:owner/:repo', async (req, res) => {
 
   // Check access
   if (repoData.is_private && (!req.user || req.user.id !== repoData.owner_id)) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
   // Get branches (with caching)
@@ -149,40 +204,42 @@ router.get('/:owner/:repo', async (req, res) => {
 /**
  * Create repository
  */
-router.post('/', requireAuth, async (req, res) => {
-  const { name, description, isPrivate, initWithReadme } = req.body;
+router.post('/', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { name, description, isPrivate, initWithReadme } = req.body as CreateRepoBody;
 
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
-    return res.status(400).json({ error: 'Invalid repository name' });
+    res.status(400).json({ error: 'Invalid repository name' });
+    return;
   }
 
   try {
     // Check if repo exists
     const existing = await query(
       'SELECT id FROM repositories WHERE owner_id = $1 AND name = $2',
-      [req.user.id, name]
+      [req.user!.id, name]
     );
 
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Repository already exists' });
+      res.status(409).json({ error: 'Repository already exists' });
+      return;
     }
 
     // Initialize git repository
-    const storagePath = await gitService.initRepository(req.user.username, name);
+    const storagePath = await gitService.initRepository(req.user!.username, name);
 
     // Create database record
     const result = await query(
       `INSERT INTO repositories (owner_id, name, description, is_private, storage_path)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [req.user.id, name, description || null, isPrivate || false, storagePath]
+      [req.user!.id, name, description || null, isPrivate || false, storagePath]
     );
 
-    const repo = result.rows[0];
+    const repo = result.rows[0] as Repository;
 
     // Initialize with README if requested
     if (initWithReadme) {
-      await gitService.initWithReadme(req.user.username, name, description || '');
+      await gitService.initWithReadme(req.user!.username, name, description || '');
     }
 
     // Create default labels
@@ -219,9 +276,9 @@ router.post('/', requireAuth, async (req, res) => {
 /**
  * Update repository
  */
-router.patch('/:owner/:repo', requireAuth, async (req, res) => {
+router.patch('/:owner/:repo', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { description, isPrivate, defaultBranch } = req.body;
+  const { description, isPrivate, defaultBranch } = req.body as UpdateRepoBody;
 
   // Get repo and verify ownership
   const repoResult = await query(
@@ -232,16 +289,20 @@ router.patch('/:owner/:repo', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  if (repoResult.rows[0].owner_id !== req.user.id) {
-    return res.status(403).json({ error: 'Not authorized' });
+  const repoData = repoResult.rows[0] as Repository;
+
+  if (repoData.owner_id !== req.user!.id) {
+    res.status(403).json({ error: 'Not authorized' });
+    return;
   }
 
-  const updates = [];
-  const params = [];
-  const changes = {};
+  const updates: string[] = [];
+  const params: unknown[] = [];
+  const changes: Record<string, unknown> = {};
 
   if (description !== undefined) {
     params.push(description);
@@ -260,13 +321,14 @@ router.patch('/:owner/:repo', requireAuth, async (req, res) => {
   }
 
   if (updates.length === 0) {
-    return res.json(repoResult.rows[0]);
+    res.json(repoData);
+    return;
   }
 
   params.push(new Date());
   updates.push(`updated_at = $${params.length}`);
 
-  params.push(repoResult.rows[0].id);
+  params.push(repoData.id);
 
   const result = await query(
     `UPDATE repositories SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`,
@@ -274,11 +336,11 @@ router.patch('/:owner/:repo', requireAuth, async (req, res) => {
   );
 
   // Invalidate cache
-  await invalidateRepoCache(repoResult.rows[0].id);
+  await invalidateRepoCache(repoData.id);
 
   // Audit log
   const action = isPrivate !== undefined ? AUDITED_ACTIONS.REPO_VISIBILITY_CHANGE : AUDITED_ACTIONS.REPO_SETTINGS_CHANGE;
-  await auditLog(action, 'repository', repoResult.rows[0].id, changes, req);
+  await auditLog(action, 'repository', repoData.id, changes, req);
 
   res.json(result.rows[0]);
 });
@@ -286,7 +348,7 @@ router.patch('/:owner/:repo', requireAuth, async (req, res) => {
 /**
  * Delete repository
  */
-router.delete('/:owner/:repo', requireAuth, async (req, res) => {
+router.delete('/:owner/:repo', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   const repoResult = await query(
@@ -297,15 +359,19 @@ router.delete('/:owner/:repo', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  if (repoResult.rows[0].owner_id !== req.user.id) {
-    return res.status(403).json({ error: 'Not authorized' });
+  const repoData = repoResult.rows[0] as Repository;
+
+  if (repoData.owner_id !== req.user!.id) {
+    res.status(403).json({ error: 'Not authorized' });
+    return;
   }
 
   try {
-    const repoId = repoResult.rows[0].id;
+    const repoId = repoData.id;
 
     // Delete git repository
     await gitService.deleteRepository(owner, repo);
@@ -338,9 +404,9 @@ router.delete('/:owner/:repo', requireAuth, async (req, res) => {
 /**
  * Get repository tree (with caching and circuit breaker)
  */
-router.get('/:owner/:repo/tree/:ref(*)', async (req, res) => {
+router.get('/:owner/:repo/tree/:ref(*)', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, ref } = req.params;
-  const { path: treePath = '' } = req.query;
+  const { path: treePath = '' } = req.query as TreeQueryParams;
 
   // Get repo ID for caching
   const repoIdResult = await query(
@@ -351,10 +417,11 @@ router.get('/:owner/:repo/tree/:ref(*)', async (req, res) => {
   );
 
   if (repoIdResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoIdResult.rows[0].id;
+  const repoId = repoIdResult.rows[0].id as number;
 
   // Try cache first
   let tree = await getTreeFromCache(repoId, ref, treePath);
@@ -375,7 +442,7 @@ router.get('/:owner/:repo/tree/:ref(*)', async (req, res) => {
 /**
  * Get file content (with caching and circuit breaker)
  */
-router.get('/:owner/:repo/blob/:ref/:path(*)', async (req, res) => {
+router.get('/:owner/:repo/blob/:ref/:path(*)', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, ref, path: filePath } = req.params;
 
   // Get repo ID for caching
@@ -387,10 +454,11 @@ router.get('/:owner/:repo/blob/:ref/:path(*)', async (req, res) => {
   );
 
   if (repoIdResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoIdResult.rows[0].id;
+  const repoId = repoIdResult.rows[0].id as number;
 
   // Try cache first
   let content = await getFileFromCache(repoId, ref, filePath);
@@ -402,7 +470,8 @@ router.get('/:owner/:repo/blob/:ref/:path(*)', async (req, res) => {
     );
 
     if (content === null) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
     // Cache the content
@@ -415,9 +484,9 @@ router.get('/:owner/:repo/blob/:ref/:path(*)', async (req, res) => {
 /**
  * Get commits (with caching and circuit breaker)
  */
-router.get('/:owner/:repo/commits', async (req, res) => {
+router.get('/:owner/:repo/commits', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { branch = 'HEAD', page = 1, limit = 30 } = req.query;
+  const { branch = 'HEAD', page = '1', limit = '30' } = req.query as CommitsQueryParams;
 
   // Get repo ID for caching
   const repoIdResult = await query(
@@ -428,13 +497,14 @@ router.get('/:owner/:repo/commits', async (req, res) => {
   );
 
   if (repoIdResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoIdResult.rows[0].id;
+  const repoId = repoIdResult.rows[0].id as number;
 
   // Try cache first
-  let commits = await getCommitsFromCache(repoId, branch, page);
+  let commits = await getCommitsFromCache(repoId, branch, parseInt(page));
 
   if (!commits) {
     // Cache miss - fetch with circuit breaker
@@ -448,7 +518,7 @@ router.get('/:owner/:repo/commits', async (req, res) => {
     );
 
     // Cache the result
-    await setCommitsInCache(repoId, branch, page, commits);
+    await setCommitsInCache(repoId, branch, parseInt(page), commits);
   }
 
   res.json(commits);
@@ -457,7 +527,7 @@ router.get('/:owner/:repo/commits', async (req, res) => {
 /**
  * Get single commit
  */
-router.get('/:owner/:repo/commit/:sha', async (req, res) => {
+router.get('/:owner/:repo/commit/:sha', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, sha } = req.params;
 
   const commit = await withCircuitBreaker('git_commit', () =>
@@ -465,7 +535,8 @@ router.get('/:owner/:repo/commit/:sha', async (req, res) => {
   );
 
   if (!commit) {
-    return res.status(404).json({ error: 'Commit not found' });
+    res.status(404).json({ error: 'Commit not found' });
+    return;
   }
 
   res.json(commit);
@@ -474,7 +545,7 @@ router.get('/:owner/:repo/commit/:sha', async (req, res) => {
 /**
  * Get branches (with caching)
  */
-router.get('/:owner/:repo/branches', async (req, res) => {
+router.get('/:owner/:repo/branches', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   // Get repo ID for caching
@@ -486,10 +557,11 @@ router.get('/:owner/:repo/branches', async (req, res) => {
   );
 
   if (repoIdResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoIdResult.rows[0].id;
+  const repoId = repoIdResult.rows[0].id as number;
 
   // Try cache first
   let branches = await getBranchesFromCache(repoId);
@@ -507,7 +579,7 @@ router.get('/:owner/:repo/branches', async (req, res) => {
 /**
  * Get tags
  */
-router.get('/:owner/:repo/tags', async (req, res) => {
+router.get('/:owner/:repo/tags', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
   const tags = await withCircuitBreaker('git_tags', () =>
     gitService.getTags(owner, repo)
@@ -519,9 +591,9 @@ router.get('/:owner/:repo/tags', async (req, res) => {
  * Handle push event (webhook endpoint for cache invalidation)
  * This would typically be called by git hooks
  */
-router.post('/:owner/:repo/push', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/push', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { branch, commits } = req.body;
+  const { branch, commits } = req.body as PushBody;
 
   // Get repo and verify access
   const repoResult = await query(
@@ -532,10 +604,11 @@ router.post('/:owner/:repo/push', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
 
   // Invalidate all repository caches
   await invalidateRepoCaches(repoId);
@@ -549,7 +622,7 @@ router.post('/:owner/:repo/push', requireAuth, async (req, res) => {
   );
 
   // Invalidate PR caches
-  await invalidatePRCaches(openPRs.rows.map(pr => pr.id));
+  await invalidatePRCaches((openPRs.rows as { id: number }[]).map(pr => pr.id));
 
   // Update metrics
   pushesTotal.inc({ status: 'success' });
@@ -562,7 +635,7 @@ router.post('/:owner/:repo/push', requireAuth, async (req, res) => {
 /**
  * Star a repository
  */
-router.post('/:owner/:repo/star', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/star', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   const repoResult = await query(
@@ -573,15 +646,16 @@ router.post('/:owner/:repo/star', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
 
   await query(
     `INSERT INTO stars (user_id, repo_id) VALUES ($1, $2)
      ON CONFLICT (user_id, repo_id) DO NOTHING`,
-    [req.user.id, repoId]
+    [req.user!.id, repoId]
   );
 
   await query(
@@ -598,7 +672,7 @@ router.post('/:owner/:repo/star', requireAuth, async (req, res) => {
 /**
  * Unstar a repository
  */
-router.delete('/:owner/:repo/star', requireAuth, async (req, res) => {
+router.delete('/:owner/:repo/star', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   const repoResult = await query(
@@ -609,12 +683,13 @@ router.delete('/:owner/:repo/star', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
 
-  await query('DELETE FROM stars WHERE user_id = $1 AND repo_id = $2', [req.user.id, repoId]);
+  await query('DELETE FROM stars WHERE user_id = $1 AND repo_id = $2', [req.user!.id, repoId]);
 
   await query(
     'UPDATE repositories SET stars_count = (SELECT COUNT(*) FROM stars WHERE repo_id = $1) WHERE id = $1',
@@ -630,7 +705,7 @@ router.delete('/:owner/:repo/star', requireAuth, async (req, res) => {
 /**
  * Check if repo is starred
  */
-router.get('/:owner/:repo/starred', requireAuth, async (req, res) => {
+router.get('/:owner/:repo/starred', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
 
   const result = await query(
@@ -638,7 +713,7 @@ router.get('/:owner/:repo/starred', requireAuth, async (req, res) => {
      JOIN repositories r ON s.repo_id = r.id
      JOIN users u ON r.owner_id = u.id
      WHERE u.username = $1 AND r.name = $2 AND s.user_id = $3`,
-    [owner, repo, req.user.id]
+    [owner, repo, req.user!.id]
   );
 
   res.json({ starred: result.rows.length > 0 });

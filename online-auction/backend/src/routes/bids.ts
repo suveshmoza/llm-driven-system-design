@@ -56,7 +56,7 @@ router.post(
   '/:auctionId',
   authenticate as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { auctionId } = req.params;
+    const auctionId = req.params.auctionId as string;
     const { amount } = req.body;
     const bidderId = req.user!.id;
     const startTime = Date.now();
@@ -369,7 +369,7 @@ router.post(
   '/:auctionId/auto',
   authenticate as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { auctionId } = req.params;
+    const auctionId = req.params.auctionId as string;
     const { max_amount } = req.body;
     const bidderId = req.user!.id;
 
@@ -540,7 +540,7 @@ router.delete(
   '/:auctionId/auto',
   authenticate as express.RequestHandler,
   async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { auctionId } = req.params;
+    const auctionId = req.params.auctionId as string;
 
     try {
       await query('UPDATE auto_bids SET is_active = false WHERE auction_id = $1 AND bidder_id = $2', [
@@ -558,7 +558,7 @@ router.delete(
 
 // Get bid history for an auction
 router.get('/:auctionId', async (req: Request, res: Response): Promise<void> => {
-  const { auctionId } = req.params;
+  const auctionId = req.params.auctionId as string;
   const { limit = 50 } = req.query;
 
   try {

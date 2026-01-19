@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { query } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -33,9 +33,9 @@ router.post('/', authenticate, async (req, res) => {
 
     // Determine author type
     let authorType;
-    if (req.user.id === booking.guest_id) {
+    if (req.user!.id === booking.guest_id) {
       authorType = 'guest';
-    } else if (req.user.id === booking.host_id) {
+    } else if (req.user!.id === booking.host_id) {
       authorType = 'host';
     } else {
       return res.status(403).json({ error: 'Not authorized to review this booking' });
@@ -59,7 +59,7 @@ router.post('/', authenticate, async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *`,
       [
-        booking_id, req.user.id, authorType, rating,
+        booking_id, req.user!.id, authorType, rating,
         cleanliness_rating, communication_rating, location_rating, value_rating, content,
       ]
     );
@@ -85,7 +85,7 @@ router.get('/listing/:listingId', async (req, res) => {
       WHERE b.listing_id = $1 AND r.is_public = TRUE AND r.author_type = 'guest'
       ORDER BY r.created_at DESC
       LIMIT $2 OFFSET $3`,
-      [listingId, parseInt(limit), parseInt(offset)]
+      [listingId, parseInt(String(limit)), parseInt(String(offset))]
     );
 
     // Get average ratings
@@ -172,7 +172,7 @@ router.get('/booking/:bookingId/status', authenticate, async (req, res) => {
 
     const booking = bookingResult.rows[0];
 
-    if (req.user.id !== booking.guest_id && req.user.id !== booking.host_id) {
+    if (req.user!.id !== booking.guest_id && req.user!.id !== booking.host_id) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
@@ -189,7 +189,7 @@ router.get('/booking/:bookingId/status', authenticate, async (req, res) => {
       host_reviewed: hostReviewed,
       guest_reviewed: guestReviewed,
       visible,
-      can_review: req.user.id === booking.guest_id ? !guestReviewed : !hostReviewed,
+      can_review: req.user!.id === booking.guest_id ? !guestReviewed : !hostReviewed,
     });
   } catch (error) {
     console.error('Get review status error:', error);

@@ -1,7 +1,7 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { query } from '../services/db.js';
 import { timelineGet, cacheGet, cacheSet } from '../services/redis.js';
-import { requireAuth, optionalAuth } from '../middleware/auth.js';
+import { requireAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth.js';
 import { feedRateLimiter } from '../services/rateLimiter.js';
 import { createCircuitBreaker, fallbackWithDefault } from '../services/circuitBreaker.js';
 import logger from '../services/logger.js';
@@ -12,6 +12,77 @@ import {
 } from '../services/metrics.js';
 
 const router = Router();
+
+// Database row types
+interface PostRow {
+  id: string;
+  user_id: string;
+  username: string;
+  display_name: string;
+  profile_picture_url: string | null;
+  caption: string;
+  location: string | null;
+  like_count: number;
+  comment_count: number;
+  created_at: Date;
+}
+
+interface MediaRow {
+  id: string;
+  media_type: string;
+  media_url: string;
+  thumbnail_url: string | null;
+  filter_applied: string;
+  width: number;
+  height: number;
+  order_index: number;
+}
+
+interface ExplorePostRow {
+  id: string;
+  thumbnail: string | null;
+  like_count: number;
+  comment_count: number;
+  media_count: string;
+  created_at: Date;
+}
+
+// Response types
+interface MediaItem {
+  id: string;
+  mediaType: string;
+  mediaUrl: string;
+  thumbnailUrl: string | null;
+  filterApplied: string;
+  width: number;
+  height: number;
+  orderIndex: number;
+}
+
+interface FeedPost {
+  id: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  profilePictureUrl: string | null;
+  caption: string;
+  location: string | null;
+  likeCount: number;
+  commentCount: number;
+  createdAt: Date;
+  isLiked: boolean;
+  isSaved: boolean;
+  media: MediaItem[];
+}
+
+interface FeedResult {
+  posts: FeedPost[];
+  hasMore: boolean;
+  offset: number;
+  limit: number;
+  cacheHit: boolean;
+  fallback?: boolean;
+}
 
 /**
  * Circuit breaker for feed generation
@@ -35,9 +106,9 @@ const router = Router();
  */
 const feedGenerationBreaker = createCircuitBreaker(
   'feed_generation',
-  async (userId, offset, limit) => {
+  async (userId: string, offset: number, limit: number): Promise<FeedResult> => {
     // Get post IDs from Redis timeline cache
-    const postIds = await timelineGet(userId, offset, parseInt(limit));
+    const postIds = await timelineGet(userId, offset, limit);
 
     if (postIds.length === 0) {
       // If no cached timeline, generate from database
@@ -51,20 +122,20 @@ const feedGenerationBreaker = createCircuitBreaker(
           SELECT $1
         )
       `;
-      const params = [userId];
+      const params: (string | number)[] = [userId];
 
       queryText += ` ORDER BY p.created_at DESC LIMIT $${params.length + 1}`;
-      params.push(parseInt(limit) + 1);
+      params.push(limit + 1);
 
-      const result = await query(queryText, params);
+      const result = await query<PostRow>(queryText, params);
 
       const hasMore = result.rows.length > limit;
       const posts = result.rows.slice(0, limit);
 
       // Get media for each post
-      const postsWithMedia = await Promise.all(
+      const postsWithMedia: FeedPost[] = await Promise.all(
         posts.map(async (post) => {
-          const mediaResult = await query(
+          const mediaResult = await query<MediaRow>(
             'SELECT * FROM post_media WHERE post_id = $1 ORDER BY order_index',
             [post.id]
           );
@@ -110,7 +181,7 @@ const feedGenerationBreaker = createCircuitBreaker(
     }
 
     // Fetch posts from database using cached IDs
-    const postResult = await query(
+    const postResult = await query<PostRow>(
       `SELECT p.*, u.username, u.display_name, u.profile_picture_url
        FROM posts p
        JOIN users u ON p.user_id = u.id
@@ -120,12 +191,12 @@ const feedGenerationBreaker = createCircuitBreaker(
 
     // Order by the timeline order
     const postsMap = new Map(postResult.rows.map((p) => [p.id, p]));
-    const orderedPosts = postIds.map((id) => postsMap.get(id)).filter(Boolean);
+    const orderedPosts = postIds.map((id) => postsMap.get(id)).filter((p): p is PostRow => p !== undefined);
 
     // Get media and user-specific data for each post
-    const postsWithMedia = await Promise.all(
+    const postsWithMedia: FeedPost[] = await Promise.all(
       orderedPosts.map(async (post) => {
-        const mediaResult = await query(
+        const mediaResult = await query<MediaRow>(
           'SELECT * FROM post_media WHERE post_id = $1 ORDER BY order_index',
           [post.id]
         );
@@ -208,17 +279,18 @@ feedGenerationBreaker.fallback(
  * - Provides consistent <50ms feed load times
  * - Allows database to focus on write operations
  */
-router.get('/', requireAuth, feedRateLimiter, async (req, res) => {
+router.get('/', requireAuth, feedRateLimiter, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const startTime = Date.now();
 
   try {
     const userId = req.session.userId;
-    const { cursor, limit = 20 } = req.query;
+    const { cursor, limit = '20' } = req.query as { cursor?: string; limit?: string };
     const offset = cursor ? parseInt(cursor) : 0;
+    const parsedLimit = parseInt(limit);
 
     // Check feed cache first
-    const cacheKey = `feed:${userId}:${offset}:${limit}`;
-    const cached = await cacheGet(cacheKey);
+    const cacheKey = `feed:${userId}:${offset}:${parsedLimit}`;
+    const cached = await cacheGet<FeedResult>(cacheKey);
 
     if (cached) {
       feedCacheHits.inc();
@@ -228,20 +300,21 @@ router.get('/', requireAuth, feedRateLimiter, async (req, res) => {
         type: 'feed_cache_hit',
         userId,
         offset,
-        limit,
+        limit: parsedLimit,
         durationMs: Date.now() - startTime,
       }, 'Feed cache hit');
 
-      return res.json({
+      res.json({
         posts: cached.posts,
-        nextCursor: cached.hasMore ? offset + parseInt(limit) : null,
+        nextCursor: cached.hasMore ? offset + parsedLimit : null,
       });
+      return;
     }
 
     feedCacheMisses.inc();
 
     // Use circuit breaker for feed generation
-    const result = await feedGenerationBreaker.fire(userId, offset, parseInt(limit));
+    const result = await feedGenerationBreaker.fire(userId, offset, parsedLimit) as FeedResult;
 
     // Track metrics
     feedGenerationDuration.labels('miss').observe((Date.now() - startTime) / 1000);
@@ -251,7 +324,7 @@ router.get('/', requireAuth, feedRateLimiter, async (req, res) => {
       type: 'feed_generated',
       userId,
       offset,
-      limit,
+      limit: parsedLimit,
       postCount: result.posts.length,
       cacheHit: result.cacheHit,
       fallback: result.fallback || false,
@@ -265,24 +338,26 @@ router.get('/', requireAuth, feedRateLimiter, async (req, res) => {
 
     res.json({
       posts: result.posts,
-      nextCursor: result.hasMore ? offset + parseInt(limit) : null,
+      nextCursor: result.hasMore ? offset + parsedLimit : null,
     });
   } catch (error) {
+    const err = error as Error;
     logger.error({
       type: 'feed_error',
-      error: error.message,
+      error: err.message,
       userId: req.session.userId,
       durationMs: Date.now() - startTime,
-    }, `Get feed error: ${error.message}`);
+    }, `Get feed error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Explore page - discover new content
-router.get('/explore', optionalAuth, async (req, res) => {
+router.get('/explore', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const userId = req.session?.userId;
-    const { cursor, limit = 24 } = req.query;
+    const { cursor, limit = '24' } = req.query as { cursor?: string; limit?: string };
+    const parsedLimit = parseInt(limit);
 
     // Get popular posts (not from followed users)
     let queryText = `
@@ -293,7 +368,7 @@ router.get('/explore', optionalAuth, async (req, res) => {
       JOIN users u ON p.user_id = u.id
       WHERE u.is_private = false
     `;
-    const params = [];
+    const params: (string | number)[] = [];
 
     // Exclude posts from users we already follow
     if (userId) {
@@ -310,12 +385,12 @@ router.get('/explore', optionalAuth, async (req, res) => {
 
     // Order by engagement score (simple: likes + comments) and recency
     queryText += ` ORDER BY (p.like_count + p.comment_count * 2) DESC, p.created_at DESC LIMIT $${params.length + 1}`;
-    params.push(parseInt(limit) + 1);
+    params.push(parsedLimit + 1);
 
-    const result = await query(queryText, params);
+    const result = await query<ExplorePostRow>(queryText, params);
 
-    const hasMore = result.rows.length > limit;
-    const posts = result.rows.slice(0, limit);
+    const hasMore = result.rows.length > parsedLimit;
+    const posts = result.rows.slice(0, parsedLimit);
 
     res.json({
       posts: posts.map((p) => ({
@@ -329,10 +404,11 @@ router.get('/explore', optionalAuth, async (req, res) => {
       nextCursor: hasMore ? posts[posts.length - 1].created_at : null,
     });
   } catch (error) {
+    const err = error as Error;
     logger.error({
       type: 'explore_error',
-      error: error.message,
-    }, `Get explore error: ${error.message}`);
+      error: err.message,
+    }, `Get explore error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

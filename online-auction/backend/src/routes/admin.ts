@@ -134,7 +134,7 @@ router.get('/auctions', async (req: Request, res: Response): Promise<void> => {
 
 // Force close an auction
 router.post('/auctions/:id/close', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   try {
     const result = await closeAuction(id);
@@ -147,7 +147,7 @@ router.post('/auctions/:id/close', async (req: Request, res: Response): Promise<
 
 // Cancel an auction (admin override)
 router.post('/auctions/:id/cancel', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   try {
     await query("UPDATE auctions SET status = 'cancelled' WHERE id = $1", [id]);

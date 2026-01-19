@@ -1,40 +1,62 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../db/pool.js';
 import { generateApiKey, hashApiKey, generateWebhookSecret } from '../utils/helpers.js';
 
 const router = Router();
 
+// Interfaces
+interface MerchantRow {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  webhook_url: string | null;
+  created_at: Date;
+}
+
+interface MerchantResponse {
+  id: string;
+  object: 'merchant';
+  name: string;
+  email: string;
+  status: string;
+  webhook_url: string | null;
+  created: number;
+}
+
 /**
  * Create a new merchant (for demo/testing)
  * POST /v1/merchants
  */
-router.post('/', async (req, res) => {
+router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email } = req.body;
+    const { name, email } = req.body as { name?: string; email?: string };
 
     if (!name || !email) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Name and email are required',
         },
       });
+      return;
     }
 
     // Check if email already exists
-    const existing = await query(`
+    const existing = await query<{ id: string }>(`
       SELECT id FROM merchants WHERE email = $1
     `, [email]);
 
     if (existing.rows.length > 0) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'A merchant with this email already exists',
           param: 'email',
         },
       });
+      return;
     }
 
     const id = uuidv4();
@@ -42,7 +64,7 @@ router.post('/', async (req, res) => {
     const apiKeyHash = hashApiKey(apiKey);
     const webhookSecret = generateWebhookSecret();
 
-    const result = await query(`
+    const result = await query<MerchantRow>(`
       INSERT INTO merchants (id, name, email, api_key, api_key_hash, webhook_secret)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id, name, email, status, created_at
@@ -68,32 +90,34 @@ router.post('/', async (req, res) => {
  * Get merchant by API key (self)
  * GET /v1/merchants/me
  */
-router.get('/me', async (req, res) => {
+router.get('/me', async (req: Request, res: Response): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
+      res.status(401).json({
         error: {
           type: 'authentication_error',
           message: 'API key required',
         },
       });
+      return;
     }
 
     const apiKey = authHeader.slice(7);
-    const result = await query(`
+    const result = await query<MerchantRow>(`
       SELECT id, name, email, status, webhook_url, created_at
       FROM merchants
       WHERE api_key = $1
     `, [apiKey]);
 
     if (result.rows.length === 0) {
-      return res.status(401).json({
+      res.status(401).json({
         error: {
           type: 'authentication_error',
           message: 'Invalid API key',
         },
       });
+      return;
     }
 
     res.json(formatMerchant(result.rows[0]));
@@ -112,18 +136,18 @@ router.get('/me', async (req, res) => {
  * List all merchants (admin endpoint for demo)
  * GET /v1/merchants
  */
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit = '50', offset = '0' } = req.query as { limit?: string; offset?: string };
 
-    const result = await query(`
+    const result = await query<MerchantRow>(`
       SELECT id, name, email, status, webhook_url, created_at
       FROM merchants
       ORDER BY created_at DESC
       LIMIT $1 OFFSET $2
     `, [parseInt(limit), parseInt(offset)]);
 
-    const countResult = await query(`SELECT COUNT(*) FROM merchants`);
+    const countResult = await query<{ count: string }>(`SELECT COUNT(*) FROM merchants`);
 
     res.json({
       object: 'list',
@@ -145,21 +169,22 @@ router.get('/', async (req, res) => {
  * Get merchant by ID
  * GET /v1/merchants/:id
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(`
+    const result = await query<MerchantRow>(`
       SELECT id, name, email, status, webhook_url, created_at
       FROM merchants
       WHERE id = $1
     `, [req.params.id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Merchant not found',
         },
       });
+      return;
     }
 
     res.json(formatMerchant(result.rows[0]));
@@ -178,31 +203,33 @@ router.get('/:id', async (req, res) => {
  * Regenerate API key
  * POST /v1/merchants/:id/rotate-key
  */
-router.post('/:id/rotate-key', async (req, res) => {
+router.post('/:id/rotate-key', async (req: Request, res: Response): Promise<void> => {
   try {
     // Verify ownership (in production, this would be more secure)
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
+      res.status(401).json({
         error: {
           type: 'authentication_error',
           message: 'API key required',
         },
       });
+      return;
     }
 
     const currentApiKey = authHeader.slice(7);
-    const verifyResult = await query(`
+    const verifyResult = await query<{ id: string }>(`
       SELECT id FROM merchants WHERE id = $1 AND api_key = $2
     `, [req.params.id, currentApiKey]);
 
     if (verifyResult.rows.length === 0) {
-      return res.status(403).json({
+      res.status(403).json({
         error: {
           type: 'authentication_error',
           message: 'Not authorized to rotate this API key',
         },
       });
+      return;
     }
 
     // Generate new key
@@ -233,7 +260,7 @@ router.post('/:id/rotate-key', async (req, res) => {
 /**
  * Format merchant for API response
  */
-function formatMerchant(row) {
+function formatMerchant(row: MerchantRow): MerchantResponse {
   return {
     id: row.id,
     object: 'merchant',

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import Redis from 'ioredis';
 import pg from 'pg';
@@ -36,7 +36,7 @@ app.use(globalRateLimiter); // Global rate limiting
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
-  retryDelayOnFailover: 100,
+  retryStrategy: (times: number) => Math.min(times * 100, 3000),
   maxRetriesPerRequest: 3,
 });
 
@@ -74,11 +74,28 @@ app.use('/api/v1/suggestions', suggestionRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
+interface HealthCheck {
+  status: string;
+  phraseCount?: number;
+  nodeCount?: number;
+  error?: string;
+}
+
+interface RedisInfo {
+  memory?: string;
+}
+
+interface PgInfo {
+  totalConnections?: number;
+  idleConnections?: number;
+  waitingConnections?: number;
+}
+
 /**
  * Prometheus metrics endpoint
  * WHY: Metrics enable SLO monitoring, capacity planning, and ranking optimization
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response) => {
   try {
     // Update trie metrics before scraping
     const trieStats = trie.getStats();
@@ -91,7 +108,7 @@ app.get('/metrics', async (req, res) => {
     res.set('Content-Type', getMetricsContentType());
     res.end(await getMetrics());
   } catch (error) {
-    logger.error({ event: 'metrics_error', error: error.message });
+    logger.error({ event: 'metrics_error', error: (error as Error).message });
     res.status(500).end();
   }
 });
@@ -99,7 +116,7 @@ app.get('/metrics', async (req, res) => {
 /**
  * Basic liveness probe
  */
-app.get('/health', async (req, res) => {
+app.get('/health', async (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -110,8 +127,8 @@ app.get('/health', async (req, res) => {
  * Comprehensive readiness probe
  * WHY: Readiness probes ensure traffic only goes to healthy instances
  */
-app.get('/health/ready', async (req, res) => {
-  const checks = {
+app.get('/health/ready', async (_req: Request, res: Response) => {
+  const checks: Record<string, HealthCheck> = {
     trie: { status: 'unknown' },
     redis: { status: 'unknown' },
     postgres: { status: 'unknown' },
@@ -126,7 +143,7 @@ app.get('/health/ready', async (req, res) => {
       nodeCount: stats.nodeCount,
     };
   } catch (error) {
-    checks.trie = { status: 'unhealthy', error: error.message };
+    checks.trie = { status: 'unhealthy', error: (error as Error).message };
   }
 
   // Check Redis connectivity
@@ -134,7 +151,7 @@ app.get('/health/ready', async (req, res) => {
     const pong = await redis.ping();
     checks.redis = { status: pong === 'PONG' ? 'healthy' : 'unhealthy' };
   } catch (error) {
-    checks.redis = { status: 'unhealthy', error: error.message };
+    checks.redis = { status: 'unhealthy', error: (error as Error).message };
   }
 
   // Check PostgreSQL connectivity
@@ -142,7 +159,7 @@ app.get('/health/ready', async (req, res) => {
     await pgPool.query('SELECT 1');
     checks.postgres = { status: 'healthy' };
   } catch (error) {
-    checks.postgres = { status: 'unhealthy', error: error.message };
+    checks.postgres = { status: 'unhealthy', error: (error as Error).message };
   }
 
   const allHealthy = Object.values(checks).every((c) => c.status === 'healthy');
@@ -161,7 +178,7 @@ app.get('/health/ready', async (req, res) => {
  * Circuit breaker status endpoint
  * WHY: Visibility into circuit breaker states for debugging
  */
-app.get('/health/circuits', async (req, res) => {
+app.get('/health/circuits', async (_req: Request, res: Response) => {
   const circuits = getCircuitStatus();
   res.json({
     circuits,
@@ -172,31 +189,31 @@ app.get('/health/circuits', async (req, res) => {
 /**
  * Detailed status endpoint for debugging
  */
-app.get('/status', async (req, res) => {
+app.get('/status', async (_req: Request, res: Response) => {
   try {
     // Check Redis
     let redisStatus = 'unknown';
-    let redisInfo = {};
+    const redisInfo: RedisInfo = {};
     try {
       const pong = await redis.ping();
       redisStatus = pong === 'PONG' ? 'connected' : 'error';
       const info = await redis.info('memory');
       const memMatch = info.match(/used_memory_human:([^\r\n]+)/);
       redisInfo.memory = memMatch ? memMatch[1] : 'unknown';
-    } catch (e) {
+    } catch {
       redisStatus = 'error';
     }
 
     // Check PostgreSQL
     let pgStatus = 'unknown';
-    let pgInfo = {};
+    const pgInfo: PgInfo = {};
     try {
       await pgPool.query('SELECT 1');
       pgStatus = 'connected';
       pgInfo.totalConnections = pgPool.totalCount;
       pgInfo.idleConnections = pgPool.idleCount;
       pgInfo.waitingConnections = pgPool.waitingCount;
-    } catch (e) {
+    } catch {
       pgStatus = 'error';
     }
 
@@ -214,16 +231,16 @@ app.get('/status', async (req, res) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    logger.error({ event: 'status_error', error: error.message });
+    logger.error({ event: 'status_error', error: (error as Error).message });
     res.status(500).json({
       error: 'Internal server error',
-      message: error.message,
+      message: (error as Error).message,
     });
   }
 });
 
 // Initialize and load data
-async function initialize() {
+async function initialize(): Promise<void> {
   const startTime = Date.now();
 
   try {
@@ -268,15 +285,15 @@ async function initialize() {
   } catch (error) {
     logger.error({
       event: 'initialization_error',
-      error: error.message,
-      stack: error.stack,
+      error: (error as Error).message,
+      stack: (error as Error).stack,
     });
     logger.info({ event: 'continuing_with_empty_trie' });
   }
 }
 
 // Graceful shutdown
-async function shutdown() {
+async function shutdown(): Promise<void> {
   logger.info({ event: 'shutdown_started' });
 
   aggregationService.stop();
@@ -286,14 +303,14 @@ async function shutdown() {
     await redis.quit();
     logger.info({ event: 'redis_disconnected' });
   } catch (error) {
-    logger.error({ event: 'redis_disconnect_error', error: error.message });
+    logger.error({ event: 'redis_disconnect_error', error: (error as Error).message });
   }
 
   try {
     await pgPool.end();
     logger.info({ event: 'postgres_disconnected' });
   } catch (error) {
-    logger.error({ event: 'postgres_disconnect_error', error: error.message });
+    logger.error({ event: 'postgres_disconnect_error', error: (error as Error).message });
   }
 
   logger.info({ event: 'shutdown_complete' });

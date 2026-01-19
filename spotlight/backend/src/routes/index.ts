@@ -221,14 +221,14 @@ router.post('/files', idempotencyMiddleware('index_file'), async (req: Request, 
 // ============================================================================
 router.delete('/files/:path(*)', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { path } = req.params;
+    const filePath = req.params.path as string;
     const startTime = Date.now();
 
     // Remove from PostgreSQL
-    await pool.query('DELETE FROM indexed_files WHERE path = $1', [path]);
+    await pool.query('DELETE FROM indexed_files WHERE path = $1', [filePath]);
 
     // Remove from Elasticsearch
-    await deleteDocument('files', path);
+    await deleteDocument('files', filePath);
 
     indexOperationLatency.labels('delete', 'files').observe((Date.now() - startTime) / 1000);
     indexOperationsTotal.labels('delete', 'files', 'success').inc();
@@ -236,7 +236,7 @@ router.delete('/files/:path(*)', async (req: Request, res: Response): Promise<vo
     logIndexOperation({
       operation: 'delete',
       documentType: 'files',
-      documentId: path,
+      documentId: filePath,
       latencyMs: Date.now() - startTime,
       success: true
     });

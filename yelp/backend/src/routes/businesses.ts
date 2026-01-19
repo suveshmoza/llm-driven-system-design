@@ -1,13 +1,150 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../utils/db.js';
 import { cache } from '../utils/redis.js';
-import { authenticate, optionalAuth, requireBusinessOwner } from '../middleware/auth.js';
+import {
+  authenticate,
+  optionalAuth,
+  AuthenticatedRequest,
+} from '../middleware/auth.js';
 import { publishBusinessReindex } from '../utils/queue.js';
 
 const router = Router();
 
+// Database row interfaces
+interface BusinessRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  phone: string | null;
+  website: string | null;
+  email: string | null;
+  price_level: number | null;
+  rating: number;
+  review_count: number;
+  photo_count: number;
+  is_claimed: boolean;
+  is_verified: boolean;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+  categories?: string[] | null;
+  category_names?: string[] | null;
+  photo_url?: string | null;
+  distance_km?: number;
+  hours?: BusinessHour[];
+  photos?: BusinessPhoto[];
+  owner_name?: string | null;
+  is_owner?: boolean;
+}
+
+interface BusinessHour {
+  day_of_week: number;
+  open_time: string;
+  close_time: string;
+  is_closed: boolean;
+}
+
+interface BusinessPhoto {
+  id: string;
+  url: string;
+  caption: string | null;
+  is_primary: boolean;
+}
+
+interface OwnerCheckRow {
+  owner_id: string | null;
+}
+
+interface ClaimCheckRow {
+  is_claimed: boolean;
+  owner_id: string | null;
+}
+
+interface CountRow {
+  count: string;
+}
+
+interface ReviewWithUser {
+  id: string;
+  business_id: string;
+  user_id: string;
+  rating: number;
+  text: string;
+  helpful_count: number;
+  created_at: string;
+  updated_at: string;
+  user_name: string;
+  user_avatar: string | null;
+  user_review_count: number;
+  response_text: string | null;
+  response_created_at: string | null;
+  photos: string[] | null;
+}
+
+interface CategoryRow {
+  slug: string;
+  name: string;
+}
+
+// Request body interfaces
+interface CreateBusinessBody {
+  name: string;
+  description?: string;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  country?: string;
+  latitude: number;
+  longitude: number;
+  phone?: string;
+  website?: string;
+  email?: string;
+  price_level?: number;
+  categories?: string[];
+}
+
+interface UpdateBusinessBody {
+  name?: string;
+  description?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  phone?: string;
+  website?: string;
+  email?: string;
+  price_level?: number;
+  latitude?: number;
+  longitude?: number;
+  categories?: string[];
+}
+
+interface AddHoursBody {
+  hours: Array<{
+    day_of_week: number;
+    open_time: string;
+    close_time: string;
+    is_closed?: boolean;
+  }>;
+}
+
+interface AddPhotoBody {
+  url: string;
+  caption?: string;
+  is_primary?: boolean;
+}
+
 // Helper to generate slug
-function generateSlug(name) {
+function generateSlug(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
@@ -17,12 +154,26 @@ function generateSlug(name) {
 }
 
 // Get all businesses with pagination
-router.get('/', async (req, res) => {
-  try {
-    const { page = 1, limit = 20, city, category, minRating } = req.query;
-    const offset = (page - 1) * limit;
+router.get(
+  '/',
+  async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+      const {
+        page = '1',
+        limit = '20',
+        city,
+        category,
+        minRating,
+      } = req.query as {
+        page?: string;
+        limit?: string;
+        city?: string;
+        category?: string;
+        minRating?: string;
+      };
+      const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-    let query = `
+      let query = `
       SELECT b.*,
              array_agg(DISTINCT c.slug) FILTER (WHERE c.slug IS NOT NULL) as categories,
              array_agg(DISTINCT c.name) FILTER (WHERE c.name IS NOT NULL) as category_names,
@@ -33,81 +184,98 @@ router.get('/', async (req, res) => {
       WHERE 1=1
     `;
 
-    const params = [];
-    let paramIndex = 1;
+      const params: unknown[] = [];
+      let paramIndex = 1;
 
-    if (city) {
-      query += ` AND LOWER(b.city) = LOWER($${paramIndex++})`;
-      params.push(city);
-    }
+      if (city) {
+        query += ` AND LOWER(b.city) = LOWER($${paramIndex++})`;
+        params.push(city);
+      }
 
-    if (category) {
-      query += ` AND c.slug = $${paramIndex++}`;
-      params.push(category);
-    }
+      if (category) {
+        query += ` AND c.slug = $${paramIndex++}`;
+        params.push(category);
+      }
 
-    if (minRating) {
-      query += ` AND b.rating >= $${paramIndex++}`;
-      params.push(parseFloat(minRating));
-    }
+      if (minRating) {
+        query += ` AND b.rating >= $${paramIndex++}`;
+        params.push(parseFloat(minRating));
+      }
 
-    query += ` GROUP BY b.id ORDER BY b.rating DESC, b.review_count DESC`;
-    query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    params.push(parseInt(limit), parseInt(offset));
+      query += ` GROUP BY b.id ORDER BY b.rating DESC, b.review_count DESC`;
+      query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+      params.push(parseInt(limit, 10), offset);
 
-    const result = await pool.query(query, params);
+      const result = await pool.query<BusinessRow>(query, params);
 
-    // Get total count
-    let countQuery = `
+      // Get total count
+      let countQuery = `
       SELECT COUNT(DISTINCT b.id)
       FROM businesses b
       LEFT JOIN business_categories bc ON b.id = bc.business_id
       LEFT JOIN categories c ON bc.category_id = c.id
       WHERE 1=1
     `;
-    const countParams = [];
-    let countParamIndex = 1;
+      const countParams: unknown[] = [];
+      let countParamIndex = 1;
 
-    if (city) {
-      countQuery += ` AND LOWER(b.city) = LOWER($${countParamIndex++})`;
-      countParams.push(city);
-    }
-    if (category) {
-      countQuery += ` AND c.slug = $${countParamIndex++}`;
-      countParams.push(category);
-    }
-    if (minRating) {
-      countQuery += ` AND b.rating >= $${countParamIndex++}`;
-      countParams.push(parseFloat(minRating));
-    }
-
-    const countResult = await pool.query(countQuery, countParams);
-
-    res.json({
-      businesses: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count),
-        pages: Math.ceil(countResult.rows[0].count / limit)
+      if (city) {
+        countQuery += ` AND LOWER(b.city) = LOWER($${countParamIndex++})`;
+        countParams.push(city);
       }
-    });
-  } catch (error) {
-    console.error('Get businesses error:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch businesses' } });
+      if (category) {
+        countQuery += ` AND c.slug = $${countParamIndex++}`;
+        countParams.push(category);
+      }
+      if (minRating) {
+        countQuery += ` AND b.rating >= $${countParamIndex++}`;
+        countParams.push(parseFloat(minRating));
+      }
+
+      const countResult = await pool.query<CountRow>(countQuery, countParams);
+
+      res.json({
+        businesses: result.rows,
+        pagination: {
+          page: parseInt(page, 10),
+          limit: parseInt(limit, 10),
+          total: parseInt(countResult.rows[0].count, 10),
+          pages: Math.ceil(
+            parseInt(countResult.rows[0].count, 10) / parseInt(limit, 10)
+          ),
+        },
+      });
+    } catch (error) {
+      console.error('Get businesses error:', error);
+      res.status(500).json({ error: { message: 'Failed to fetch businesses' } });
+    }
   }
-});
+);
 
 // Get nearby businesses
-router.get('/nearby', async (req, res) => {
-  try {
-    const { latitude, longitude, distance = 10, limit = 20 } = req.query;
+router.get(
+  '/nearby',
+  async (req: Request, res: Response): Promise<void | Response> => {
+    try {
+      const {
+        latitude,
+        longitude,
+        distance = '10',
+        limit = '20',
+      } = req.query as {
+        latitude?: string;
+        longitude?: string;
+        distance?: string;
+        limit?: string;
+      };
 
-    if (!latitude || !longitude) {
-      return res.status(400).json({ error: { message: 'Latitude and longitude are required' } });
-    }
+      if (!latitude || !longitude) {
+        return res
+          .status(400)
+          .json({ error: { message: 'Latitude and longitude are required' } });
+      }
 
-    const query = `
+      const query = `
       SELECT b.*,
              ST_Distance(b.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000 as distance_km,
              array_agg(DISTINCT c.slug) FILTER (WHERE c.slug IS NOT NULL) as categories,
@@ -126,36 +294,45 @@ router.get('/nearby', async (req, res) => {
       LIMIT $4
     `;
 
-    const result = await pool.query(query, [
-      parseFloat(longitude),
-      parseFloat(latitude),
-      parseFloat(distance),
-      parseInt(limit)
-    ]);
+      const result = await pool.query<BusinessRow>(query, [
+        parseFloat(longitude),
+        parseFloat(latitude),
+        parseFloat(distance),
+        parseInt(limit, 10),
+      ]);
 
-    res.json({ businesses: result.rows });
-  } catch (error) {
-    console.error('Get nearby businesses error:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch nearby businesses' } });
+      res.json({ businesses: result.rows });
+    } catch (error) {
+      console.error('Get nearby businesses error:', error);
+      res
+        .status(500)
+        .json({ error: { message: 'Failed to fetch nearby businesses' } });
+    }
   }
-});
+);
 
 // Get business by ID or slug
-router.get('/:idOrSlug', optionalAuth, async (req, res) => {
-  try {
-    const { idOrSlug } = req.params;
-    const cacheKey = `business:${idOrSlug}`;
+router.get(
+  '/:idOrSlug',
+  optionalAuth as any,
+  async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
+    try {
+      const { idOrSlug } = req.params;
+      const cacheKey = `business:${idOrSlug}`;
 
-    // Try cache first
-    const cached = await cache.get(cacheKey);
-    if (cached) {
-      return res.json({ business: cached });
-    }
+      // Try cache first
+      const cached = await cache.get<BusinessRow>(cacheKey);
+      if (cached) {
+        return res.json({ business: cached });
+      }
 
-    // Check if it's a UUID or slug
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+      // Check if it's a UUID or slug
+      const isUUID =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          idOrSlug
+        );
 
-    const query = `
+      const query = `
       SELECT b.*,
              array_agg(DISTINCT jsonb_build_object('id', c.id, 'name', c.name, 'slug', c.slug)) FILTER (WHERE c.id IS NOT NULL) as categories,
              u.name as owner_name
@@ -167,334 +344,418 @@ router.get('/:idOrSlug', optionalAuth, async (req, res) => {
       GROUP BY b.id, u.name
     `;
 
-    const result = await pool.query(query, [idOrSlug]);
+      const result = await pool.query<BusinessRow>(query, [idOrSlug]);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: { message: 'Business not found' } });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: { message: 'Business not found' } });
+      }
+
+      const business = result.rows[0];
+
+      // Get business hours
+      const hoursResult = await pool.query<BusinessHour>(
+        'SELECT day_of_week, open_time, close_time, is_closed FROM business_hours WHERE business_id = $1 ORDER BY day_of_week',
+        [business.id]
+      );
+      business.hours = hoursResult.rows;
+
+      // Get photos
+      const photosResult = await pool.query<BusinessPhoto>(
+        'SELECT id, url, caption, is_primary FROM business_photos WHERE business_id = $1 ORDER BY is_primary DESC, created_at DESC',
+        [business.id]
+      );
+      business.photos = photosResult.rows;
+
+      // Check if current user is owner
+      if (req.user) {
+        business.is_owner = req.user.id === business.owner_id;
+      }
+
+      // Cache for 5 minutes
+      await cache.set(cacheKey, business, 300);
+
+      res.json({ business });
+    } catch (error) {
+      console.error('Get business error:', error);
+      res.status(500).json({ error: { message: 'Failed to fetch business' } });
     }
-
-    const business = result.rows[0];
-
-    // Get business hours
-    const hoursResult = await pool.query(
-      'SELECT day_of_week, open_time, close_time, is_closed FROM business_hours WHERE business_id = $1 ORDER BY day_of_week',
-      [business.id]
-    );
-    business.hours = hoursResult.rows;
-
-    // Get photos
-    const photosResult = await pool.query(
-      'SELECT id, url, caption, is_primary FROM business_photos WHERE business_id = $1 ORDER BY is_primary DESC, created_at DESC',
-      [business.id]
-    );
-    business.photos = photosResult.rows;
-
-    // Check if current user is owner
-    if (req.user) {
-      business.is_owner = req.user.id === business.owner_id;
-    }
-
-    // Cache for 5 minutes
-    await cache.set(cacheKey, business, 300);
-
-    res.json({ business });
-  } catch (error) {
-    console.error('Get business error:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch business' } });
   }
-});
+);
 
 // Create a new business
-router.post('/', authenticate, async (req, res) => {
-  try {
-    const {
-      name,
-      description,
-      address,
-      city,
-      state,
-      zip_code,
-      country = 'USA',
-      latitude,
-      longitude,
-      phone,
-      website,
-      email,
-      price_level,
-      categories = []
-    } = req.body;
+router.post(
+  '/',
+  authenticate as any,
+  async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
+    try {
+      const {
+        name,
+        description,
+        address,
+        city,
+        state,
+        zip_code,
+        country = 'USA',
+        latitude,
+        longitude,
+        phone,
+        website,
+        email,
+        price_level,
+        categories = [],
+      } = req.body as CreateBusinessBody;
 
-    if (!name || !address || !city || !state || !zip_code || !latitude || !longitude) {
-      return res.status(400).json({
-        error: { message: 'Name, address, city, state, zip_code, latitude, and longitude are required' }
-      });
-    }
+      if (
+        !name ||
+        !address ||
+        !city ||
+        !state ||
+        !zip_code ||
+        !latitude ||
+        !longitude
+      ) {
+        return res.status(400).json({
+          error: {
+            message:
+              'Name, address, city, state, zip_code, latitude, and longitude are required',
+          },
+        });
+      }
 
-    // Generate unique slug
-    let slug = generateSlug(name);
-    const existingSlug = await pool.query('SELECT id FROM businesses WHERE slug = $1', [slug]);
-    if (existingSlug.rows.length > 0) {
-      slug = `${slug}-${Date.now()}`;
-    }
+      // Generate unique slug
+      let slug = generateSlug(name);
+      const existingSlug = await pool.query<{ id: string }>(
+        'SELECT id FROM businesses WHERE slug = $1',
+        [slug]
+      );
+      if (existingSlug.rows.length > 0) {
+        slug = `${slug}-${Date.now()}`;
+      }
 
-    // Insert business
-    const result = await pool.query(
-      `INSERT INTO businesses (name, slug, description, address, city, state, zip_code, country, latitude, longitude, phone, website, email, price_level, owner_id, is_claimed)
+      // Insert business
+      const result = await pool.query<BusinessRow>(
+        `INSERT INTO businesses (name, slug, description, address, city, state, zip_code, country, latitude, longitude, phone, website, email, price_level, owner_id, is_claimed)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true)
        RETURNING *`,
-      [name, slug, description, address, city, state, zip_code, country, latitude, longitude, phone, website, email, price_level, req.user.id]
-    );
-
-    const business = result.rows[0];
-
-    // Add categories
-    if (categories.length > 0) {
-      const categoryValues = categories.map((catId, index) => `($1, $${index + 2})`).join(', ');
-      await pool.query(
-        `INSERT INTO business_categories (business_id, category_id) VALUES ${categoryValues}`,
-        [business.id, ...categories]
+        [
+          name,
+          slug,
+          description,
+          address,
+          city,
+          state,
+          zip_code,
+          country,
+          latitude,
+          longitude,
+          phone,
+          website,
+          email,
+          price_level,
+          req.user!.id,
+        ]
       );
-    }
 
-    // Update user role if not already a business owner
-    if (req.user.role === 'user') {
-      await pool.query('UPDATE users SET role = $1 WHERE id = $2', ['business_owner', req.user.id]);
-    }
+      const business = result.rows[0];
 
-    // Get category info for indexing
-    const catResult = await pool.query(
-      `SELECT c.slug, c.name FROM categories c
-       JOIN business_categories bc ON c.id = bc.category_id
-       WHERE bc.business_id = $1`,
-      [business.id]
-    );
-
-    // Publish to queue for async Elasticsearch indexing
-    publishBusinessReindex(business.id);
-
-    res.status(201).json({ business });
-  } catch (error) {
-    console.error('Create business error:', error);
-    res.status(500).json({ error: { message: 'Failed to create business' } });
-  }
-});
-
-// Update business
-router.patch('/:id', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Check ownership
-    const ownerCheck = await pool.query(
-      'SELECT owner_id FROM businesses WHERE id = $1',
-      [id]
-    );
-
-    if (ownerCheck.rows.length === 0) {
-      return res.status(404).json({ error: { message: 'Business not found' } });
-    }
-
-    if (ownerCheck.rows[0].owner_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: { message: 'Not authorized to update this business' } });
-    }
-
-    const allowedFields = ['name', 'description', 'address', 'city', 'state', 'zip_code', 'phone', 'website', 'email', 'price_level', 'latitude', 'longitude'];
-    const updates = [];
-    const values = [];
-    let paramIndex = 1;
-
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = $${paramIndex++}`);
-        values.push(req.body[field]);
-      }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: { message: 'No updates provided' } });
-    }
-
-    values.push(id);
-
-    const result = await pool.query(
-      `UPDATE businesses SET ${updates.join(', ')}, updated_at = NOW()
-       WHERE id = $${paramIndex}
-       RETURNING *`,
-      values
-    );
-
-    const business = result.rows[0];
-
-    // Update categories if provided
-    if (req.body.categories) {
-      await pool.query('DELETE FROM business_categories WHERE business_id = $1', [id]);
-      if (req.body.categories.length > 0) {
-        const categoryValues = req.body.categories.map((catId, index) => `($1, $${index + 2})`).join(', ');
+      // Add categories
+      if (categories.length > 0) {
+        const categoryValues = categories
+          .map((_, index) => `($1, $${index + 2})`)
+          .join(', ');
         await pool.query(
           `INSERT INTO business_categories (business_id, category_id) VALUES ${categoryValues}`,
-          [id, ...req.body.categories]
+          [business.id, ...categories]
         );
       }
+
+      // Update user role if not already a business owner
+      if (req.user!.role === 'user') {
+        await pool.query('UPDATE users SET role = $1 WHERE id = $2', [
+          'business_owner',
+          req.user!.id,
+        ]);
+      }
+
+      // Publish to queue for async Elasticsearch indexing
+      publishBusinessReindex(business.id);
+
+      res.status(201).json({ business });
+    } catch (error) {
+      console.error('Create business error:', error);
+      res.status(500).json({ error: { message: 'Failed to create business' } });
     }
-
-    // Get updated category info
-    const catResult = await pool.query(
-      `SELECT c.slug, c.name FROM categories c
-       JOIN business_categories bc ON c.id = bc.category_id
-       WHERE bc.business_id = $1`,
-      [id]
-    );
-
-    // Publish to queue for async Elasticsearch reindex
-    publishBusinessReindex(id);
-
-    // Clear cache
-    await cache.delPattern(`business:${id}*`);
-    await cache.delPattern(`business:${business.slug}*`);
-
-    res.json({ business });
-  } catch (error) {
-    console.error('Update business error:', error);
-    res.status(500).json({ error: { message: 'Failed to update business' } });
   }
-});
+);
 
-// Add business hours
-router.post('/:id/hours', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { hours } = req.body;
+// Update business
+router.patch(
+  '/:id',
+  authenticate as any,
+  async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
+    try {
+      const { id } = req.params;
+      const body = req.body as UpdateBusinessBody;
 
-    // Check ownership
-    const ownerCheck = await pool.query(
-      'SELECT owner_id FROM businesses WHERE id = $1',
-      [id]
-    );
-
-    if (ownerCheck.rows.length === 0) {
-      return res.status(404).json({ error: { message: 'Business not found' } });
-    }
-
-    if (ownerCheck.rows[0].owner_id !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: { message: 'Not authorized' } });
-    }
-
-    // Delete existing hours and insert new ones
-    await pool.query('DELETE FROM business_hours WHERE business_id = $1', [id]);
-
-    for (const hour of hours) {
-      await pool.query(
-        `INSERT INTO business_hours (business_id, day_of_week, open_time, close_time, is_closed)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [id, hour.day_of_week, hour.open_time, hour.close_time, hour.is_closed || false]
-      );
-    }
-
-    // Clear cache
-    await cache.delPattern(`business:${id}*`);
-
-    res.json({ message: 'Hours updated successfully' });
-  } catch (error) {
-    console.error('Update hours error:', error);
-    res.status(500).json({ error: { message: 'Failed to update hours' } });
-  }
-});
-
-// Add business photo
-router.post('/:id/photos', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { url, caption, is_primary = false } = req.body;
-
-    if (!url) {
-      return res.status(400).json({ error: { message: 'Photo URL is required' } });
-    }
-
-    // Check if business exists
-    const businessCheck = await pool.query('SELECT id FROM businesses WHERE id = $1', [id]);
-    if (businessCheck.rows.length === 0) {
-      return res.status(404).json({ error: { message: 'Business not found' } });
-    }
-
-    // If setting as primary, unset other primary photos
-    if (is_primary) {
-      await pool.query(
-        'UPDATE business_photos SET is_primary = false WHERE business_id = $1',
+      // Check ownership
+      const ownerCheck = await pool.query<OwnerCheckRow>(
+        'SELECT owner_id FROM businesses WHERE id = $1',
         [id]
       );
-    }
 
-    const result = await pool.query(
-      `INSERT INTO business_photos (business_id, url, caption, is_primary, uploaded_by)
+      if (ownerCheck.rows.length === 0) {
+        return res.status(404).json({ error: { message: 'Business not found' } });
+      }
+
+      if (
+        ownerCheck.rows[0].owner_id !== req.user!.id &&
+        req.user!.role !== 'admin'
+      ) {
+        return res
+          .status(403)
+          .json({ error: { message: 'Not authorized to update this business' } });
+      }
+
+      const allowedFields = [
+        'name',
+        'description',
+        'address',
+        'city',
+        'state',
+        'zip_code',
+        'phone',
+        'website',
+        'email',
+        'price_level',
+        'latitude',
+        'longitude',
+      ];
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      let paramIndex = 1;
+
+      for (const field of allowedFields) {
+        if ((body as Record<string, unknown>)[field] !== undefined) {
+          updates.push(`${field} = $${paramIndex++}`);
+          values.push((body as Record<string, unknown>)[field]);
+        }
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: { message: 'No updates provided' } });
+      }
+
+      values.push(id);
+
+      const result = await pool.query<BusinessRow>(
+        `UPDATE businesses SET ${updates.join(', ')}, updated_at = NOW()
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+        values
+      );
+
+      const business = result.rows[0];
+
+      // Update categories if provided
+      if (body.categories) {
+        await pool.query('DELETE FROM business_categories WHERE business_id = $1', [
+          id,
+        ]);
+        if (body.categories.length > 0) {
+          const categoryValues = body.categories
+            .map((_, index) => `($1, $${index + 2})`)
+            .join(', ');
+          await pool.query(
+            `INSERT INTO business_categories (business_id, category_id) VALUES ${categoryValues}`,
+            [id, ...body.categories]
+          );
+        }
+      }
+
+      // Publish to queue for async Elasticsearch reindex
+      publishBusinessReindex(id);
+
+      // Clear cache
+      await cache.delPattern(`business:${id}*`);
+      await cache.delPattern(`business:${business.slug}*`);
+
+      res.json({ business });
+    } catch (error) {
+      console.error('Update business error:', error);
+      res.status(500).json({ error: { message: 'Failed to update business' } });
+    }
+  }
+);
+
+// Add business hours
+router.post(
+  '/:id/hours',
+  authenticate as any,
+  async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
+    try {
+      const { id } = req.params;
+      const { hours } = req.body as AddHoursBody;
+
+      // Check ownership
+      const ownerCheck = await pool.query<OwnerCheckRow>(
+        'SELECT owner_id FROM businesses WHERE id = $1',
+        [id]
+      );
+
+      if (ownerCheck.rows.length === 0) {
+        return res.status(404).json({ error: { message: 'Business not found' } });
+      }
+
+      if (
+        ownerCheck.rows[0].owner_id !== req.user!.id &&
+        req.user!.role !== 'admin'
+      ) {
+        return res.status(403).json({ error: { message: 'Not authorized' } });
+      }
+
+      // Delete existing hours and insert new ones
+      await pool.query('DELETE FROM business_hours WHERE business_id = $1', [id]);
+
+      for (const hour of hours) {
+        await pool.query(
+          `INSERT INTO business_hours (business_id, day_of_week, open_time, close_time, is_closed)
+         VALUES ($1, $2, $3, $4, $5)`,
+          [id, hour.day_of_week, hour.open_time, hour.close_time, hour.is_closed || false]
+        );
+      }
+
+      // Clear cache
+      await cache.delPattern(`business:${id}*`);
+
+      res.json({ message: 'Hours updated successfully' });
+    } catch (error) {
+      console.error('Update hours error:', error);
+      res.status(500).json({ error: { message: 'Failed to update hours' } });
+    }
+  }
+);
+
+// Add business photo
+router.post(
+  '/:id/photos',
+  authenticate as any,
+  async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
+    try {
+      const { id } = req.params;
+      const { url, caption, is_primary = false } = req.body as AddPhotoBody;
+
+      if (!url) {
+        return res.status(400).json({ error: { message: 'Photo URL is required' } });
+      }
+
+      // Check if business exists
+      const businessCheck = await pool.query<{ id: string }>(
+        'SELECT id FROM businesses WHERE id = $1',
+        [id]
+      );
+      if (businessCheck.rows.length === 0) {
+        return res.status(404).json({ error: { message: 'Business not found' } });
+      }
+
+      // If setting as primary, unset other primary photos
+      if (is_primary) {
+        await pool.query(
+          'UPDATE business_photos SET is_primary = false WHERE business_id = $1',
+          [id]
+        );
+      }
+
+      const result = await pool.query<BusinessPhoto & { uploaded_by: string; created_at: string }>(
+        `INSERT INTO business_photos (business_id, url, caption, is_primary, uploaded_by)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [id, url, caption, is_primary, req.user.id]
-    );
+        [id, url, caption, is_primary, req.user!.id]
+      );
 
-    // Update photo count
-    await pool.query(
-      'UPDATE businesses SET photo_count = photo_count + 1 WHERE id = $1',
-      [id]
-    );
+      // Update photo count
+      await pool.query(
+        'UPDATE businesses SET photo_count = photo_count + 1 WHERE id = $1',
+        [id]
+      );
 
-    // Clear cache
-    await cache.delPattern(`business:${id}*`);
+      // Clear cache
+      await cache.delPattern(`business:${id}*`);
 
-    res.status(201).json({ photo: result.rows[0] });
-  } catch (error) {
-    console.error('Add photo error:', error);
-    res.status(500).json({ error: { message: 'Failed to add photo' } });
+      res.status(201).json({ photo: result.rows[0] });
+    } catch (error) {
+      console.error('Add photo error:', error);
+      res.status(500).json({ error: { message: 'Failed to add photo' } });
+    }
   }
-});
+);
 
 // Claim a business
-router.post('/:id/claim', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
+router.post(
+  '/:id/claim',
+  authenticate as any,
+  async (req: AuthenticatedRequest, res: Response): Promise<void | Response> => {
+    try {
+      const { id } = req.params;
 
-    const result = await pool.query(
-      'SELECT is_claimed, owner_id FROM businesses WHERE id = $1',
-      [id]
-    );
+      const result = await pool.query<ClaimCheckRow>(
+        'SELECT is_claimed, owner_id FROM businesses WHERE id = $1',
+        [id]
+      );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: { message: 'Business not found' } });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: { message: 'Business not found' } });
+      }
+
+      if (result.rows[0].is_claimed) {
+        return res
+          .status(409)
+          .json({ error: { message: 'Business already claimed' } });
+      }
+
+      await pool.query(
+        'UPDATE businesses SET is_claimed = true, owner_id = $1 WHERE id = $2',
+        [req.user!.id, id]
+      );
+
+      // Update user role
+      if (req.user!.role === 'user') {
+        await pool.query('UPDATE users SET role = $1 WHERE id = $2', [
+          'business_owner',
+          req.user!.id,
+        ]);
+      }
+
+      res.json({ message: 'Business claimed successfully' });
+    } catch (error) {
+      console.error('Claim business error:', error);
+      res.status(500).json({ error: { message: 'Failed to claim business' } });
     }
-
-    if (result.rows[0].is_claimed) {
-      return res.status(409).json({ error: { message: 'Business already claimed' } });
-    }
-
-    await pool.query(
-      'UPDATE businesses SET is_claimed = true, owner_id = $1 WHERE id = $2',
-      [req.user.id, id]
-    );
-
-    // Update user role
-    if (req.user.role === 'user') {
-      await pool.query('UPDATE users SET role = $1 WHERE id = $2', ['business_owner', req.user.id]);
-    }
-
-    res.json({ message: 'Business claimed successfully' });
-  } catch (error) {
-    console.error('Claim business error:', error);
-    res.status(500).json({ error: { message: 'Failed to claim business' } });
   }
-});
+);
 
 // Get reviews for a business
-router.get('/:id/reviews', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { page = 1, limit = 10, sort = 'recent' } = req.query;
-    const offset = (page - 1) * limit;
+router.get(
+  '/:id/reviews',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const {
+        page = '1',
+        limit = '10',
+        sort = 'recent',
+      } = req.query as {
+        page?: string;
+        limit?: string;
+        sort?: string;
+      };
+      const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-    let orderBy = 'r.created_at DESC';
-    if (sort === 'rating_high') orderBy = 'r.rating DESC, r.created_at DESC';
-    if (sort === 'rating_low') orderBy = 'r.rating ASC, r.created_at DESC';
-    if (sort === 'helpful') orderBy = 'r.helpful_count DESC, r.created_at DESC';
+      let orderBy = 'r.created_at DESC';
+      if (sort === 'rating_high') orderBy = 'r.rating DESC, r.created_at DESC';
+      if (sort === 'rating_low') orderBy = 'r.rating ASC, r.created_at DESC';
+      if (sort === 'helpful') orderBy = 'r.helpful_count DESC, r.created_at DESC';
 
-    const query = `
+      const query = `
       SELECT r.*,
              u.name as user_name, u.avatar_url as user_avatar, u.review_count as user_review_count,
              rr.text as response_text, rr.created_at as response_created_at,
@@ -509,26 +770,33 @@ router.get('/:id/reviews', async (req, res) => {
       LIMIT $2 OFFSET $3
     `;
 
-    const result = await pool.query(query, [id, parseInt(limit), parseInt(offset)]);
+      const result = await pool.query<ReviewWithUser>(query, [
+        id,
+        parseInt(limit, 10),
+        offset,
+      ]);
 
-    const countResult = await pool.query(
-      'SELECT COUNT(*) FROM reviews WHERE business_id = $1',
-      [id]
-    );
+      const countResult = await pool.query<CountRow>(
+        'SELECT COUNT(*) FROM reviews WHERE business_id = $1',
+        [id]
+      );
 
-    res.json({
-      reviews: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count),
-        pages: Math.ceil(countResult.rows[0].count / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Get reviews error:', error);
-    res.status(500).json({ error: { message: 'Failed to fetch reviews' } });
+      res.json({
+        reviews: result.rows,
+        pagination: {
+          page: parseInt(page, 10),
+          limit: parseInt(limit, 10),
+          total: parseInt(countResult.rows[0].count, 10),
+          pages: Math.ceil(
+            parseInt(countResult.rows[0].count, 10) / parseInt(limit, 10)
+          ),
+        },
+      });
+    } catch (error) {
+      console.error('Get reviews error:', error);
+      res.status(500).json({ error: { message: 'Failed to fetch reviews' } });
+    }
   }
-});
+);
 
 export default router;

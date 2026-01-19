@@ -1,11 +1,11 @@
-const express = require('express');
-const cors = require('cors');
-const config = require('./config');
-const elasticsearch = require('./models/elasticsearch');
-const bookingService = require('./services/bookingService');
+import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import config from './config/index.js';
+import * as elasticsearch from './models/elasticsearch.js';
+import bookingService from './services/bookingService.js';
 
 // Import shared modules
-const {
+import {
   logger,
   requestLoggerMiddleware,
   metricsMiddleware,
@@ -13,12 +13,12 @@ const {
   getContentType,
   createHealthRouter,
   metrics,
-} = require('./shared');
+} from './shared/index.js';
 
 // Import routes
-const authRoutes = require('./routes/auth');
-const hotelRoutes = require('./routes/hotels');
-const bookingRoutes = require('./routes/bookings');
+import authRoutes from './routes/auth.js';
+import hotelRoutes from './routes/hotels.js';
+import bookingRoutes from './routes/bookings.js';
 
 const app = express();
 
@@ -36,12 +36,12 @@ app.use(metricsMiddleware);
 app.use('/health', createHealthRouter(express));
 
 // Simple health check (backward compatibility)
-app.get('/healthz', (req, res) => {
+app.get('/healthz', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Prometheus metrics endpoint
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response) => {
   try {
     const metricsData = await getMetrics();
     res.set('Content-Type', getContentType());
@@ -58,21 +58,21 @@ app.use('/api/v1/hotels', hotelRoutes);
 app.use('/api/v1/bookings', bookingRoutes);
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   const log = req.log || logger;
   log.error({ error: err, stack: err.stack }, 'Unhandled error');
   res.status(500).json({ error: 'Internal server error' });
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
 // Background job: Expire stale reservations
-let expiryInterval;
+let expiryInterval: ReturnType<typeof setInterval> | undefined;
 
-async function startExpiryJob() {
+async function startExpiryJob(): Promise<void> {
   expiryInterval = setInterval(async () => {
     try {
       const expired = await bookingService.expireStaleReservations();
@@ -87,7 +87,7 @@ async function startExpiryJob() {
 }
 
 // Start server
-async function start() {
+async function start(): Promise<void> {
   try {
     // Setup Elasticsearch index
     await elasticsearch.setupIndex();

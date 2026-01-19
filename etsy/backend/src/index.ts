@@ -1,10 +1,11 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, Application } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
 import RedisStore from 'connect-redis';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Server } from 'http';
 
 import config from './config.js';
 import redis from './services/redis.js';
@@ -29,7 +30,7 @@ import categoriesRoutes from './routes/categories.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
+const app: Application = express();
 
 // Trust proxy for session cookies
 app.set('trust proxy', 1);
@@ -72,8 +73,17 @@ app.use(session({
   },
 }));
 
+interface HealthResponse {
+  status: string;
+  timestamp: string;
+  version: string;
+  uptime: number;
+  services: Record<string, unknown>;
+  circuitBreakers?: Record<string, unknown>;
+}
+
 // Prometheus metrics endpoint
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response) => {
   try {
     // Update database connection gauge
     const poolInfo = db.pool;
@@ -88,8 +98,8 @@ app.get('/metrics', async (req, res) => {
 });
 
 // Comprehensive health check endpoint
-app.get('/api/health', async (req, res) => {
-  const health = {
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const health: HealthResponse = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
@@ -114,7 +124,7 @@ app.get('/api/health', async (req, res) => {
     health.status = 'degraded';
     health.services.postgres = {
       status: 'unhealthy',
-      error: error.message,
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 
@@ -130,7 +140,7 @@ app.get('/api/health', async (req, res) => {
     health.status = 'degraded';
     health.services.redis = {
       status: 'unhealthy',
-      error: error.message,
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 
@@ -143,18 +153,18 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Readiness probe (for Kubernetes)
-app.get('/api/ready', async (req, res) => {
+app.get('/api/ready', async (_req: Request, res: Response) => {
   try {
     await db.query('SELECT 1');
     await redis.ping();
     res.json({ ready: true });
   } catch (error) {
-    res.status(503).json({ ready: false, error: error.message });
+    res.status(503).json({ ready: false, error: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
 // Liveness probe (for Kubernetes)
-app.get('/api/live', (req, res) => {
+app.get('/api/live', (_req: Request, res: Response) => {
   res.json({ alive: true });
 });
 
@@ -169,7 +179,7 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/categories', categoriesRoutes);
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   logger.error({
     error: err.message,
     stack: err.stack,
@@ -182,7 +192,9 @@ app.use((err, req, res, next) => {
 });
 
 // Graceful shutdown
-function gracefulShutdown(signal) {
+let server: Server;
+
+function gracefulShutdown(signal: string): void {
   logger.info({ signal }, 'Received shutdown signal');
 
   // Close server
@@ -194,7 +206,7 @@ function gracefulShutdown(signal) {
       logger.info('Database pool closed');
 
       // Close Redis connection
-      redis.quit(() => {
+      redis.quit().then(() => {
         logger.info('Redis connection closed');
         process.exit(0);
       });
@@ -210,9 +222,8 @@ function gracefulShutdown(signal) {
 
 // Start server
 const PORT = config.port;
-let server;
 
-async function startServer() {
+async function startServer(): Promise<void> {
   try {
     // Initialize Elasticsearch index
     await initializeIndex();

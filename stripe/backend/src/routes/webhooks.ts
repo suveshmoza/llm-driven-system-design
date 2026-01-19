@@ -1,23 +1,40 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../db/pool.js';
-import { authenticateApiKey } from '../middleware/auth.js';
-import { getWebhookEvents, retryWebhook, signPayload, verifySignature } from '../services/webhooks.js';
+import { authenticateApiKey, AuthenticatedRequest } from '../middleware/auth.js';
+import { getWebhookEvents, retryWebhook, verifySignature, WebhookEvent } from '../services/webhooks.js';
 import { generateWebhookSecret } from '../utils/helpers.js';
 
 const router = Router();
+
+// Interfaces
+interface MerchantWebhookRow {
+  webhook_url: string | null;
+  webhook_secret: string | null;
+}
+
+interface WebhookEventResponse {
+  id: string;
+  type: string;
+  data: Record<string, unknown>;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+  delivered_at: Date | null;
+  created: number;
+}
 
 /**
  * List webhook events for merchant
  * GET /v1/webhook_events
  */
-router.get('/events', authenticateApiKey, async (req, res) => {
+router.get('/events', authenticateApiKey, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { limit = 50, offset = 0 } = req.query;
-    const events = await getWebhookEvents(req.merchantId, parseInt(limit), parseInt(offset));
+    const { limit = '50', offset = '0' } = req.query as { limit?: string; offset?: string };
+    const events = await getWebhookEvents(req.merchantId!, parseInt(limit), parseInt(offset));
 
     res.json({
       object: 'list',
-      data: events.map(e => ({
+      data: events.map((e: WebhookEvent): WebhookEventResponse => ({
         id: e.id,
         type: e.type,
         data: e.data,
@@ -43,21 +60,22 @@ router.get('/events', authenticateApiKey, async (req, res) => {
  * Retry a failed webhook
  * POST /v1/webhook_events/:id/retry
  */
-router.post('/events/:id/retry', authenticateApiKey, async (req, res) => {
+router.post('/events/:id/retry', authenticateApiKey, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     // Verify event belongs to merchant
-    const eventResult = await query(`
+    const eventResult = await query<{ id: string }>(`
       SELECT * FROM webhook_events
       WHERE id = $1 AND merchant_id = $2
     `, [req.params.id, req.merchantId]);
 
     if (eventResult.rows.length === 0) {
-      return res.status(404).json({
+      res.status(404).json({
         error: {
           type: 'invalid_request_error',
           message: 'Webhook event not found',
         },
       });
+      return;
     }
 
     const result = await retryWebhook(req.params.id);
@@ -77,35 +95,37 @@ router.post('/events/:id/retry', authenticateApiKey, async (req, res) => {
  * Update webhook endpoint settings
  * POST /v1/webhook_endpoints
  */
-router.post('/endpoints', authenticateApiKey, async (req, res) => {
+router.post('/endpoints', authenticateApiKey, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { url } = req.body;
+    const { url } = req.body as { url?: string };
 
     if (!url) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Webhook URL is required',
           param: 'url',
         },
       });
+      return;
     }
 
     // Validate URL format
     try {
       new URL(url);
     } catch {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Invalid webhook URL format',
           param: 'url',
         },
       });
+      return;
     }
 
     // Generate new secret if not exists
-    const merchantResult = await query(`
+    const merchantResult = await query<MerchantWebhookRow>(`
       SELECT webhook_secret FROM merchants WHERE id = $1
     `, [req.merchantId]);
 
@@ -142,21 +162,22 @@ router.post('/endpoints', authenticateApiKey, async (req, res) => {
  * Get webhook endpoint settings
  * GET /v1/webhook_endpoints
  */
-router.get('/endpoints', authenticateApiKey, async (req, res) => {
+router.get('/endpoints', authenticateApiKey, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const result = await query(`
+    const result = await query<MerchantWebhookRow>(`
       SELECT webhook_url, webhook_secret FROM merchants WHERE id = $1
     `, [req.merchantId]);
 
     const merchant = result.rows[0];
 
     if (!merchant.webhook_url) {
-      return res.json({
+      res.json({
         object: 'webhook_endpoint',
         url: null,
         secret: null,
         enabled: false,
       });
+      return;
     }
 
     res.json({
@@ -180,7 +201,7 @@ router.get('/endpoints', authenticateApiKey, async (req, res) => {
  * Delete webhook endpoint
  * DELETE /v1/webhook_endpoints
  */
-router.delete('/endpoints', authenticateApiKey, async (req, res) => {
+router.delete('/endpoints', authenticateApiKey, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     await query(`
       UPDATE merchants
@@ -207,18 +228,19 @@ router.delete('/endpoints', authenticateApiKey, async (req, res) => {
  * Test webhook verification helper (for demo/testing)
  * POST /v1/webhooks/verify
  */
-router.post('/verify', async (req, res) => {
+router.post('/verify', async (req: Request, res: Response): Promise<void> => {
   try {
-    const signature = req.headers['stripe-signature'];
-    const { secret } = req.query;
+    const signature = req.headers['stripe-signature'] as string | undefined;
+    const { secret } = req.query as { secret?: string };
 
     if (!signature || !secret) {
-      return res.status(400).json({
+      res.status(400).json({
         error: {
           type: 'invalid_request_error',
           message: 'Signature header and secret are required',
         },
       });
+      return;
     }
 
     const isValid = verifySignature(req.body, signature, secret);

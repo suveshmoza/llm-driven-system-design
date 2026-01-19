@@ -1,16 +1,99 @@
 import { query } from '../utils/db.js';
 import { cacheGet, cacheSet, getTrendingVideos } from '../utils/redis.js';
 
-// Get personalized recommendations for a user
-export const getRecommendations = async (userId, limit = 20) => {
+// ============ Type Definitions ============
+
+interface VideoRow {
+  id: string;
+  title: string;
+  description: string;
+  duration_seconds: number;
+  thumbnail_url: string;
+  view_count: number;
+  like_count: number;
+  dislike_count: number;
+  comment_count: number;
+  published_at: Date;
+  channel_id: string;
+  channel_name: string;
+  username: string;
+  avatar_url: string | null;
+  categories: string[];
+  tags: string[];
+  status: string;
+  visibility: string;
+  source?: string;
+}
+
+interface WatchHistoryRow extends VideoRow {
+  watched_at: Date;
+  watch_percentage: number;
+  last_position_seconds: number;
+}
+
+interface VideoRecommendation {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+  thumbnailUrl: string | null;
+  viewCount: number;
+  likeCount: number;
+  publishedAt: Date;
+  source?: string;
+  channel: {
+    id: string;
+    name: string;
+    username: string;
+    avatarUrl: string | null;
+  };
+}
+
+interface WatchHistoryVideo extends VideoRecommendation {
+  watchedAt: Date;
+  watchPercentage: number;
+  resumePosition: number;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+interface PaginatedResult<T> {
+  videos: T[];
+  pagination: Pagination;
+}
+
+interface SearchResult extends PaginatedResult<VideoRecommendation> {
+  query: string;
+}
+
+interface SearchOptions {
+  page?: number;
+  limit?: number;
+  sortBy?: 'relevance' | 'date' | 'views' | 'rating';
+}
+
+// ============ Service Functions ============
+
+/**
+ * Get personalized recommendations for a user
+ */
+export const getRecommendations = async (
+  userId: string | null | undefined,
+  limit: number = 20
+): Promise<VideoRecommendation[]> => {
   // Check cache first
   const cacheKey = userId ? `recommendations:${userId}` : 'recommendations:anonymous';
-  const cached = await cacheGet(cacheKey);
+  const cached = await cacheGet<VideoRecommendation[]>(cacheKey);
   if (cached) {
     return cached;
   }
 
-  let recommendations;
+  let recommendations: VideoRecommendation[];
 
   if (userId) {
     recommendations = await getPersonalizedRecommendations(userId, limit);
@@ -24,10 +107,15 @@ export const getRecommendations = async (userId, limit = 20) => {
   return recommendations;
 };
 
-// Get personalized recommendations based on watch history
-const getPersonalizedRecommendations = async (userId, limit) => {
+/**
+ * Get personalized recommendations based on watch history
+ */
+const getPersonalizedRecommendations = async (
+  userId: string,
+  limit: number
+): Promise<VideoRecommendation[]> => {
   // Get user's watch history and preferences
-  const watchHistory = await query(
+  const watchHistory = await query<{ video_id: string; watch_percentage: number }>(
     `SELECT video_id, watch_percentage
      FROM watch_history
      WHERE user_id = $1
@@ -36,10 +124,10 @@ const getPersonalizedRecommendations = async (userId, limit) => {
     [userId]
   );
 
-  const watchedVideoIds = watchHistory.rows.map(r => r.video_id);
+  const watchedVideoIds = watchHistory.rows.map((r) => r.video_id);
 
   // Get preferred categories from watched videos
-  const categoryPreferences = await query(
+  const categoryPreferences = await query<{ category: string; count: string }>(
     `SELECT UNNEST(categories) as category, COUNT(*) as count
      FROM videos
      WHERE id = ANY($1)
@@ -49,22 +137,22 @@ const getPersonalizedRecommendations = async (userId, limit) => {
     [watchedVideoIds.length > 0 ? watchedVideoIds : ['none']]
   );
 
-  const preferredCategories = categoryPreferences.rows.map(r => r.category);
+  const preferredCategories = categoryPreferences.rows.map((r) => r.category);
 
   // Get subscribed channels
-  const subscriptions = await query(
+  const subscriptions = await query<{ channel_id: string }>(
     'SELECT channel_id FROM subscriptions WHERE subscriber_id = $1',
     [userId]
   );
 
-  const subscribedChannelIds = subscriptions.rows.map(r => r.channel_id);
+  const subscribedChannelIds = subscriptions.rows.map((r) => r.channel_id);
 
   // Combine multiple recommendation sources
-  const recommendations = [];
+  const recommendations: (VideoRow & { source: string })[] = [];
 
   // 1. Recent videos from subscribed channels (highest priority)
   if (subscribedChannelIds.length > 0) {
-    const subscriptionVideos = await query(
+    const subscriptionVideos = await query<VideoRow>(
       `SELECT v.*, u.username, u.channel_name, u.avatar_url
        FROM videos v
        JOIN users u ON v.channel_id = u.id
@@ -74,15 +162,21 @@ const getPersonalizedRecommendations = async (userId, limit) => {
          AND v.id != ALL($2)
        ORDER BY v.published_at DESC
        LIMIT $3`,
-      [subscribedChannelIds, watchedVideoIds.length > 0 ? watchedVideoIds : ['none'], Math.ceil(limit * 0.4)]
+      [
+        subscribedChannelIds,
+        watchedVideoIds.length > 0 ? watchedVideoIds : ['none'],
+        Math.ceil(limit * 0.4),
+      ]
     );
 
-    recommendations.push(...subscriptionVideos.rows.map(v => ({ ...v, source: 'subscription' })));
+    recommendations.push(
+      ...subscriptionVideos.rows.map((v) => ({ ...v, source: 'subscription' }))
+    );
   }
 
   // 2. Videos from preferred categories
   if (preferredCategories.length > 0) {
-    const categoryVideos = await query(
+    const categoryVideos = await query<VideoRow>(
       `SELECT v.*, u.username, u.channel_name, u.avatar_url
        FROM videos v
        JOIN users u ON v.channel_id = u.id
@@ -92,16 +186,22 @@ const getPersonalizedRecommendations = async (userId, limit) => {
          AND v.id != ALL($2)
        ORDER BY v.view_count DESC, v.published_at DESC
        LIMIT $3`,
-      [preferredCategories, watchedVideoIds.length > 0 ? watchedVideoIds : ['none'], Math.ceil(limit * 0.3)]
+      [
+        preferredCategories,
+        watchedVideoIds.length > 0 ? watchedVideoIds : ['none'],
+        Math.ceil(limit * 0.3),
+      ]
     );
 
-    recommendations.push(...categoryVideos.rows.map(v => ({ ...v, source: 'category' })));
+    recommendations.push(
+      ...categoryVideos.rows.map((v) => ({ ...v, source: 'category' }))
+    );
   }
 
   // 3. Trending videos
   const trendingIds = await getTrendingVideos(Math.ceil(limit * 0.3));
   if (trendingIds.length > 0) {
-    const trendingVideos = await query(
+    const trendingVideos = await query<VideoRow>(
       `SELECT v.*, u.username, u.channel_name, u.avatar_url
        FROM videos v
        JOIN users u ON v.channel_id = u.id
@@ -112,7 +212,9 @@ const getPersonalizedRecommendations = async (userId, limit) => {
       [trendingIds, watchedVideoIds.length > 0 ? watchedVideoIds : ['none']]
     );
 
-    recommendations.push(...trendingVideos.rows.map(v => ({ ...v, source: 'trending' })));
+    recommendations.push(
+      ...trendingVideos.rows.map((v) => ({ ...v, source: 'trending' }))
+    );
   }
 
   // Deduplicate and shuffle
@@ -121,15 +223,17 @@ const getPersonalizedRecommendations = async (userId, limit) => {
   return uniqueRecommendations.map(formatVideoForRecommendation);
 };
 
-// Get generic recommendations for anonymous users
-const getGenericRecommendations = async (limit) => {
+/**
+ * Get generic recommendations for anonymous users
+ */
+const getGenericRecommendations = async (limit: number): Promise<VideoRecommendation[]> => {
   // Mix of trending and recent popular videos
-  const recommendations = [];
+  const recommendations: (VideoRow & { source: string })[] = [];
 
   // 1. Trending videos
   const trendingIds = await getTrendingVideos(Math.ceil(limit * 0.5));
   if (trendingIds.length > 0) {
-    const trendingVideos = await query(
+    const trendingVideos = await query<VideoRow>(
       `SELECT v.*, u.username, u.channel_name, u.avatar_url
        FROM videos v
        JOIN users u ON v.channel_id = u.id
@@ -139,11 +243,13 @@ const getGenericRecommendations = async (limit) => {
       [trendingIds]
     );
 
-    recommendations.push(...trendingVideos.rows.map(v => ({ ...v, source: 'trending' })));
+    recommendations.push(
+      ...trendingVideos.rows.map((v) => ({ ...v, source: 'trending' }))
+    );
   }
 
   // 2. Recent popular videos
-  const popularVideos = await query(
+  const popularVideos = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
      FROM videos v
      JOIN users u ON v.channel_id = u.id
@@ -155,7 +261,9 @@ const getGenericRecommendations = async (limit) => {
     [Math.ceil(limit * 0.5)]
   );
 
-  recommendations.push(...popularVideos.rows.map(v => ({ ...v, source: 'popular' })));
+  recommendations.push(
+    ...popularVideos.rows.map((v) => ({ ...v, source: 'popular' }))
+  );
 
   // Deduplicate and shuffle
   const uniqueRecommendations = deduplicateAndShuffle(recommendations, limit);
@@ -163,10 +271,15 @@ const getGenericRecommendations = async (limit) => {
   return uniqueRecommendations.map(formatVideoForRecommendation);
 };
 
-// Get trending videos
-export const getTrending = async (limit = 50, category = null) => {
+/**
+ * Get trending videos
+ */
+export const getTrending = async (
+  limit: number = 50,
+  category: string | null = null
+): Promise<VideoRecommendation[]> => {
   const cacheKey = category ? `trending:${category}` : 'trending:all';
-  const cached = await cacheGet(cacheKey);
+  const cached = await cacheGet<VideoRecommendation[]>(cacheKey);
   if (cached) {
     return cached;
   }
@@ -180,7 +293,7 @@ export const getTrending = async (limit = 50, category = null) => {
       AND v.published_at > NOW() - INTERVAL '7 days'
   `;
 
-  const params = [];
+  const params: (string | number)[] = [];
 
   if (category) {
     queryText += ` AND $1 = ANY(v.categories)`;
@@ -197,7 +310,7 @@ export const getTrending = async (limit = 50, category = null) => {
 
   params.push(limit);
 
-  const result = await query(queryText, params);
+  const result = await query<VideoRow>(queryText, params);
 
   const trending = result.rows.map(formatVideoForRecommendation);
 
@@ -207,18 +320,19 @@ export const getTrending = async (limit = 50, category = null) => {
   return trending;
 };
 
-// Search videos
-export const searchVideos = async (searchQuery, options = {}) => {
-  const {
-    page = 1,
-    limit = 20,
-    sortBy = 'relevance', // 'relevance', 'date', 'views', 'rating'
-  } = options;
+/**
+ * Search videos
+ */
+export const searchVideos = async (
+  searchQuery: string,
+  options: SearchOptions = {}
+): Promise<SearchResult> => {
+  const { page = 1, limit = 20, sortBy = 'relevance' } = options;
 
   const offset = (page - 1) * limit;
 
   // Build search query with ranking
-  let orderClause;
+  let orderClause: string;
   switch (sortBy) {
     case 'date':
       orderClause = 'v.published_at DESC';
@@ -227,7 +341,8 @@ export const searchVideos = async (searchQuery, options = {}) => {
       orderClause = 'v.view_count DESC';
       break;
     case 'rating':
-      orderClause = '(v.like_count::float / NULLIF(v.like_count + v.dislike_count, 0)) DESC NULLS LAST';
+      orderClause =
+        '(v.like_count::float / NULLIF(v.like_count + v.dislike_count, 0)) DESC NULLS LAST';
       break;
     default:
       // Relevance: combine text matching with popularity
@@ -244,7 +359,7 @@ export const searchVideos = async (searchQuery, options = {}) => {
   const exactMatch = searchQuery;
   const fuzzyMatch = `%${searchQuery}%`;
 
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     `SELECT COUNT(*)
      FROM videos v
      WHERE v.status = 'ready'
@@ -255,7 +370,7 @@ export const searchVideos = async (searchQuery, options = {}) => {
 
   const total = parseInt(countResult.rows[0].count, 10);
 
-  const result = await query(
+  const result = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
      FROM videos v
      JOIN users u ON v.channel_id = u.id
@@ -279,12 +394,18 @@ export const searchVideos = async (searchQuery, options = {}) => {
   };
 };
 
-// Get subscription feed
-export const getSubscriptionFeed = async (userId, page = 1, limit = 20) => {
+/**
+ * Get subscription feed
+ */
+export const getSubscriptionFeed = async (
+  userId: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<PaginatedResult<VideoRecommendation>> => {
   const offset = (page - 1) * limit;
 
   // Get subscribed channel IDs
-  const subscriptions = await query(
+  const subscriptions = await query<{ channel_id: string }>(
     'SELECT channel_id FROM subscriptions WHERE subscriber_id = $1',
     [userId]
   );
@@ -296,9 +417,9 @@ export const getSubscriptionFeed = async (userId, page = 1, limit = 20) => {
     };
   }
 
-  const channelIds = subscriptions.rows.map(r => r.channel_id);
+  const channelIds = subscriptions.rows.map((r) => r.channel_id);
 
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     `SELECT COUNT(*)
      FROM videos
      WHERE channel_id = ANY($1)
@@ -309,7 +430,7 @@ export const getSubscriptionFeed = async (userId, page = 1, limit = 20) => {
 
   const total = parseInt(countResult.rows[0].count, 10);
 
-  const result = await query(
+  const result = await query<VideoRow>(
     `SELECT v.*, u.username, u.channel_name, u.avatar_url
      FROM videos v
      JOIN users u ON v.channel_id = u.id
@@ -332,18 +453,24 @@ export const getSubscriptionFeed = async (userId, page = 1, limit = 20) => {
   };
 };
 
-// Get watch history
-export const getWatchHistory = async (userId, page = 1, limit = 20) => {
+/**
+ * Get watch history
+ */
+export const getWatchHistory = async (
+  userId: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<PaginatedResult<WatchHistoryVideo>> => {
   const offset = (page - 1) * limit;
 
-  const countResult = await query(
+  const countResult = await query<{ count: string }>(
     'SELECT COUNT(DISTINCT video_id) FROM watch_history WHERE user_id = $1',
     [userId]
   );
 
   const total = parseInt(countResult.rows[0].count, 10);
 
-  const result = await query(
+  const result = await query<WatchHistoryRow>(
     `SELECT DISTINCT ON (wh.video_id)
        v.*, u.username, u.channel_name, u.avatar_url,
        wh.watched_at, wh.watch_percentage, wh.last_position_seconds
@@ -357,14 +484,14 @@ export const getWatchHistory = async (userId, page = 1, limit = 20) => {
   );
 
   // Sort by watched_at after deduplication
-  const sorted = result.rows.sort((a, b) =>
-    new Date(b.watched_at) - new Date(a.watched_at)
+  const sorted = result.rows.sort(
+    (a, b) => new Date(b.watched_at).getTime() - new Date(a.watched_at).getTime()
   );
 
   const paginated = sorted.slice(offset, offset + limit);
 
   return {
-    videos: paginated.map(v => ({
+    videos: paginated.map((v) => ({
       ...formatVideoForRecommendation(v),
       watchedAt: v.watched_at,
       watchPercentage: v.watch_percentage,
@@ -379,10 +506,17 @@ export const getWatchHistory = async (userId, page = 1, limit = 20) => {
   };
 };
 
-// Helper functions
-const deduplicateAndShuffle = (videos, limit) => {
-  const seen = new Set();
-  const unique = [];
+// ============ Helper Functions ============
+
+/**
+ * Deduplicate videos by ID and shuffle
+ */
+const deduplicateAndShuffle = <T extends { id: string }>(
+  videos: T[],
+  limit: number
+): T[] => {
+  const seen = new Set<string>();
+  const unique: T[] = [];
 
   for (const video of videos) {
     if (!seen.has(video.id)) {
@@ -400,7 +534,10 @@ const deduplicateAndShuffle = (videos, limit) => {
   return unique.slice(0, limit);
 };
 
-const formatVideoForRecommendation = (row) => ({
+/**
+ * Format video row for recommendation response
+ */
+const formatVideoForRecommendation = (row: VideoRow): VideoRecommendation => ({
   id: row.id,
   title: row.title,
   description: row.description,

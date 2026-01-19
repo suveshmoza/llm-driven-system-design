@@ -22,7 +22,7 @@ interface RateLimiterOptions {
 }
 
 // Rate limiters collection interface
-interface RateLimiters {
+export interface RateLimiters {
   upload: RateLimitRequestHandler;
   comment: RateLimitRequestHandler;
   like: RateLimitRequestHandler;

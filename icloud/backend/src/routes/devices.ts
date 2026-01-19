@@ -1,13 +1,47 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { pool } from '../db.js';
 
 const router = Router();
 
+interface RegisterDeviceBody {
+  name: string;
+  deviceType?: string;
+}
+
+interface UpdateDeviceBody {
+  name?: string;
+  deviceType?: string;
+}
+
+interface SyncHistoryQuery {
+  limit?: string;
+}
+
+interface DeviceRow {
+  id: string;
+  name: string;
+  device_type: string;
+  last_sync_at: Date | null;
+  sync_cursor: Record<string, unknown> | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface SyncOperationRow {
+  id: string;
+  operation_type: string;
+  status: string;
+  created_at: Date;
+  completed_at: Date | null;
+  file_name: string | null;
+  file_path: string | null;
+}
+
 // Get all devices for user
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `SELECT id, name, device_type, last_sync_at, sync_cursor, created_at, updated_at
@@ -18,7 +52,7 @@ router.get('/', async (req, res) => {
     );
 
     res.json({
-      devices: result.rows.map(d => ({
+      devices: result.rows.map((d: DeviceRow) => ({
         id: d.id,
         name: d.name,
         deviceType: d.device_type,
@@ -35,13 +69,14 @@ router.get('/', async (req, res) => {
 });
 
 // Register a new device
-router.post('/', async (req, res) => {
+router.post('/', async (req: Request<object, unknown, RegisterDeviceBody>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { name, deviceType } = req.body;
 
     if (!name) {
-      return res.status(400).json({ error: 'Device name is required' });
+      res.status(400).json({ error: 'Device name is required' });
+      return;
     }
 
     // Check if device with same name exists
@@ -51,10 +86,11 @@ router.post('/', async (req, res) => {
     );
 
     if (existing.rows.length > 0) {
-      return res.status(409).json({
+      res.status(409).json({
         error: 'Device with this name already exists',
         deviceId: existing.rows[0].id,
       });
+      return;
     }
 
     const result = await pool.query(
@@ -79,9 +115,9 @@ router.post('/', async (req, res) => {
 });
 
 // Get device details
-router.get('/:deviceId', async (req, res) => {
+router.get('/:deviceId', async (req: Request<{ deviceId: string }>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { deviceId } = req.params;
 
     const result = await pool.query(
@@ -92,10 +128,11 @@ router.get('/:deviceId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found' });
+      res.status(404).json({ error: 'Device not found' });
+      return;
     }
 
-    const device = result.rows[0];
+    const device: DeviceRow = result.rows[0];
 
     res.json({
       id: device.id,
@@ -113,14 +150,14 @@ router.get('/:deviceId', async (req, res) => {
 });
 
 // Update device
-router.patch('/:deviceId', async (req, res) => {
+router.patch('/:deviceId', async (req: Request<{ deviceId: string }, unknown, UpdateDeviceBody>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { deviceId } = req.params;
     const { name, deviceType } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates: string[] = [];
+    const params: string[] = [];
     let paramIndex = 1;
 
     if (name) {
@@ -134,7 +171,8 @@ router.patch('/:deviceId', async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: 'No updates provided' });
+      res.status(400).json({ error: 'No updates provided' });
+      return;
     }
 
     updates.push(`updated_at = NOW()`);
@@ -148,7 +186,8 @@ router.patch('/:deviceId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found' });
+      res.status(404).json({ error: 'Device not found' });
+      return;
     }
 
     const device = result.rows[0];
@@ -166,14 +205,15 @@ router.patch('/:deviceId', async (req, res) => {
 });
 
 // Delete device
-router.delete('/:deviceId', async (req, res) => {
+router.delete('/:deviceId', async (req: Request<{ deviceId: string }>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { deviceId } = req.params;
 
     // Don't allow deleting current device
     if (req.deviceId === deviceId) {
-      return res.status(400).json({ error: 'Cannot delete current device' });
+      res.status(400).json({ error: 'Cannot delete current device' });
+      return;
     }
 
     const result = await pool.query(
@@ -182,7 +222,8 @@ router.delete('/:deviceId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Device not found' });
+      res.status(404).json({ error: 'Device not found' });
+      return;
     }
 
     res.json({ message: 'Device deleted', id: deviceId });
@@ -193,11 +234,11 @@ router.delete('/:deviceId', async (req, res) => {
 });
 
 // Get device sync history
-router.get('/:deviceId/sync-history', async (req, res) => {
+router.get('/:deviceId/sync-history', async (req: Request<{ deviceId: string }, unknown, unknown, SyncHistoryQuery>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { deviceId } = req.params;
-    const { limit = 50 } = req.query;
+    const { limit = '50' } = req.query;
 
     const result = await pool.query(
       `SELECT so.id, so.operation_type, so.status, so.created_at, so.completed_at,
@@ -212,7 +253,7 @@ router.get('/:deviceId/sync-history', async (req, res) => {
 
     res.json({
       deviceId,
-      operations: result.rows.map(op => ({
+      operations: result.rows.map((op: SyncOperationRow) => ({
         id: op.id,
         operationType: op.operation_type,
         status: op.status,

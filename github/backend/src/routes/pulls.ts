@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../db/index.js';
 import * as gitService from '../services/git.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -13,10 +13,70 @@ import { prsCreated, prsMerged } from '../shared/metrics.js';
 
 const router = Router();
 
+interface PullRequest {
+  id: number;
+  repo_id: number;
+  number: number;
+  title: string;
+  body: string | null;
+  head_branch: string;
+  head_sha: string;
+  base_branch: string;
+  base_sha: string;
+  author_id: number;
+  state: 'open' | 'closed' | 'merged';
+  is_draft: boolean;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  merged_by: number | null;
+  merged_at: Date | null;
+  closed_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+  author_name?: string;
+  author_avatar?: string;
+  merged_by_name?: string;
+}
+
+interface ListPullsQuery {
+  state?: string;
+  page?: string;
+  limit?: string;
+}
+
+interface CreatePRBody {
+  title?: string;
+  body?: string;
+  headBranch?: string;
+  baseBranch?: string;
+  isDraft?: boolean;
+}
+
+interface UpdatePRBody {
+  title?: string;
+  body?: string;
+  state?: string;
+}
+
+interface MergeBody {
+  strategy?: 'merge' | 'squash' | 'rebase';
+  message?: string;
+}
+
+interface ReviewBody {
+  state?: 'approved' | 'changes_requested' | 'commented';
+  body?: string;
+}
+
+interface CommentBody {
+  body?: string;
+}
+
 /**
  * Get next PR/issue number for a repo
  */
-async function getNextNumber(repoId) {
+async function getNextNumber(repoId: number): Promise<number> {
   const prResult = await query(
     'SELECT COALESCE(MAX(number), 0) as max_num FROM pull_requests WHERE repo_id = $1',
     [repoId]
@@ -26,15 +86,15 @@ async function getNextNumber(repoId) {
     [repoId]
   );
 
-  return Math.max(parseInt(prResult.rows[0].max_num), parseInt(issueResult.rows[0].max_num)) + 1;
+  return Math.max(parseInt(prResult.rows[0].max_num as string), parseInt(issueResult.rows[0].max_num as string)) + 1;
 }
 
 /**
  * List pull requests for a repo
  */
-router.get('/:owner/:repo/pulls', async (req, res) => {
+router.get('/:owner/:repo/pulls', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { state = 'open', page = 1, limit = 20 } = req.query;
+  const { state = 'open', page = '1', limit = '20' } = req.query as ListPullsQuery;
 
   const repoResult = await query(
     `SELECT r.id FROM repositories r
@@ -44,14 +104,15 @@ router.get('/:owner/:repo/pulls', async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
   let stateFilter = '';
-  const params = [repoId];
+  const params: unknown[] = [repoId];
 
   if (state === 'open') {
     stateFilter = 'AND p.state = $2';
@@ -78,7 +139,7 @@ router.get('/:owner/:repo/pulls', async (req, res) => {
 
   res.json({
     pulls: result.rows,
-    total: parseInt(countResult.rows[0].count),
+    total: parseInt(countResult.rows[0].count as string),
     page: parseInt(page),
     limit: parseInt(limit),
   });
@@ -87,7 +148,7 @@ router.get('/:owner/:repo/pulls', async (req, res) => {
 /**
  * Get single pull request
  */
-router.get('/:owner/:repo/pulls/:number', async (req, res) => {
+router.get('/:owner/:repo/pulls/:number', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
 
   const result = await query(
@@ -105,10 +166,11 @@ router.get('/:owner/:repo/pulls/:number', async (req, res) => {
   );
 
   if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
-  const pr = result.rows[0];
+  const pr = result.rows[0] as PullRequest;
 
   // Get commits with circuit breaker
   const commits = await withCircuitBreaker('git_commits_between', () =>
@@ -150,7 +212,7 @@ router.get('/:owner/:repo/pulls/:number', async (req, res) => {
 /**
  * Get PR diff (with caching)
  */
-router.get('/:owner/:repo/pulls/:number/diff', async (req, res) => {
+router.get('/:owner/:repo/pulls/:number/diff', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
 
   const result = await query(
@@ -163,10 +225,11 @@ router.get('/:owner/:repo/pulls/:number/diff', async (req, res) => {
   );
 
   if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
-  const pr = result.rows[0];
+  const pr = result.rows[0] as { id: number; head_branch: string; base_branch: string };
 
   // Try cache first
   let diff = await getPRDiffFromCache(pr.id);
@@ -187,13 +250,14 @@ router.get('/:owner/:repo/pulls/:number/diff', async (req, res) => {
 /**
  * Create pull request (with idempotency)
  */
-router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/pulls', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo } = req.params;
-  const { title, body, headBranch, baseBranch, isDraft } = req.body;
+  const { title, body, headBranch, baseBranch, isDraft } = req.body as CreatePRBody;
   const idempotencyKey = getIdempotencyKey(req);
 
   if (!title || !headBranch || !baseBranch) {
-    return res.status(400).json({ error: 'Title, head branch, and base branch required' });
+    res.status(400).json({ error: 'Title, head branch, and base branch required' });
+    return;
   }
 
   const repoResult = await query(
@@ -204,10 +268,11 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
   );
 
   if (repoResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Repository not found' });
+    res.status(404).json({ error: 'Repository not found' });
+    return;
   }
 
-  const repoId = repoResult.rows[0].id;
+  const repoId = repoResult.rows[0].id as number;
 
   // Verify branches exist with circuit breaker
   const headExists = await withCircuitBreaker('git_branch_exists', () =>
@@ -218,16 +283,18 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
   );
 
   if (!headExists) {
-    return res.status(400).json({ error: 'Head branch does not exist' });
+    res.status(400).json({ error: 'Head branch does not exist' });
+    return;
   }
   if (!baseExists) {
-    return res.status(400).json({ error: 'Base branch does not exist' });
+    res.status(400).json({ error: 'Base branch does not exist' });
+    return;
   }
 
   try {
     // Use idempotency transaction
     const { cached, response } = await withIdempotencyTransaction(
-      idempotencyKey,
+      idempotencyKey || '',
       'pr_create',
       async (tx) => {
         // Get SHAs with circuit breaker
@@ -252,13 +319,13 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
           'SELECT COALESCE(MAX(number), 0) as max_num FROM issues WHERE repo_id = $1',
           [repoId]
         );
-        const number = Math.max(
-          parseInt(prMax.rows[0].max_num),
-          parseInt(issueMax.rows[0].max_num)
+        const prNumber = Math.max(
+          parseInt(prMax.rows[0].max_num as string),
+          parseInt(issueMax.rows[0].max_num as string)
         ) + 1;
 
         // Insert PR
-        const result = await tx.query(
+        const insertResult = await tx.query(
           `INSERT INTO pull_requests
            (repo_id, number, title, body, head_branch, head_sha, base_branch, base_sha,
             author_id, additions, deletions, changed_files, is_draft)
@@ -266,14 +333,14 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
            RETURNING *`,
           [
             repoId,
-            number,
+            prNumber,
             title,
             body || null,
             headBranch,
             headSha,
             baseBranch,
             baseSha,
-            req.user.id,
+            req.user!.id,
             diff.stats.additions,
             diff.stats.deletions,
             diff.stats.files.length,
@@ -281,7 +348,7 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
           ]
         );
 
-        const pr = result.rows[0];
+        const pr = insertResult.rows[0] as PullRequest;
 
         return { resourceId: pr.id, response: pr };
       }
@@ -291,7 +358,8 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
       // Return cached response for duplicate request
       prsCreated.inc({ status: 'duplicate' });
       req.log?.info({ idempotencyKey }, 'PR creation request deduplicated');
-      return res.status(200).json(response);
+      res.status(200).json(response);
+      return;
     }
 
     // Audit log
@@ -315,9 +383,9 @@ router.post('/:owner/:repo/pulls', requireAuth, async (req, res) => {
 /**
  * Update pull request
  */
-router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req, res) => {
+router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
-  const { title, body, state } = req.body;
+  const { title, body, state } = req.body as UpdatePRBody;
 
   const prResult = await query(
     `SELECT p.* FROM pull_requests p
@@ -328,18 +396,20 @@ router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req, res) => {
   );
 
   if (prResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
-  const pr = prResult.rows[0];
+  const pr = prResult.rows[0] as PullRequest;
 
   // Only author can update
-  if (pr.author_id !== req.user.id) {
-    return res.status(403).json({ error: 'Not authorized' });
+  if (pr.author_id !== req.user!.id) {
+    res.status(403).json({ error: 'Not authorized' });
+    return;
   }
 
-  const updates = [];
-  const params = [];
+  const updates: string[] = [];
+  const params: unknown[] = [];
 
   if (title !== undefined) {
     params.push(title);
@@ -362,7 +432,8 @@ router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req, res) => {
   }
 
   if (updates.length === 0) {
-    return res.json(pr);
+    res.json(pr);
+    return;
   }
 
   params.push(new Date());
@@ -384,9 +455,9 @@ router.patch('/:owner/:repo/pulls/:number', requireAuth, async (req, res) => {
 /**
  * Merge pull request
  */
-router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
-  const { strategy = 'merge', message } = req.body;
+  const { strategy = 'merge', message } = req.body as MergeBody;
 
   const prResult = await query(
     `SELECT p.*, r.id as repo_id FROM pull_requests p
@@ -397,13 +468,15 @@ router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req, res) =
   );
 
   if (prResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
-  const pr = prResult.rows[0];
+  const pr = prResult.rows[0] as PullRequest;
 
   if (pr.state !== 'open') {
-    return res.status(400).json({ error: 'Pull request is not open' });
+    res.status(400).json({ error: 'Pull request is not open' });
+    return;
   }
 
   try {
@@ -420,7 +493,8 @@ router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req, res) =
     );
 
     if (!mergeResult.success) {
-      return res.status(400).json({ error: mergeResult.error || 'Merge failed' });
+      res.status(400).json({ error: mergeResult.error || 'Merge failed' });
+      return;
     }
 
     // Update PR
@@ -428,7 +502,7 @@ router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req, res) =
       `UPDATE pull_requests
        SET state = 'merged', merged_by = $1, merged_at = NOW(), updated_at = NOW()
        WHERE id = $2`,
-      [req.user.id, pr.id]
+      [req.user!.id, pr.id]
     );
 
     // Invalidate caches
@@ -457,12 +531,13 @@ router.post('/:owner/:repo/pulls/:number/merge', requireAuth, async (req, res) =
 /**
  * Add review
  */
-router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
-  const { state, body } = req.body;
+  const { state, body } = req.body as ReviewBody;
 
   if (!state || !['approved', 'changes_requested', 'commented'].includes(state)) {
-    return res.status(400).json({ error: 'Invalid review state' });
+    res.status(400).json({ error: 'Invalid review state' });
+    return;
   }
 
   const prResult = await query(
@@ -474,16 +549,17 @@ router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req, res)
   );
 
   if (prResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
-  const pr = prResult.rows[0];
+  const pr = prResult.rows[0] as PullRequest;
 
   const result = await query(
     `INSERT INTO reviews (pr_id, reviewer_id, state, body, commit_sha)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [pr.id, req.user.id, state, body || null, pr.head_sha]
+    [pr.id, req.user!.id, state, body || null, pr.head_sha]
   );
 
   res.status(201).json(result.rows[0]);
@@ -492,7 +568,7 @@ router.post('/:owner/:repo/pulls/:number/reviews', requireAuth, async (req, res)
 /**
  * Get PR comments
  */
-router.get('/:owner/:repo/pulls/:number/comments', async (req, res) => {
+router.get('/:owner/:repo/pulls/:number/comments', async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
 
   const prResult = await query(
@@ -504,7 +580,8 @@ router.get('/:owner/:repo/pulls/:number/comments', async (req, res) => {
   );
 
   if (prResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
   const result = await query(
@@ -522,12 +599,13 @@ router.get('/:owner/:repo/pulls/:number/comments', async (req, res) => {
 /**
  * Add PR comment
  */
-router.post('/:owner/:repo/pulls/:number/comments', requireAuth, async (req, res) => {
+router.post('/:owner/:repo/pulls/:number/comments', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { owner, repo, number } = req.params;
-  const { body } = req.body;
+  const { body } = req.body as CommentBody;
 
   if (!body) {
-    return res.status(400).json({ error: 'Comment body required' });
+    res.status(400).json({ error: 'Comment body required' });
+    return;
   }
 
   const prResult = await query(
@@ -539,14 +617,15 @@ router.post('/:owner/:repo/pulls/:number/comments', requireAuth, async (req, res
   );
 
   if (prResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Pull request not found' });
+    res.status(404).json({ error: 'Pull request not found' });
+    return;
   }
 
   const result = await query(
     `INSERT INTO comments (pr_id, user_id, body)
      VALUES ($1, $2, $3)
      RETURNING *`,
-    [prResult.rows[0].id, req.user.id, body]
+    [prResult.rows[0].id, req.user!.id, body]
   );
 
   res.status(201).json(result.rows[0]);

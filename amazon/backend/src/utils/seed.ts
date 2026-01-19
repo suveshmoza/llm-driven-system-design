@@ -1,8 +1,32 @@
 import 'dotenv/config';
 import { initializeDb, query, transaction } from '../services/database.js';
-import bcrypt from 'bcrypt';
+import type { PoolClient } from 'pg';
 
-const sampleProducts = [
+interface SampleProduct {
+  title: string;
+  description: string;
+  categorySlug: string;
+  price: number;
+  compareAtPrice?: number;
+  images: string[];
+  attributes: Record<string, unknown>;
+  stock: number;
+}
+
+interface CategoryRow {
+  id: number;
+  slug: string;
+}
+
+interface SellerRow {
+  id: number;
+}
+
+interface ProductRow {
+  id: number;
+}
+
+const sampleProducts: SampleProduct[] = [
   {
     title: 'Apple MacBook Pro 14-inch M3',
     description: 'The most advanced Mac laptop for professionals. Powered by the M3 chip with 8-core CPU and 10-core GPU.',
@@ -117,7 +141,7 @@ const sampleProducts = [
   }
 ];
 
-async function seed() {
+async function seed(): Promise<void> {
   try {
     console.log('Connecting to database...');
     await initializeDb();
@@ -125,18 +149,18 @@ async function seed() {
     console.log('Seeding products...');
 
     // Get seller id
-    const sellerResult = await query(
+    const sellerResult = await query<SellerRow>(
       "SELECT s.id FROM sellers s JOIN users u ON s.user_id = u.id WHERE u.email = 'seller@amazon.local'"
     );
 
-    let sellerId = null;
+    let sellerId: number | null = null;
     if (sellerResult.rows.length > 0) {
       sellerId = sellerResult.rows[0].id;
     }
 
     // Get category map
-    const categoriesResult = await query('SELECT id, slug FROM categories');
-    const categoryMap = new Map();
+    const categoriesResult = await query<CategoryRow>('SELECT id, slug FROM categories');
+    const categoryMap = new Map<string, number>();
     categoriesResult.rows.forEach(cat => categoryMap.set(cat.slug, cat.id));
 
     for (const product of sampleProducts) {
@@ -147,9 +171,9 @@ async function seed() {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '') + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
 
-      await transaction(async (client) => {
+      await transaction(async (client: PoolClient) => {
         // Check if product already exists
-        const existing = await client.query(
+        const existing = await client.query<ProductRow>(
           'SELECT id FROM products WHERE title = $1',
           [product.title]
         );
@@ -160,7 +184,7 @@ async function seed() {
         }
 
         // Insert product
-        const productResult = await client.query(
+        const productResult = await client.query<ProductRow>(
           `INSERT INTO products (seller_id, title, slug, description, category_id, price, compare_at_price, images, attributes, rating, review_count)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING id`,

@@ -1,24 +1,35 @@
-const express = require('express');
-const cors = require('cors');
-const { v4: uuidv4 } = require('uuid');
-require('dotenv').config();
+import express, { type Request, type Response, type NextFunction } from 'express';
+import cors from 'cors';
+import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 // Import shared modules
-const { logger } = require('./shared/logger');
-const { register, metricsMiddleware, updatePoolMetrics } = require('./shared/metrics');
-const { pool } = require('./db/pool');
-const { redis } = require('./db/redis');
-const { getStorageStats, RETENTION_CONFIG } = require('./shared/archival');
-const { bankApiCircuit, cardNetworkCircuit, achNetworkCircuit } = require('./shared/circuit-breaker');
+import { logger } from './shared/logger.js';
+import { register, metricsMiddleware, updatePoolMetrics } from './shared/metrics.js';
+import { pool } from './db/pool.js';
+import { redis } from './db/redis.js';
+import { getStorageStats, RETENTION_CONFIG } from './shared/archival.js';
+import { bankApiCircuit, cardNetworkCircuit, achNetworkCircuit } from './shared/circuit-breaker.js';
 
 // Import routes
-const authRoutes = require('./routes/auth');
-const walletRoutes = require('./routes/wallet');
-const transferRoutes = require('./routes/transfers');
-const requestRoutes = require('./routes/requests');
-const feedRoutes = require('./routes/feed');
-const friendsRoutes = require('./routes/friends');
-const paymentMethodsRoutes = require('./routes/paymentMethods');
+import authRoutes from './routes/auth.js';
+import walletRoutes from './routes/wallet.js';
+import transferRoutes from './routes/transfers.js';
+import requestRoutes from './routes/requests.js';
+import feedRoutes from './routes/feed.js';
+import friendsRoutes from './routes/friends.js';
+import paymentMethodsRoutes from './routes/paymentMethods.js';
+
+// Extend Express Request type
+declare global {
+  namespace Express {
+    interface Request {
+      requestId?: string;
+    }
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,9 +48,8 @@ app.use(cors({
 app.use(express.json());
 
 // Request ID middleware - adds unique ID for request tracing
-app.use((req, res, next) => {
-  req.requestId = req.headers['x-request-id'] || uuidv4();
-  res.setHeader('x-request-id', req.requestId);
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  req.requestId = (req.headers['x-request-id'] as string | undefined) || uuidv4();
   next();
 });
 
@@ -47,7 +57,7 @@ app.use((req, res, next) => {
 app.use(metricsMiddleware);
 
 // Structured request logging with pino
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
 
   // Log request
@@ -85,7 +95,7 @@ app.use((req, res, next) => {
 /**
  * Basic health check - returns 200 if server is running
  */
-app.get('/health', (req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -94,12 +104,30 @@ app.get('/health', (req, res) => {
   });
 });
 
+interface HealthCheck {
+  status: string;
+  timestamp: string;
+  service: string;
+  uptime: number;
+  checks: {
+    postgres?: { status: string; latencyMs?: number; error?: string };
+    redis?: { status: string; latencyMs?: number; error?: string };
+    circuitBreakers?: {
+      bankApi: ReturnType<typeof bankApiCircuit.getStats>;
+      cardNetwork: ReturnType<typeof cardNetworkCircuit.getStats>;
+      achNetwork: ReturnType<typeof achNetworkCircuit.getStats>;
+    };
+    connectionPool?: { total: number; idle: number; waiting: number };
+  };
+  memory?: { heapUsedMB: number; heapTotalMB: number; rssMB: number };
+}
+
 /**
  * Detailed health check - checks all dependencies
  * Use this for load balancer health checks with longer intervals
  */
-app.get('/health/detailed', async (req, res) => {
-  const health = {
+app.get('/health/detailed', async (_req: Request, res: Response) => {
+  const health: HealthCheck = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'venmo-api',
@@ -119,7 +147,7 @@ app.get('/health/detailed', async (req, res) => {
     health.status = 'degraded';
     health.checks.postgres = {
       status: 'error',
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 
@@ -135,7 +163,7 @@ app.get('/health/detailed', async (req, res) => {
     health.status = 'degraded';
     health.checks.redis = {
       status: 'error',
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 
@@ -171,7 +199,7 @@ app.get('/health/detailed', async (req, res) => {
  * Liveness probe - for Kubernetes
  * Returns 200 if the process is alive
  */
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'alive' });
 });
 
@@ -179,7 +207,7 @@ app.get('/health/live', (req, res) => {
  * Readiness probe - for Kubernetes
  * Returns 200 if ready to accept traffic
  */
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', async (_req: Request, res: Response) => {
   try {
     // Quick check of critical dependencies
     await Promise.all([
@@ -206,7 +234,7 @@ app.get('/health/ready', async (req, res) => {
  * - Circuit breaker states
  * - Node.js runtime metrics
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response) => {
   try {
     // Update pool metrics before serving
     updatePoolMetrics(pool);
@@ -216,9 +244,9 @@ app.get('/metrics', async (req, res) => {
   } catch (error) {
     logger.error({
       event: 'metrics_error',
-      error: error.message,
+      error: (error as Error).message,
     });
-    res.status(500).end(error.message);
+    res.status(500).end((error as Error).message);
   }
 });
 
@@ -229,7 +257,7 @@ app.get('/metrics', async (req, res) => {
 /**
  * Storage statistics - for monitoring data growth
  */
-app.get('/admin/storage-stats', async (req, res) => {
+app.get('/admin/storage-stats', async (_req: Request, res: Response) => {
   try {
     const stats = await getStorageStats();
     res.json({
@@ -240,7 +268,7 @@ app.get('/admin/storage-stats', async (req, res) => {
   } catch (error) {
     logger.error({
       event: 'storage_stats_error',
-      error: error.message,
+      error: (error as Error).message,
     });
     res.status(500).json({ error: 'Failed to get storage stats' });
   }
@@ -249,7 +277,7 @@ app.get('/admin/storage-stats', async (req, res) => {
 /**
  * Circuit breaker status - for debugging
  */
-app.get('/admin/circuit-breakers', (req, res) => {
+app.get('/admin/circuit-breakers', (_req: Request, res: Response) => {
   res.json({
     bankApi: bankApiCircuit.getStats(),
     cardNetwork: cardNetworkCircuit.getStats(),
@@ -273,8 +301,12 @@ app.use('/api/payment-methods', paymentMethodsRoutes);
 // ERROR HANDLING
 // ============================================================================
 
+interface ErrorWithStack extends Error {
+  stack?: string;
+}
+
 // Global error handler
-app.use((err, req, res, next) => {
+app.use((err: ErrorWithStack, req: Request, res: Response, _next: NextFunction) => {
   logger.error({
     event: 'unhandled_error',
     requestId: req.requestId,
@@ -291,7 +323,7 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   logger.warn({
     event: 'route_not_found',
     requestId: req.requestId,
@@ -344,4 +376,4 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-module.exports = app;
+export default app;

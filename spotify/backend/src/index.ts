@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import { RedisStore } from 'connect-redis';
@@ -21,6 +21,25 @@ import playbackRoutes from './routes/playback.js';
 import recommendationsRoutes from './routes/recommendations.js';
 import adminRoutes from './routes/admin.js';
 
+import type { AuthenticatedRequest } from './types.js';
+
+interface HealthDependency {
+  status: 'healthy' | 'unhealthy';
+  latencyMs?: number | null;
+  error?: string;
+}
+
+interface HealthResponse {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  dependencies: {
+    postgres?: HealthDependency;
+    redis?: HealthDependency;
+  };
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -39,7 +58,7 @@ app.use(cookieParser());
 app.use(metricsMiddleware);
 
 // Initialize server
-async function startServer() {
+async function startServer(): Promise<void> {
   try {
     // Initialize database connections
     await initializeDatabase();
@@ -52,7 +71,8 @@ async function startServer() {
       await initProducer();
       logger.info('Kafka producer initialized');
     } catch (error) {
-      logger.warn({ error: error.message }, 'Kafka producer initialization failed - playback events will not be published');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.warn({ error: errorMessage }, 'Kafka producer initialization failed - playback events will not be published');
     }
 
     // Session store with Redis
@@ -80,8 +100,8 @@ async function startServer() {
     app.get('/metrics', metricsHandler);
 
     // Enhanced health check with dependency status
-    app.get('/health', async (req, res) => {
-      const health = {
+    app.get('/health', async (_req: Request, res: Response): Promise<void> => {
+      const health: HealthResponse = {
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
@@ -91,7 +111,7 @@ async function startServer() {
 
       // Check PostgreSQL
       try {
-        const dbResult = await pool.query('SELECT 1');
+        await pool.query('SELECT 1');
         health.dependencies.postgres = {
           status: 'healthy',
           latencyMs: null, // Could add timing if needed
@@ -103,9 +123,10 @@ async function startServer() {
         dbPoolConnections.set({ state: 'waiting' }, pool.waitingCount);
       } catch (error) {
         health.status = 'degraded';
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         health.dependencies.postgres = {
           status: 'unhealthy',
-          error: error.message,
+          error: errorMessage,
         };
       }
 
@@ -117,9 +138,10 @@ async function startServer() {
         };
       } catch (error) {
         health.status = 'degraded';
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         health.dependencies.redis = {
           status: 'unhealthy',
-          error: error.message,
+          error: errorMessage,
         };
       }
 
@@ -128,18 +150,19 @@ async function startServer() {
     });
 
     // Liveness probe (simple check for Kubernetes)
-    app.get('/health/live', (req, res) => {
+    app.get('/health/live', (_req: Request, res: Response): void => {
       res.json({ status: 'alive' });
     });
 
     // Readiness probe (check if ready to receive traffic)
-    app.get('/health/ready', async (req, res) => {
+    app.get('/health/ready', async (_req: Request, res: Response): Promise<void> => {
       try {
         await pool.query('SELECT 1');
         await redisClient.ping();
         res.json({ status: 'ready' });
       } catch (error) {
-        res.status(503).json({ status: 'not ready', error: error.message });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        res.status(503).json({ status: 'not ready', error: errorMessage });
       }
     });
 
@@ -153,14 +176,15 @@ async function startServer() {
     app.use('/api/admin', adminRoutes);
 
     // Error handling middleware
-    app.use((err, req, res, next) => {
-      const log = req.log || logger;
+    app.use((err: Error, req: Request, res: Response, _next: NextFunction): void => {
+      const authReq = req as AuthenticatedRequest;
+      const log = authReq.log || logger;
       log.error({ err, stack: err.stack }, 'Unhandled error');
       res.status(500).json({ error: 'Internal server error' });
     });
 
     // 404 handler
-    app.use((req, res) => {
+    app.use((_req: Request, res: Response): void => {
       res.status(404).json({ error: 'Not found' });
     });
 
@@ -176,7 +200,7 @@ async function startServer() {
 }
 
 // Graceful shutdown
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutdown signal received, closing connections gracefully');
   try {
     await disconnectProducer();

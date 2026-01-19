@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { query } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -25,7 +25,7 @@ router.post('/start', authenticate, async (req, res) => {
 
     const listing = listingResult.rows[0];
     const hostId = listing.host_id;
-    const guestId = req.user.id;
+    const guestId = req.user!.id;
 
     if (hostId === guestId) {
       return res.status(400).json({ error: 'Cannot message yourself' });
@@ -76,7 +76,7 @@ router.get('/', authenticate, async (req, res) => {
       LEFT JOIN users g ON c.guest_id = g.id
       WHERE c.host_id = $1 OR c.guest_id = $1
       ORDER BY last_message_at DESC NULLS LAST`,
-      [req.user.id]
+      [req.user!.id]
     );
 
     res.json({ conversations: result.rows });
@@ -102,7 +102,7 @@ router.get('/:id', authenticate, async (req, res) => {
       LEFT JOIN users h ON c.host_id = h.id
       LEFT JOIN users g ON c.guest_id = g.id
       WHERE c.id = $1 AND (c.host_id = $2 OR c.guest_id = $2)`,
-      [id, req.user.id]
+      [id, req.user!.id]
     );
 
     if (convResult.rows.length === 0) {
@@ -125,7 +125,7 @@ router.get('/:id', authenticate, async (req, res) => {
     await query(
       `UPDATE messages SET is_read = TRUE
       WHERE conversation_id = $1 AND sender_id != $2 AND is_read = FALSE`,
-      [id, req.user.id]
+      [id, req.user!.id]
     );
 
     res.json({
@@ -151,7 +151,7 @@ router.post('/:id/messages', authenticate, async (req, res) => {
     // Verify conversation access
     const convResult = await query(
       'SELECT * FROM conversations WHERE id = $1 AND (host_id = $2 OR guest_id = $2)',
-      [id, req.user.id]
+      [id, req.user!.id]
     );
 
     if (convResult.rows.length === 0) {
@@ -162,7 +162,7 @@ router.post('/:id/messages', authenticate, async (req, res) => {
     const result = await query(
       `INSERT INTO messages (conversation_id, sender_id, content)
       VALUES ($1, $2, $3) RETURNING *`,
-      [id, req.user.id, content.trim()]
+      [id, req.user!.id, content.trim()]
     );
 
     // Update conversation timestamp
@@ -188,7 +188,7 @@ router.get('/unread/count', authenticate, async (req, res) => {
       WHERE (c.host_id = $1 OR c.guest_id = $1)
         AND m.sender_id != $1
         AND m.is_read = FALSE`,
-      [req.user.id]
+      [req.user!.id]
     );
 
     res.json({ count: parseInt(result.rows[0].count) });

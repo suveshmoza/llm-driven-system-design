@@ -163,7 +163,7 @@ router.get('/:type', async (req: SearchRequest, res: Response): Promise<void> =>
   const requestId = req.requestId;
 
   try {
-    const { type } = req.params;
+    const searchType = req.params.type as string;
     const { q, limit = '20' } = req.query as { q?: string; limit?: string };
 
     if (!q || q.trim().length === 0) {
@@ -172,21 +172,21 @@ router.get('/:type', async (req: SearchRequest, res: Response): Promise<void> =>
     }
 
     const validTypes = ['files', 'apps', 'contacts', 'web'];
-    if (!validTypes.includes(type)) {
+    if (!validTypes.includes(searchType)) {
       res.status(400).json({ error: 'Invalid type' });
       return;
     }
 
     // Track query by type
-    searchRequestsTotal.labels(`type_${type}`).inc();
+    searchRequestsTotal.labels(`type_${searchType}`).inc();
 
     const results = await searchAll(q.trim(), {
       limit: parseInt(limit),
-      types: [type]
+      types: [searchType]
     });
 
     // Record metrics
-    searchLatency.labels(type).observe((Date.now() - startTime) / 1000);
+    searchLatency.labels(searchType).observe((Date.now() - startTime) / 1000);
     searchResultCount.observe(results.length);
 
     // Log search
@@ -195,7 +195,7 @@ router.get('/:type', async (req: SearchRequest, res: Response): Promise<void> =>
       userId: req.session?.userId,
       resultCount: results.length,
       latencyMs: Date.now() - startTime,
-      sources: [type],
+      sources: [searchType],
       requestId
     });
 

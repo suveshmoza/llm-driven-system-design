@@ -1,8 +1,10 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, Application } from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import RedisStore from 'connect-redis';
 import dotenv from 'dotenv';
+import { Server } from 'http';
+import { RedisClientType } from 'redis';
 
 import { connectRedis, getRedis } from './redis.js';
 import { query } from './db.js';
@@ -13,16 +15,48 @@ import commentRoutes from './routes/comments.js';
 import feedRoutes from './routes/feed.js';
 
 // Shared modules
-import logger, { requestLogger, createLogger } from './shared/logger.js';
+import { requestLogger, createLogger } from './shared/logger.js';
 import { getMetrics, getContentType, metricsMiddleware } from './shared/metrics.js';
-import { createRateLimiters } from './shared/rateLimiter.js';
+import { createRateLimiters, RateLimiters } from './shared/rateLimiter.js';
 import { getAllCircuitBreakerStats } from './shared/circuitBreaker.js';
 import { ensureRole } from './middleware/auth.js';
 
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Extend Express Request to include requestId
+declare module 'express-serve-static-core' {
+  interface Request {
+    requestId?: string;
+  }
+}
+
+// Health check response interfaces
+interface HealthCheck {
+  status: 'healthy' | 'unhealthy';
+  latencyMs?: number;
+  error?: string;
+}
+
+interface HealthResponse {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  checks: {
+    database?: HealthCheck;
+    redis?: HealthCheck;
+    circuitBreakers?: Record<string, unknown>;
+  };
+  memory?: {
+    heapUsed: string;
+    heapTotal: string;
+    rss: string;
+  };
+  responseTimeMs?: number;
+}
+
+const app: Application = express();
+const PORT: string | number = process.env.PORT || 3000;
 const appLogger = createLogger('app');
 
 // Trust proxy for proper IP detection behind load balancer
@@ -42,9 +76,9 @@ app.use(requestLogger);
 app.use(metricsMiddleware);
 
 // Session setup with Redis
-let rateLimiters = null;
+let rateLimiters: RateLimiters | null = null;
 
-async function setupSession() {
+async function setupSession(): Promise<RedisClientType> {
   const redisClient = await connectRedis();
 
   const redisStore = new RedisStore({
@@ -75,20 +109,20 @@ async function setupSession() {
 }
 
 // Prometheus metrics endpoint
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (req: Request, res: Response): Promise<void> => {
   try {
     res.set('Content-Type', getContentType());
     res.end(await getMetrics());
   } catch (error) {
-    appLogger.error({ error: error.message }, 'Failed to get metrics');
+    appLogger.error({ error: (error as Error).message }, 'Failed to get metrics');
     res.status(500).end('Error collecting metrics');
   }
 });
 
 // Enhanced health check endpoint
-app.get('/health', async (req, res) => {
+app.get('/health', async (req: Request, res: Response): Promise<void> => {
   const startTime = Date.now();
-  const health = {
+  const health: HealthResponse = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
@@ -107,7 +141,7 @@ app.get('/health', async (req, res) => {
   } catch (error) {
     health.checks.database = {
       status: 'unhealthy',
-      error: error.message,
+      error: (error as Error).message,
     };
     health.status = 'degraded';
   }
@@ -124,7 +158,7 @@ app.get('/health', async (req, res) => {
   } catch (error) {
     health.checks.redis = {
       status: 'unhealthy',
-      error: error.message,
+      error: (error as Error).message,
     };
     health.status = 'degraded';
   }
@@ -147,12 +181,12 @@ app.get('/health', async (req, res) => {
 });
 
 // Liveness probe (for Kubernetes)
-app.get('/health/live', (req, res) => {
+app.get('/health/live', (req: Request, res: Response): void => {
   res.json({ status: 'alive', timestamp: new Date().toISOString() });
 });
 
 // Readiness probe (for Kubernetes)
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', async (req: Request, res: Response): Promise<void> => {
   try {
     await query('SELECT 1');
     const redis = getRedis();
@@ -161,14 +195,14 @@ app.get('/health/ready', async (req, res) => {
   } catch (error) {
     res.status(503).json({
       status: 'not ready',
-      error: error.message,
+      error: (error as Error).message,
       timestamp: new Date().toISOString(),
     });
   }
 });
 
 // Rate limiters middleware getter
-export const getRateLimiters = () => rateLimiters;
+export const getRateLimiters = (): RateLimiters | null => rateLimiters;
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -178,12 +212,17 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/feed', feedRoutes);
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response): void => {
   res.status(404).json({ error: 'Not found' });
 });
 
+// Error interface for typed error handling
+interface AppError extends Error {
+  status?: number;
+}
+
 // Error handler with structured logging
-app.use((err, req, res, next) => {
+app.use((err: AppError, req: Request, res: Response, _next: NextFunction): void => {
   const requestId = req.requestId || 'unknown';
 
   // Log error with context
@@ -211,7 +250,7 @@ app.use((err, req, res, next) => {
 });
 
 // Graceful shutdown
-const gracefulShutdown = async (signal) => {
+const gracefulShutdown = async (signal: string): Promise<void> => {
   appLogger.info({ signal }, 'Received shutdown signal, starting graceful shutdown');
 
   // Stop accepting new connections
@@ -225,7 +264,7 @@ const gracefulShutdown = async (signal) => {
     await redis.quit();
     appLogger.info('Redis connection closed');
   } catch (error) {
-    appLogger.error({ error: error.message }, 'Error closing Redis connection');
+    appLogger.error({ error: (error as Error).message }, 'Error closing Redis connection');
   }
 
   // Exit after timeout
@@ -237,10 +276,10 @@ const gracefulShutdown = async (signal) => {
   process.exit(0);
 };
 
-let server;
+let server: Server;
 
 // Start server
-async function start() {
+async function start(): Promise<void> {
   try {
     await setupSession();
     appLogger.info('Session store connected');
@@ -260,7 +299,7 @@ async function start() {
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   } catch (error) {
-    appLogger.error({ error: error.message }, 'Failed to start server');
+    appLogger.error({ error: (error as Error).message }, 'Failed to start server');
     console.error('Failed to start server:', error);
     process.exit(1);
   }

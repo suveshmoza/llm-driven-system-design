@@ -224,72 +224,74 @@ export async function searchAll(query: string, options: SearchOptions = {}): Pro
 
   const response = await esClient.search({
     index: indices,
-    body: {
-      size: limit,
-      query: {
-        bool: {
-          should: [
-            // Prefix matching on name fields
-            {
-              multi_match: {
-                query,
-                fields: ['name.prefix^3', 'title.prefix^3', 'name^2', 'title^2', 'content'],
-                type: 'best_fields'
+    size: limit,
+    query: {
+      function_score: {
+        query: {
+          bool: {
+            should: [
+              // Prefix matching on name fields
+              {
+                multi_match: {
+                  query,
+                  fields: ['name.prefix^3', 'title.prefix^3', 'name^2', 'title^2', 'content'],
+                  type: 'best_fields'
+                }
+              },
+              // Fuzzy matching for typo tolerance
+              {
+                multi_match: {
+                  query,
+                  fields: ['name', 'title', 'content'],
+                  fuzziness: 'AUTO',
+                  prefix_length: 2
+                }
+              }
+            ],
+            minimum_should_match: 1
+          }
+        },
+        // Boost recent and frequently used items
+        functions: [
+          {
+            gauss: {
+              modified_at: {
+                origin: 'now',
+                scale: '7d',
+                decay: 0.5
               }
             },
-            // Fuzzy matching for typo tolerance
-            {
-              multi_match: {
-                query,
-                fields: ['name', 'title', 'content'],
-                fuzziness: 'AUTO',
-                prefix_length: 2
+            weight: 2
+          },
+          {
+            gauss: {
+              last_used: {
+                origin: 'now',
+                scale: '3d',
+                decay: 0.5
               }
-            }
-          ],
-          minimum_should_match: 1
-        }
-      },
-      // Boost recent and frequently used items
-      functions: [
-        {
-          gauss: {
-            modified_at: {
-              origin: 'now',
-              scale: '7d',
-              decay: 0.5
-            }
+            },
+            weight: 3
           },
-          weight: 2
-        },
-        {
-          gauss: {
-            last_used: {
-              origin: 'now',
-              scale: '3d',
-              decay: 0.5
+          {
+            field_value_factor: {
+              field: 'usage_count',
+              factor: 0.1,
+              modifier: 'log1p',
+              missing: 1
             }
-          },
-          weight: 3
-        },
-        {
-          field_value_factor: {
-            field: 'usage_count',
-            factor: 0.1,
-            modifier: 'log1p',
-            missing: 1
           }
-        }
-      ],
-      score_mode: 'sum',
-      boost_mode: 'multiply'
+        ],
+        score_mode: 'sum',
+        boost_mode: 'multiply'
+      }
     }
   });
 
   return response.hits.hits.map(hit => ({
-    id: hit._id,
+    id: hit._id!,
     type: hit._index.replace('spotlight_', ''),
-    score: hit._score,
+    score: hit._score ?? null,
     ...(hit._source as Record<string, unknown>)
   }));
 }
@@ -324,38 +326,36 @@ export async function deleteDocument(indexName: string, id: string): Promise<voi
 export async function getSuggestions(prefix: string, limit: number = 10): Promise<SuggestionResult[]> {
   const response = await esClient.search({
     index: ['spotlight_files', 'spotlight_apps', 'spotlight_contacts', 'spotlight_web'],
-    body: {
-      size: limit,
-      query: {
-        bool: {
-          should: [
-            {
-              prefix: {
-                'name.keyword': {
-                  value: prefix.toLowerCase(),
-                  boost: 3
-                }
-              }
-            },
-            {
-              match: {
-                'name.prefix': {
-                  query: prefix,
-                  boost: 2
-                }
+    size: limit,
+    query: {
+      bool: {
+        should: [
+          {
+            prefix: {
+              'name.keyword': {
+                value: prefix.toLowerCase(),
+                boost: 3
               }
             }
-          ]
-        }
-      },
-      _source: ['name', 'title', 'type', 'bundle_id', 'url']
-    }
+          },
+          {
+            match: {
+              'name.prefix': {
+                query: prefix,
+                boost: 2
+              }
+            }
+          }
+        ]
+      }
+    },
+    _source: ['name', 'title', 'type', 'bundle_id', 'url']
   });
 
   return response.hits.hits.map(hit => {
     const source = hit._source as Record<string, unknown>;
     return {
-      id: hit._id,
+      id: hit._id!,
       type: hit._index.replace('spotlight_', ''),
       name: (source.name || source.title) as string,
       ...source

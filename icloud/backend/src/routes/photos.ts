@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import sharp from 'sharp';
 import crypto from 'crypto';
@@ -10,7 +10,7 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max for photos
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
@@ -22,11 +22,53 @@ const upload = multer({
 const PHOTOS_BUCKET = 'icloud-photos';
 const THUMBNAILS_BUCKET = 'icloud-thumbnails';
 
+interface ListPhotosQuery {
+  limit?: string;
+  offset?: string;
+  favorite?: string;
+  albumId?: string;
+}
+
+interface CreateAlbumBody {
+  name: string;
+  photoIds?: string[];
+}
+
+interface AddPhotosToAlbumBody {
+  photoIds: string[];
+}
+
+interface PhotoRow {
+  id: string;
+  original_hash: string;
+  thumbnail_key: string;
+  preview_key: string;
+  full_res_key: string;
+  width: number;
+  height: number;
+  taken_at: Date | null;
+  location_lat: string | null;
+  location_lng: string | null;
+  is_favorite: boolean;
+  created_at: Date;
+  metadata: Record<string, unknown>;
+}
+
+interface AlbumRow {
+  id: string;
+  name: string;
+  is_shared: boolean;
+  created_at: Date;
+  updated_at: Date;
+  photo_count: string;
+  cover_thumbnail: string | null;
+}
+
 // List photos
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request<object, unknown, unknown, ListPhotosQuery>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
-    const { limit = 50, offset = 0, favorite, albumId } = req.query;
+    const userId = req.user!.id;
+    const { limit = '50', offset = '0', favorite, albumId } = req.query;
 
     let query = `
       SELECT p.id, p.original_hash, p.thumbnail_key, p.preview_key,
@@ -34,7 +76,7 @@ router.get('/', async (req, res) => {
              p.is_favorite, p.created_at, p.metadata
       FROM photos p
     `;
-    const params = [userId];
+    const params: (string | number)[] = [userId];
     let paramIndex = 2;
 
     if (albumId) {
@@ -57,7 +99,7 @@ router.get('/', async (req, res) => {
     const result = await pool.query(query, params);
 
     res.json({
-      photos: result.rows.map(p => ({
+      photos: result.rows.map((p: PhotoRow) => ({
         id: p.id,
         thumbnailUrl: `/api/v1/photos/${p.id}/thumbnail`,
         previewUrl: `/api/v1/photos/${p.id}/preview`,
@@ -80,13 +122,14 @@ router.get('/', async (req, res) => {
 });
 
 // Upload photo
-router.post('/upload', upload.single('photo'), async (req, res) => {
+router.post('/upload', upload.single('photo'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const photo = req.file;
 
     if (!photo) {
-      return res.status(400).json({ error: 'No photo provided' });
+      res.status(400).json({ error: 'No photo provided' });
+      return;
     }
 
     // Calculate hash
@@ -99,10 +142,11 @@ router.post('/upload', upload.single('photo'), async (req, res) => {
     );
 
     if (existing.rows.length > 0) {
-      return res.status(409).json({
+      res.status(409).json({
         error: 'Photo already exists',
         photoId: existing.rows[0].id,
       });
+      return;
     }
 
     // Get image metadata
@@ -138,11 +182,11 @@ router.post('/upload', upload.single('photo'), async (req, res) => {
     ]);
 
     // Extract EXIF data
-    let takenAt = null;
-    let locationLat = null;
-    let locationLng = null;
-    let cameraMake = null;
-    let cameraModel = null;
+    let takenAt: Date | null = null;
+    let locationLat: number | null = null;
+    let locationLng: number | null = null;
+    let cameraMake: string | null = null;
+    let cameraModel: string | null = null;
 
     // Try to parse EXIF from metadata
     if (metadata.exif) {
@@ -195,10 +239,10 @@ router.post('/upload', upload.single('photo'), async (req, res) => {
 });
 
 // Get thumbnail
-router.get('/:photoId/thumbnail', async (req, res) => {
+router.get('/:photoId/thumbnail', async (req: Request<{ photoId: string }>, res: Response): Promise<void> => {
   try {
     const { photoId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const photo = await pool.query(
       'SELECT thumbnail_key FROM photos WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE',
@@ -206,7 +250,8 @@ router.get('/:photoId/thumbnail', async (req, res) => {
     );
 
     if (photo.rows.length === 0) {
-      return res.status(404).json({ error: 'Photo not found' });
+      res.status(404).json({ error: 'Photo not found' });
+      return;
     }
 
     const stream = await minioClient.getObject(THUMBNAILS_BUCKET, photo.rows[0].thumbnail_key);
@@ -221,10 +266,10 @@ router.get('/:photoId/thumbnail', async (req, res) => {
 });
 
 // Get preview
-router.get('/:photoId/preview', async (req, res) => {
+router.get('/:photoId/preview', async (req: Request<{ photoId: string }>, res: Response): Promise<void> => {
   try {
     const { photoId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const photo = await pool.query(
       'SELECT preview_key FROM photos WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE',
@@ -232,7 +277,8 @@ router.get('/:photoId/preview', async (req, res) => {
     );
 
     if (photo.rows.length === 0) {
-      return res.status(404).json({ error: 'Photo not found' });
+      res.status(404).json({ error: 'Photo not found' });
+      return;
     }
 
     const stream = await minioClient.getObject(THUMBNAILS_BUCKET, photo.rows[0].preview_key);
@@ -247,10 +293,10 @@ router.get('/:photoId/preview', async (req, res) => {
 });
 
 // Get full resolution
-router.get('/:photoId/full', async (req, res) => {
+router.get('/:photoId/full', async (req: Request<{ photoId: string }>, res: Response): Promise<void> => {
   try {
     const { photoId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
 
     const photo = await pool.query(
@@ -259,7 +305,8 @@ router.get('/:photoId/full', async (req, res) => {
     );
 
     if (photo.rows.length === 0) {
-      return res.status(404).json({ error: 'Photo not found' });
+      res.status(404).json({ error: 'Photo not found' });
+      return;
     }
 
     // Update device photo state
@@ -285,10 +332,10 @@ router.get('/:photoId/full', async (req, res) => {
 });
 
 // Toggle favorite
-router.post('/:photoId/favorite', async (req, res) => {
+router.post('/:photoId/favorite', async (req: Request<{ photoId: string }>, res: Response): Promise<void> => {
   try {
     const { photoId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `UPDATE photos SET is_favorite = NOT is_favorite, modified_at = NOW()
@@ -298,7 +345,8 @@ router.post('/:photoId/favorite', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Photo not found' });
+      res.status(404).json({ error: 'Photo not found' });
+      return;
     }
 
     broadcastToUser(userId, {
@@ -317,10 +365,10 @@ router.post('/:photoId/favorite', async (req, res) => {
 });
 
 // Delete photo
-router.delete('/:photoId', async (req, res) => {
+router.delete('/:photoId', async (req: Request<{ photoId: string }>, res: Response): Promise<void> => {
   try {
     const { photoId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `UPDATE photos SET is_deleted = TRUE, modified_at = NOW()
@@ -330,7 +378,8 @@ router.delete('/:photoId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Photo not found' });
+      res.status(404).json({ error: 'Photo not found' });
+      return;
     }
 
     broadcastToUser(userId, {
@@ -346,9 +395,9 @@ router.delete('/:photoId', async (req, res) => {
 });
 
 // List albums
-router.get('/albums', async (req, res) => {
+router.get('/albums', async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `SELECT a.id, a.name, a.is_shared, a.created_at, a.updated_at,
@@ -364,7 +413,7 @@ router.get('/albums', async (req, res) => {
     );
 
     res.json({
-      albums: result.rows.map(a => ({
+      albums: result.rows.map((a: AlbumRow) => ({
         id: a.id,
         name: a.name,
         isShared: a.is_shared,
@@ -381,13 +430,14 @@ router.get('/albums', async (req, res) => {
 });
 
 // Create album
-router.post('/albums', async (req, res) => {
+router.post('/albums', async (req: Request<object, unknown, CreateAlbumBody>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { name, photoIds } = req.body;
 
     if (!name) {
-      return res.status(400).json({ error: 'Album name is required' });
+      res.status(400).json({ error: 'Album name is required' });
+      return;
     }
 
     const result = await pool.query(
@@ -401,7 +451,7 @@ router.post('/albums', async (req, res) => {
 
     // Add photos if provided
     if (photoIds && Array.isArray(photoIds) && photoIds.length > 0) {
-      const values = photoIds.map((photoId, i) => `($1, $${i + 2})`).join(', ');
+      const values = photoIds.map((_, i) => `($1, $${i + 2})`).join(', ');
       await pool.query(
         `INSERT INTO album_photos (album_id, photo_id) VALUES ${values}
          ON CONFLICT DO NOTHING`,
@@ -427,14 +477,15 @@ router.post('/albums', async (req, res) => {
 });
 
 // Add photos to album
-router.post('/albums/:albumId/photos', async (req, res) => {
+router.post('/albums/:albumId/photos', async (req: Request<{ albumId: string }, unknown, AddPhotosToAlbumBody>, res: Response): Promise<void> => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { albumId } = req.params;
     const { photoIds } = req.body;
 
     if (!photoIds || !Array.isArray(photoIds)) {
-      return res.status(400).json({ error: 'photoIds array is required' });
+      res.status(400).json({ error: 'photoIds array is required' });
+      return;
     }
 
     // Verify album belongs to user
@@ -444,10 +495,11 @@ router.post('/albums/:albumId/photos', async (req, res) => {
     );
 
     if (album.rows.length === 0) {
-      return res.status(404).json({ error: 'Album not found' });
+      res.status(404).json({ error: 'Album not found' });
+      return;
     }
 
-    const values = photoIds.map((photoId, i) => `($1, $${i + 2})`).join(', ');
+    const values = photoIds.map((_, i) => `($1, $${i + 2})`).join(', ');
     await pool.query(
       `INSERT INTO album_photos (album_id, photo_id) VALUES ${values}
        ON CONFLICT DO NOTHING`,

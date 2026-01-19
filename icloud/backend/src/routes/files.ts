@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import crypto from 'crypto';
@@ -10,11 +10,64 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 const chunkService = new ChunkService();
 
+interface ListFilesQuery {
+  path?: string;
+  includeDeleted?: string;
+}
+
+interface CreateFolderBody {
+  name: string;
+  parentPath?: string;
+}
+
+interface UploadBody {
+  parentPath?: string;
+  fileName?: string;
+}
+
+interface UpdateFileBody {
+  name?: string;
+  newPath?: string;
+}
+
+interface FileRow {
+  id: string;
+  name: string;
+  path: string;
+  mime_type: string | null;
+  size: number;
+  content_hash: string | null;
+  version_vector: Record<string, number>;
+  is_folder: boolean;
+  is_deleted: boolean;
+  created_at: Date;
+  modified_at: Date;
+  last_modified_by: string | null;
+  chunks?: (string | null)[];
+}
+
+interface VersionRow {
+  id: string;
+  version_number: number;
+  content_hash: string;
+  version_vector: Record<string, number>;
+  device_name: string | null;
+  is_conflict: boolean;
+  conflict_resolved: boolean;
+  created_at: Date;
+}
+
+interface ChunkRow {
+  chunk_hash: string;
+  chunk_index: number;
+  storage_key: string;
+}
+
 // List files in a folder
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request<object, unknown, unknown, ListFilesQuery>, res: Response): Promise<void> => {
   try {
     const { path = '/', includeDeleted = 'false' } = req.query;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     let query = `
       SELECT id, name, path, mime_type, size, content_hash, version_vector,
@@ -23,7 +76,7 @@ router.get('/', async (req, res) => {
       WHERE user_id = $1 AND path LIKE $2
     `;
 
-    const params = [userId, path === '/' ? '/%' : `${path}/%`];
+    const params: (string | boolean)[] = [userId, path === '/' ? '/%' : `${path}/%`];
 
     if (includeDeleted !== 'true') {
       query += ' AND is_deleted = FALSE';
@@ -40,7 +93,7 @@ router.get('/', async (req, res) => {
 
     res.json({
       path,
-      files: result.rows.map(f => ({
+      files: result.rows.map((f: FileRow) => ({
         id: f.id,
         name: f.name,
         path: f.path,
@@ -61,10 +114,10 @@ router.get('/', async (req, res) => {
 });
 
 // Get file metadata
-router.get('/:fileId', async (req, res) => {
+router.get('/:fileId', async (req: Request<{ fileId: string }>, res: Response): Promise<void> => {
   try {
     const { fileId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `SELECT f.*, array_agg(fc.chunk_hash ORDER BY fc.chunk_index) as chunks
@@ -76,10 +129,11 @@ router.get('/:fileId', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
-    const file = result.rows[0];
+    const file: FileRow = result.rows[0];
 
     res.json({
       id: file.id,
@@ -91,7 +145,7 @@ router.get('/:fileId', async (req, res) => {
       versionVector: file.version_vector,
       isFolder: file.is_folder,
       isDeleted: file.is_deleted,
-      chunks: file.chunks.filter(c => c !== null),
+      chunks: (file.chunks || []).filter((c): c is string => c !== null),
       createdAt: file.created_at,
       modifiedAt: file.modified_at,
     });
@@ -102,14 +156,15 @@ router.get('/:fileId', async (req, res) => {
 });
 
 // Create folder
-router.post('/folder', async (req, res) => {
+router.post('/folder', async (req: Request<object, unknown, CreateFolderBody>, res: Response): Promise<void> => {
   try {
     const { name, parentPath = '/' } = req.body;
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
 
     if (!name) {
-      return res.status(400).json({ error: 'Folder name is required' });
+      res.status(400).json({ error: 'Folder name is required' });
+      return;
     }
 
     const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
@@ -121,11 +176,12 @@ router.post('/folder', async (req, res) => {
     );
 
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Folder already exists' });
+      res.status(409).json({ error: 'Folder already exists' });
+      return;
     }
 
     // Initialize version vector
-    const versionVector = deviceId ? { [deviceId]: 1 } : {};
+    const versionVector: Record<string, number> = deviceId ? { [deviceId]: 1 } : {};
 
     const result = await pool.query(
       `INSERT INTO files (user_id, name, path, is_folder, version_vector, last_modified_by)
@@ -158,15 +214,16 @@ router.post('/folder', async (req, res) => {
 });
 
 // Upload file (small files - direct upload)
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', upload.single('file'), async (req: Request<object, unknown, UploadBody>, res: Response): Promise<void> => {
   try {
     const { parentPath = '/', fileName } = req.body;
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
     const file = req.file;
 
     if (!file) {
-      return res.status(400).json({ error: 'No file provided' });
+      res.status(400).json({ error: 'No file provided' });
+      return;
     }
 
     const name = fileName || file.originalname;
@@ -183,8 +240,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     );
 
     // Get current version vector
-    let versionVector = {};
-    let fileId;
+    let versionVector: Record<string, number> = {};
+    let fileId: string;
     let isUpdate = false;
 
     if (existing.rows.length > 0) {
@@ -261,10 +318,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 // Download file
-router.get('/:fileId/download', async (req, res) => {
+router.get('/:fileId/download', async (req: Request<{ fileId: string }>, res: Response): Promise<void> => {
   try {
     const { fileId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     // Get file metadata
     const fileResult = await pool.query(
@@ -275,7 +332,8 @@ router.get('/:fileId/download', async (req, res) => {
     );
 
     if (fileResult.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
     const file = fileResult.rows[0];
@@ -291,7 +349,7 @@ router.get('/:fileId/download', async (req, res) => {
     );
 
     // Assemble file from chunks
-    const fileBuffer = await chunkService.assembleFile(chunksResult.rows);
+    const fileBuffer = await chunkService.assembleFile(chunksResult.rows as ChunkRow[]);
 
     // Set response headers
     res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
@@ -306,10 +364,10 @@ router.get('/:fileId/download', async (req, res) => {
 });
 
 // Delete file (soft delete)
-router.delete('/:fileId', async (req, res) => {
+router.delete('/:fileId', async (req: Request<{ fileId: string }>, res: Response): Promise<void> => {
   try {
     const { fileId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
 
     // Get file info
@@ -321,11 +379,12 @@ router.delete('/:fileId', async (req, res) => {
     );
 
     if (fileResult.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
-    const file = fileResult.rows[0];
-    const versionVector = file.version_vector || {};
+    const file: FileRow = fileResult.rows[0];
+    const versionVector: Record<string, number> = file.version_vector || {};
 
     // Increment version for deletion
     if (deviceId) {
@@ -376,11 +435,11 @@ router.delete('/:fileId', async (req, res) => {
 });
 
 // Rename/move file
-router.patch('/:fileId', async (req, res) => {
+router.patch('/:fileId', async (req: Request<{ fileId: string }, unknown, UpdateFileBody>, res: Response): Promise<void> => {
   try {
     const { fileId } = req.params;
     const { name, newPath } = req.body;
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const deviceId = req.deviceId;
 
     // Get current file
@@ -391,19 +450,20 @@ router.patch('/:fileId', async (req, res) => {
     );
 
     if (fileResult.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
-    const file = fileResult.rows[0];
-    const versionVector = file.version_vector || {};
+    const file: FileRow = fileResult.rows[0];
+    const versionVector: Record<string, number> = file.version_vector || {};
 
     // Increment version
     if (deviceId) {
       versionVector[deviceId] = (versionVector[deviceId] || 0) + 1;
     }
 
-    const updates = [];
-    const params = [];
+    const updates: string[] = [];
+    const params: (string | null | undefined)[] = [];
     let paramIndex = 1;
 
     if (name) {
@@ -466,10 +526,10 @@ router.patch('/:fileId', async (req, res) => {
 });
 
 // Get file versions (for conflict resolution)
-router.get('/:fileId/versions', async (req, res) => {
+router.get('/:fileId/versions', async (req: Request<{ fileId: string }>, res: Response): Promise<void> => {
   try {
     const { fileId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     // Verify file belongs to user
     const fileResult = await pool.query(
@@ -478,7 +538,8 @@ router.get('/:fileId/versions', async (req, res) => {
     );
 
     if (fileResult.rows.length === 0) {
-      return res.status(404).json({ error: 'File not found' });
+      res.status(404).json({ error: 'File not found' });
+      return;
     }
 
     const versions = await pool.query(
@@ -492,7 +553,7 @@ router.get('/:fileId/versions', async (req, res) => {
 
     res.json({
       fileId,
-      versions: versions.rows.map(v => ({
+      versions: versions.rows.map((v: VersionRow) => ({
         id: v.id,
         versionNumber: v.version_number,
         contentHash: v.content_hash,
