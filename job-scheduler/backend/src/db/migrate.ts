@@ -113,9 +113,23 @@ CREATE TRIGGER update_users_updated_at
 
 /**
  * Runs database migrations.
- * Creates all necessary tables, indexes, and triggers.
- * Safe to run multiple times (uses IF NOT EXISTS).
- * @returns Promise that resolves when migrations complete
+ *
+ * @description Creates all necessary tables, indexes, and triggers for the job scheduler.
+ * Uses IF NOT EXISTS clauses, making it safe to run multiple times (idempotent).
+ * Should be called at application startup or via `npm run db:migrate`.
+ *
+ * @returns {Promise<void>} Resolves when migrations complete successfully
+ * @throws {Error} If migration fails - error is logged and re-thrown
+ *
+ * @example
+ * // At application startup
+ * await migrate();
+ * console.log('Database ready');
+ *
+ * @example
+ * // In seed script
+ * await migrate();
+ * await seedSampleJobs();
  */
 export async function migrate(): Promise<void> {
   logger.info('Running database migrations...');
@@ -134,8 +148,21 @@ export async function migrate(): Promise<void> {
 
 /**
  * Rolls back the database by dropping all tables.
- * WARNING: This will delete all data. Use only in development.
- * @returns Promise that resolves when rollback completes
+ *
+ * @description Removes all job scheduler tables, triggers, and functions from the database.
+ * This is a destructive operation that permanently deletes all data.
+ *
+ * WARNING: This will delete ALL job scheduler data including jobs, executions, and logs.
+ * Only use in development or testing environments.
+ *
+ * @returns {Promise<void>} Resolves when rollback completes successfully
+ * @throws {Error} If rollback fails - error is logged and re-thrown
+ *
+ * @example
+ * // Reset database for testing
+ * await rollback();
+ * await migrate();
+ * await seedTestData();
  */
 export async function rollback(): Promise<void> {
   logger.warn('Rolling back database (dropping all tables)...');

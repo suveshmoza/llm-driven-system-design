@@ -1,6 +1,8 @@
 /**
- * Cursor position handling for collaborative editing.
- * Manages cursor and selection updates between clients.
+ * @fileoverview Cursor position handling for collaborative editing.
+ * @description Manages cursor and selection updates between clients, enabling real-time
+ * visibility of where each collaborator is working in the document.
+ * @module services/collaboration/cursors
  */
 
 import type { WebSocket } from 'ws';
@@ -12,8 +14,24 @@ import { documents, serverId, broadcastToDocument } from './state.js';
 
 /**
  * Handles cursor/selection updates from a client.
- * Updates the client's presence state and broadcasts to others.
- * Published via Redis for cross-server visibility.
+ *
+ * @description Updates the client's presence state with new cursor position and/or
+ * selection range, then broadcasts the update to all other clients in the document.
+ * Also publishes via Redis for cross-server visibility in distributed deployments.
+ *
+ * @param {WebSocket} ws - The WebSocket connection of the client sending the update
+ * @param {ClientConnection} client - The client metadata including user info and current document
+ * @param {WSMessage} msg - The WebSocket message containing cursor and/or selection data
+ * @returns {void}
+ *
+ * @example
+ * // Handle incoming cursor update message
+ * const msg = {
+ *   type: 'CURSOR',
+ *   cursor: { pos: 42, line: 3, column: 15 },
+ *   selection: { start: 42, end: 50 },
+ * };
+ * handleCursor(clientWebSocket, clientConnection, msg);
  */
 export function handleCursor(ws: WebSocket, client: ClientConnection, msg: WSMessage): void {
   const documentId = client.documentId;
@@ -51,6 +69,15 @@ export function handleCursor(ws: WebSocket, client: ClientConnection, msg: WSMes
 
 /**
  * Handles presence updates (cursor + selection combined).
- * Alias for handleCursor as they share the same logic.
+ *
+ * @description Alias for handleCursor as they share the same logic. Both message types
+ * (CURSOR and PRESENCE) can contain cursor and selection updates and are processed identically.
+ *
+ * @param {WebSocket} ws - The WebSocket connection of the client sending the update
+ * @param {ClientConnection} client - The client metadata including user info and current document
+ * @param {WSMessage} msg - The WebSocket message containing presence data
+ * @returns {void}
+ *
+ * @see handleCursor
  */
 export const handlePresence = handleCursor;

@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request as _Request, type Response as _Response } from 'express';
 import { query } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 

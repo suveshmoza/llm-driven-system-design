@@ -122,7 +122,7 @@ async function processPayment(order: OrderRow, paymentDetails: PaymentDetails): 
 /**
  * Fallback when payment circuit is open
  */
-async function paymentFallback(order: OrderRow, paymentDetails: PaymentDetails): Promise<PaymentResult> {
+async function paymentFallback(order: OrderRow, _paymentDetails: PaymentDetails): Promise<PaymentResult> {
   logger.warn({ orderId: order.id }, 'Payment circuit open, using fallback');
   // Queue for later processing or use backup gateway
   return {

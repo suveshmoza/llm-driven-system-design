@@ -19,7 +19,7 @@ import {
   generateCheckoutIdempotencyKey,
   validateIdempotencyKey,
 } from '../shared/idempotency.js';
-import { CircuitBreaker, CircuitState, createPaymentCircuitBreaker } from '../shared/circuit-breaker.js';
+import { CircuitBreaker, CircuitState as _CircuitState, createPaymentCircuitBreaker } from '../shared/circuit-breaker.js';
 import {
   seatsSoldTotal,
   checkoutCompletedTotal,

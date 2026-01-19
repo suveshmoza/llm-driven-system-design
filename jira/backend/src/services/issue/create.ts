@@ -10,12 +10,38 @@ import { query } from '../../config/database.js';
 
 /**
  * Creates a new issue within a project.
- * Generates a unique issue key (e.g., PROJ-123), sets initial status from workflow,
- * records creation history, indexes the issue for search, and publishes an event.
  *
- * @param data - Issue creation data
- * @param user - User creating the issue (for history tracking)
- * @returns Newly created issue
+ * @description Performs a transactional issue creation that:
+ * 1. Increments the project's issue counter to generate a unique key (e.g., PROJ-123)
+ * 2. Determines the initial status from the project's workflow (first 'todo' status)
+ * 3. Inserts the issue record with all provided data
+ * 4. Records the creation event in issue history for audit trail
+ * 5. Increments Prometheus metrics for monitoring
+ * 6. Asynchronously indexes the issue in Elasticsearch for search
+ * 7. Publishes an event for notifications and webhooks
+ * 8. Invalidates board cache for the project
+ *
+ * @param data - Issue creation data including project, summary, type, and reporter
+ * @param user - User creating the issue (used for history tracking)
+ * @returns Promise resolving to the newly created issue
+ *
+ * @throws Error - If the project is not found
+ * @throws Error - If no initial status is found in the project's workflow
+ * @throws Error - If database transaction fails
+ *
+ * @example
+ * ```typescript
+ * const issue = await createIssue({
+ *   projectId: 'project-uuid',
+ *   summary: 'Implement user authentication',
+ *   description: 'Add OAuth2 login support',
+ *   issueType: 'story',
+ *   priority: 'high',
+ *   reporterId: currentUser.id
+ * }, currentUser);
+ *
+ * console.log(issue.key); // "PROJ-42"
+ * ```
  */
 export async function createIssue(data: CreateIssueData, user: User): Promise<Issue> {
   const log = logger.child({ operation: 'createIssue', projectId: data.projectId, userId: user.id });
@@ -122,9 +148,23 @@ export async function createIssue(data: CreateIssueData, user: User): Promise<Is
 
 /**
  * Indexes an issue document in Elasticsearch for search.
- * Denormalizes related data (status name, assignee name, etc.) for efficient search.
  *
- * @param issue - Issue to index
+ * @description Prepares and indexes an issue for full-text search by:
+ * 1. Fetching denormalized data (status name, assignee name, etc.) from related tables
+ * 2. Building a search document with all searchable and filterable fields
+ * 3. Sending the document to Elasticsearch for indexing
+ *
+ * This function is typically called asynchronously after issue creation or updates
+ * to keep the search index in sync with the database.
+ *
+ * @param issue - The issue entity to index
+ * @returns Promise that resolves when indexing is complete
+ *
+ * @example
+ * ```typescript
+ * // After creating or updating an issue
+ * await indexIssueForSearch(issue);
+ * ```
  */
 export async function indexIssueForSearch(issue: Issue): Promise<void> {
   // Get additional data for search
@@ -182,7 +222,20 @@ export async function indexIssueForSearch(issue: Issue): Promise<void> {
 /**
  * Invalidates board cache for a project when issues change.
  *
- * @param projectId - Project ID
+ * @description Clears all Redis cache entries related to a project's board views.
+ * This ensures that after issue changes (create, update, delete), subsequent
+ * board requests will fetch fresh data from the database.
+ *
+ * Uses a pattern-based deletion to clear all board cache variants for the project.
+ *
+ * @param projectId - UUID of the project whose board cache should be invalidated
+ * @returns Promise that resolves when cache invalidation is complete
+ *
+ * @example
+ * ```typescript
+ * // After modifying an issue
+ * await invalidateProjectBoardCache('project-uuid');
+ * ```
  */
 export async function invalidateProjectBoardCache(projectId: string): Promise<void> {
   await cacheDelPattern(`board:*:project:${projectId}*`);

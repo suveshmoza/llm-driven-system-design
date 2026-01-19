@@ -18,10 +18,39 @@ import { HealthCheckData, WorkerData } from './types.js';
 
 const router = Router();
 
-/** GET /metrics - Prometheus metrics endpoint (public) */
+/**
+ * GET /metrics - Prometheus metrics endpoint.
+ *
+ * @description Exposes application metrics in Prometheus format for monitoring.
+ * Includes job counts, execution statistics, queue depths, and worker status.
+ * This endpoint is public and does not require authentication.
+ *
+ * @route GET /metrics
+ * @access Public
+ *
+ * @returns {string} Prometheus-formatted metrics text
+ */
 router.get('/metrics', metricsHandler);
 
-/** GET /api/v1/health - Check database and Redis connectivity */
+/**
+ * GET /api/v1/health - System health check endpoint.
+ *
+ * @description Checks connectivity to PostgreSQL and Redis, returning overall
+ * system health status. Returns 503 if any dependency is unhealthy.
+ * This endpoint is public and does not require authentication.
+ *
+ * @route GET /api/v1/health
+ * @access Public
+ *
+ * @returns {ApiResponse<HealthCheckData>} 200 - All dependencies healthy
+ * @returns {ApiResponse<HealthCheckData>} 503 - One or more dependencies unhealthy
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/v1/health
+ * # Response: {"success":true,"data":{"db":true,"redis":true,"uptime":3600,"version":"1.0.0"}}
+ * ```
+ */
 router.get(
   '/api/v1/health',
   asyncHandler(async (_req, res) => {
@@ -42,7 +71,25 @@ router.get(
   })
 );
 
-/** GET /api/v1/health/ready - Readiness check for k8s */
+/**
+ * GET /api/v1/health/ready - Kubernetes readiness probe endpoint.
+ *
+ * @description Indicates whether the application is ready to receive traffic.
+ * Checks database and Redis connectivity. Used by Kubernetes to determine
+ * if the pod should receive traffic from the load balancer.
+ *
+ * @route GET /api/v1/health/ready
+ * @access Public
+ *
+ * @returns {Object} 200 - Application is ready to receive traffic
+ * @returns {Object} 503 - Application is not ready (dependencies unavailable)
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/v1/health/ready
+ * # Response: {"ready":true,"db":true,"redis":true}
+ * ```
+ */
 router.get(
   '/api/v1/health/ready',
   asyncHandler(async (_req, res) => {
@@ -52,12 +99,46 @@ router.get(
   })
 );
 
-/** GET /api/v1/health/live - Liveness check for k8s */
+/**
+ * GET /api/v1/health/live - Kubernetes liveness probe endpoint.
+ *
+ * @description Indicates whether the application is alive and should not be restarted.
+ * This is a simple check that always returns true if the process is running.
+ * Used by Kubernetes to determine if the pod should be restarted.
+ *
+ * @route GET /api/v1/health/live
+ * @access Public
+ *
+ * @returns {Object} 200 - Application is alive
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/v1/health/live
+ * # Response: {"alive":true}
+ * ```
+ */
 router.get('/api/v1/health/live', (_req: Request, res: Response) => {
   res.status(200).json({ alive: true });
 });
 
-/** GET /api/v1/metrics/system - Get aggregated system metrics */
+/**
+ * GET /api/v1/metrics/system - Get aggregated system metrics.
+ *
+ * @description Returns comprehensive system metrics including job statistics,
+ * queue depths, worker status, and circuit breaker states. Used by the dashboard
+ * to display real-time system health. Requires authentication.
+ *
+ * @route GET /api/v1/metrics/system
+ * @access Authenticated users
+ *
+ * @returns {ApiResponse<SystemMetricsData>} 200 - Aggregated system metrics
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/v1/metrics/system
+ * # Response includes jobs, queue, workers, and circuit breaker data
+ * ```
+ */
 router.get(
   '/api/v1/metrics/system',
   authenticate,
@@ -97,7 +178,26 @@ router.get(
   })
 );
 
-/** GET /api/v1/metrics/executions - Get hourly execution statistics */
+/**
+ * GET /api/v1/metrics/executions - Get hourly execution statistics.
+ *
+ * @description Returns aggregated execution statistics grouped by hour for the
+ * specified time period. Useful for charting execution trends and identifying
+ * patterns. Requires authentication.
+ *
+ * @route GET /api/v1/metrics/executions
+ * @access Authenticated users
+ *
+ * @param {string} [req.query.hours=24] - Number of hours of history to retrieve
+ *
+ * @returns {ApiResponse<ExecutionStats[]>} 200 - Hourly execution statistics
+ *
+ * @example
+ * ```bash
+ * curl -X GET '/api/v1/metrics/executions?hours=48'
+ * # Response: {"success":true,"data":[{"hour":"2024-01-15T10:00:00Z","completed":50,"failed":2},...]}
+ * ```
+ */
 router.get(
   '/api/v1/metrics/executions',
   authenticate,
@@ -112,7 +212,24 @@ router.get(
   })
 );
 
-/** GET /api/v1/workers - Get list of registered workers */
+/**
+ * GET /api/v1/workers - Get list of registered workers.
+ *
+ * @description Returns a list of all workers that have registered with the system,
+ * including their current status, last heartbeat time, and job completion statistics.
+ * Requires authentication.
+ *
+ * @route GET /api/v1/workers
+ * @access Authenticated users
+ *
+ * @returns {ApiResponse<WorkerData[]>} 200 - List of registered workers
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/v1/workers
+ * # Response: {"success":true,"data":[{"id":"worker-1","status":"idle","jobs_completed":150},...]}
+ * ```
+ */
 router.get(
   '/api/v1/workers',
   authenticate,
@@ -128,7 +245,27 @@ router.get(
   })
 );
 
-/** GET /api/v1/dead-letter - Get items from the dead letter queue */
+/**
+ * GET /api/v1/dead-letter - Get items from the dead letter queue.
+ *
+ * @description Retrieves failed executions that have exhausted all retry attempts
+ * and been moved to the dead letter queue. These items require manual intervention.
+ * Requires authentication.
+ *
+ * @route GET /api/v1/dead-letter
+ * @access Authenticated users
+ *
+ * @param {string} [req.query.start=0] - Starting index for pagination
+ * @param {string} [req.query.count=100] - Number of items to retrieve
+ *
+ * @returns {ApiResponse<DeadLetterItem[]>} 200 - List of dead letter queue items
+ *
+ * @example
+ * ```bash
+ * curl -X GET '/api/v1/dead-letter?start=0&count=50'
+ * # Response: {"success":true,"data":[{"execution_id":"...","job_id":"...","error":"..."},...]}
+ * ```
+ */
 router.get(
   '/api/v1/dead-letter',
   authenticate,

@@ -1,5 +1,14 @@
 /**
  * Moderator Management - Handles adding/removing channel moderators.
+ *
+ * Provides endpoints for:
+ * - Adding new moderators to a channel
+ * - Removing moderators from a channel
+ * - Listing all moderators for a channel
+ *
+ * Only channel owners and platform admins can manage moderators.
+ *
+ * @module routes/moderation/moderators
  */
 import express, { Request, Response, Router } from 'express';
 import { query } from '../../services/database.js';
@@ -10,6 +19,20 @@ import type { ChannelParams, ModeratorParams, AddModeratorBody, ChannelOwnerRow,
 
 const router: Router = express.Router({ mergeParams: true });
 
+/**
+ * Checks if the actor is the channel owner or a platform admin.
+ *
+ * Only owners and admins can add/remove moderators. Regular moderators
+ * cannot manage the moderator list.
+ *
+ * @description Validates owner/admin access for moderator management
+ * @param actorId - The numeric ID of the user attempting the action
+ * @param channelId - The string ID of the channel
+ * @param res - The Express response object for sending error responses
+ * @returns Object with isOwner and isAdmin flags, or null if unauthorized
+ * @throws Sends 404 if channel not found
+ * @throws Sends 403 if user is not owner or admin
+ */
 async function checkOwnerOrAdmin(actorId: number, channelId: string, res: Response): Promise<{ isOwner: boolean; isAdmin: boolean } | null> {
   const ownerCheck = await query<ChannelOwnerRow>('SELECT user_id FROM channels WHERE id = $1', [channelId]);
   if (!ownerCheck.rows[0]) {
@@ -26,7 +49,27 @@ async function checkOwnerOrAdmin(actorId: number, channelId: string, res: Respon
   return { isOwner, isAdmin };
 }
 
-/** Add a moderator - POST /api/moderation/:channelId/moderator */
+/**
+ * Adds a moderator to a channel.
+ *
+ * Grants moderator privileges to a user for the specified channel.
+ * Only channel owners and platform admins can add moderators.
+ * If the user is already a moderator, returns success without error.
+ *
+ * @description POST /api/moderation/:channelId/moderator - Add a moderator
+ * @param req.params.channelId - The channel to add the moderator to
+ * @param req.body.userId - The user ID to grant moderator privileges to (required)
+ * @returns JSON with success status
+ * @throws 400 if userId is missing
+ * @throws 401 if not authenticated
+ * @throws 403 if not channel owner or admin
+ * @throws 404 if channel not found
+ * @throws 500 on database or server error
+ *
+ * @example
+ * POST /api/moderation/123/moderator
+ * { "userId": 456 }
+ */
 router.post('/', async (req: Request<ChannelParams, object, AddModeratorBody>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);
@@ -60,7 +103,24 @@ router.post('/', async (req: Request<ChannelParams, object, AddModeratorBody>, r
   }
 });
 
-/** Remove a moderator - DELETE /api/moderation/:channelId/moderator/:userId */
+/**
+ * Removes a moderator from a channel.
+ *
+ * Revokes moderator privileges from a user for the specified channel.
+ * Only channel owners and platform admins can remove moderators.
+ *
+ * @description DELETE /api/moderation/:channelId/moderator/:userId - Remove moderator
+ * @param req.params.channelId - The channel to remove the moderator from
+ * @param req.params.userId - The user ID to revoke moderator privileges from
+ * @returns JSON with success status
+ * @throws 401 if not authenticated
+ * @throws 403 if not channel owner or admin
+ * @throws 404 if channel not found or user is not a moderator
+ * @throws 500 on database or server error
+ *
+ * @example
+ * DELETE /api/moderation/123/moderator/456
+ */
 router.delete('/:userId', async (req: Request<ModeratorParams>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);
@@ -86,7 +146,32 @@ router.delete('/:userId', async (req: Request<ModeratorParams>, res: Response): 
   }
 });
 
-/** Get moderators - GET /api/moderation/:channelId/moderators */
+/**
+ * Gets the list of moderators for a channel.
+ *
+ * Returns all moderators with user details and when they were added.
+ * This endpoint is publicly accessible (no authentication required).
+ *
+ * @description GET /api/moderation/:channelId/moderators - Get moderator list
+ * @param req.params.channelId - The channel to get moderators for
+ * @returns JSON with array of moderator records including user info
+ * @throws 500 on database or server error
+ *
+ * @example
+ * GET /api/moderation/123/moderators
+ * // Response:
+ * {
+ *   "moderators": [
+ *     {
+ *       "userId": 456,
+ *       "username": "trusted_mod",
+ *       "displayName": "Trusted Mod",
+ *       "addedAt": "2024-01-10T08:00:00Z",
+ *       "addedByUsername": "channel_owner"
+ *     }
+ *   ]
+ * }
+ */
 router.get('s', async (req: Request<ChannelParams>, res: Response): Promise<void> => {
   try {
     const { channelId } = req.params;

@@ -178,7 +178,7 @@ app.use((req, res) => {
 });
 
 // Error handler
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const traceContext = (req as express.Request & { traceContext: { traceId: string; spanId: string } }).traceContext;
 
   logger.error({

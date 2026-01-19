@@ -7,7 +7,7 @@
  * menu items, calculating pricing (subtotal, delivery fee, tip, total), and
  * estimating delivery time based on preparation time and distance.
  */
-import { query, queryOne } from '../../utils/db.js';
+import { query as _query, queryOne } from '../../utils/db.js';
 import { haversineDistance, calculateDeliveryFee, calculateETA } from '../../utils/geo.js';
 import { getMerchantById, getMenuItemsByIds } from '../merchantService.js';
 import type {

@@ -1,5 +1,14 @@
 /**
  * Ban/Unban Operations - Handles permanent bans and ban listing for channels.
+ *
+ * Provides endpoints for:
+ * - Banning users (permanent or timed)
+ * - Unbanning users
+ * - Listing all banned users in a channel
+ *
+ * All actions are logged for audit purposes and broadcast via Redis pub/sub.
+ *
+ * @module routes/moderation/bans
  */
 import express, { Request, Response, Router } from 'express';
 import { query } from '../../services/database.js';
@@ -11,7 +20,32 @@ import type { ChannelParams, UserBanParams, BanBody, ChannelOwnerRow, BanRow } f
 
 const router: Router = express.Router({ mergeParams: true });
 
-/** Ban a user from a channel - POST /api/moderation/:channelId/ban */
+/**
+ * Bans a user from a channel.
+ *
+ * Creates or updates a ban record for the target user. Supports both permanent
+ * bans and timed bans with expiration. Channel owners cannot be banned.
+ *
+ * @description POST /api/moderation/:channelId/ban - Ban a user from a channel
+ * @param req.params.channelId - The channel to ban the user from
+ * @param req.body.userId - The user ID to ban (required)
+ * @param req.body.reason - Optional reason for the ban
+ * @param req.body.durationSeconds - Optional duration; omit for permanent ban
+ * @returns JSON with success status and ban details
+ * @throws 400 if userId is missing or target is the channel owner
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 500 on database or server error
+ *
+ * @example
+ * // Permanent ban
+ * POST /api/moderation/123/ban
+ * { "userId": 456, "reason": "Spam" }
+ *
+ * // Timed ban (1 hour)
+ * POST /api/moderation/123/ban
+ * { "userId": 456, "durationSeconds": 3600 }
+ */
 router.post('/', async (req: Request<ChannelParams, object, BanBody>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);
@@ -67,7 +101,24 @@ router.post('/', async (req: Request<ChannelParams, object, BanBody>, res: Respo
   }
 });
 
-/** Unban a user from a channel - DELETE /api/moderation/:channelId/ban/:userId */
+/**
+ * Unbans a user from a channel.
+ *
+ * Removes the ban record for the target user, allowing them to participate
+ * in chat again. Broadcasts the unban event to all connected clients.
+ *
+ * @description DELETE /api/moderation/:channelId/ban/:userId - Unban a user
+ * @param req.params.channelId - The channel to unban the user from
+ * @param req.params.userId - The user ID to unban
+ * @returns JSON with success status
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 404 if no ban exists for this user
+ * @throws 500 on database or server error
+ *
+ * @example
+ * DELETE /api/moderation/123/ban/456
+ */
 router.delete('/:userId', async (req: Request<UserBanParams>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);
@@ -105,7 +156,34 @@ router.delete('/:userId', async (req: Request<UserBanParams>, res: Response): Pr
   }
 });
 
-/** Get banned users for a channel - GET /api/moderation/:channelId/bans */
+/**
+ * Gets the list of banned users for a channel.
+ *
+ * Returns all active bans with user details and ban metadata.
+ * Only moderators, channel owners, and admins can view the ban list.
+ *
+ * @description GET /api/moderation/:channelId/bans - Get banned users list
+ * @param req.params.channelId - The channel to get bans for
+ * @returns JSON with array of ban records including user info
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 500 on database or server error
+ *
+ * @example
+ * GET /api/moderation/123/bans
+ * // Response:
+ * {
+ *   "bans": [
+ *     {
+ *       "userId": 456,
+ *       "username": "spammer",
+ *       "reason": "Spam",
+ *       "isPermanent": true,
+ *       "createdAt": "2024-01-15T10:30:00Z"
+ *     }
+ *   ]
+ * }
+ */
 router.get('s', async (req: Request<ChannelParams>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);

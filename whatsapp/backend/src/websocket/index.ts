@@ -59,7 +59,7 @@ export { broadcastReactionUpdate } from './presence.js';
  * });
  * ```
  */
-export function setupWebSocket(server: Server, sessionMiddleware: unknown): WebSocketServer {
+export function setupWebSocket(server: Server, _sessionMiddleware: unknown): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   withRedisCircuit(async () => {

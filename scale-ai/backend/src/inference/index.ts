@@ -15,7 +15,7 @@
 import express from 'express'
 import cors from 'cors'
 import { pool } from '../shared/db.js'
-import { getModel } from '../shared/storage.js'
+import { getModel as _getModel } from '../shared/storage.js'
 import {
   SHAPE_NAMES as PROTOTYPE_SHAPE_NAMES,
   denormalizeStrokes,
@@ -432,7 +432,7 @@ interface Canvas {
  * @param canvas - Canvas dimensions
  * @returns Prediction with shape name, confidence, and all class probabilities
  */
-function analyzeStrokes(strokes: Stroke[], canvas: Canvas) {
+function analyzeStrokes(strokes: Stroke[], _canvas: Canvas) {
   const allPoints: StrokePoint[] = strokes.flatMap((s) => s.points)
 
   if (allPoints.length < 2) {

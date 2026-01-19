@@ -3,10 +3,23 @@ import { IssueWithDetails, IssueType, IssueHistoryWithUser } from '../../types/i
 
 /**
  * Retrieves an issue by its database ID with full details.
- * Joins related data including status, assignee, reporter, project, epic, and sprint.
  *
- * @param issueId - Numeric ID of the issue
- * @returns Issue with all related entities, or null if not found
+ * @description Fetches a single issue with all related entities joined including
+ * status, assignee, reporter, project, epic, and sprint. Returns fully hydrated
+ * issue data suitable for display in issue views.
+ *
+ * @param issueId - Numeric ID of the issue in the database
+ * @returns Promise resolving to the issue with all related entities, or null if not found
+ *
+ * @example
+ * ```typescript
+ * const issue = await getIssueById(123);
+ * if (issue) {
+ *   console.log(issue.key); // "PROJ-123"
+ *   console.log(issue.status.name); // "In Progress"
+ *   console.log(issue.assignee?.name); // "John Doe" or undefined
+ * }
+ * ```
  */
 export async function getIssueById(issueId: number): Promise<IssueWithDetails | null> {
   const { rows } = await query<IssueWithDetails>(
@@ -35,8 +48,20 @@ export async function getIssueById(issueId: number): Promise<IssueWithDetails | 
 /**
  * Retrieves an issue by its human-readable key (e.g., "PROJ-123").
  *
- * @param key - Issue key string
- * @returns Issue with full details, or null if not found
+ * @description Looks up an issue using its unique key string and returns
+ * the full issue details. Internally resolves the key to an ID and delegates
+ * to getIssueById for fetching complete data.
+ *
+ * @param key - Issue key string in format "PROJECT-NUMBER" (e.g., "DEMO-42")
+ * @returns Promise resolving to the issue with full details, or null if not found
+ *
+ * @example
+ * ```typescript
+ * const issue = await getIssueByKey('PROJ-123');
+ * if (issue) {
+ *   console.log(issue.summary);
+ * }
+ * ```
  */
 export async function getIssueByKey(key: string): Promise<IssueWithDetails | null> {
   const { rows } = await query<{ id: number }>(
@@ -50,11 +75,35 @@ export async function getIssueByKey(key: string): Promise<IssueWithDetails | nul
 
 /**
  * Retrieves paginated issues for a project with optional filters.
- * Supports filtering by status, assignee, sprint, epic, and issue type.
  *
- * @param projectId - UUID of the project
- * @param options - Filter and pagination options
- * @returns Object containing issues array and total count
+ * @description Fetches issues belonging to a project with support for filtering
+ * by status, assignee, sprint, epic, and issue type. Results are paginated
+ * and ordered by creation date (newest first). Supports backlog queries by
+ * passing sprintId: 0 to find unassigned issues.
+ *
+ * @param projectId - UUID of the project to fetch issues from
+ * @param options - Optional filter and pagination parameters
+ * @param options.statusId - Filter by specific status ID
+ * @param options.assigneeId - Filter by assignee's UUID
+ * @param options.sprintId - Filter by sprint ID (use 0 for backlog/unassigned)
+ * @param options.epicId - Filter by epic ID
+ * @param options.issueType - Filter by issue type (bug, story, task, epic, subtask)
+ * @param options.limit - Maximum number of issues to return (default: 50)
+ * @param options.offset - Number of issues to skip for pagination (default: 0)
+ * @returns Promise resolving to object containing issues array and total count
+ *
+ * @example
+ * ```typescript
+ * // Get first page of high priority bugs
+ * const { issues, total } = await getIssuesByProject('project-uuid', {
+ *   issueType: 'bug',
+ *   limit: 20,
+ *   offset: 0
+ * });
+ *
+ * // Get backlog items (not in any sprint)
+ * const backlog = await getIssuesByProject('project-uuid', { sprintId: 0 });
+ * ```
  */
 export async function getIssuesByProject(
   projectId: string,
@@ -136,10 +185,24 @@ export async function getIssuesByProject(
 
 /**
  * Retrieves all issues assigned to a specific sprint.
- * Used for sprint board views.
  *
- * @param sprintId - ID of the sprint
- * @returns Array of issues with full details
+ * @description Fetches all issues belonging to a sprint with full details.
+ * Used for sprint board views where all sprint issues need to be displayed
+ * grouped by status. Results are ordered by creation date (oldest first)
+ * to maintain consistent ordering on boards.
+ *
+ * @param sprintId - Numeric ID of the sprint
+ * @returns Promise resolving to an array of issues with full details
+ *
+ * @example
+ * ```typescript
+ * const sprintIssues = await getIssuesBySprint(42);
+ * // Group by status for board display
+ * const byStatus = sprintIssues.reduce((acc, issue) => {
+ *   (acc[issue.status.name] ||= []).push(issue);
+ *   return acc;
+ * }, {});
+ * ```
  */
 export async function getIssuesBySprint(sprintId: number): Promise<IssueWithDetails[]> {
   const { rows } = await query<IssueWithDetails>(
@@ -169,8 +232,18 @@ export async function getIssuesBySprint(sprintId: number): Promise<IssueWithDeta
 /**
  * Retrieves issues not assigned to any sprint (backlog).
  *
+ * @description Fetches all issues in a project that have not been assigned
+ * to any sprint. These issues represent the product backlog and are candidates
+ * for future sprint planning. Delegates to getIssuesByProject with sprintId: 0.
+ *
  * @param projectId - UUID of the project
- * @returns Array of backlog issues
+ * @returns Promise resolving to an array of backlog issues with full details
+ *
+ * @example
+ * ```typescript
+ * const backlogIssues = await getBacklogIssues('project-uuid');
+ * console.log(`${backlogIssues.length} items in backlog`);
+ * ```
  */
 export async function getBacklogIssues(projectId: string): Promise<IssueWithDetails[]> {
   const { issues } = await getIssuesByProject(projectId, { sprintId: 0 });
@@ -179,10 +252,22 @@ export async function getBacklogIssues(projectId: string): Promise<IssueWithDeta
 
 /**
  * Retrieves the change history for an issue.
- * Includes user details for each history entry, ordered newest first.
  *
- * @param issueId - ID of the issue
- * @returns Array of history entries with user information
+ * @description Fetches the complete audit trail of changes made to an issue,
+ * including who made each change and when. Each history entry includes the
+ * field that changed, old and new values, and the user who made the change.
+ * Results are ordered by creation date (newest first).
+ *
+ * @param issueId - Numeric ID of the issue
+ * @returns Promise resolving to an array of history entries with user information
+ *
+ * @example
+ * ```typescript
+ * const history = await getIssueHistory(123);
+ * history.forEach(entry => {
+ *   console.log(`${entry.user.name} changed ${entry.field} from "${entry.old_value}" to "${entry.new_value}"`);
+ * });
+ * ```
  */
 export async function getIssueHistory(issueId: number): Promise<IssueHistoryWithUser[]> {
   const { rows } = await query<IssueHistoryWithUser>(

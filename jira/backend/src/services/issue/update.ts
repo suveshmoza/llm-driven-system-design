@@ -10,13 +10,39 @@ import { indexIssueForSearch, invalidateProjectBoardCache } from './create.js';
 
 /**
  * Updates an existing issue with partial data.
- * Records all field changes in issue history for audit trail.
- * Updates the Elasticsearch index and invalidates caches after modification.
  *
- * @param issueId - ID of the issue to update
- * @param data - Partial issue data to update
- * @param user - User making the update (for history tracking)
- * @returns Updated issue, or null if not found
+ * @description Performs a partial update of an issue, only modifying the fields
+ * provided in the update data. For each changed field:
+ * 1. Compares new value against current value
+ * 2. Records the change in issue_history table for audit trail
+ * 3. Updates the issue record in the database
+ * 4. Asynchronously updates the Elasticsearch index
+ * 5. Publishes an update event for notifications/webhooks
+ * 6. Invalidates relevant caches
+ *
+ * If sprint assignment changes, also invalidates the project board cache.
+ *
+ * @param issueId - Numeric ID of the issue to update
+ * @param data - Partial issue data with fields to update
+ * @param user - User making the update (used for history tracking)
+ * @returns Promise resolving to the updated issue, or null if not found
+ *
+ * @example
+ * ```typescript
+ * const updated = await updateIssue(
+ *   123,
+ *   {
+ *     priority: 'highest',
+ *     assigneeId: 'user-uuid',
+ *     storyPoints: 8
+ *   },
+ *   currentUser
+ * );
+ *
+ * if (updated) {
+ *   console.log(`Issue ${updated.key} updated successfully`);
+ * }
+ * ```
  */
 export async function updateIssue(
   issueId: number,
@@ -122,8 +148,28 @@ export async function updateIssue(
 /**
  * Deletes an issue from the database and search index.
  *
- * @param issueId - ID of the issue to delete
- * @returns True if issue was deleted, false if not found
+ * @description Permanently removes an issue from the system. This operation:
+ * 1. Retrieves issue details before deletion for event publishing
+ * 2. Deletes the issue record from the database (cascades to related records)
+ * 3. Removes the issue from Elasticsearch search index
+ * 4. Publishes a delete event for notifications/webhooks
+ * 5. Invalidates issue and board caches
+ *
+ * Note: This is a destructive operation that cannot be undone. Consider
+ * implementing soft-delete if issue recovery is needed.
+ *
+ * @param issueId - Numeric ID of the issue to delete
+ * @returns Promise resolving to true if issue was deleted, false if not found
+ *
+ * @example
+ * ```typescript
+ * const deleted = await deleteIssue(123);
+ * if (deleted) {
+ *   console.log('Issue successfully deleted');
+ * } else {
+ *   console.log('Issue not found');
+ * }
+ * ```
  */
 export async function deleteIssue(issueId: number): Promise<boolean> {
   const log = logger.child({ operation: 'deleteIssue', issueId });
@@ -168,8 +214,19 @@ export async function deleteIssue(issueId: number): Promise<boolean> {
 /**
  * Invalidates cache entries for a specific issue.
  *
- * @param issueId - Issue ID
- * @param issueKey - Issue key (e.g., "PROJ-123")
+ * @description Clears all Redis cache entries related to a specific issue.
+ * This includes both the ID-based cache key and the human-readable key-based
+ * cache entry. Should be called after any issue modification.
+ *
+ * @param issueId - Numeric ID of the issue
+ * @param issueKey - Human-readable issue key (e.g., "PROJ-123")
+ * @returns Promise that resolves when cache invalidation is complete
+ *
+ * @example
+ * ```typescript
+ * // After updating an issue
+ * await invalidateIssueCache(123, 'PROJ-123');
+ * ```
  */
 export async function invalidateIssueCache(issueId: number, issueKey: string): Promise<void> {
   await Promise.all([

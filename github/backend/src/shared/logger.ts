@@ -89,7 +89,12 @@ export function requestLoggerMiddleware(req, res, next) {
 /**
  * Log git operations with structured context
  */
-export function logGitOperation(operation, owner, repo, details = {}) {
+export function logGitOperation(
+  operation: string,
+  owner: string,
+  repo: string,
+  details: Record<string, unknown> = {}
+): void {
   logger.info({
     type: 'git_operation',
     operation,
@@ -102,7 +107,11 @@ export function logGitOperation(operation, owner, repo, details = {}) {
 /**
  * Log cache operations
  */
-export function logCacheOperation(operation, key, hit = null) {
+export function logCacheOperation(
+  operation: string,
+  key: string,
+  hit: boolean | null = null
+): void {
   logger.debug({
     type: 'cache_operation',
     operation,

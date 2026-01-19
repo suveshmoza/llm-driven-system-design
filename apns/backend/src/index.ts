@@ -178,7 +178,7 @@ app.post("/3/device/:deviceToken", async (req: Request, res: Response) => {
  * Global error handling middleware.
  * Catches unhandled errors and returns a 500 response.
  */
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   logger.error({
     event: "unhandled_error",
     error: err.message,

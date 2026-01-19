@@ -120,7 +120,7 @@ app.use('/api/v1/alerts', alertsRoutes);
  * Error handling middleware.
  * Logs errors and returns appropriate error responses.
  */
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   logger.error({
     err,
     method: req.method,

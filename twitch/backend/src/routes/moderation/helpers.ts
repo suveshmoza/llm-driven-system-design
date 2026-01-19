@@ -75,7 +75,21 @@ export async function getUsername(userId: number): Promise<string> {
 }
 
 /**
- * Authenticate request and return actor ID, or send error response
+ * Authenticates an HTTP request using session cookie.
+ *
+ * Extracts the session ID from cookies and validates it against Redis.
+ * Sends appropriate error responses if authentication fails.
+ *
+ * @description Validates the request session and returns the authenticated user ID
+ * @param req - The Express request object containing cookies
+ * @param res - The Express response object for sending error responses
+ * @returns A promise resolving to the user ID if authenticated, or null if not
+ * @throws Sends 401 response if session cookie is missing or invalid
+ *
+ * @example
+ * const actorId = await authenticateRequest(req, res);
+ * if (!actorId) return; // Response already sent
+ * // Continue with authenticated user
  */
 export async function authenticateRequest(
   req: Request,
@@ -95,7 +109,21 @@ export async function authenticateRequest(
 }
 
 /**
- * Check moderator access and return result, or send error response
+ * Enforces moderator access for a channel, sending error response if unauthorized.
+ *
+ * Combines checkModeratorAccess with automatic error response handling.
+ * Use this in route handlers for clean authorization checks.
+ *
+ * @description Validates moderator access and sends 403 if unauthorized
+ * @param actorId - The numeric ID of the user attempting the action
+ * @param channelId - The string ID of the channel to check access for
+ * @param res - The Express response object for sending error responses
+ * @returns A promise resolving to true if authorized, false if not (response already sent)
+ * @throws Sends 403 response if user lacks moderator access
+ *
+ * @example
+ * if (!(await requireModeratorAccess(actorId, channelId, res))) return;
+ * // User has moderator access, continue with action
  */
 export async function requireModeratorAccess(
   actorId: number,

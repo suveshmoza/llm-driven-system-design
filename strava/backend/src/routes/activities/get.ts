@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Activity retrieval router.
+ * Provides endpoints for fetching activities, GPS points, and comments.
+ * @module routes/activities/get
+ */
+
 import { Router, Response } from 'express';
 import { query } from '../../utils/db.js';
 import { optionalAuth, AuthenticatedRequest } from '../../middleware/auth.js';
@@ -6,7 +12,26 @@ import { ActivityRow, SegmentEffortRow, GpsPointRow } from './types.js';
 
 const router = Router();
 
-// Get all activities (paginated)
+/**
+ * @description GET / - Retrieve paginated list of public activities.
+ * Returns activities ordered by start time with optional filtering by type and user.
+ * Includes user information and engagement counts (kudos, comments).
+ *
+ * @route GET /activities
+ * @authentication Optional
+ * @param req.query.limit - Maximum number of activities to return. Defaults to 20
+ * @param req.query.offset - Number of activities to skip. Defaults to 0
+ * @param req.query.type - Filter by activity type (e.g., 'run', 'ride')
+ * @param req.query.userId - Filter by user ID
+ * @returns 200 - Array of activities with user data
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * GET /activities?limit=10&type=run
+ *
+ * // Response 200
+ * { "activities": [{ "id": "...", "name": "Morning Run", ... }] }
+ */
 router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 20;
@@ -49,7 +74,25 @@ router.get('/', optionalAuth, async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
-// Get single activity
+/**
+ * @description GET /:id - Retrieve a single activity by ID.
+ * Returns full activity details with user info, kudos status, and segment efforts.
+ * Respects privacy settings and follower relationships.
+ *
+ * @route GET /activities/:id
+ * @authentication Optional (required for private/followers-only activities)
+ * @param req.params.id - The activity UUID
+ * @returns 200 - Activity with kudosCount, hasKudos, and segmentEfforts
+ * @returns 403 - Activity is private and user lacks access
+ * @returns 404 - Activity not found
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * GET /activities/550e8400-e29b-41d4-a716-446655440000
+ *
+ * // Response 200
+ * { "id": "...", "name": "Morning Run", "kudosCount": 5, "hasKudos": true, "segmentEfforts": [...] }
+ */
 router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -124,7 +167,25 @@ router.get('/:id', optionalAuth, async (req: AuthenticatedRequest, res: Response
   }
 });
 
-// Get GPS points for activity
+/**
+ * @description GET /:id/gps - Retrieve GPS points for an activity.
+ * Returns all recorded GPS data including coordinates, altitude, speed, and sensor data.
+ * Respects activity privacy settings.
+ *
+ * @route GET /activities/:id/gps
+ * @authentication Optional (required for private activities)
+ * @param req.params.id - The activity UUID
+ * @returns 200 - Array of GPS points ordered by index
+ * @returns 403 - Activity is private and user lacks access
+ * @returns 404 - Activity not found
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * GET /activities/550e8400-e29b-41d4-a716-446655440000/gps
+ *
+ * // Response 200
+ * { "points": [{ "point_index": 0, "latitude": 37.77, "longitude": -122.41, ... }] }
+ */
 router.get('/:id/gps', optionalAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -161,7 +222,22 @@ router.get('/:id/gps', optionalAuth, async (req: AuthenticatedRequest, res: Resp
   }
 });
 
-// Get comments for an activity
+/**
+ * @description GET /:id/comments - Retrieve comments for an activity.
+ * Returns all comments with user information, ordered chronologically.
+ *
+ * @route GET /activities/:id/comments
+ * @authentication None required
+ * @param req.params.id - The activity UUID
+ * @returns 200 - Array of comments with user data
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * GET /activities/550e8400-e29b-41d4-a716-446655440000/comments
+ *
+ * // Response 200
+ * { "comments": [{ "id": "...", "content": "Great run!", "username": "john", ... }] }
+ */
 router.get('/:id/comments', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;

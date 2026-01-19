@@ -304,7 +304,7 @@ export async function retrieveArchivedOrder(orderId: number): Promise<unknown | 
 /**
  * Anonymize old orders for GDPR/CCPA compliance
  */
-export async function anonymizeOldOrders(limit: number = 500): Promise<number> {
+export async function anonymizeOldOrders(_limit: number = 500): Promise<number> {
   const cutoffDate = new Date();
   const ordersPolicy = RetentionPolicies.ORDERS;
   cutoffDate.setDate(cutoffDate.getDate() - (ordersPolicy?.anonymizeAfterDays ?? 2555));

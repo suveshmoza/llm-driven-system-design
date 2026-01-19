@@ -187,7 +187,7 @@ app.use((req, res) => {
 });
 
 /** Global error handler for uncaught exceptions in routes */
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const requestLogger = (req as any).log || logger;
   requestLogger.error({
     error: err.message,

@@ -1,6 +1,8 @@
 /**
- * Operational Transformation (OT) sync logic for collaborative editing.
- * Handles transforming operations and broadcasting to clients.
+ * @fileoverview Operational Transformation (OT) sync logic for collaborative editing.
+ * @description Handles transforming operations against concurrent edits and broadcasting
+ * updates to connected clients. This is the core conflict resolution mechanism.
+ * @module services/collaboration/ot
  */
 
 import type { WebSocket } from 'ws';
@@ -24,9 +26,31 @@ import { debouncedPersist, redisPublishCircuitBreaker } from './persist.js';
 
 /**
  * Handles an edit operation from a client.
- * Transforms the operation against any concurrent operations (OT).
- * Uses idempotency keys to prevent duplicate operations on retry.
- * Broadcasts to other clients and persists to database.
+ *
+ * @description Processes incoming edit operations using Operational Transformation (OT).
+ * Key steps:
+ * 1. Checks idempotency to prevent duplicate operations on retry
+ * 2. Transforms the operation against any concurrent server operations the client hasn't seen
+ * 3. Increments document version and stores operation in the log
+ * 4. Sends ACK to the originating client with new version
+ * 5. Broadcasts transformed operation to other clients
+ * 6. Publishes to Redis for cross-server synchronization
+ * 7. Triggers debounced database persistence
+ *
+ * @param {WebSocket} ws - The WebSocket connection of the client sending the operation
+ * @param {ClientConnection} client - The client metadata including user info and current document
+ * @param {WSMessage} msg - The WebSocket message containing the operation and version
+ * @returns {Promise<void>} Resolves when operation processing is complete
+ *
+ * @example
+ * // Handle an insert operation from client
+ * const msg = {
+ *   type: 'OPERATION',
+ *   version: 42,
+ *   operation: [{ type: 'insert', pos: 10, text: 'Hello' }],
+ *   data: { operationId: 'op-abc123' },
+ * };
+ * await handleOperation(clientWebSocket, clientConnection, msg);
  */
 export async function handleOperation(
   ws: WebSocket,

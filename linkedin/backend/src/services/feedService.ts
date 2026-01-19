@@ -1,5 +1,5 @@
 import { query, queryOne, execute } from '../utils/db.js';
-import { cacheGet, cacheSet, cacheDel } from '../utils/redis.js';
+import { cacheGet as _cacheGet, cacheSet as _cacheSet, cacheDel } from '../utils/redis.js';
 import { getFirstDegreeConnections } from './connectionService.js';
 import type { Post, PostComment, User } from '../types/index.js';
 

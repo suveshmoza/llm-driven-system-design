@@ -108,6 +108,7 @@ export class ForbiddenError extends AppError {
  * Create a 429 rate limit error
  */
 export class RateLimitError extends AppError {
+  retryAfter: number;
   constructor(message = 'Rate limit exceeded', retryAfter = 60) {
     super(message, 429);
     this.retryAfter = retryAfter;

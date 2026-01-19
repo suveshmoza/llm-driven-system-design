@@ -10,7 +10,17 @@ import { activityLogger as log, logError, ErrorWithCode } from '../../shared/log
 import { GpsPoint, BoundingBox } from '../../utils/gps.js';
 import { ActivityRow } from './types.js';
 
-// Store GPS points for an activity
+/**
+ * @description Stores GPS points for an activity in the database.
+ * Inserts each point sequentially with its index, timestamp, coordinates, and sensor data.
+ * @param activityId - The UUID of the activity to associate points with
+ * @param points - Array of GPS points to store
+ * @returns Promise that resolves when all points are stored
+ * @throws Database errors if insertion fails
+ * @example
+ * const points = [{ latitude: 37.77, longitude: -122.41, timestamp: new Date(), ... }];
+ * await storeGpsPoints('activity-uuid', points);
+ */
 export async function storeGpsPoints(
   activityId: string,
   points: GpsPoint[]
@@ -25,12 +35,29 @@ export async function storeGpsPoints(
   }
 }
 
-// Record GPS points metric
+/**
+ * @description Records a metric for GPS points processed.
+ * Increments the Prometheus counter for activity GPS points by type and count.
+ * @param activityType - The type of activity (e.g., 'run', 'ride')
+ * @param pointCount - Number of GPS points to record
+ * @example
+ * recordGpsMetric('run', 150);
+ */
 export function recordGpsMetric(activityType: string, pointCount: number): void {
   activityGpsPointsTotal.inc({ type: activityType }, pointCount);
 }
 
-// Trigger async segment matching
+/**
+ * @description Initiates asynchronous segment matching for an activity.
+ * Matches the activity's GPS points against known segments using a two-phase algorithm
+ * (bounding box filtering followed by precise GPS matching). Errors are logged but not thrown.
+ * @param activityId - The UUID of the activity to match
+ * @param points - Array of GPS points from the activity
+ * @param activityType - The type of activity (e.g., 'run', 'ride')
+ * @param bbox - Bounding box of the activity route, or null if not calculated
+ * @example
+ * triggerSegmentMatching('activity-uuid', points, 'run', { minLat: 37, maxLat: 38, minLng: -123, maxLng: -122 });
+ */
 export function triggerSegmentMatching(
   activityId: string,
   points: GpsPoint[],
@@ -42,7 +69,15 @@ export function triggerSegmentMatching(
   });
 }
 
-// Trigger async achievement check
+/**
+ * @description Initiates asynchronous achievement checking for a user after an activity.
+ * Evaluates the activity against defined achievement criteria (distance milestones, elevation PRs, etc.).
+ * Errors are logged but not thrown.
+ * @param userId - The UUID of the user to check achievements for
+ * @param activity - The activity row data to evaluate
+ * @example
+ * triggerAchievementCheck('user-uuid', { id: 'activity-uuid', type: 'run', distance: 10000, ... });
+ */
 export function triggerAchievementCheck(
   userId: string,
   activity: ActivityRow
@@ -59,7 +94,18 @@ export function triggerAchievementCheck(
   });
 }
 
-// Fan out activity to followers' feeds
+/**
+ * @description Distributes an activity to followers' feeds using fan-out on write strategy.
+ * Adds the activity to the Redis feed of each follower and the activity owner.
+ * Also records the fanout duration metric bucketed by follower count.
+ * @param userId - The UUID of the user who created the activity
+ * @param activityId - The UUID of the activity to distribute
+ * @param startTime - The start time of the activity, used as the feed score
+ * @returns Promise that resolves when all feeds are updated
+ * @throws Database or Redis errors if queries fail
+ * @example
+ * await fanoutToFollowers('user-uuid', 'activity-uuid', new Date('2024-01-15T10:30:00Z'));
+ */
 export async function fanoutToFollowers(
   userId: string,
   activityId: string,

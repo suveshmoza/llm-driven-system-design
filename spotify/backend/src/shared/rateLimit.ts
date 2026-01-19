@@ -30,7 +30,7 @@ export async function checkRateLimit(key: string, limit: number, windowSec: numb
     multi.expire(fullKey, windowSec);
 
     const results = await multi.exec();
-    const count = results[2];
+    const count = (results?.[2] ?? 0) as number;
 
     return {
       allowed: count <= limit,
@@ -78,8 +78,7 @@ export function rateLimitMiddleware(
     if (!result.allowed) {
       rateLimitHitsTotal.inc({ endpoint: endpointName, scope });
 
-      const log = req.log || logger;
-      log.warn(
+      logger.warn(
         {
           key: keyValue,
           limit,
@@ -91,7 +90,7 @@ export function rateLimitMiddleware(
 
       return res.status(429).json({
         error: 'Rate limit exceeded',
-        retryAfter: Math.ceil((result.resetAt - Date.now()) / 1000),
+        retryAfter: Math.ceil((result.resetAt.getTime() - Date.now()) / 1000),
       });
     }
 

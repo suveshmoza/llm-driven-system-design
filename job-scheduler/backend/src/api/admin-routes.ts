@@ -21,7 +21,31 @@ const router = Router();
 
 // === Authentication Endpoints ===
 
-/** POST /api/auth/login - Create session */
+/**
+ * POST /api/auth/login - Authenticate user and create session.
+ *
+ * @description Validates user credentials and creates a new session. On success,
+ * sets an HTTP-only session cookie and returns user information. The session
+ * expires after 24 hours.
+ *
+ * @route POST /api/auth/login
+ * @access Public
+ *
+ * @param {Object} req.body - Login credentials
+ * @param {string} req.body.username - User's username
+ * @param {string} req.body.password - User's password
+ *
+ * @returns {ApiResponse<{user: User}>} 200 - Login successful with user data
+ * @returns {ApiResponse} 400 - Missing username or password
+ * @returns {ApiResponse} 401 - Invalid credentials
+ *
+ * @example
+ * ```bash
+ * curl -X POST /api/auth/login \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"username": "admin", "password": "secret"}'
+ * ```
+ */
 router.post(
   '/auth/login',
   asyncHandler(async (req, res) => {
@@ -62,7 +86,22 @@ router.post(
   })
 );
 
-/** POST /api/auth/logout - Destroy session */
+/**
+ * POST /api/auth/logout - Destroy current session and log out.
+ *
+ * @description Destroys the user's current session and clears the session cookie.
+ * Requires authentication.
+ *
+ * @route POST /api/auth/logout
+ * @access Authenticated users
+ *
+ * @returns {ApiResponse} 200 - Logout successful
+ *
+ * @example
+ * ```bash
+ * curl -X POST /api/auth/logout -b 'session_id=abc123'
+ * ```
+ */
 router.post(
   '/auth/logout',
   authenticate,
@@ -79,7 +118,22 @@ router.post(
   })
 );
 
-/** GET /api/auth/me - Get current user */
+/**
+ * GET /api/auth/me - Get current authenticated user.
+ *
+ * @description Returns the currently authenticated user's information including
+ * their ID, username, and role. Requires authentication.
+ *
+ * @route GET /api/auth/me
+ * @access Authenticated users
+ *
+ * @returns {ApiResponse<{id: string, username: string, role: string}>} 200 - Current user info
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/auth/me -b 'session_id=abc123'
+ * ```
+ */
 router.get('/auth/me', authenticate, (req: Request, res: Response) => {
   res.json({
     success: true,
@@ -93,7 +147,31 @@ router.get('/auth/me', authenticate, (req: Request, res: Response) => {
 
 // === Admin User Management ===
 
-/** POST /api/v1/admin/users - Create a new user (Admin only) */
+/**
+ * POST /api/v1/admin/users - Create a new user.
+ *
+ * @description Creates a new user account with the specified username, password,
+ * and role. Default role is 'user' if not specified. Requires admin authorization.
+ *
+ * @route POST /api/v1/admin/users
+ * @access Admin only
+ *
+ * @param {Object} req.body - User creation parameters
+ * @param {string} req.body.username - Username for the new account
+ * @param {string} req.body.password - Password for the new account
+ * @param {string} [req.body.role='user'] - Role assignment ('admin' or 'user')
+ *
+ * @returns {ApiResponse<User>} 201 - Created user object (password excluded)
+ * @returns {ApiResponse} 400 - Missing required fields
+ *
+ * @throws {Error} If username already exists
+ *
+ * @example
+ * ```bash
+ * curl -X POST /api/v1/admin/users \
+ *   -d '{"username": "newuser", "password": "secure123", "role": "user"}'
+ * ```
+ */
 router.post(
   '/v1/admin/users',
   authenticate,
@@ -121,7 +199,30 @@ router.post(
 
 // === Admin System Management ===
 
-/** POST /api/v1/admin/cleanup - Run data cleanup (Admin only) */
+/**
+ * POST /api/v1/admin/cleanup - Run data cleanup or preview cleanup.
+ *
+ * @description Runs the data retention cleanup process to delete old executions and logs
+ * based on configured retention policies. When dryRun is true, returns a preview of what
+ * would be deleted without actually deleting anything. Requires admin authorization.
+ *
+ * @route POST /api/v1/admin/cleanup
+ * @access Admin only
+ *
+ * @param {Object} req.body - Cleanup options
+ * @param {boolean} [req.body.dryRun=false] - If true, preview changes without executing
+ *
+ * @returns {ApiResponse<CleanupStats>} 200 - Cleanup statistics (or preview)
+ *
+ * @example
+ * ```bash
+ * # Preview cleanup
+ * curl -X POST /api/v1/admin/cleanup -d '{"dryRun": true}'
+ *
+ * # Execute cleanup
+ * curl -X POST /api/v1/admin/cleanup -d '{"dryRun": false}'
+ * ```
+ */
 router.post(
   '/v1/admin/cleanup',
   authenticate,
@@ -149,7 +250,24 @@ router.post(
   })
 );
 
-/** GET /api/v1/admin/storage - Get storage statistics (Admin only) */
+/**
+ * GET /api/v1/admin/storage - Get storage statistics.
+ *
+ * @description Returns database storage statistics including table sizes, row counts,
+ * and the current retention configuration. Useful for monitoring storage growth and
+ * planning cleanup operations. Requires admin authorization.
+ *
+ * @route GET /api/v1/admin/storage
+ * @access Admin only
+ *
+ * @returns {ApiResponse<{stats: StorageStats, retentionConfig: RetentionConfig}>} 200 - Storage statistics
+ *
+ * @example
+ * ```bash
+ * curl -X GET /api/v1/admin/storage
+ * # Response: {"success":true,"data":{"stats":{...},"retentionConfig":{...}}}
+ * ```
+ */
 router.get(
   '/v1/admin/storage',
   authenticate,
@@ -167,7 +285,24 @@ router.get(
   })
 );
 
-/** POST /api/v1/admin/circuit-breakers/reset - Reset all circuit breakers (Admin only) */
+/**
+ * POST /api/v1/admin/circuit-breakers/reset - Reset all circuit breakers.
+ *
+ * @description Resets all circuit breakers to their closed (normal) state. Use this
+ * after resolving the underlying issues that caused circuit breakers to open.
+ * Requires admin authorization.
+ *
+ * @route POST /api/v1/admin/circuit-breakers/reset
+ * @access Admin only
+ *
+ * @returns {ApiResponse} 200 - Circuit breakers reset confirmation
+ *
+ * @example
+ * ```bash
+ * curl -X POST /api/v1/admin/circuit-breakers/reset
+ * # Response: {"success":true,"message":"All circuit breakers reset"}
+ * ```
+ */
 router.post(
   '/v1/admin/circuit-breakers/reset',
   authenticate,

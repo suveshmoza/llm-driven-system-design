@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Activity upload router.
+ * Handles GPX file uploads and activity creation from GPS data.
+ * @module routes/activities/upload
+ */
+
 import { Router, Response } from 'express';
 import multer, { Multer } from 'multer';
 import { query } from '../../utils/db.js';
@@ -33,8 +39,16 @@ import {
 
 const router = Router();
 
-// Configure multer for file uploads
+/**
+ * @description Multer storage configuration for in-memory file handling.
+ * Files are stored in memory buffers for processing without disk I/O.
+ */
 const storage = multer.memoryStorage();
+
+/**
+ * @description Multer instance configured for GPX file uploads.
+ * Validates file type and enforces size limits from configuration.
+ */
 const upload: Multer = multer({
   storage,
   limits: { fileSize: alerts.activityUpload.maxFileSizeBytes },
@@ -47,7 +61,34 @@ const upload: Multer = multer({
   }
 });
 
-// Create activity from GPX upload
+/**
+ * @description POST /upload - Create activity from GPX file upload.
+ * Parses the GPX file, calculates metrics, applies privacy zones, and stores the activity.
+ * Includes idempotency checking to prevent duplicate uploads.
+ *
+ * @route POST /activities/upload
+ * @authentication Required
+ * @param req.file - The uploaded GPX file (multipart form-data)
+ * @param req.body.type - Activity type (e.g., 'run', 'ride'). Defaults to 'run'
+ * @param req.body.name - Activity name. Falls back to GPX name or generated name
+ * @param req.body.description - Optional description
+ * @param req.body.privacy - Privacy setting: 'public', 'followers', 'private'. Defaults to 'followers'
+ * @param req.headers.x-idempotency-key - Optional client idempotency key
+ * @returns 201 - Activity created with gpsPointCount
+ * @returns 200 - Duplicate activity (already uploaded)
+ * @returns 400 - No file uploaded, invalid GPX, or too many points
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * POST /activities/upload
+ * Content-Type: multipart/form-data
+ * file: morning_run.gpx
+ * type: run
+ * name: Morning Run
+ *
+ * // Response 201
+ * { "activity": {...}, "gpsPointCount": 256 }
+ */
 router.post('/upload', requireAuth, upload.single('file'), async (req: MulterRequest, res: Response): Promise<void> => {
   const uploadStart = Date.now();
   const userId = req.session.userId!;

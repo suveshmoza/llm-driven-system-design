@@ -1,5 +1,14 @@
 /**
  * Moderation Logs / History - Handles message deletion and chat clearing.
+ *
+ * Provides endpoints for:
+ * - Deleting individual chat messages
+ * - Clearing all messages in a channel
+ *
+ * All actions are logged for audit purposes and broadcast via Redis pub/sub
+ * to update connected clients in real-time.
+ *
+ * @module routes/moderation/logs
  */
 import express, { Request, Response, Router } from 'express';
 import { query } from '../../services/database.js';
@@ -11,7 +20,27 @@ import type { ChannelParams, MessageParams, DeleteMessageBody } from './types.js
 
 const router: Router = express.Router({ mergeParams: true });
 
-/** Delete a chat message - DELETE /api/moderation/:channelId/message/:messageId */
+/**
+ * Deletes a chat message.
+ *
+ * Soft-deletes a message by marking it as deleted rather than removing it
+ * from the database. This preserves the message for audit purposes while
+ * hiding it from chat display. Broadcasts deletion to all connected clients.
+ *
+ * @description DELETE /api/moderation/:channelId/message/:messageId - Delete a message
+ * @param req.params.channelId - The channel containing the message
+ * @param req.params.messageId - The ID of the message to delete
+ * @param req.body.reason - Optional reason for the deletion (for audit log)
+ * @returns JSON with success status
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 404 if message not found
+ * @throws 500 on database or server error
+ *
+ * @example
+ * DELETE /api/moderation/123/message/msg_abc123
+ * { "reason": "Inappropriate content" }
+ */
 router.delete('/:messageId', async (req: Request<MessageParams, object, DeleteMessageBody>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);
@@ -45,7 +74,23 @@ router.delete('/:messageId', async (req: Request<MessageParams, object, DeleteMe
   }
 });
 
-/** Clear all chat messages - POST /api/moderation/:channelId/clear */
+/**
+ * Clears all chat messages in a channel.
+ *
+ * Soft-deletes all non-deleted messages in the channel. This is typically
+ * used to clean up spam or reset chat. Messages are preserved for audit
+ * purposes. Broadcasts the clear event to all connected clients.
+ *
+ * @description POST /api/moderation/:channelId/clear - Clear all chat messages
+ * @param req.params.channelId - The channel to clear messages from
+ * @returns JSON with success status
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 500 on database or server error
+ *
+ * @example
+ * POST /api/moderation/123/clear
+ */
 router.post('/clear', async (req: Request<ChannelParams>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);

@@ -238,7 +238,7 @@ app.use('/api/search', searchRoutes);
 // Error Handler
 // ============================================================================
 
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const requestId = res.getHeader('X-Request-ID');
   logger.error({
     err,

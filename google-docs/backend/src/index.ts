@@ -155,7 +155,7 @@ app.use('/api/documents', suggestionsRoutes);
  * Global error handler for uncaught exceptions in routes.
  * Logs error details and returns generic error response.
  */
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   logger.error({
     error: err.message,
     stack: err.stack,

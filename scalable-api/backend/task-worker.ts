@@ -2,14 +2,31 @@ import queue, { QUEUES } from './shared/services/queue.js';
 import db from './shared/services/database.js';
 import config from './shared/config/index.js';
 
-const workerId = process.env.WORKER_ID || 'worker-1';
+const workerId = process.env['WORKER_ID'] || 'worker-1';
 
 console.log(`Task Worker [${workerId}] starting...`);
+
+interface TaskPayload {
+  to?: string;
+  subject?: string;
+  reportType?: string;
+  target?: string;
+  url?: string;
+  keys?: string[];
+}
+
+interface Task {
+  id: string;
+  type: string;
+  payload: TaskPayload;
+  retryCount: number;
+  maxRetries: number;
+}
 
 /**
  * Task handlers by type
  */
-const taskHandlers = {
+const taskHandlers: Record<string, (payload: TaskPayload) => Promise<unknown>> = {
   /**
    * Send email notification
    */
@@ -76,7 +93,7 @@ const taskHandlers = {
 /**
  * Handle incoming task message
  */
-async function handleTask(task) {
+async function handleTask(task: Task): Promise<void> {
   const { id, type, payload, retryCount, maxRetries } = task;
 
   console.log(`[${workerId}] Received task ${id} (type: ${type})`);
@@ -97,7 +114,7 @@ async function handleTask(task) {
     console.log(`[${workerId}] Task ${id} completed in ${duration}ms`);
     await updateTaskStatus(id, 'completed', { result, duration });
   } catch (error) {
-    console.error(`[${workerId}] Task ${id} failed:`, error.message);
+    console.error(`[${workerId}] Task ${id} failed:`, (error as Error).message);
 
     if (retryCount < maxRetries) {
       console.log(`[${workerId}] Will retry task ${id} (${retryCount + 1}/${maxRetries})`);
@@ -107,7 +124,7 @@ async function handleTask(task) {
         retryCount: retryCount + 1,
       });
     } else {
-      await updateTaskStatus(id, 'failed', { error: error.message });
+      await updateTaskStatus(id, 'failed', { error: (error as Error).message });
     }
   }
 }
@@ -115,7 +132,11 @@ async function handleTask(task) {
 /**
  * Update task status in database (for tracking)
  */
-async function updateTaskStatus(taskId, status, metadata = {}) {
+async function updateTaskStatus(
+  taskId: string,
+  status: string,
+  metadata: Record<string, unknown> = {}
+): Promise<void> {
   try {
     await db.query(
       `INSERT INTO task_status (task_id, status, metadata, updated_at)
@@ -125,14 +146,14 @@ async function updateTaskStatus(taskId, status, metadata = {}) {
     );
   } catch (error) {
     // Table might not exist yet, log but don't fail
-    console.warn(`[${workerId}] Could not update task status:`, error.message);
+    console.warn(`[${workerId}] Could not update task status:`, (error as Error).message);
   }
 }
 
 /**
  * Start the worker
  */
-async function start() {
+async function start(): Promise<void> {
   try {
     // Connect to RabbitMQ
     await queue.connect();
@@ -145,13 +166,13 @@ async function start() {
     console.log(`Task Worker [${workerId}] is now consuming from ${QUEUES.ASYNC_TASKS}`);
     console.log(`Environment: ${config.env}`);
   } catch (error) {
-    console.error(`[${workerId}] Failed to start:`, error.message);
+    console.error(`[${workerId}] Failed to start:`, (error as Error).message);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
-async function shutdown() {
+async function shutdown(): Promise<void> {
   console.log(`[${workerId}] Shutting down...`);
   await queue.close();
   await db.closePool();

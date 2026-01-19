@@ -5,7 +5,7 @@
  * @module routes/sharing
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request as _Request, Response } from 'express';
 import {
   createSharedLink,
   validateSharedLink,
@@ -17,9 +17,9 @@ import {
   getFolderShares,
   removeFolderShare,
 } from '../services/sharingService.js';
-import { downloadFile, getFileChunks } from '../services/file/index.js';
+import { downloadFile as _downloadFile, getFileChunks } from '../services/file/index.js';
 import { authMiddleware, optionalAuthMiddleware, AuthRequest } from '../middleware/auth.js';
-import { getDownloadPresignedUrl } from '../utils/storage.js';
+import { getDownloadPresignedUrl as _getDownloadPresignedUrl } from '../utils/storage.js';
 import { queryOne } from '../utils/database.js';
 import { FileItem } from '../types/index.js';
 

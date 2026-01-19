@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Activity analysis router.
+ * Provides endpoints for activity statistics and analytics.
+ * @module routes/activities/analysis
+ */
+
 import { Router, Response } from 'express';
 import { query } from '../../utils/db.js';
 import { requireAuth, AuthenticatedRequest } from '../../middleware/auth.js';
@@ -5,10 +11,31 @@ import { activityLogger as log, logError, ErrorWithCode } from '../../shared/log
 
 const router = Router();
 
-// Activity analysis endpoints
-// These endpoints provide statistics and analytics for activities
-
-// Get activity summary statistics (e.g., splits, zones)
+/**
+ * @description GET /:id/analysis - Get detailed analysis of an activity.
+ * Computes statistics from GPS points including elevation, speed, and heart rate zones.
+ * Provides min, max, and average values for each metric.
+ *
+ * @route GET /activities/:id/analysis
+ * @authentication Required
+ * @param req.params.id - The activity UUID to analyze
+ * @returns 200 - Analysis object with elevation, speed, heartRate stats and pointCount
+ * @returns 404 - Activity not found
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * GET /activities/550e8400-e29b-41d4-a716-446655440000/analysis
+ *
+ * // Response 200
+ * {
+ *   "analysis": {
+ *     "elevation": { "min": 10, "max": 150, "avg": 45.5 },
+ *     "speed": { "min": 2.1, "max": 5.8, "avg": 3.2 },
+ *     "heartRate": { "min": 120, "max": 175, "avg": 152 },
+ *     "pointCount": 256
+ *   }
+ * }
+ */
 router.get('/:id/analysis', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

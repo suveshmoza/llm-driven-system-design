@@ -1,5 +1,14 @@
 /**
  * Timeout Operations - Handles temporary bans (timeouts) for channels.
+ *
+ * Provides endpoints for:
+ * - Timing out users (temporary ban with automatic expiration)
+ * - Removing active timeouts early
+ *
+ * Timeouts are stored in the same table as bans but with an expiration date.
+ * All actions are logged for audit purposes and broadcast via Redis pub/sub.
+ *
+ * @module routes/moderation/timeouts
  */
 import express, { Request, Response, Router } from 'express';
 import { query } from '../../services/database.js';
@@ -11,7 +20,29 @@ import type { ChannelParams, TimeoutBody, ChannelOwnerRow, UserBanParams } from 
 
 const router: Router = express.Router({ mergeParams: true });
 
-/** Timeout a user in a channel - POST /api/moderation/:channelId/timeout */
+/**
+ * Times out a user in a channel.
+ *
+ * Creates a temporary ban that automatically expires after the specified duration.
+ * Channel owners cannot be timed out. If the user already has a timeout or ban,
+ * it will be updated with the new duration.
+ *
+ * @description POST /api/moderation/:channelId/timeout - Timeout a user
+ * @param req.params.channelId - The channel to timeout the user in
+ * @param req.body.userId - The user ID to timeout (required)
+ * @param req.body.durationSeconds - Duration in seconds (required, must be positive)
+ * @param req.body.reason - Optional reason for the timeout
+ * @returns JSON with success status and timeout details including expiration time
+ * @throws 400 if userId or durationSeconds is missing/invalid, or target is channel owner
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 500 on database or server error
+ *
+ * @example
+ * // 10-minute timeout
+ * POST /api/moderation/123/timeout
+ * { "userId": 456, "durationSeconds": 600, "reason": "Calm down" }
+ */
 router.post('/', async (req: Request<ChannelParams, object, TimeoutBody>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);
@@ -70,7 +101,25 @@ router.post('/', async (req: Request<ChannelParams, object, TimeoutBody>, res: R
   }
 });
 
-/** Remove a timeout - DELETE /api/moderation/:channelId/timeout/:userId */
+/**
+ * Removes a timeout from a user.
+ *
+ * Deletes the timeout record, allowing the user to participate in chat
+ * immediately rather than waiting for the timeout to expire. Only removes
+ * timeouts (bans with expiration), not permanent bans.
+ *
+ * @description DELETE /api/moderation/:channelId/timeout/:userId - Remove timeout
+ * @param req.params.channelId - The channel to remove the timeout from
+ * @param req.params.userId - The user ID to remove the timeout for
+ * @returns JSON with success status
+ * @throws 401 if not authenticated
+ * @throws 403 if not authorized to moderate this channel
+ * @throws 404 if no timeout exists for this user (permanent bans not affected)
+ * @throws 500 on database or server error
+ *
+ * @example
+ * DELETE /api/moderation/123/timeout/456
+ */
 router.delete('/:userId', async (req: Request<UserBanParams>, res: Response): Promise<void> => {
   try {
     const actorId = await authenticateRequest(req, res);

@@ -6,7 +6,7 @@ import {
   getDriverLocationFromRedis,
   getDriverOrderCount,
 } from '../utils/redis.js';
-import { haversineDistance, calculateETA } from '../utils/geo.js';
+import { haversineDistance as _haversineDistance, calculateETA as _calculateETA } from '../utils/geo.js';
 import type {
   Driver,
   CreateDriverInput,

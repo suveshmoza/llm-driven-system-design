@@ -99,7 +99,7 @@ export function getRedisClient(): Redis {
  * @param redis - Redis client instance
  * @returns Circuit breaker instance
  */
-export function getRedisCircuitBreaker(redis: Redis): CircuitBreaker<unknown[], unknown> {
+export function getRedisCircuitBreaker(_redis: Redis): CircuitBreaker<unknown[], unknown> {
   if (!redisCircuitBreaker) {
     // Create a wrapper function for Redis operations
     const redisOperation = async <T>(

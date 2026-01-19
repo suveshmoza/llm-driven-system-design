@@ -48,9 +48,18 @@ interface RebalanceOptions {
 interface HashRing {
   getAllNodes(): string[];
   getNode(key: string): string;
+  addNode(node: string): void;
+  removeNode(node: string): void;
 }
 
-type NodeRequestFn = (node: string, path: string) => Promise<unknown>;
+interface NodeRequestResult {
+  success: boolean;
+  data?: {
+    keys?: string[];
+  };
+}
+
+type NodeRequestFn = (node: string, path: string) => Promise<NodeRequestResult>;
 
 export class RebalanceManager {
   private ring: HashRing;

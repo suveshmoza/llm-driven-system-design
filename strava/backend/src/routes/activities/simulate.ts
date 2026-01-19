@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Activity simulation router.
+ * Provides endpoints to create simulated activities for testing without GPX files.
+ * @module routes/activities/simulate
+ */
+
 import { Router, Response } from 'express';
 import { query } from '../../utils/db.js';
 import { requireAuth, AuthenticatedRequest } from '../../middleware/auth.js';
@@ -23,7 +29,28 @@ import {
 
 const router = Router();
 
-// Create simulated activity (for testing without GPX)
+/**
+ * @description POST /simulate - Create a simulated activity with generated GPS data.
+ * Generates synthetic GPS points for testing purposes without requiring a GPX file.
+ * Useful for development and testing segment matching, achievements, and feed functionality.
+ *
+ * @route POST /activities/simulate
+ * @authentication Required
+ * @param req.body.type - Activity type (e.g., 'run', 'ride'). Defaults to 'run'
+ * @param req.body.name - Activity name. Defaults to 'Simulated [Type]'
+ * @param req.body.startLat - Starting latitude. Defaults to 37.7749 (San Francisco)
+ * @param req.body.startLng - Starting longitude. Defaults to -122.4194 (San Francisco)
+ * @param req.body.numPoints - Number of GPS points to generate. Defaults to 100
+ * @returns 201 - Created activity with gpsPointCount
+ * @returns 500 - Server error
+ * @example
+ * // Request
+ * POST /activities/simulate
+ * { "type": "ride", "startLat": 40.7128, "startLng": -74.0060, "numPoints": 200 }
+ *
+ * // Response 201
+ * { "activity": {...}, "gpsPointCount": 200 }
+ */
 router.post('/simulate', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const uploadStart = Date.now();
 

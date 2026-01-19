@@ -1,9 +1,24 @@
 /**
  * Repository module combining all database operations.
- * Re-exports all functions from individual repository modules for convenience.
+ *
+ * @description Central export point for all database repository functions.
+ * Re-exports all functions from job, execution, and schedule repositories
+ * for convenient single-import access.
+ *
  * Import from this file for a unified API, or import directly from specific
- * modules for more granular control.
+ * modules (job-repository, execution-repository, schedule-repository) for
+ * more granular control and smaller bundle sizes.
+ *
  * @module db/repository
+ *
+ * @example
+ * // Unified import
+ * import { createJob, createExecution, getDueJobs } from './db/repository';
+ *
+ * @example
+ * // Granular import (smaller bundles)
+ * import { createJob } from './db/job-repository';
+ * import { createExecution } from './db/execution-repository';
  */
 
 // Re-export all job operations

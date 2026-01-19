@@ -140,7 +140,7 @@ export function createObservabilityRoutes(sseManager: SSEManager): Router {
  * // Mount under /api for API-level health checks
  * app.use('/api', createApiHealthRoutes(sseManager));
  */
-export function createApiHealthRoutes(sseManager: SSEManager): Router {
+export function createApiHealthRoutes(_sseManager: SSEManager): Router {
   const router = express.Router();
 
   // Legacy health check endpoint for backwards compatibility

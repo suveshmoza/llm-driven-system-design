@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Script to fix unused variable errors by prefixing them with _
- * This script parses ESLint output and applies fixes
+ * Enhanced script to fix unused variable errors by prefixing them with _
+ * Handles imports with 'as' syntax, destructuring, catch blocks, and regular declarations
  */
 
 import { execSync } from 'child_process';
@@ -40,27 +40,28 @@ for (const entry of entries) {
   // Parse ESLint output for unused variable errors
   const lines = eslintOutput.split('\n');
   const fixes = [];
+  let currentFile = null;
 
   for (const line of lines) {
+    // Match file path
+    if (line.startsWith('/') && (line.endsWith('.ts') || line.endsWith('.js'))) {
+      currentFile = line.trim();
+      continue;
+    }
+
     // Match pattern like: "23:3  error  'clickMetrics' is defined but never used."
-    const match = line.match(/^\s*(\d+):(\d+)\s+error\s+'([^']+)'\s+is\s+(defined|assigned)/);
-    if (match) {
+    const match = line.match(/^\s*(\d+):(\d+)\s+error\s+'([^']+)'\s+is\s+(defined|assigned|never)/);
+    if (match && currentFile) {
       const lineNum = parseInt(match[1], 10);
       const colNum = parseInt(match[2], 10);
       const varName = match[3];
 
-      // Find the file path (it appears on a line before the errors)
-      for (let i = lines.indexOf(line) - 1; i >= 0; i--) {
-        if (lines[i].startsWith('/') && lines[i].endsWith('.ts')) {
-          fixes.push({
-            file: lines[i].trim(),
-            line: lineNum,
-            col: colNum,
-            varName,
-          });
-          break;
-        }
-      }
+      fixes.push({
+        file: currentFile,
+        line: lineNum,
+        col: colNum,
+        varName,
+      });
     }
   }
 
@@ -68,86 +69,99 @@ for (const entry of entries) {
   for (const fix of fixes) {
     if (!fs.existsSync(fix.file)) continue;
 
+    // Skip if already prefixed with _
+    if (fix.varName.startsWith('_')) continue;
+
     const content = fs.readFileSync(fix.file, 'utf8');
     const fileLines = content.split('\n');
     const lineIndex = fix.line - 1;
 
-    if (lineIndex >= 0 && lineIndex < fileLines.length) {
-      const originalLine = fileLines[lineIndex];
+    if (lineIndex < 0 || lineIndex >= fileLines.length) continue;
 
-      // Skip if already prefixed with _
-      if (fix.varName.startsWith('_')) continue;
+    const originalLine = fileLines[lineIndex];
+    let newLine = originalLine;
+    let fixed = false;
 
-      // Replace the variable name with _prefixed version
-      // Handle different patterns: imports, catch blocks, destructuring, regular declarations
-      const patterns = [
-        // Import pattern: import { foo } or import { foo as bar }
-        new RegExp(`\\b${fix.varName}\\b(?=\\s*[,}]|\\s+as\\s+|\\s+from\\s+)`),
-        // Catch pattern: } catch (error) {
-        new RegExp(`catch\\s*\\(\\s*${fix.varName}\\s*\\)`),
-        // Destructuring: const { foo } = or const { foo, bar } =
-        new RegExp(`\\{[^}]*\\b${fix.varName}\\b[^}]*\\}\\s*=`),
-        // Regular declaration: const foo = or let foo =
-        new RegExp(`(const|let|var)\\s+${fix.varName}\\b`),
-        // Function parameter: (foo, bar) or (foo) or foo =>
-        new RegExp(`[(,]\\s*${fix.varName}\\s*[),]`),
-      ];
-
-      let newLine = originalLine;
-      let fixed = false;
-
-      // Special handling for catch blocks
-      if (originalLine.includes('catch') && originalLine.includes(fix.varName)) {
-        newLine = originalLine.replace(
-          new RegExp(`catch\\s*\\(\\s*${fix.varName}\\s*\\)`),
-          `catch (_${fix.varName})`
-        );
+    // Pattern 1: Catch blocks - catch (error)
+    if (!fixed && originalLine.includes('catch')) {
+      const catchPattern = new RegExp(`(catch\\s*\\()\\s*${fix.varName}\\s*(\\))`);
+      if (catchPattern.test(originalLine)) {
+        newLine = originalLine.replace(catchPattern, `$1_${fix.varName}$2`);
         fixed = newLine !== originalLine;
       }
+    }
 
-      // Special handling for destructuring imports with 'as'
-      if (!fixed && originalLine.includes('import')) {
-        // Handle: import { foo, bar } from - replace just the variable name in context
-        newLine = originalLine.replace(
-          new RegExp(`(\\{[^}]*?)\\b${fix.varName}\\b([^}]*?\\})`),
-          (match, before, after) => `${before}_${fix.varName}${after}`
-        );
+    // Pattern 2: Import with 'as' - import { foo as bar }
+    if (!fixed && originalLine.includes('import') && originalLine.includes('as')) {
+      const asPattern = new RegExp(`(\\b${fix.varName})\\s+as\\s+(${fix.varName})\\b`);
+      if (asPattern.test(originalLine)) {
+        // Already using as, just prefix the alias
+        newLine = originalLine.replace(asPattern, `$1 as _${fix.varName}`);
+        fixed = newLine !== originalLine;
+      } else {
+        // Check if it's an import that needs "as _varname"
+        const importPattern = new RegExp(`(import\\s*\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\}\\s*from)`);
+        if (importPattern.test(originalLine)) {
+          // Check if already has 'as' for this var
+          const hasAs = new RegExp(`${fix.varName}\\s+as\\s+`).test(originalLine);
+          if (!hasAs) {
+            newLine = originalLine.replace(importPattern, `$1${fix.varName} as _${fix.varName}$3`);
+            fixed = newLine !== originalLine;
+          }
+        }
+      }
+    }
+
+    // Pattern 3: Simple import - import { foo } or import { foo, bar }
+    if (!fixed && originalLine.includes('import') && !originalLine.includes('as')) {
+      const importPattern = new RegExp(`(import\\s*\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\}\\s*from)`);
+      if (importPattern.test(originalLine)) {
+        newLine = originalLine.replace(importPattern, `$1${fix.varName} as _${fix.varName}$3`);
         fixed = newLine !== originalLine;
       }
+    }
 
-      // Handle const/let/var declarations
-      if (!fixed) {
-        newLine = originalLine.replace(
-          new RegExp(`(const|let|var)\\s+${fix.varName}\\b`),
-          `$1 _${fix.varName}`
-        );
+    // Pattern 4: const/let/var declarations
+    if (!fixed) {
+      const declPattern = new RegExp(`(const|let|var)\\s+${fix.varName}\\b`);
+      if (declPattern.test(originalLine)) {
+        newLine = originalLine.replace(declPattern, `$1 _${fix.varName}`);
         fixed = newLine !== originalLine;
       }
+    }
 
-      // Handle destructuring assignments
-      if (!fixed) {
-        newLine = originalLine.replace(
-          new RegExp(`(\\{[^}]*?)\\b${fix.varName}\\b([^}]*?\\}\\s*=)`),
-          (match, before, after) => `${before}_${fix.varName}${after}`
-        );
+    // Pattern 5: Destructuring - const { foo, bar } =
+    if (!fixed) {
+      const destructPattern = new RegExp(`(\\{[^}]*?)\\b(${fix.varName})\\b([^}]*?\\}\\s*=)`);
+      if (destructPattern.test(originalLine)) {
+        newLine = originalLine.replace(destructPattern, `$1${fix.varName}: _${fix.varName}$3`);
         fixed = newLine !== originalLine;
       }
+    }
 
-      // Handle function parameters
-      if (!fixed) {
-        newLine = originalLine.replace(
-          new RegExp(`([,(]\\s*)${fix.varName}(\\s*[,)])`),
-          `$1_${fix.varName}$2`
-        );
+    // Pattern 6: Function parameters - (foo, bar) or function(foo)
+    if (!fixed) {
+      const paramPattern = new RegExp(`([\\(,]\\s*)${fix.varName}(\\s*[\\),:])`);
+      if (paramPattern.test(originalLine)) {
+        newLine = originalLine.replace(paramPattern, `$1_${fix.varName}$2`);
         fixed = newLine !== originalLine;
       }
+    }
 
-      if (fixed && newLine !== originalLine) {
-        fileLines[lineIndex] = newLine;
-        fs.writeFileSync(fix.file, fileLines.join('\n'), 'utf8');
-        console.log(`Fixed: ${fix.file}:${fix.line} - ${fix.varName} -> _${fix.varName}`);
-        totalFixed++;
+    // Pattern 7: Arrow function single param - foo =>
+    if (!fixed) {
+      const arrowPattern = new RegExp(`^(\\s*)${fix.varName}(\\s*=>)`);
+      if (arrowPattern.test(originalLine)) {
+        newLine = originalLine.replace(arrowPattern, `$1_${fix.varName}$2`);
+        fixed = newLine !== originalLine;
       }
+    }
+
+    if (fixed && newLine !== originalLine) {
+      fileLines[lineIndex] = newLine;
+      fs.writeFileSync(fix.file, fileLines.join('\n'), 'utf8');
+      console.log(`Fixed: ${fix.file}:${fix.line} - ${fix.varName} -> _${fix.varName}`);
+      totalFixed++;
     }
   }
 }

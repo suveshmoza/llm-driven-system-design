@@ -14,8 +14,17 @@ import { logger } from '../utils/logger';
 
 /**
  * Seeds the database with sample jobs.
- * Runs migrations first, then creates sample jobs if they don't exist.
- * Includes examples of recurring, one-time, and test jobs.
+ *
+ * @description Runs migrations first, then creates sample jobs for demonstration
+ * and development purposes. Skips jobs that already exist (by name) to allow
+ * safe re-runs. Includes examples of recurring, one-time, and test jobs.
+ *
+ * @returns {Promise<void>} Resolves when seeding completes, then exits process
+ * @throws {Error} Logs error and exits with code 1 if seeding fails
+ *
+ * @example
+ * // Run via npm script
+ * // $ npm run db:seed
  */
 async function seed() {
   logger.info('Starting database seeding...');

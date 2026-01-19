@@ -64,7 +64,7 @@ export function createAuthRoutes(sseHandler: SSEHandler): Router {
 
       // HTTP sessions don't have a direct send function
       // Messages are sent via SSE
-      const sendFn = (msg: string) => {
+      const sendFn = (_msg: string) => {
         // Will be replaced when SSE connects
       };
 

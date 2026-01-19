@@ -7,8 +7,20 @@ import { getIssueById } from './queries.js';
 /**
  * Retrieves all comments for an issue with author details.
  *
- * @param issueId - ID of the issue
- * @returns Array of comments with author information
+ * @description Fetches all comments associated with an issue, including
+ * embedded author information (id, name, email, avatar). Comments are
+ * returned in chronological order (oldest first) for natural conversation flow.
+ *
+ * @param issueId - Numeric ID of the issue
+ * @returns Promise resolving to an array of comments with author information
+ *
+ * @example
+ * ```typescript
+ * const comments = await getIssueComments(123);
+ * comments.forEach(comment => {
+ *   console.log(`${comment.author.name}: ${comment.body}`);
+ * });
+ * ```
  */
 export async function getIssueComments(issueId: number): Promise<CommentWithAuthor[]> {
   const { rows } = await query<CommentWithAuthor>(
@@ -27,12 +39,26 @@ export async function getIssueComments(issueId: number): Promise<CommentWithAuth
 
 /**
  * Adds a comment to an issue.
- * Also updates the issue's updated_at timestamp and publishes an event.
  *
- * @param issueId - ID of the issue to comment on
- * @param authorId - UUID of the comment author
- * @param body - Comment text content
- * @returns Newly created comment
+ * @description Creates a new comment on an issue and performs related updates:
+ * 1. Inserts the comment record into the database
+ * 2. Updates the issue's updated_at timestamp to reflect activity
+ * 3. Publishes a 'commented' event for notifications and webhooks
+ *
+ * @param issueId - Numeric ID of the issue to comment on
+ * @param authorId - UUID of the user creating the comment
+ * @param body - Text content of the comment (supports markdown)
+ * @returns Promise resolving to the newly created comment
+ *
+ * @example
+ * ```typescript
+ * const comment = await addComment(
+ *   123,
+ *   'user-uuid',
+ *   'I think we should prioritize this for the next sprint.'
+ * );
+ * console.log(`Comment ${comment.id} created at ${comment.created_at}`);
+ * ```
  */
 export async function addComment(
   issueId: number,
@@ -72,12 +98,25 @@ export async function addComment(
 
 /**
  * Updates an existing comment.
- * Only the original author can update their comment.
  *
- * @param commentId - ID of the comment to update
- * @param body - New comment text
- * @param userId - ID of user attempting the update (must match author)
- * @returns Updated comment, or null if not found or unauthorized
+ * @description Modifies the body text of an existing comment. Authorization
+ * is enforced at the database level - only the original author can update
+ * their comment. The comment's updated_at timestamp is automatically set.
+ *
+ * @param commentId - Numeric ID of the comment to update
+ * @param body - New text content for the comment
+ * @param userId - UUID of the user attempting the update (must match original author)
+ * @returns Promise resolving to the updated comment, or null if not found or unauthorized
+ *
+ * @example
+ * ```typescript
+ * const updated = await updateComment(456, 'Fixed typo in my previous comment', 'user-uuid');
+ * if (updated) {
+ *   console.log('Comment updated successfully');
+ * } else {
+ *   console.log('Comment not found or you are not the author');
+ * }
+ * ```
  */
 export async function updateComment(
   commentId: number,
@@ -96,11 +135,24 @@ export async function updateComment(
 
 /**
  * Deletes a comment.
- * Only the original author can delete their comment.
  *
- * @param commentId - ID of the comment to delete
- * @param userId - ID of user attempting deletion (must match author)
- * @returns True if deleted, false if not found or unauthorized
+ * @description Permanently removes a comment from the database. Authorization
+ * is enforced at the database level - only the original author can delete
+ * their comment. The delete operation is atomic and cannot be undone.
+ *
+ * @param commentId - Numeric ID of the comment to delete
+ * @param userId - UUID of the user attempting deletion (must match original author)
+ * @returns Promise resolving to true if deleted, false if not found or unauthorized
+ *
+ * @example
+ * ```typescript
+ * const deleted = await deleteComment(456, 'user-uuid');
+ * if (deleted) {
+ *   console.log('Comment deleted successfully');
+ * } else {
+ *   console.log('Comment not found or you are not the author');
+ * }
+ * ```
  */
 export async function deleteComment(commentId: number, userId: string): Promise<boolean> {
   const { rowCount } = await query(

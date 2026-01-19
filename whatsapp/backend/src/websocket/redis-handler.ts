@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config as _config } from '../config.js';
 import { redisPub, KEYS } from '../redis.js';
 import { createServiceLogger } from '../shared/logger.js';
 import { recordDeliveryDuration } from '../shared/metrics.js';

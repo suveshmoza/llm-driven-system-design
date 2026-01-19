@@ -66,7 +66,25 @@ app.use(errorHandler);
 
 /**
  * Starts the API server.
- * Runs database migrations and ensures admin user before listening for requests.
+ *
+ * @description Initializes the job scheduler API server by running database migrations,
+ * ensuring the default admin user exists, and then starting the Express server on the
+ * configured port. Exits the process with code 1 if startup fails.
+ *
+ * @returns {Promise<void>} Resolves when server is listening
+ *
+ * @throws {Error} If database migration fails
+ * @throws {Error} If admin user creation fails
+ * @throws {Error} If server fails to bind to port
+ *
+ * @example
+ * ```typescript
+ * // The start function is called automatically when this module is imported
+ * start().catch((error) => {
+ *   logger.error({ err: error }, 'Failed to start API server');
+ *   process.exit(1);
+ * });
+ * ```
  */
 async function start(): Promise<void> {
   // Run migrations
