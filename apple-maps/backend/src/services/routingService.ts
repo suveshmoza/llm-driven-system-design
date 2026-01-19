@@ -21,23 +21,105 @@ import {
   cacheHits,
   cacheMisses,
 } from '../shared/metrics.js';
+import type CircuitBreaker from 'opossum';
+
+/**
+ * Type definitions for routing
+ */
+interface RoadNode {
+  id: string;
+  lat: number;
+  lng: number;
+  isIntersection: boolean;
+}
+
+interface RoadEdge {
+  id: string;
+  targetNode: string;
+  sourceNode: string;
+  streetName: string;
+  roadClass: string;
+  length: number;
+  freeFlowSpeed: number;
+  isToll: boolean;
+  isOneWay: boolean;
+}
+
+interface TrafficData {
+  speed: number;
+  congestion: string;
+}
+
+interface Graph {
+  nodes: Map<string, RoadNode>;
+  edges: Map<string, RoadEdge[]>;
+}
+
+interface NearestNode {
+  id: string;
+  lat: number;
+  lng: number;
+  distance: number;
+}
+
+interface RouteOptions {
+  avoidTolls?: boolean;
+  avoidHighways?: boolean;
+}
+
+interface Maneuver {
+  type: string;
+  instruction: string;
+  distance: number;
+  distanceFormatted?: string;
+  location: RoadNode;
+  streetName?: string;
+}
+
+interface RouteEdgeInfo {
+  id: string;
+  streetName: string;
+  length: number;
+  roadClass: string;
+}
+
+interface RouteResult {
+  coordinates: Array<{ lat: number; lng: number }>;
+  distance: number;
+  distanceFormatted: string;
+  duration: number;
+  durationFormatted: string;
+  maneuvers: Maneuver[];
+  edges: RouteEdgeInfo[];
+}
+
+interface CameFromEntry {
+  nodeId: string;
+  edge: RoadEdge;
+}
 
 /**
  * Routing Engine using A* algorithm with traffic-aware weights
  * Enhanced with circuit breakers and metrics
  */
 class RoutingService {
+  private graphCache: Graph | null;
+  private graphCacheTime: number | null;
+  private readonly CACHE_TTL: number;
+  private graphLoadBreaker: CircuitBreaker<[], Graph>;
+  private nearestNodeBreaker: CircuitBreaker<[number, number], NearestNode | null>;
+
   constructor() {
     this.graphCache = null;
     this.graphCacheTime = null;
     this.CACHE_TTL = 60000; // 1 minute
 
     // Initialize circuit breaker for graph loading
-    this.graphLoadBreaker = createCircuitBreaker(
+    this.graphLoadBreaker = createCircuitBreaker<[], Graph>(
       'routing_graph_load',
       this._loadGraphFromDB.bind(this),
       routingCircuitBreakerOptions,
-      async () => {
+      async (): Promise<Graph> => {
         // Fallback: return cached graph if available
         if (this.graphCache) {
           logger.warn('Using stale graph cache as fallback');
@@ -48,7 +130,7 @@ class RoutingService {
     );
 
     // Circuit breaker for finding nearest node (DB intensive)
-    this.nearestNodeBreaker = createCircuitBreaker(
+    this.nearestNodeBreaker = createCircuitBreaker<[number, number], NearestNode | null>(
       'routing_nearest_node',
       this._findNearestNodeDB.bind(this),
       { ...routingCircuitBreakerOptions, timeout: 5000 }
@@ -58,7 +140,7 @@ class RoutingService {
   /**
    * Internal: Load road graph from database
    */
-  async _loadGraphFromDB() {
+  private async _loadGraphFromDB(): Promise<Graph> {
     const nodesResult = await pool.query(`
       SELECT id, lat, lng, is_intersection
       FROM road_nodes
@@ -72,8 +154,8 @@ class RoutingService {
     `);
 
     // Build adjacency list
-    const nodes = new Map();
-    const edges = new Map();
+    const nodes = new Map<string, RoadNode>();
+    const edges = new Map<string, RoadEdge[]>();
 
     for (const node of nodesResult.rows) {
       nodes.set(node.id, {
@@ -86,7 +168,7 @@ class RoutingService {
     }
 
     for (const segment of segmentsResult.rows) {
-      const edge = {
+      const edge: RoadEdge = {
         id: segment.id,
         targetNode: segment.end_node_id,
         sourceNode: segment.start_node_id,
@@ -99,17 +181,21 @@ class RoutingService {
       };
 
       // Add forward edge
-      if (edges.has(segment.start_node_id)) {
-        edges.get(segment.start_node_id).push(edge);
+      const forwardEdges = edges.get(segment.start_node_id);
+      if (forwardEdges) {
+        forwardEdges.push(edge);
       }
 
       // Add reverse edge if not one-way
-      if (!segment.is_one_way && edges.has(segment.end_node_id)) {
-        edges.get(segment.end_node_id).push({
-          ...edge,
-          targetNode: segment.start_node_id,
-          sourceNode: segment.end_node_id,
-        });
+      if (!segment.is_one_way) {
+        const reverseEdges = edges.get(segment.end_node_id);
+        if (reverseEdges) {
+          reverseEdges.push({
+            ...edge,
+            targetNode: segment.start_node_id,
+            sourceNode: segment.end_node_id,
+          });
+        }
       }
     }
 
@@ -124,9 +210,9 @@ class RoutingService {
   /**
    * Load road graph from database with caching and circuit breaker
    */
-  async loadGraph() {
+  async loadGraph(): Promise<Graph> {
     // Check cache
-    if (this.graphCache && Date.now() - this.graphCacheTime < this.CACHE_TTL) {
+    if (this.graphCache && this.graphCacheTime && Date.now() - this.graphCacheTime < this.CACHE_TTL) {
       cacheHits.inc({ cache_name: 'routing_graph' });
       return this.graphCache;
     }
@@ -145,7 +231,7 @@ class RoutingService {
   /**
    * Get traffic data for segments with caching
    */
-  async getTrafficData(segmentIds) {
+  async getTrafficData(segmentIds: string[]): Promise<Map<string, TrafficData>> {
     if (segmentIds.length === 0) return new Map();
 
     // Try cache first
@@ -154,7 +240,7 @@ class RoutingService {
 
     if (cached) {
       cacheHits.inc({ cache_name: 'traffic_data' });
-      return new Map(Object.entries(JSON.parse(cached)));
+      return new Map(Object.entries(JSON.parse(cached) as Record<string, TrafficData>));
     }
 
     cacheMisses.inc({ cache_name: 'traffic_data' });
@@ -167,7 +253,7 @@ class RoutingService {
       ORDER BY segment_id, timestamp DESC
     `, [segmentIds]);
 
-    const trafficMap = new Map();
+    const trafficMap = new Map<string, TrafficData>();
     for (const row of result.rows) {
       trafficMap.set(row.segment_id, {
         speed: parseFloat(row.speed_kph),
@@ -184,7 +270,7 @@ class RoutingService {
   /**
    * Internal: Find nearest node from database
    */
-  async _findNearestNodeDB(lat, lng) {
+  private async _findNearestNodeDB(lat: number, lng: number): Promise<NearestNode | null> {
     const result = await pool.query(`
       SELECT id, lat, lng,
         ST_Distance(location, ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography) as distance
@@ -208,14 +294,20 @@ class RoutingService {
   /**
    * Find nearest node to a coordinate with circuit breaker
    */
-  async findNearestNode(lat, lng) {
+  async findNearestNode(lat: number, lng: number): Promise<NearestNode | null> {
     return this.nearestNodeBreaker.fire(lat, lng);
   }
 
   /**
    * A* pathfinding algorithm with metrics
    */
-  async findRoute(originLat, originLng, destLat, destLng, options = {}) {
+  async findRoute(
+    originLat: number,
+    originLng: number,
+    destLat: number,
+    destLng: number,
+    options: RouteOptions = {}
+  ): Promise<RouteResult> {
     const { avoidTolls = false, avoidHighways = false } = options;
     const endTimer = routeCalculationDuration.startTimer({ route_type: 'primary' });
     let nodesVisitedCount = 0;
@@ -235,7 +327,7 @@ class RoutingService {
       }
 
       // Get all segment IDs for traffic lookup
-      const allSegmentIds = [];
+      const allSegmentIds: string[] = [];
       for (const nodeEdges of edges.values()) {
         for (const edge of nodeEdges) {
           allSegmentIds.push(edge.id);
@@ -247,16 +339,17 @@ class RoutingService {
 
       // A* algorithm
       const openSet = new PriorityQueue();
-      const cameFrom = new Map();
-      const gScore = new Map();
-      const fScore = new Map();
+      const cameFrom = new Map<string, CameFromEntry>();
+      const gScore = new Map<string, number>();
+      const fScore = new Map<string, number>();
 
       gScore.set(startNode.id, 0);
       fScore.set(startNode.id, this.heuristic(startNode, goalNode));
-      openSet.enqueue(startNode.id, fScore.get(startNode.id));
+      openSet.enqueue(startNode.id, fScore.get(startNode.id) ?? 0);
 
       while (!openSet.isEmpty()) {
         const currentId = openSet.dequeue();
+        if (!currentId) break;
         nodesVisitedCount++;
 
         if (currentId === goalNode.id) {
@@ -296,7 +389,7 @@ class RoutingService {
           const speed = traffic ? traffic.speed : edge.freeFlowSpeed;
           const weight = (edge.length / 1000) / (speed / 3600); // seconds
 
-          const tentativeG = gScore.get(currentId) + weight;
+          const tentativeG = (gScore.get(currentId) ?? 0) + weight;
           const neighborG = gScore.get(edge.targetNode) ?? Infinity;
 
           if (tentativeG < neighborG) {
@@ -304,10 +397,10 @@ class RoutingService {
             gScore.set(edge.targetNode, tentativeG);
 
             const neighborNode = nodes.get(edge.targetNode);
-            const h = this.heuristic(neighborNode, goalNode);
+            const h = neighborNode ? this.heuristic(neighborNode, goalNode) : Infinity;
             fScore.set(edge.targetNode, tentativeG + h);
 
-            openSet.enqueue(edge.targetNode, fScore.get(edge.targetNode));
+            openSet.enqueue(edge.targetNode, fScore.get(edge.targetNode) ?? 0);
           }
         }
       }
@@ -325,7 +418,8 @@ class RoutingService {
 
       throw new Error('No route found');
     } catch (error) {
-      if (!error.message.includes('No route found') && !error.message.includes('Could not find')) {
+      const errorMessage = (error as Error).message;
+      if (!errorMessage.includes('No route found') && !errorMessage.includes('Could not find')) {
         routeRequestsTotal.inc({ status: 'error' });
         endTimer({ status: 'error' });
         logger.error({ error }, 'Route calculation error');
@@ -337,7 +431,7 @@ class RoutingService {
   /**
    * Heuristic function for A* (straight-line distance in time)
    */
-  heuristic(nodeA, nodeB) {
+  private heuristic(nodeA: RoadNode | NearestNode, nodeB: RoadNode | NearestNode): number {
     if (!nodeA || !nodeB) return Infinity;
 
     const distance = haversineDistance(nodeA.lat, nodeA.lng, nodeB.lat, nodeB.lng);
@@ -349,18 +443,32 @@ class RoutingService {
   /**
    * Reconstruct path from A* result
    */
-  reconstructPath(cameFrom, goalId, nodes, trafficData, endpoints) {
-    const path = [];
-    const routeEdges = [];
+  private reconstructPath(
+    cameFrom: Map<string, CameFromEntry>,
+    goalId: string,
+    nodes: Map<string, RoadNode>,
+    trafficData: Map<string, TrafficData>,
+    endpoints: { originLat: number; originLng: number; destLat: number; destLng: number }
+  ): RouteResult {
+    const path: RoadNode[] = [];
+    const routeEdges: RoadEdge[] = [];
     let current = goalId;
 
     while (cameFrom.has(current)) {
-      const { nodeId, edge } = cameFrom.get(current);
-      path.unshift(nodes.get(current));
+      const entry = cameFrom.get(current);
+      if (!entry) break;
+      const { nodeId, edge } = entry;
+      const node = nodes.get(current);
+      if (node) {
+        path.unshift(node);
+      }
       routeEdges.unshift(edge);
       current = nodeId;
     }
-    path.unshift(nodes.get(current));
+    const startNode = nodes.get(current);
+    if (startNode) {
+      path.unshift(startNode);
+    }
 
     // Calculate totals
     let totalDistance = 0;
@@ -402,22 +510,25 @@ class RoutingService {
   /**
    * Generate turn-by-turn maneuvers
    */
-  generateManeuvers(path, edges) {
-    const maneuvers = [];
+  private generateManeuvers(path: RoadNode[], edges: RoadEdge[]): Maneuver[] {
+    const maneuvers: Maneuver[] = [];
     let cumulativeDistance = 0;
 
     // Start maneuver
-    maneuvers.push({
-      type: 'depart',
-      instruction: `Start on ${edges[0]?.streetName || 'the road'}`,
-      distance: 0,
-      location: path[0],
-    });
+    if (path[0]) {
+      maneuvers.push({
+        type: 'depart',
+        instruction: `Start on ${edges[0]?.streetName || 'the road'}`,
+        distance: 0,
+        location: path[0],
+      });
+    }
 
     for (let i = 0; i < edges.length; i++) {
       const edge = edges[i];
       const nextEdge = edges[i + 1];
 
+      if (!edge) continue;
       cumulativeDistance += edge.length;
 
       if (nextEdge) {
@@ -448,13 +559,16 @@ class RoutingService {
         }
       } else {
         // Arrive maneuver
-        maneuvers.push({
-          type: 'arrive',
-          instruction: 'You have arrived at your destination',
-          distance: cumulativeDistance,
-          distanceFormatted: formatDistance(cumulativeDistance),
-          location: path[path.length - 1],
-        });
+        const lastNode = path[path.length - 1];
+        if (lastNode) {
+          maneuvers.push({
+            type: 'arrive',
+            instruction: 'You have arrived at your destination',
+            distance: cumulativeDistance,
+            distanceFormatted: formatDistance(cumulativeDistance),
+            location: lastNode,
+          });
+        }
       }
     }
 
@@ -464,7 +578,7 @@ class RoutingService {
   /**
    * Classify turn angle into turn type
    */
-  classifyTurn(angle) {
+  private classifyTurn(angle: number): string {
     const absAngle = Math.abs(angle);
 
     if (absAngle < 15) return 'straight';
@@ -477,8 +591,8 @@ class RoutingService {
   /**
    * Generate instruction text for a maneuver
    */
-  generateInstruction(currentEdge, nextEdge, turnType) {
-    const turnPhrase = {
+  private generateInstruction(_currentEdge: RoadEdge, nextEdge: RoadEdge, turnType: string): string {
+    const turnPhrase: Record<string, string> = {
       'slight-right': 'Keep right onto',
       'slight-left': 'Keep left onto',
       'right': 'Turn right onto',
@@ -489,13 +603,20 @@ class RoutingService {
     };
 
     const streetName = nextEdge.streetName || 'the road';
-    return `${turnPhrase[turnType]} ${streetName}`;
+    return `${turnPhrase[turnType] || 'Continue onto'} ${streetName}`;
   }
 
   /**
    * Find alternative routes by penalizing primary route edges
    */
-  async findAlternatives(originLat, originLng, destLat, destLng, primaryRoute, options = {}) {
+  async findAlternatives(
+    _originLat: number,
+    _originLng: number,
+    _destLat: number,
+    _destLng: number,
+    _primaryRoute: RouteResult,
+    _options: RouteOptions = {}
+  ): Promise<RouteResult[]> {
     // For now, return empty alternatives
     // Full implementation would penalize edges in primary route
     return [];

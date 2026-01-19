@@ -1,9 +1,7 @@
 // Authentication and authorization middleware with RBAC
-import type { Response, NextFunction, RequestHandler } from 'express';
 import { pool } from '../db.js';
 import logger from '../shared/logger.js';
 import { authEventsTotal } from '../shared/metrics.js';
-import type { AuthenticatedRequest, RoleCacheEntry } from '../types.js';
 
 /**
  * User roles and their hierarchy.
@@ -14,15 +12,13 @@ export const Roles = {
   PREMIUM: 'premium',
   ARTIST: 'artist',
   ADMIN: 'admin',
-} as const;
-
-export type Role = typeof Roles[keyof typeof Roles];
+};
 
 /**
  * Role hierarchy for permission checks.
  * Admin has all permissions, premium extends user, etc.
  */
-const roleHierarchy: Record<string, number> = {
+const roleHierarchy = {
   [Roles.USER]: 1,
   [Roles.PREMIUM]: 2,
   [Roles.ARTIST]: 3,
@@ -33,13 +29,13 @@ const roleHierarchy: Record<string, number> = {
  * Cache for user roles (short TTL to avoid stale permissions).
  * In production, use Redis with proper invalidation.
  */
-const roleCache = new Map<string, RoleCacheEntry>();
+const roleCache = new Map();
 const ROLE_CACHE_TTL = 60000; // 1 minute
 
 /**
  * Get user role from database (with caching).
  */
-async function getUserRole(userId: string): Promise<string | null> {
+async function getUserRole(userId) {
   const cacheKey = `role:${userId}`;
   const cached = roleCache.get(cacheKey);
 
@@ -57,7 +53,7 @@ async function getUserRole(userId: string): Promise<string | null> {
       return null;
     }
 
-    const user = result.rows[0] as { role?: string; is_premium: boolean };
+    const user = result.rows[0];
     // Determine effective role (premium is a special case)
     let role = user.role || Roles.USER;
     if (user.is_premium && role === Roles.USER) {
@@ -72,8 +68,7 @@ async function getUserRole(userId: string): Promise<string | null> {
 
     return role;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage, userId }, 'Failed to get user role');
+    logger.error({ error, userId }, 'Failed to get user role');
     return null;
   }
 }
@@ -81,7 +76,7 @@ async function getUserRole(userId: string): Promise<string | null> {
 /**
  * Clear role cache for a user (call after role changes).
  */
-export function clearRoleCache(userId: string): void {
+export function clearRoleCache(userId) {
   roleCache.delete(`role:${userId}`);
 }
 
@@ -89,15 +84,10 @@ export function clearRoleCache(userId: string): void {
  * Require authentication middleware.
  * Attaches user info to request.
  */
-export function requireAuth(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void {
+export function requireAuth(req, res, next) {
   if (!req.session || !req.session.userId) {
     authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
-    res.status(401).json({ error: 'Authentication required' });
-    return;
+    return res.status(401).json({ error: 'Authentication required' });
   }
 
   // User is authenticated
@@ -108,11 +98,7 @@ export function requireAuth(
  * Optional authentication middleware.
  * Continues whether or not user is authenticated.
  */
-export function optionalAuth(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void {
+export function optionalAuth(req, res, next) {
   // Just continue - session may or may not have userId
   next();
 }
@@ -120,24 +106,22 @@ export function optionalAuth(
 /**
  * Require specific role(s) middleware factory.
  * Checks if user has one of the specified roles.
+ *
+ * @param {...string} roles - Required roles (user must have at least one)
  */
-export function requireRole(...roles: string[]): RequestHandler {
-  return async (req, res, next): Promise<void> => {
-    const authReq = req as AuthenticatedRequest;
-
+export function requireRole(...roles) {
+  return async (req, res, next) => {
     // First check authentication
-    if (!authReq.session || !authReq.session.userId) {
+    if (!req.session || !req.session.userId) {
       authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
-      res.status(401).json({ error: 'Authentication required' });
-      return;
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const userRole = await getUserRole(authReq.session.userId);
+    const userRole = await getUserRole(req.session.userId);
 
     if (!userRole) {
       authEventsTotal.inc({ event: 'role_check_failed', success: 'false' });
-      res.status(401).json({ error: 'User not found' });
-      return;
+      return res.status(401).json({ error: 'User not found' });
     }
 
     // Check if user has one of the required roles
@@ -153,21 +137,20 @@ export function requireRole(...roles: string[]): RequestHandler {
 
     if (!hasRole) {
       authEventsTotal.inc({ event: 'forbidden', success: 'false' });
-      const log = authReq.log || logger;
+      const log = req.log || logger;
       log.warn(
         {
-          userId: authReq.session.userId,
+          userId: req.session.userId,
           userRole,
           requiredRoles: roles,
         },
         'Insufficient permissions'
       );
-      res.status(403).json({ error: 'Insufficient permissions' });
-      return;
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     // Attach role to request for use in handlers
-    authReq.userRole = userRole;
+    req.userRole = userRole;
     next();
   };
 }
@@ -175,23 +158,21 @@ export function requireRole(...roles: string[]): RequestHandler {
 /**
  * Require minimum role level middleware factory.
  * Uses role hierarchy for comparison.
+ *
+ * @param {string} minimumRole - Minimum required role level
  */
-export function requireMinRole(minimumRole: string): RequestHandler {
-  return async (req, res, next): Promise<void> => {
-    const authReq = req as AuthenticatedRequest;
-
-    if (!authReq.session || !authReq.session.userId) {
+export function requireMinRole(minimumRole) {
+  return async (req, res, next) => {
+    if (!req.session || !req.session.userId) {
       authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
-      res.status(401).json({ error: 'Authentication required' });
-      return;
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const userRole = await getUserRole(authReq.session.userId);
+    const userRole = await getUserRole(req.session.userId);
 
     if (!userRole) {
       authEventsTotal.inc({ event: 'role_check_failed', success: 'false' });
-      res.status(401).json({ error: 'User not found' });
-      return;
+      return res.status(401).json({ error: 'User not found' });
     }
 
     const userLevel = roleHierarchy[userRole] || 0;
@@ -199,11 +180,10 @@ export function requireMinRole(minimumRole: string): RequestHandler {
 
     if (userLevel < requiredLevel) {
       authEventsTotal.inc({ event: 'forbidden', success: 'false' });
-      res.status(403).json({ error: 'Insufficient permissions' });
-      return;
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
-    authReq.userRole = userRole;
+    req.userRole = userRole;
     next();
   };
 }
@@ -212,35 +192,27 @@ export function requireMinRole(minimumRole: string): RequestHandler {
  * Require admin role middleware.
  * Convenience wrapper for requireRole(Roles.ADMIN).
  */
-export function requireAdmin(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void {
-  requireRole(Roles.ADMIN)(req, res, next);
+export function requireAdmin(req, res, next) {
+  return requireRole(Roles.ADMIN)(req, res, next);
 }
 
 /**
  * Require premium subscription middleware.
  * Allows premium users and admins.
  */
-export function requirePremium(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void {
-  requireRole(Roles.PREMIUM, Roles.ADMIN)(req, res, next);
+export function requirePremium(req, res, next) {
+  return requireRole(Roles.PREMIUM, Roles.ADMIN)(req, res, next);
 }
 
 /**
  * Check if user can access a resource.
  * Helper for resource-level authorization.
+ *
+ * @param {string} userId - User making the request
+ * @param {string} ownerId - Owner of the resource
+ * @param {string} userRole - Role of the user
  */
-export function canAccessResource(
-  userId: string,
-  ownerId: string,
-  userRole: string
-): boolean {
+export function canAccessResource(userId, ownerId, userRole) {
   // Admins can access anything
   if (userRole === Roles.ADMIN) return true;
   // Owner can access their own resources

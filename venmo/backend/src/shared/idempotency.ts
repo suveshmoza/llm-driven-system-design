@@ -27,43 +27,59 @@
  * The key should be generated when user clicks "Send", not on page load.
  */
 
-const { redis } = require('../db/redis');
-const { logger } = require('./logger');
-const { idempotencyCacheHits } = require('./metrics');
+import type { Request, Response, NextFunction } from 'express';
+import type pg from 'pg';
+import { redis } from '../db/redis.js';
+import { logger } from './logger.js';
+import { idempotencyCacheHits } from './metrics.js';
+import type { AuthenticatedRequest } from '../middleware/auth.js';
 
 // Idempotency key prefix and TTL
 const IDEMPOTENCY_PREFIX = 'idempotency:';
 const IDEMPOTENCY_TTL = 24 * 60 * 60; // 24 hours in seconds
 
 // Status values for idempotency entries
-const STATUS = {
+export const STATUS = {
   PROCESSING: 'processing',
   COMPLETED: 'completed',
   FAILED: 'failed',
-};
+} as const;
+
+export type IdempotencyStatus = typeof STATUS[keyof typeof STATUS];
+
+export interface IdempotencyResponse {
+  status: IdempotencyStatus;
+  timestamp: number;
+  response?: unknown;
+  statusCode?: number;
+}
+
+export interface IdempotencyCheckResult {
+  isNew: boolean;
+  existingResponse: IdempotencyResponse | null;
+}
+
+export interface IdempotencyOptions {
+  required?: boolean;
+}
 
 /**
  * Get the idempotency key from request headers
- * @param {Object} req - Express request object
- * @returns {string|null} Idempotency key or null if not provided
  */
-function getIdempotencyKey(req) {
+export function getIdempotencyKey(req: Request): string | null {
   // Check multiple header names (different client conventions)
   return (
-    req.headers['idempotency-key'] ||
-    req.headers['x-idempotency-key'] ||
-    req.headers['x-request-id'] ||
+    (req.headers['idempotency-key'] as string | undefined) ||
+    (req.headers['x-idempotency-key'] as string | undefined) ||
+    (req.headers['x-request-id'] as string | undefined) ||
     null
   );
 }
 
 /**
  * Build Redis key for idempotency
- * @param {string} userId - User ID
- * @param {string} key - Client-provided idempotency key
- * @param {string} operation - Operation type (e.g., 'transfer', 'cashout')
  */
-function buildRedisKey(userId, key, operation) {
+function buildRedisKey(userId: string, key: string, operation: string): string {
   return `${IDEMPOTENCY_PREFIX}${operation}:${userId}:${key}`;
 }
 
@@ -73,13 +89,12 @@ function buildRedisKey(userId, key, operation) {
  * Uses Redis SET NX (set if not exists) for atomic check-and-set.
  * This prevents race conditions when two concurrent requests arrive
  * with the same idempotency key.
- *
- * @param {string} userId - User ID
- * @param {string} key - Idempotency key
- * @param {string} operation - Operation type
- * @returns {Object} { isNew: boolean, existingResponse: object|null }
  */
-async function checkIdempotency(userId, key, operation) {
+export async function checkIdempotency(
+  userId: string,
+  key: string,
+  operation: string
+): Promise<IdempotencyCheckResult> {
   const redisKey = buildRedisKey(userId, key, operation);
 
   // Try to set the key with NX (only if not exists)
@@ -106,7 +121,7 @@ async function checkIdempotency(userId, key, operation) {
     return checkIdempotency(userId, key, operation);
   }
 
-  const parsed = JSON.parse(existingData);
+  const parsed = JSON.parse(existingData) as IdempotencyResponse;
 
   // Update metrics
   idempotencyCacheHits.inc();
@@ -124,14 +139,14 @@ async function checkIdempotency(userId, key, operation) {
 
 /**
  * Store the result of an idempotent operation
- *
- * @param {string} userId - User ID
- * @param {string} key - Idempotency key
- * @param {string} operation - Operation type
- * @param {string} status - Result status (completed/failed)
- * @param {Object} response - Response data to cache
  */
-async function storeIdempotencyResult(userId, key, operation, status, response) {
+export async function storeIdempotencyResult(
+  userId: string,
+  key: string,
+  operation: string,
+  status: IdempotencyStatus,
+  response: unknown
+): Promise<void> {
   const redisKey = buildRedisKey(userId, key, operation);
 
   await redis.set(
@@ -153,15 +168,15 @@ async function storeIdempotencyResult(userId, key, operation, status, response) 
  *   router.post('/send', authMiddleware, idempotencyMiddleware('transfer'), async (req, res) => {
  *     // Your handler
  *   });
- *
- * @param {string} operation - Operation type for namespacing keys
- * @param {Object} options - Configuration options
- * @param {boolean} options.required - Whether idempotency key is required (default: true for financial ops)
  */
-function idempotencyMiddleware(operation, options = {}) {
+export function idempotencyMiddleware(
+  operation: string,
+  options: IdempotencyOptions = {}
+) {
   const { required = true } = options;
 
-  return async (req, res, next) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const authReq = req as AuthenticatedRequest;
     const idempotencyKey = getIdempotencyKey(req);
 
     // Check if key is required but not provided
@@ -170,88 +185,101 @@ function idempotencyMiddleware(operation, options = {}) {
         logger.warn({
           event: 'idempotency_key_missing',
           operation,
-          userId: req.user?.id,
+          userId: authReq.user?.id,
           path: req.path,
         });
-        return res.status(400).json({
+        res.status(400).json({
           error: 'Idempotency-Key header is required for this operation',
           code: 'IDEMPOTENCY_KEY_REQUIRED',
         });
+        return;
       }
       // Not required, proceed without idempotency
-      return next();
+      next();
+      return;
     }
 
     // Validate key format (should be UUID-like or at least reasonable length)
     if (idempotencyKey.length < 8 || idempotencyKey.length > 128) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid Idempotency-Key format',
         code: 'INVALID_IDEMPOTENCY_KEY',
       });
+      return;
     }
 
     // Store key in request for later use
-    req.idempotencyKey = idempotencyKey;
+    authReq.idempotencyKey = idempotencyKey;
 
     try {
       const { isNew, existingResponse } = await checkIdempotency(
-        req.user.id,
+        authReq.user.id,
         idempotencyKey,
         operation
       );
 
-      if (!isNew) {
+      if (!isNew && existingResponse) {
         // Duplicate request detected
         if (existingResponse.status === STATUS.PROCESSING) {
           // Previous request is still processing - return conflict
-          return res.status(409).json({
+          res.status(409).json({
             error: 'A request with this Idempotency-Key is currently being processed',
             code: 'REQUEST_IN_PROGRESS',
           });
+          return;
         }
 
         if (existingResponse.status === STATUS.COMPLETED) {
           // Return cached successful response
-          return res.status(200).json({
-            ...existingResponse.response,
+          res.status(200).json({
+            ...(existingResponse.response as object),
             _cached: true,
           });
+          return;
         }
 
         if (existingResponse.status === STATUS.FAILED) {
           // Return cached error response
           // We return the same error so client knows the original result
-          return res.status(existingResponse.response.statusCode || 400).json({
-            ...existingResponse.response,
+          const failedResponse = existingResponse.response as { statusCode?: number };
+          res.status(failedResponse?.statusCode || 400).json({
+            ...(existingResponse.response as object),
             _cached: true,
           });
+          return;
         }
       }
 
       // Store reference to storeIdempotencyResult for handler to use
-      req.storeIdempotencyResult = async (status, response) => {
-        await storeIdempotencyResult(req.user.id, idempotencyKey, operation, status, response);
+      authReq.storeIdempotencyResult = async (status: string, response: unknown) => {
+        await storeIdempotencyResult(
+          authReq.user.id,
+          idempotencyKey,
+          operation,
+          status as IdempotencyStatus,
+          response
+        );
       };
 
       next();
     } catch (error) {
       logger.error({
         event: 'idempotency_check_failed',
-        error: error.message,
+        error: (error as Error).message,
         operation,
-        userId: req.user?.id,
+        userId: authReq.user?.id,
       });
 
       // If Redis is down, we should still process the request
       // but log this as a critical issue
       logger.error({
         event: 'idempotency_redis_failure',
-        error: error.message,
+        error: (error as Error).message,
         warning: 'Processing request without idempotency protection',
       });
 
       // Add a flag so the handler knows idempotency check failed
-      req.idempotencyFailed = true;
+      authReq.idempotencyFailed = true;
       next();
     }
   };
@@ -261,7 +289,12 @@ function idempotencyMiddleware(operation, options = {}) {
  * Also store idempotency in database for persistence beyond cache TTL
  * Used for critical operations that need long-term duplicate detection
  */
-async function checkDatabaseIdempotency(pool, tableName, userId, idempotencyKey) {
+export async function checkDatabaseIdempotency(
+  pool: pg.Pool,
+  tableName: string,
+  userId: string,
+  idempotencyKey: string
+): Promise<{ id: string; status: string; created_at: Date } | null> {
   // Check for existing record with this idempotency key
   const existing = await pool.query(
     `SELECT id, status, created_at FROM ${tableName}
@@ -271,12 +304,3 @@ async function checkDatabaseIdempotency(pool, tableName, userId, idempotencyKey)
 
   return existing.rows[0] || null;
 }
-
-module.exports = {
-  idempotencyMiddleware,
-  getIdempotencyKey,
-  checkIdempotency,
-  storeIdempotencyResult,
-  checkDatabaseIdempotency,
-  STATUS,
-};

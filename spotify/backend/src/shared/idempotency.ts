@@ -1,8 +1,6 @@
-import type { Response, NextFunction } from 'express';
 import { redisClient } from '../db.js';
 import logger from './logger.js';
 import { idempotencyDeduplicationsTotal } from './metrics.js';
-import type { AuthenticatedRequest, IdempotencyResult } from '../types.js';
 
 /**
  * Idempotency handling for playlist modifications.
@@ -16,12 +14,13 @@ const DEFAULT_TTL_SECONDS = 300; // 5 minutes
 /**
  * Check if an operation has already been processed.
  * If not, mark it as in-progress.
+ *
+ * @param {string} key - Idempotency key (e.g., request ID or composite key)
+ * @param {string} operation - Operation name for metrics
+ * @param {number} ttlSeconds - TTL for the idempotency record
+ * @returns {Promise<{isDuplicate: boolean, cachedResult: any}>}
  */
-export async function checkIdempotency(
-  key: string,
-  operation: string,
-  ttlSeconds: number = DEFAULT_TTL_SECONDS
-): Promise<IdempotencyResult> {
+export async function checkIdempotency(key, operation, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const fullKey = `idempotency:${key}`;
 
   try {
@@ -43,7 +42,7 @@ export async function checkIdempotency(
       return { isDuplicate: false, cachedResult: null };
     }
 
-    const data = JSON.parse(existing) as { status: string; result?: unknown };
+    const data = JSON.parse(existing);
 
     if (data.status === 'processing') {
       // Another request is still processing
@@ -56,8 +55,7 @@ export async function checkIdempotency(
     logger.info({ key, operation }, 'Returning cached idempotent result');
     return { isDuplicate: true, cachedResult: data.result };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage, key, operation }, 'Idempotency check failed');
+    logger.error({ error, key, operation }, 'Idempotency check failed');
     // On error, proceed with the request (fail open)
     return { isDuplicate: false, cachedResult: null };
   }
@@ -65,12 +63,12 @@ export async function checkIdempotency(
 
 /**
  * Store the result of an idempotent operation.
+ *
+ * @param {string} key - Idempotency key
+ * @param {any} result - Result to cache
+ * @param {number} ttlSeconds - TTL for the result
  */
-export async function storeIdempotencyResult(
-  key: string,
-  result: unknown,
-  ttlSeconds: number = DEFAULT_TTL_SECONDS
-): Promise<void> {
+export async function storeIdempotencyResult(key, result, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const fullKey = `idempotency:${key}`;
 
   try {
@@ -80,22 +78,21 @@ export async function storeIdempotencyResult(
       { EX: ttlSeconds }
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage, key }, 'Failed to store idempotency result');
+    logger.error({ error, key }, 'Failed to store idempotency result');
   }
 }
 
 /**
  * Middleware factory for idempotent operations.
  * Expects `X-Idempotency-Key` header or generates one from request body hash.
+ *
+ * @param {string} operation - Operation name for logging/metrics
+ * @param {Function} keyGenerator - Optional custom key generator function
  */
-export function idempotencyMiddleware(
-  operation: string,
-  keyGenerator: ((req: AuthenticatedRequest) => string) | null = null
-) {
-  return async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+export function idempotencyMiddleware(operation, keyGenerator = null) {
+  return async (req, res, next) => {
     // Get idempotency key from header or generate from request
-    let idempotencyKey = req.headers['x-idempotency-key'] as string | undefined;
+    let idempotencyKey = req.headers['x-idempotency-key'];
 
     if (!idempotencyKey && keyGenerator) {
       idempotencyKey = keyGenerator(req);
@@ -114,15 +111,13 @@ export function idempotencyMiddleware(
     if (isDuplicate) {
       if (cachedResult !== null) {
         // Return cached result
-        res.json(cachedResult);
-        return;
+        return res.json(cachedResult);
       }
       // Request still processing
-      res.status(409).json({
+      return res.status(409).json({
         error: 'Request already in progress',
         idempotencyKey,
       });
-      return;
     }
 
     // Store key and operation info on request for later result storage
@@ -131,10 +126,10 @@ export function idempotencyMiddleware(
 
     // Wrap res.json to capture result
     const originalJson = res.json.bind(res);
-    res.json = (body: unknown) => {
+    res.json = async (body) => {
       // Store result for future duplicate requests
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        storeIdempotencyResult(fullKey, body).catch(() => {});
+        await storeIdempotencyResult(fullKey, body);
       }
       return originalJson(body);
     };
@@ -147,9 +142,9 @@ export function idempotencyMiddleware(
  * Generate idempotency key for playlist track operations.
  * Uses playlist ID, track ID, and operation type.
  */
-export function playlistTrackIdempotencyKey(req: AuthenticatedRequest): string {
+export function playlistTrackIdempotencyKey(req) {
   const playlistId = req.params.id;
-  const trackId = (req.body as { trackId?: string })?.trackId || req.params.trackId;
+  const trackId = req.body?.trackId || req.params.trackId;
   const operation = req.method;
   return `${playlistId}:${trackId}:${operation}`;
 }

@@ -1,8 +1,130 @@
-const db = require('../models/db');
-const elasticsearch = require('../models/elasticsearch');
+import { query } from '../models/db.js';
+import { indexHotel, removeHotel, HotelDocument, HotelRoomTypeDoc } from '../models/elasticsearch.js';
+
+export interface CreateHotelData {
+  name: string;
+  description: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode?: string;
+  latitude?: number;
+  longitude?: number;
+  starRating: number;
+  amenities?: string[];
+  checkInTime?: string;
+  checkOutTime?: string;
+  cancellationPolicy?: string;
+  images?: string[];
+}
+
+export interface UpdateHotelData {
+  name?: string;
+  description?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+  latitude?: number;
+  longitude?: number;
+  starRating?: number;
+  amenities?: string[];
+  checkInTime?: string;
+  checkOutTime?: string;
+  cancellationPolicy?: string;
+  images?: string[];
+  isActive?: boolean;
+}
+
+export interface RoomType {
+  id: string;
+  hotelId: string;
+  name: string;
+  description: string;
+  capacity: number;
+  bedType: string;
+  totalCount: number;
+  basePrice: number;
+  amenities: string[];
+  images: string[];
+  sizeSqm: number | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Hotel {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  latitude: string | null;
+  longitude: string | null;
+  starRating: number;
+  amenities: string[];
+  checkInTime: string;
+  checkOutTime: string;
+  cancellationPolicy: string;
+  images: string[];
+  isActive: boolean;
+  avgRating: number;
+  reviewCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  roomTypes?: RoomType[];
+}
+
+interface HotelRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postal_code: string;
+  latitude: string | null;
+  longitude: string | null;
+  star_rating: number;
+  amenities: string[] | null;
+  check_in_time: string;
+  check_out_time: string;
+  cancellation_policy: string;
+  images: string[] | null;
+  is_active: boolean;
+  avg_rating?: string | null;
+  review_count?: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface RoomTypeRow {
+  id: string;
+  hotel_id: string;
+  name: string;
+  description: string;
+  capacity: number;
+  bed_type: string;
+  total_count: number;
+  base_price: string;
+  amenities: string[] | null;
+  images: string[] | null;
+  size_sqm: number | null;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
 
 class HotelService {
-  async createHotel(hotelData, ownerId) {
+  async createHotel(hotelData: CreateHotelData, ownerId: string): Promise<Hotel> {
     const {
       name,
       description,
@@ -21,7 +143,7 @@ class HotelService {
       images = [],
     } = hotelData;
 
-    const result = await db.query(
+    const result = await query<HotelRow>(
       `INSERT INTO hotels
        (owner_id, name, description, address, city, state, country, postal_code,
         latitude, longitude, star_rating, amenities, check_in_time, check_out_time,
@@ -36,19 +158,24 @@ class HotelService {
         city,
         state,
         country,
-        postalCode,
-        latitude,
-        longitude,
+        postalCode || null,
+        latitude || null,
+        longitude || null,
         starRating,
         amenities,
         checkInTime,
         checkOutTime,
-        cancellationPolicy,
+        cancellationPolicy || null,
         images,
       ]
     );
 
-    const hotel = this.formatHotel(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('Failed to create hotel');
+    }
+
+    const hotel = this.formatHotel(row);
 
     // Index in Elasticsearch
     await this.indexHotelInElasticsearch(hotel.id);
@@ -56,9 +183,9 @@ class HotelService {
     return hotel;
   }
 
-  async updateHotel(hotelId, hotelData, ownerId) {
+  async updateHotel(hotelId: string, hotelData: UpdateHotelData, ownerId: string): Promise<Hotel> {
     // Verify ownership
-    const ownerCheck = await db.query(
+    const ownerCheck = await query<{ id: string }>(
       'SELECT id FROM hotels WHERE id = $1 AND owner_id = $2',
       [hotelId, ownerId]
     );
@@ -86,7 +213,7 @@ class HotelService {
       isActive,
     } = hotelData;
 
-    const result = await db.query(
+    const result = await query<HotelRow>(
       `UPDATE hotels SET
        name = COALESCE($1, name),
        description = COALESCE($2, description),
@@ -107,27 +234,32 @@ class HotelService {
        WHERE id = $17
        RETURNING *`,
       [
-        name,
-        description,
-        address,
-        city,
-        state,
-        country,
-        postalCode,
-        latitude,
-        longitude,
-        starRating,
-        amenities,
-        checkInTime,
-        checkOutTime,
-        cancellationPolicy,
-        images,
-        isActive,
+        name ?? null,
+        description ?? null,
+        address ?? null,
+        city ?? null,
+        state ?? null,
+        country ?? null,
+        postalCode ?? null,
+        latitude ?? null,
+        longitude ?? null,
+        starRating ?? null,
+        amenities ?? null,
+        checkInTime ?? null,
+        checkOutTime ?? null,
+        cancellationPolicy ?? null,
+        images ?? null,
+        isActive ?? null,
         hotelId,
       ]
     );
 
-    const hotel = this.formatHotel(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error('Failed to update hotel');
+    }
+
+    const hotel = this.formatHotel(row);
 
     // Update Elasticsearch index
     await this.indexHotelInElasticsearch(hotel.id);
@@ -135,8 +267,8 @@ class HotelService {
     return hotel;
   }
 
-  async getHotelById(hotelId) {
-    const result = await db.query(
+  async getHotelById(hotelId: string): Promise<Hotel | null> {
+    const result = await query<HotelRow>(
       `SELECT h.*,
               COALESCE(AVG(r.rating), 0) as avg_rating,
               COUNT(r.id) as review_count
@@ -151,21 +283,26 @@ class HotelService {
       return null;
     }
 
-    const hotel = this.formatHotel(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    const hotel = this.formatHotel(row);
 
     // Get room types
-    const roomsResult = await db.query(
+    const roomsResult = await query<RoomTypeRow>(
       'SELECT * FROM room_types WHERE hotel_id = $1 AND is_active = true ORDER BY base_price',
       [hotelId]
     );
 
-    hotel.roomTypes = roomsResult.rows.map(this.formatRoomType);
+    hotel.roomTypes = roomsResult.rows.map((r) => this.formatRoomType(r));
 
     return hotel;
   }
 
-  async getHotelsByOwner(ownerId) {
-    const result = await db.query(
+  async getHotelsByOwner(ownerId: string): Promise<Hotel[]> {
+    const result = await query<HotelRow>(
       `SELECT h.*,
               COALESCE(AVG(r.rating), 0) as avg_rating,
               COUNT(r.id) as review_count
@@ -177,11 +314,11 @@ class HotelService {
       [ownerId]
     );
 
-    return result.rows.map(this.formatHotel);
+    return result.rows.map((row) => this.formatHotel(row));
   }
 
-  async deleteHotel(hotelId, ownerId) {
-    const result = await db.query(
+  async deleteHotel(hotelId: string, ownerId: string): Promise<boolean> {
+    const result = await query<{ id: string }>(
       'DELETE FROM hotels WHERE id = $1 AND owner_id = $2 RETURNING id',
       [hotelId, ownerId]
     );
@@ -191,16 +328,26 @@ class HotelService {
     }
 
     // Remove from Elasticsearch
-    await elasticsearch.removeHotel(hotelId);
+    await removeHotel(hotelId);
 
     return true;
   }
 
-  async indexHotelInElasticsearch(hotelId) {
+  async indexHotelInElasticsearch(hotelId: string): Promise<void> {
     const hotel = await this.getHotelById(hotelId);
     if (!hotel) return;
 
-    const doc = {
+    const roomTypeDocs: HotelRoomTypeDoc[] = hotel.roomTypes
+      ? hotel.roomTypes.map((rt) => ({
+          id: rt.id,
+          name: rt.name,
+          capacity: rt.capacity,
+          base_price: rt.basePrice,
+          amenities: rt.amenities,
+        }))
+      : [];
+
+    const doc: HotelDocument = {
       hotel_id: hotel.id,
       name: hotel.name,
       description: hotel.description,
@@ -208,36 +355,33 @@ class HotelService {
       state: hotel.state,
       country: hotel.country,
       address: hotel.address,
-      location: hotel.latitude && hotel.longitude
-        ? { lat: parseFloat(hotel.latitude), lon: parseFloat(hotel.longitude) }
-        : null,
+      location:
+        hotel.latitude && hotel.longitude
+          ? { lat: parseFloat(hotel.latitude), lon: parseFloat(hotel.longitude) }
+          : null,
       star_rating: hotel.starRating,
       amenities: hotel.amenities,
       images: hotel.images,
       check_in_time: hotel.checkInTime,
       check_out_time: hotel.checkOutTime,
       is_active: hotel.isActive,
-      room_types: hotel.roomTypes ? hotel.roomTypes.map(rt => ({
-        id: rt.id,
-        name: rt.name,
-        capacity: rt.capacity,
-        base_price: rt.basePrice,
-        amenities: rt.amenities,
-      })) : [],
-      min_price: hotel.roomTypes && hotel.roomTypes.length > 0
-        ? Math.min(...hotel.roomTypes.map(rt => rt.basePrice))
-        : 0,
-      max_capacity: hotel.roomTypes && hotel.roomTypes.length > 0
-        ? Math.max(...hotel.roomTypes.map(rt => rt.capacity))
-        : 0,
-      avg_rating: parseFloat(hotel.avgRating) || 0,
-      review_count: parseInt(hotel.reviewCount) || 0,
+      room_types: roomTypeDocs,
+      min_price:
+        hotel.roomTypes && hotel.roomTypes.length > 0
+          ? Math.min(...hotel.roomTypes.map((rt) => rt.basePrice))
+          : 0,
+      max_capacity:
+        hotel.roomTypes && hotel.roomTypes.length > 0
+          ? Math.max(...hotel.roomTypes.map((rt) => rt.capacity))
+          : 0,
+      avg_rating: hotel.avgRating || 0,
+      review_count: hotel.reviewCount || 0,
     };
 
-    await elasticsearch.indexHotel(doc);
+    await indexHotel(doc);
   }
 
-  formatHotel(row) {
+  formatHotel(row: HotelRow): Hotel {
     return {
       id: row.id,
       ownerId: row.owner_id,
@@ -258,13 +402,13 @@ class HotelService {
       images: row.images || [],
       isActive: row.is_active,
       avgRating: row.avg_rating ? parseFloat(row.avg_rating) : 0,
-      reviewCount: row.review_count ? parseInt(row.review_count) : 0,
+      reviewCount: row.review_count ? parseInt(row.review_count, 10) : 0,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   }
 
-  formatRoomType(row) {
+  formatRoomType(row: RoomTypeRow): RoomType {
     return {
       id: row.id,
       hotelId: row.hotel_id,
@@ -284,4 +428,4 @@ class HotelService {
   }
 }
 
-module.exports = new HotelService();
+export default new HotelService();

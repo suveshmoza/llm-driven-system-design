@@ -4,13 +4,52 @@ import { query } from '../utils/db.js';
 // Simulated email service for development
 // In production, this would integrate with SendGrid, SES, etc.
 
+export interface Recipient {
+  id: string;
+  name: string;
+  email: string;
+  access_token: string;
+  envelope_id: string;
+}
+
+export interface Envelope {
+  id: string;
+  name: string;
+  message?: string;
+  sender_name?: string;
+  sender_id?: string;
+}
+
+export interface EmailNotificationRow {
+  id: string;
+  recipient_id: string;
+  envelope_id: string;
+  type: string;
+  subject: string;
+  body: string;
+  status: string;
+  sent_at: string;
+  created_at: string;
+  recipient_email?: string;
+  recipient_name?: string;
+  envelope_name?: string;
+}
+
 class EmailService {
+  private baseUrl: string;
+
   constructor() {
     this.baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   }
 
   // Store email in database (simulated sending)
-  async storeEmail(recipientId, envelopeId, type, subject, body) {
+  async storeEmail(
+    recipientId: string | null,
+    envelopeId: string,
+    type: string,
+    subject: string,
+    body: string
+  ): Promise<void> {
     await query(
       `INSERT INTO email_notifications
         (id, recipient_id, envelope_id, type, subject, body, status, sent_at)
@@ -23,7 +62,7 @@ class EmailService {
   }
 
   // Send signing request to recipient
-  async sendSigningRequest(recipient, envelope) {
+  async sendSigningRequest(recipient: Recipient, envelope: Envelope): Promise<{ signingUrl: string }> {
     const signingUrl = `${this.baseUrl}/sign/${recipient.access_token}`;
 
     const subject = `Please sign: ${envelope.name}`;
@@ -49,7 +88,7 @@ DocuSign
   }
 
   // Send reminder to recipient
-  async sendReminder(recipient, envelope) {
+  async sendReminder(recipient: Recipient, envelope: Envelope): Promise<void> {
     const signingUrl = `${this.baseUrl}/sign/${recipient.access_token}`;
 
     const subject = `Reminder: Please sign "${envelope.name}"`;
@@ -69,7 +108,7 @@ DocuSign
   }
 
   // Send completion notification
-  async sendCompletionNotification(recipient, envelope) {
+  async sendCompletionNotification(recipient: Recipient, envelope: Envelope): Promise<void> {
     const downloadUrl = `${this.baseUrl}/envelopes/${envelope.id}/download`;
 
     const subject = `Completed: ${envelope.name}`;
@@ -88,7 +127,7 @@ Thank you for using DocuSign.
   }
 
   // Send decline notification to sender
-  async sendDeclineNotification(recipient, envelope, reason) {
+  async sendDeclineNotification(recipient: Recipient, envelope: Envelope, reason?: string): Promise<void> {
     const subject = `Document Declined: ${envelope.name}`;
     const body = `
 Hello ${envelope.sender_name},
@@ -108,7 +147,7 @@ DocuSign
   }
 
   // Send void notification
-  async sendVoidNotification(recipient, envelope, reason) {
+  async sendVoidNotification(recipient: Recipient, envelope: Envelope, reason?: string): Promise<void> {
     const subject = `Document Voided: ${envelope.name}`;
     const body = `
 Hello ${recipient.name},
@@ -127,8 +166,8 @@ DocuSign
   }
 
   // Get all emails for an envelope (for debugging/admin)
-  async getEnvelopeEmails(envelopeId) {
-    const result = await query(
+  async getEnvelopeEmails(envelopeId: string): Promise<EmailNotificationRow[]> {
+    const result = await query<EmailNotificationRow>(
       `SELECT en.*, r.email as recipient_email, r.name as recipient_name
        FROM email_notifications en
        LEFT JOIN recipients r ON en.recipient_id = r.id
@@ -140,8 +179,8 @@ DocuSign
   }
 
   // Get recent emails (for admin dashboard)
-  async getRecentEmails(limit = 50) {
-    const result = await query(
+  async getRecentEmails(limit: number = 50): Promise<EmailNotificationRow[]> {
+    const result = await query<EmailNotificationRow>(
       `SELECT en.*, r.email as recipient_email, r.name as recipient_name,
               e.name as envelope_name
        FROM email_notifications en

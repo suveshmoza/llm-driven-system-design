@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { query, transaction } from '../services/database.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import logger from '../shared/logger.js';
@@ -22,8 +22,73 @@ import {
 } from '../shared/audit.js';
 import { withDatabaseRetry } from '../shared/retry.js';
 import { createPaymentCircuitBreaker } from '../shared/circuitBreaker.js';
+import type { PoolClient } from 'pg';
 
 const router = Router();
+
+// Extend Request to include log and idempotencyKey
+interface ExtendedRequest extends Request {
+  log?: typeof logger;
+  idempotencyKey?: string;
+}
+
+interface CartItemRow {
+  product_id: number;
+  quantity: number;
+  title: string;
+  price: string;
+}
+
+interface OrderRow {
+  id: number;
+  user_id: number;
+  status: string;
+  payment_status: string;
+  subtotal: string;
+  tax: string;
+  shipping_cost: string;
+  total: string;
+  shipping_address?: Record<string, unknown>;
+  billing_address?: Record<string, unknown>;
+  payment_method?: string;
+  notes?: string;
+  idempotency_key?: string;
+  created_at: Date;
+  updated_at: Date;
+  items?: OrderItemRow[];
+}
+
+interface OrderItemRow {
+  id: number;
+  order_id: number;
+  product_id: number;
+  product_title: string;
+  quantity: number;
+  price: string;
+  images?: string[];
+  slug?: string;
+}
+
+interface PaymentDetails {
+  method?: string;
+  lastFour?: string;
+}
+
+interface PaymentResult {
+  success: boolean;
+  transactionId?: string;
+  amount?: string;
+  method?: string;
+  lastFour?: string;
+  processedAt?: string;
+  queued?: boolean;
+  message?: string;
+}
+
+interface AppError extends Error {
+  status?: number;
+  code?: string;
+}
 
 // ============================================================
 // Payment Processing with Circuit Breaker
@@ -33,13 +98,13 @@ const router = Router();
  * Simulate payment processing
  * In production, this would call a real payment gateway
  */
-async function processPayment(order, paymentDetails) {
+async function processPayment(order: OrderRow, paymentDetails: PaymentDetails): Promise<PaymentResult> {
   // Simulate payment gateway call
   await new Promise(resolve => setTimeout(resolve, 100));
 
   // Simulate occasional failures for testing
   if (process.env.SIMULATE_PAYMENT_FAILURES === 'true' && Math.random() < 0.1) {
-    const error = new Error('Payment gateway timeout');
+    const error: AppError = new Error('Payment gateway timeout');
     error.code = 'GATEWAY_TIMEOUT';
     throw error;
   }
@@ -57,7 +122,7 @@ async function processPayment(order, paymentDetails) {
 /**
  * Fallback when payment circuit is open
  */
-async function paymentFallback(order, paymentDetails) {
+async function paymentFallback(order: OrderRow, paymentDetails: PaymentDetails): Promise<PaymentResult> {
   logger.warn({ orderId: order.id }, 'Payment circuit open, using fallback');
   // Queue for later processing or use backup gateway
   return {
@@ -75,22 +140,22 @@ const paymentBreaker = createPaymentCircuitBreaker(processPayment, paymentFallba
 // ============================================================
 
 // Get user's orders
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { status, page = 0, limit = 10 } = req.query;
 
     let whereClause = 'WHERE o.user_id = $1';
-    const params = [req.user.id];
+    const params: unknown[] = [req.user!.id];
 
     if (status) {
       params.push(status);
       whereClause += ` AND o.status = $${params.length}`;
     }
 
-    const offset = parseInt(page) * parseInt(limit);
+    const offset = parseInt(String(page)) * parseInt(String(limit));
 
     const result = await withDatabaseRetry(async () => {
-      return await query(
+      return await query<OrderRow>(
         `SELECT o.*,
                 json_agg(json_build_object(
                   'id', oi.id,
@@ -105,20 +170,20 @@ router.get('/', requireAuth, async (req, res, next) => {
          GROUP BY o.id
          ORDER BY o.created_at DESC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-        [...params, parseInt(limit), offset]
+        [...params, parseInt(String(limit)), offset]
       );
     });
 
-    const countResult = await query(
+    const countResult = await query<{ total: string }>(
       `SELECT COUNT(*) as total FROM orders o ${whereClause}`,
       params
     );
 
     res.json({
       orders: result.rows,
-      total: parseInt(countResult.rows[0].total),
-      page: parseInt(page),
-      limit: parseInt(limit)
+      total: parseInt(countResult.rows[0]?.total || '0'),
+      page: parseInt(String(page)),
+      limit: parseInt(String(limit))
     });
   } catch (error) {
     next(error);
@@ -126,25 +191,26 @@ router.get('/', requireAuth, async (req, res, next) => {
 });
 
 // Get single order
-router.get('/:id', requireAuth, async (req, res, next) => {
+router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
 
-    const result = await query(
+    const result = await query<OrderRow>(
       `SELECT o.*
        FROM orders o
        WHERE o.id = $1 AND (o.user_id = $2 OR $3 = 'admin')`,
-      [id, req.user.id, req.user.role]
+      [id, req.user!.id, req.user!.role]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      res.status(404).json({ error: 'Order not found' });
+      return;
     }
 
     const order = result.rows[0];
 
     // Get order items
-    const itemsResult = await query(
+    const itemsResult = await query<OrderItemRow>(
       `SELECT oi.*, p.images, p.slug
        FROM order_items oi
        LEFT JOIN products p ON oi.product_id = p.id
@@ -161,7 +227,7 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 // Create order (checkout) - WITH IDEMPOTENCY
-router.post('/', requireAuth, async (req, res, next) => {
+router.post('/', requireAuth, async (req: ExtendedRequest, res: Response, next: NextFunction): Promise<void> => {
   const startTime = process.hrtime.bigint();
   const log = req.log || logger;
 
@@ -175,10 +241,12 @@ router.post('/', requireAuth, async (req, res, next) => {
       log.info({ idempotencyKey: req.idempotencyKey }, 'Returning cached order response');
 
       if (idempotencyResult.isProcessing) {
-        return res.status(409).json(idempotencyResult.response);
+        res.status(409).json(idempotencyResult.response);
+        return;
       }
 
-      return res.status(200).json(idempotencyResult.response);
+      res.status(200).json(idempotencyResult.response);
+      return;
     }
 
     // ============================================================
@@ -188,26 +256,27 @@ router.post('/', requireAuth, async (req, res, next) => {
 
     if (!shippingAddress || !shippingAddress.street || !shippingAddress.city) {
       await failIdempotentOrder(req, new Error('Shipping address is required'));
-      return res.status(400).json({ error: 'Shipping address is required' });
+      res.status(400).json({ error: 'Shipping address is required' });
+      return;
     }
 
     // ============================================================
     // Create Order with Retry
     // ============================================================
-    const order = await withDatabaseRetry(async () => {
-      return await transaction(async (client) => {
+    const orderData = await withDatabaseRetry(async () => {
+      return await transaction(async (client: PoolClient) => {
         // Get cart items with FOR UPDATE to lock
-        const cartResult = await client.query(
+        const cartResult = await client.query<CartItemRow>(
           `SELECT ci.product_id, ci.quantity, p.title, p.price
            FROM cart_items ci
            JOIN products p ON ci.product_id = p.id
            WHERE ci.user_id = $1
            FOR UPDATE OF ci`,
-          [req.user.id]
+          [req.user!.id]
         );
 
         if (cartResult.rows.length === 0) {
-          const error = new Error('Cart is empty');
+          const error: AppError = new Error('Cart is empty');
           error.status = 400;
           throw error;
         }
@@ -218,16 +287,16 @@ router.post('/', requireAuth, async (req, res, next) => {
         // Verify inventory and calculate total
         let subtotal = 0;
         for (const item of cartItems) {
-          const invResult = await client.query(
+          const invResult = await client.query<{ total_quantity: string }>(
             `SELECT COALESCE(SUM(quantity), 0) as total_quantity
              FROM inventory
              WHERE product_id = $1`,
             [item.product_id]
           );
 
-          const available = parseInt(invResult.rows[0].total_quantity);
+          const available = parseInt(invResult.rows[0]?.total_quantity || '0');
           if (available < item.quantity) {
-            const error = new Error(`Insufficient inventory for ${item.title}`);
+            const error: AppError = new Error(`Insufficient inventory for ${item.title}`);
             error.status = 400;
             throw error;
           }
@@ -241,11 +310,11 @@ router.post('/', requireAuth, async (req, res, next) => {
         const total = subtotal + tax + shippingCost;
 
         // Create order with idempotency key
-        const orderResult = await client.query(
+        const orderResult = await client.query<OrderRow>(
           `INSERT INTO orders (user_id, subtotal, tax, shipping_cost, total, shipping_address, billing_address, payment_method, notes, status, payment_status, idempotency_key)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', 'pending', $10)
            RETURNING *`,
-          [req.user.id, subtotal, tax, shippingCost, total, shippingAddress, billingAddress || shippingAddress, paymentMethod, notes, req.idempotencyKey]
+          [req.user!.id, subtotal, tax, shippingCost, total, shippingAddress, billingAddress || shippingAddress, paymentMethod, notes, req.idempotencyKey]
         );
 
         const order = orderResult.rows[0];
@@ -273,7 +342,7 @@ router.post('/', requireAuth, async (req, res, next) => {
         }
 
         // Clear cart
-        await client.query('DELETE FROM cart_items WHERE user_id = $1', [req.user.id]);
+        await client.query('DELETE FROM cart_items WHERE user_id = $1', [req.user!.id]);
 
         return { order, cartItems };
       });
@@ -282,9 +351,9 @@ router.post('/', requireAuth, async (req, res, next) => {
     // ============================================================
     // Process Payment with Circuit Breaker
     // ============================================================
-    let paymentResult;
+    let paymentResult: PaymentResult;
     try {
-      paymentResult = await paymentBreaker.fire(order.order, {
+      paymentResult = await paymentBreaker.fire(orderData.order, {
         method: paymentMethod,
         lastFour: req.body.cardLastFour
       });
@@ -294,26 +363,27 @@ router.post('/', requireAuth, async (req, res, next) => {
         await query(
           `UPDATE orders SET status = 'confirmed', payment_status = 'completed', updated_at = NOW()
            WHERE id = $1`,
-          [order.order.id]
+          [orderData.order.id]
         );
-        order.order.status = 'confirmed';
-        order.order.payment_status = 'completed';
+        orderData.order.status = 'confirmed';
+        orderData.order.payment_status = 'completed';
 
         // Audit payment success
-        await auditPaymentCompleted(req, order.order.id, paymentResult);
+        await auditPaymentCompleted(req, orderData.order.id, paymentResult);
       } else if (paymentResult.queued) {
         // Payment queued due to circuit breaker
-        log.warn({ orderId: order.order.id }, 'Payment queued for later processing');
+        log.warn({ orderId: orderData.order.id }, 'Payment queued for later processing');
       }
     } catch (paymentError) {
-      log.error({ orderId: order.order.id, error: paymentError.message }, 'Payment failed');
+      const err = paymentError as Error;
+      log.error({ orderId: orderData.order.id, error: err.message }, 'Payment failed');
       // Order is created but payment failed - will need manual intervention
       await query(
         `UPDATE orders SET payment_status = 'failed', updated_at = NOW()
          WHERE id = $1`,
-        [order.order.id]
+        [orderData.order.id]
       );
-      order.order.payment_status = 'failed';
+      orderData.order.payment_status = 'failed';
     }
 
     // ============================================================
@@ -321,51 +391,52 @@ router.post('/', requireAuth, async (req, res, next) => {
     // ============================================================
     const duration = Number(process.hrtime.bigint() - startTime) / 1e9;
 
-    ordersTotal.inc({ status: order.order.status, payment_method: paymentMethod });
-    orderValue.observe(parseFloat(order.order.total));
+    ordersTotal.inc({ status: orderData.order.status, payment_method: paymentMethod });
+    orderValue.observe(parseFloat(orderData.order.total));
     orderProcessingDuration.observe(duration);
 
     // Audit order creation
-    await auditOrderCreated(req, order.order, order.cartItems);
+    await auditOrderCreated(req, orderData.order, orderData.cartItems);
 
     // Complete idempotency record
-    await completeIdempotentOrder(req, order.order);
+    await completeIdempotentOrder(req, orderData.order);
 
     log.info({
-      orderId: order.order.id,
-      total: order.order.total,
+      orderId: orderData.order.id,
+      total: orderData.order.total,
       durationSeconds: duration.toFixed(3)
     }, 'Order created successfully');
 
-    res.status(201).json({ order: order.order });
+    res.status(201).json({ order: orderData.order });
   } catch (error) {
     // Mark idempotency record as failed
-    await failIdempotentOrder(req, error);
+    await failIdempotentOrder(req, error as Error);
 
-    log.error({ error: error.message }, 'Order creation failed');
+    const err = error as Error;
+    log.error({ error: err.message }, 'Order creation failed');
     next(error);
   }
 });
 
 // Cancel order - WITH AUDIT LOGGING
-router.post('/:id/cancel', requireAuth, async (req, res, next) => {
+router.post('/:id/cancel', requireAuth, async (req: ExtendedRequest, res: Response, next: NextFunction): Promise<void> => {
   const log = req.log || logger;
 
   try {
     const { id } = req.params;
     const { reason = 'Customer requested' } = req.body;
 
-    const order = await transaction(async (client) => {
+    const order = await transaction(async (client: PoolClient) => {
       // Get order
-      const orderResult = await client.query(
+      const orderResult = await client.query<OrderRow>(
         `SELECT * FROM orders
          WHERE id = $1 AND user_id = $2 AND status IN ('pending', 'confirmed')
          FOR UPDATE`,
-        [id, req.user.id]
+        [id, req.user!.id]
       );
 
       if (orderResult.rows.length === 0) {
-        const error = new Error('Order not found or cannot be cancelled');
+        const error: AppError = new Error('Order not found or cannot be cancelled');
         error.status = 400;
         throw error;
       }
@@ -373,7 +444,7 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
       const order = orderResult.rows[0];
 
       // Get order items
-      const itemsResult = await client.query(
+      const itemsResult = await client.query<{ product_id: number; quantity: number }>(
         'SELECT product_id, quantity FROM order_items WHERE order_id = $1',
         [id]
       );
@@ -413,7 +484,7 @@ router.post('/:id/cancel', requireAuth, async (req, res, next) => {
 });
 
 // Update order status (admin only) - WITH AUDIT LOGGING
-router.put('/:id/status', requireAdmin, async (req, res, next) => {
+router.put('/:id/status', requireAdmin, async (req: ExtendedRequest, res: Response, next: NextFunction): Promise<void> => {
   const log = req.log || logger;
 
   try {
@@ -422,17 +493,19 @@ router.put('/:id/status', requireAdmin, async (req, res, next) => {
 
     const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+      res.status(400).json({ error: 'Invalid status' });
+      return;
     }
 
     // Get current status for audit
-    const currentResult = await query('SELECT status FROM orders WHERE id = $1', [id]);
+    const currentResult = await query<{ status: string }>('SELECT status FROM orders WHERE id = $1', [id]);
     if (currentResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      res.status(404).json({ error: 'Order not found' });
+      return;
     }
     const oldStatus = currentResult.rows[0].status;
 
-    const result = await query(
+    const result = await query<OrderRow>(
       `UPDATE orders
        SET status = $1, updated_at = NOW()
        WHERE id = $2
@@ -441,7 +514,8 @@ router.put('/:id/status', requireAdmin, async (req, res, next) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      res.status(404).json({ error: 'Order not found' });
+      return;
     }
 
     // Audit status change

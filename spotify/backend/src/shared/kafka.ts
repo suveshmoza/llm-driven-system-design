@@ -1,6 +1,5 @@
-import { Kafka, logLevel, Producer, Consumer, EachMessagePayload } from 'kafkajs';
+import { Kafka, logLevel } from 'kafkajs';
 import { logger } from './logger.js';
-import type { KafkaPlaybackMessage, PlaybackEventType } from '../types.js';
 
 const PLAYBACK_EVENTS_TOPIC = 'playback-events';
 
@@ -18,16 +17,16 @@ const kafka = new Kafka({
 });
 
 // Producer singleton
-let producer: Producer | null = null;
+let producer = null;
 let producerReady = false;
 
 // Consumer for the analytics worker
-let consumer: Consumer | null = null;
+let consumer = null;
 
 /**
  * Initialize and connect the Kafka producer
  */
-export async function initProducer(): Promise<Producer> {
+export async function initProducer() {
   if (producer && producerReady) {
     return producer;
   }
@@ -66,7 +65,7 @@ export async function initProducer(): Promise<Producer> {
 /**
  * Disconnect the Kafka producer
  */
-export async function disconnectProducer(): Promise<void> {
+export async function disconnectProducer() {
   if (producer) {
     await producer.disconnect();
     producer = null;
@@ -77,30 +76,29 @@ export async function disconnectProducer(): Promise<void> {
 
 /**
  * Publish a playback event to Kafka
+ * @param {string} userId - User ID
+ * @param {string} trackId - Track ID
+ * @param {string} eventType - Event type (play_started, play_paused, etc.)
+ * @param {number} position - Position in milliseconds
+ * @param {object} metadata - Additional event metadata
  */
-export async function publishPlaybackEvent(
-  userId: string,
-  trackId: string,
-  eventType: PlaybackEventType,
-  position: number = 0,
-  metadata: Record<string, unknown> = {}
-): Promise<void> {
+export async function publishPlaybackEvent(userId, trackId, eventType, position = 0, metadata = {}) {
   if (!producer || !producerReady) {
     logger.warn('Kafka producer not ready, initializing...');
     await initProducer();
   }
 
-  const event: KafkaPlaybackMessage = {
+  const event = {
     userId,
     trackId,
     eventType,
     position,
     timestamp: Date.now(),
-    deviceType: metadata.deviceType as string | undefined,
+    ...metadata,
   };
 
   try {
-    await producer!.send({
+    await producer.send({
       topic: PLAYBACK_EVENTS_TOPIC,
       messages: [
         {
@@ -116,19 +114,17 @@ export async function publishPlaybackEvent(
 
     logger.debug({ userId, trackId, eventType }, 'Published playback event to Kafka');
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage, userId, trackId, eventType }, 'Failed to publish playback event');
+    logger.error({ error: error.message, userId, trackId, eventType }, 'Failed to publish playback event');
     throw error;
   }
 }
 
 /**
  * Consume playback events from Kafka
+ * @param {function} handler - Async function to handle each event
+ * @param {string} groupId - Consumer group ID (default: 'analytics-worker')
  */
-export async function consumePlaybackEvents(
-  handler: (event: KafkaPlaybackMessage) => Promise<void>,
-  groupId: string = 'analytics-worker'
-): Promise<void> {
+export async function consumePlaybackEvents(handler, groupId = 'analytics-worker') {
   consumer = kafka.consumer({
     groupId,
     sessionTimeout: 30000,
@@ -144,15 +140,14 @@ export async function consumePlaybackEvents(
   });
 
   await consumer.run({
-    eachMessage: async ({ topic, partition, message }: EachMessagePayload) => {
+    eachMessage: async ({ topic, partition, message }) => {
       try {
-        const event: KafkaPlaybackMessage = JSON.parse(message.value!.toString());
+        const event = JSON.parse(message.value.toString());
         await handler(event);
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         logger.error(
           {
-            error: errorMessage,
+            error: error.message,
             topic,
             partition,
             offset: message.offset,
@@ -169,7 +164,7 @@ export async function consumePlaybackEvents(
 /**
  * Disconnect the Kafka consumer
  */
-export async function disconnectConsumer(): Promise<void> {
+export async function disconnectConsumer() {
   if (consumer) {
     await consumer.disconnect();
     consumer = null;
@@ -180,7 +175,7 @@ export async function disconnectConsumer(): Promise<void> {
 /**
  * Graceful shutdown for both producer and consumer
  */
-export async function shutdown(): Promise<void> {
+export async function shutdown() {
   await disconnectProducer();
   await disconnectConsumer();
 }

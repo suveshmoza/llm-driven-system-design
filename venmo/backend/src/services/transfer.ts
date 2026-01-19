@@ -9,26 +9,79 @@
  * - Metrics for observability
  */
 
-const { pool, transaction } = require('../db/pool');
-const { invalidateBalanceCache } = require('../db/redis');
-const { logger, formatAmount } = require('../shared/logger');
-const {
+import type pg from 'pg';
+import type { Request } from 'express';
+import { pool, transaction } from '../db/pool.js';
+import { invalidateBalanceCache } from '../db/redis.js';
+import { logger, formatAmount } from '../shared/logger.js';
+import {
   transfersTotal,
   transferAmountHistogram,
   feedFanoutDuration,
-} = require('../shared/metrics');
-const { logTransfer, AUDIT_ACTIONS, OUTCOMES } = require('../shared/audit');
+} from '../shared/metrics.js';
+import { logTransfer, AUDIT_ACTIONS, OUTCOMES } from '../shared/audit.js';
 
 // Maximum transfer amount in cents ($5,000)
-const MAX_TRANSFER_AMOUNT = 500000;
+export const MAX_TRANSFER_AMOUNT = 500000;
+
+interface Wallet {
+  balance: number;
+  user_id: string;
+}
+
+interface PaymentMethod {
+  id: string;
+  type: string;
+  bank_name?: string;
+  last4?: string;
+}
+
+interface FundingPlan {
+  fromBalance: number;
+  fromExternal: number;
+  source: { type: string; id: string; name: string } | null;
+}
+
+export interface Transfer {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  amount: number;
+  note: string;
+  visibility: string;
+  status: string;
+  funding_source: string;
+  created_at: Date;
+  idempotency_key?: string | null;
+  _cached?: boolean;
+}
+
+export interface TransferWithUsers extends Transfer {
+  sender_username: string;
+  sender_name: string;
+  sender_avatar: string;
+  receiver_username: string;
+  receiver_name: string;
+  receiver_avatar: string;
+}
+
+export interface ExecuteTransferOptions {
+  idempotencyKey?: string | null;
+  request?: Request | null;
+}
 
 /**
  * Determine funding source for a transfer
  * Waterfall: Venmo Balance -> Bank Account -> Card
  */
-async function determineFunding(client, userId, amount, wallet) {
+async function determineFunding(
+  client: pg.PoolClient,
+  userId: string,
+  amount: number,
+  wallet: Wallet
+): Promise<FundingPlan> {
   let remaining = amount;
-  const plan = { fromBalance: 0, fromExternal: 0, source: null };
+  const plan: FundingPlan = { fromBalance: 0, fromExternal: 0, source: null };
 
   // Priority 1: Use Venmo balance
   if (wallet.balance >= remaining) {
@@ -40,7 +93,7 @@ async function determineFunding(client, userId, amount, wallet) {
   remaining -= wallet.balance;
 
   // Priority 2: Use linked bank account (free)
-  const bankAccount = await client.query(
+  const bankAccount = await client.query<PaymentMethod>(
     `SELECT * FROM payment_methods
      WHERE user_id = $1 AND type = 'bank' AND is_default = true AND verified = true`,
     [userId]
@@ -48,12 +101,12 @@ async function determineFunding(client, userId, amount, wallet) {
 
   if (bankAccount.rows.length > 0) {
     plan.fromExternal = remaining;
-    plan.source = { type: 'bank', id: bankAccount.rows[0].id, name: bankAccount.rows[0].bank_name };
+    plan.source = { type: 'bank', id: bankAccount.rows[0].id, name: bankAccount.rows[0].bank_name || 'Bank' };
     return plan;
   }
 
   // Priority 3: Use any verified bank account
-  const anyBank = await client.query(
+  const anyBank = await client.query<PaymentMethod>(
     `SELECT * FROM payment_methods
      WHERE user_id = $1 AND type = 'bank' AND verified = true LIMIT 1`,
     [userId]
@@ -61,12 +114,12 @@ async function determineFunding(client, userId, amount, wallet) {
 
   if (anyBank.rows.length > 0) {
     plan.fromExternal = remaining;
-    plan.source = { type: 'bank', id: anyBank.rows[0].id, name: anyBank.rows[0].bank_name };
+    plan.source = { type: 'bank', id: anyBank.rows[0].id, name: anyBank.rows[0].bank_name || 'Bank' };
     return plan;
   }
 
   // Priority 4: Use card (would have fee in real system)
-  const card = await client.query(
+  const card = await client.query<PaymentMethod>(
     `SELECT * FROM payment_methods
      WHERE user_id = $1 AND type IN ('card', 'debit_card') AND verified = true LIMIT 1`,
     [userId]
@@ -83,17 +136,15 @@ async function determineFunding(client, userId, amount, wallet) {
 
 /**
  * Execute an atomic P2P transfer
- *
- * @param {string} senderId - UUID of the sender
- * @param {string} receiverId - UUID of the receiver
- * @param {number} amount - Amount in cents
- * @param {string} note - Transaction note
- * @param {string} visibility - 'public', 'friends', or 'private'
- * @param {Object} options - Additional options
- * @param {string} options.idempotencyKey - Client-provided idempotency key
- * @param {Object} options.request - Express request object for audit logging
  */
-async function executeTransfer(senderId, receiverId, amount, note, visibility = 'public', options = {}) {
+export async function executeTransfer(
+  senderId: string,
+  receiverId: string,
+  amount: number,
+  note: string,
+  visibility: string = 'public',
+  options: ExecuteTransferOptions = {}
+): Promise<Transfer> {
   const { idempotencyKey = null, request = null } = options;
   const startTime = Date.now();
 
@@ -123,14 +174,14 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
     throw new Error('Cannot send money to yourself');
   }
 
-  let transfer;
+  let transfer: Transfer;
   let fundingSource = 'balance';
 
   try {
     transfer = await transaction(async (client) => {
       // Check for duplicate transfer using idempotency key (database level)
       if (idempotencyKey) {
-        const existingTransfer = await client.query(
+        const existingTransfer = await client.query<Transfer>(
           'SELECT * FROM transfers WHERE sender_id = $1 AND idempotency_key = $2',
           [senderId, idempotencyKey]
         );
@@ -147,7 +198,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
       }
 
       // Lock sender's wallet row to prevent race conditions
-      const senderWalletResult = await client.query(
+      const senderWalletResult = await client.query<Wallet>(
         'SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE',
         [senderId]
       );
@@ -159,7 +210,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
       const senderWallet = senderWalletResult.rows[0];
 
       // Verify receiver exists
-      const receiverResult = await client.query(
+      const receiverResult = await client.query<{ id: string }>(
         'SELECT id FROM users WHERE id = $1',
         [receiverId]
       );
@@ -178,7 +229,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
       const fundingPlan = await determineFunding(client, senderId, amount, senderWallet);
 
       // Determine funding source label for metrics
-      if (fundingPlan.fromExternal > 0) {
+      if (fundingPlan.fromExternal > 0 && fundingPlan.source) {
         fundingSource = fundingPlan.source.type;
       }
 
@@ -198,7 +249,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
 
       // Build funding source description
       let fundingSourceLabel = 'Venmo Balance';
-      if (fundingPlan.fromExternal > 0) {
+      if (fundingPlan.fromExternal > 0 && fundingPlan.source) {
         if (fundingPlan.fromBalance > 0) {
           fundingSourceLabel = `Venmo Balance + ${fundingPlan.source.name}`;
         } else {
@@ -207,7 +258,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
       }
 
       // Create transfer record with idempotency key
-      const transferResult = await client.query(
+      const transferResult = await client.query<Transfer>(
         `INSERT INTO transfers (sender_id, receiver_id, amount, note, visibility, status, funding_source, idempotency_key)
          VALUES ($1, $2, $3, $4, $5, 'completed', $6, $7)
          RETURNING *`,
@@ -252,14 +303,14 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
   } catch (error) {
     // Record failure metrics
     const durationMs = Date.now() - startTime;
-    const failureType = error.message.includes('Insufficient')
+    const failureType = (error as Error).message.includes('Insufficient')
       ? 'insufficient_funds'
       : 'failed';
     transfersTotal.inc({ status: failureType, funding_source: fundingSource });
 
     log.error({
       event: 'transfer_failed',
-      error: error.message,
+      error: (error as Error).message,
       durationMs,
     });
 
@@ -270,7 +321,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
         { sender_id: senderId, receiver_id: receiverId, amount },
         OUTCOMES.FAILURE,
         request,
-        { error: error.message, durationMs, idempotencyKey }
+        { error: (error as Error).message, durationMs, idempotencyKey }
       );
     }
 
@@ -281,7 +332,7 @@ async function executeTransfer(senderId, receiverId, amount, note, visibility = 
 /**
  * Fan out transfer to social feeds
  */
-async function fanOutToFeed(transfer) {
+export async function fanOutToFeed(transfer: Transfer): Promise<void> {
   const startTime = Date.now();
   const log = logger.child({ operation: 'feed_fanout', transferId: transfer.id });
 
@@ -334,7 +385,7 @@ async function fanOutToFeed(transfer) {
     // Log but don't fail the transfer
     log.error({
       event: 'feed_fanout_error',
-      error: error.message,
+      error: (error as Error).message,
     });
   }
 }
@@ -342,8 +393,8 @@ async function fanOutToFeed(transfer) {
 /**
  * Get transfer by ID
  */
-async function getTransferById(transferId) {
-  const result = await pool.query(
+export async function getTransferById(transferId: string): Promise<TransferWithUsers | undefined> {
+  const result = await pool.query<TransferWithUsers>(
     `SELECT t.*,
             sender.username as sender_username, sender.name as sender_name, sender.avatar_url as sender_avatar,
             receiver.username as receiver_username, receiver.name as receiver_name, receiver.avatar_url as receiver_avatar
@@ -356,10 +407,4 @@ async function getTransferById(transferId) {
   return result.rows[0];
 }
 
-module.exports = {
-  executeTransfer,
-  getTransferById,
-  determineFunding,
-  fanOutToFeed,
-  MAX_TRANSFER_AMOUNT,
-};
+export { determineFunding };

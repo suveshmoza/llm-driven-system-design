@@ -106,7 +106,7 @@ router.get('/me', authenticate, async (req, res) => {
 // Become a host
 router.post('/become-host', authenticate, async (req, res) => {
   try {
-    await query('UPDATE users SET is_host = TRUE WHERE id = $1', [req.user.id]);
+    await query('UPDATE users SET is_host = TRUE WHERE id = $1', [req.user!.id]);
     res.json({ message: 'You are now a host', is_host: true });
   } catch (error) {
     console.error('Become host error:', error);
@@ -127,7 +127,7 @@ router.put('/profile', authenticate, async (req, res) => {
         avatar_url = COALESCE($4, avatar_url)
       WHERE id = $5
       RETURNING id, email, name, bio, phone, avatar_url, is_host, is_verified, role`,
-      [name, bio, phone, avatar_url, req.user.id]
+      [name, bio, phone, avatar_url, req.user!.id]
     );
 
     res.json({ user: result.rows[0] });

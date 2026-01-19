@@ -68,7 +68,7 @@ router.get('/check-availability', async (req: Request, res: Response) => {
 
   try {
     // Get listing details
-    const listingResult = await query(
+    const listingResult = await query<ListingRow>(
       'SELECT * FROM listings WHERE id = $1 AND is_active = TRUE',
       [listing_id]
     );
@@ -80,7 +80,7 @@ router.get('/check-availability', async (req: Request, res: Response) => {
     const listing = listingResult.rows[0];
 
     // Check for conflicts
-    const conflictResult = await query(
+    const conflictResult = await query<{ conflicts: string }>(
       `SELECT COUNT(*) as conflicts
       FROM availability_blocks
       WHERE listing_id = $1
@@ -97,9 +97,9 @@ router.get('/check-availability', async (req: Request, res: Response) => {
     metrics.availabilityChecksTotal.inc({ available: available.toString() });
 
     // Calculate price if available
-    let pricing = null;
+    let pricing: BookingPricing | null = null;
     if (available) {
-      pricing = calculateBookingPrice(listing, check_in, check_out);
+      pricing = calculateBookingPrice(listing, String(check_in), String(check_out));
     }
 
     res.json({
@@ -139,7 +139,7 @@ router.post('/', authenticate, async (req, res) => {
       const listing = listingResult.rows[0];
 
       // Verify guest is not the host
-      if (listing.host_id === req.user.id) {
+      if (listing.host_id === req.user!.id) {
         throw new Error('Cannot book your own listing');
       }
 

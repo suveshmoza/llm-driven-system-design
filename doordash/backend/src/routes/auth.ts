@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import {
   createSession,
   deleteSession,
@@ -7,24 +7,32 @@ import {
   verifyPassword,
   getDriverByUserId,
   createDriverProfile,
+  User,
+  Driver,
 } from '../services/auth.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
+interface UserWithDriverProfile extends User {
+  driverProfile?: Driver | null;
+}
+
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, name, phone, role = 'customer' } = req.body;
 
     if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Email, password, and name are required' });
+      res.status(400).json({ error: 'Email, password, and name are required' });
+      return;
     }
 
     // Check if user exists
     const existing = await getUserByEmail(email);
     if (existing) {
-      return res.status(400).json({ error: 'Email already registered' });
+      res.status(400).json({ error: 'Email already registered' });
+      return;
     }
 
     // Create user
@@ -47,22 +55,25 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     const user = await getUserByEmail(email);
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
 
-    const valid = await verifyPassword(password, user.password_hash);
+    const valid = await verifyPassword(password, user.password_hash!);
     if (!valid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
 
     const sessionId = await createSession(user.id);
@@ -74,9 +85,10 @@ router.post('/login', async (req, res) => {
     });
 
     // Don't send password hash
-    delete user.password_hash;
+    const userResponse: Partial<User> = { ...user };
+    delete userResponse.password_hash;
 
-    res.json({ user });
+    res.json({ user: userResponse });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Failed to login' });
@@ -84,7 +96,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Logout
-router.post('/logout', async (req, res) => {
+router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   try {
     const sessionId = req.cookies?.session;
     if (sessionId) {
@@ -99,9 +111,9 @@ router.post('/logout', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = { ...req.user };
+    const user: UserWithDriverProfile = { ...req.user! };
 
     // If driver, include driver profile
     if (user.role === 'driver') {
@@ -117,21 +129,23 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // Register as driver (for existing users)
-router.post('/become-driver', requireAuth, async (req, res) => {
+router.post('/become-driver', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { vehicleType, licensePlate } = req.body;
 
     if (!vehicleType) {
-      return res.status(400).json({ error: 'Vehicle type is required' });
+      res.status(400).json({ error: 'Vehicle type is required' });
+      return;
     }
 
     // Check if already a driver
-    const existing = await getDriverByUserId(req.user.id);
+    const existing = await getDriverByUserId(req.user!.id);
     if (existing) {
-      return res.status(400).json({ error: 'Already registered as driver' });
+      res.status(400).json({ error: 'Already registered as driver' });
+      return;
     }
 
-    const driver = await createDriverProfile(req.user.id, vehicleType, licensePlate);
+    const driver = await createDriverProfile(req.user!.id, vehicleType, licensePlate);
 
     res.json({ driver });
   } catch (err) {

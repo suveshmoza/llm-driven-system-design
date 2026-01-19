@@ -1,18 +1,12 @@
-import type { Response, NextFunction, RequestHandler } from 'express';
 import { redisClient } from '../db.js';
 import logger from './logger.js';
 import { rateLimitHitsTotal } from './metrics.js';
-import type { AuthenticatedRequest, RateLimitResult } from '../types.js';
 
 /**
  * Rate limiting using Redis sliding window algorithm.
  * More accurate than token bucket and prevents burst abuse.
  */
-export async function checkRateLimit(
-  key: string,
-  limit: number,
-  windowSec: number
-): Promise<RateLimitResult> {
+export async function checkRateLimit(key, limit, windowSec) {
   const now = Date.now();
   const windowStart = now - windowSec * 1000;
   const fullKey = `ratelimit:${key}`;
@@ -35,7 +29,7 @@ export async function checkRateLimit(
     multi.expire(fullKey, windowSec);
 
     const results = await multi.exec();
-    const count = results[2] as number;
+    const count = results[2];
 
     return {
       allowed: count <= limit,
@@ -45,8 +39,7 @@ export async function checkRateLimit(
     };
   } catch (error) {
     // On Redis failure, allow the request but log the error
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error({ error: errorMessage, key }, 'Rate limit check failed');
+    logger.error({ error, key }, 'Rate limit check failed');
     return {
       allowed: true,
       remaining: limit,
@@ -58,17 +51,16 @@ export async function checkRateLimit(
 
 /**
  * Rate limit middleware factory.
+ *
+ * @param {number} limit - Maximum requests allowed in the window
+ * @param {number} windowSec - Window size in seconds
+ * @param {Function} keyFn - Function to extract rate limit key from request
+ * @param {string} endpointName - Name of the endpoint for metrics
  */
-export function rateLimitMiddleware(
-  limit: number,
-  windowSec: number,
-  keyFn: (req: AuthenticatedRequest) => string,
-  endpointName: string = 'default'
-): RequestHandler {
-  return async (req, res, next): Promise<void> => {
-    const authReq = req as AuthenticatedRequest;
-    const keyValue = keyFn(authReq);
-    const scope = authReq.session?.userId ? 'user' : 'ip';
+export function rateLimitMiddleware(limit, windowSec, keyFn, endpointName = 'default') {
+  return async (req, res, next) => {
+    const keyValue = keyFn(req);
+    const scope = req.session?.userId ? 'user' : 'ip';
 
     const result = await checkRateLimit(keyValue, limit, windowSec);
 
@@ -80,7 +72,7 @@ export function rateLimitMiddleware(
     if (!result.allowed) {
       rateLimitHitsTotal.inc({ endpoint: endpointName, scope });
 
-      const log = authReq.log || logger;
+      const log = req.log || logger;
       log.warn(
         {
           key: keyValue,
@@ -91,11 +83,10 @@ export function rateLimitMiddleware(
         'Rate limit exceeded'
       );
 
-      res.status(429).json({
+      return res.status(429).json({
         error: 'Rate limit exceeded',
-        retryAfter: Math.ceil((result.resetAt.getTime() - Date.now()) / 1000),
+        retryAfter: Math.ceil((result.resetAt - Date.now()) / 1000),
       });
-      return;
     }
 
     next();
@@ -108,7 +99,7 @@ export const rateLimiters = {
   auth: rateLimitMiddleware(
     5, // 5 requests
     900, // per 15 minutes
-    (req: AuthenticatedRequest) => `auth:${req.ip}`,
+    (req) => `auth:${req.ip}`,
     'auth'
   ),
 
@@ -116,7 +107,7 @@ export const rateLimiters = {
   search: rateLimitMiddleware(
     60, // 60 requests
     60, // per minute
-    (req: AuthenticatedRequest) => `search:${req.session?.userId || req.ip}`,
+    (req) => `search:${req.session?.userId || req.ip}`,
     'search'
   ),
 
@@ -124,7 +115,7 @@ export const rateLimiters = {
   playback: rateLimitMiddleware(
     300, // 300 requests
     60, // per minute
-    (req: AuthenticatedRequest) => `playback:${req.session?.userId || req.ip}`,
+    (req) => `playback:${req.session?.userId || req.ip}`,
     'playback'
   ),
 
@@ -132,7 +123,7 @@ export const rateLimiters = {
   libraryWrite: rateLimitMiddleware(
     100, // 100 requests
     60, // per minute
-    (req: AuthenticatedRequest) => `library:${req.session?.userId || req.ip}`,
+    (req) => `library:${req.session?.userId || req.ip}`,
     'library'
   ),
 
@@ -140,7 +131,7 @@ export const rateLimiters = {
   playlistWrite: rateLimitMiddleware(
     60, // 60 requests
     60, // per minute
-    (req: AuthenticatedRequest) => `playlist:${req.session?.userId || req.ip}`,
+    (req) => `playlist:${req.session?.userId || req.ip}`,
     'playlist'
   ),
 
@@ -148,7 +139,7 @@ export const rateLimiters = {
   recommendations: rateLimitMiddleware(
     30, // 30 requests
     60, // per minute
-    (req: AuthenticatedRequest) => `recs:${req.session?.userId || req.ip}`,
+    (req) => `recs:${req.session?.userId || req.ip}`,
     'recommendations'
   ),
 
@@ -156,7 +147,7 @@ export const rateLimiters = {
   admin: rateLimitMiddleware(
     1000, // 1000 requests
     60, // per minute
-    (req: AuthenticatedRequest) => `admin:${req.session?.userId || req.ip}`,
+    (req) => `admin:${req.session?.userId || req.ip}`,
     'admin'
   ),
 };

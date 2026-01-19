@@ -33,7 +33,6 @@ export interface IdempotencyResult<T = Record<string, unknown>> {
 
 export interface DocumentForIdempotency {
   url_id: number;
-  [key: string]: unknown;
 }
 
 /**

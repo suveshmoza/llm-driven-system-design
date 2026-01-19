@@ -1,17 +1,41 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/index.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
-// Get user library
-router.get('/', authenticate, async (req, res) => {
-  try {
-    const { type, limit = 50, offset = 0 } = req.query;
-    const userId = req.user.id;
+interface LibraryQuery {
+  type?: string;
+  limit?: string;
+  offset?: string;
+}
 
-    let query;
-    let params = [userId, parseInt(limit), parseInt(offset)];
+interface AddToLibraryBody {
+  itemType: 'track' | 'album' | 'artist' | 'playlist';
+  itemId: string;
+}
+
+interface RecordHistoryBody {
+  trackId: string;
+  durationPlayedMs: number;
+  contextType?: string;
+  contextId?: string;
+  completed?: boolean;
+}
+
+interface LibraryRow {
+  item_type: string;
+  count: string;
+}
+
+// Get user library
+router.get('/', authenticate, async (req: Request<object, unknown, unknown, LibraryQuery>, res: Response) => {
+  try {
+    const { type, limit = '50', offset = '0' } = req.query;
+    const userId = req.user!.id;
+
+    let query: string;
+    const params: (string | number)[] = [userId, parseInt(limit), parseInt(offset)];
 
     if (type === 'tracks') {
       query = `
@@ -87,12 +111,12 @@ router.get('/', authenticate, async (req, res) => {
         [userId]
       );
 
-      const countMap = {};
-      counts.rows.forEach(row => {
+      const countMap: Record<string, number> = {};
+      counts.rows.forEach((row: LibraryRow) => {
         countMap[row.item_type] = parseInt(row.count);
       });
 
-      return res.json({
+      res.json({
         tracks: tracks.rows,
         albums: albums.rows,
         artists: artists.rows,
@@ -102,13 +126,14 @@ router.get('/', authenticate, async (req, res) => {
           artists: countMap.artist || 0
         }
       });
+      return;
     }
 
     const result = await pool.query(query, params);
 
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM library_items WHERE user_id = $1 AND item_type = $2`,
-      [userId, type.slice(0, -1)] // Remove 's' from type
+      [userId, type!.slice(0, -1)] // Remove 's' from type
     );
 
     res.json({
@@ -124,17 +149,19 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // Add item to library
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, async (req: Request<object, unknown, AddToLibraryBody>, res: Response) => {
   try {
     const { itemType, itemId } = req.body;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     if (!itemType || !itemId) {
-      return res.status(400).json({ error: 'Item type and ID required' });
+      res.status(400).json({ error: 'Item type and ID required' });
+      return;
     }
 
     if (!['track', 'album', 'artist', 'playlist'].includes(itemType)) {
-      return res.status(400).json({ error: 'Invalid item type' });
+      res.status(400).json({ error: 'Invalid item type' });
+      return;
     }
 
     // Add to library
@@ -160,10 +187,10 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // Remove item from library
-router.delete('/:itemType/:itemId', authenticate, async (req, res) => {
+router.delete('/:itemType/:itemId', authenticate, async (req: Request<{ itemType: string; itemId: string }>, res: Response) => {
   try {
     const { itemType, itemId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     await pool.query(
       `DELETE FROM library_items
@@ -186,10 +213,10 @@ router.delete('/:itemType/:itemId', authenticate, async (req, res) => {
 });
 
 // Check if item is in library
-router.get('/check/:itemType/:itemId', authenticate, async (req, res) => {
+router.get('/check/:itemType/:itemId', authenticate, async (req: Request<{ itemType: string; itemId: string }>, res: Response) => {
   try {
     const { itemType, itemId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `SELECT 1 FROM library_items
@@ -205,16 +232,16 @@ router.get('/check/:itemType/:itemId', authenticate, async (req, res) => {
 });
 
 // Sync library (get changes since last sync)
-router.get('/sync', authenticate, async (req, res) => {
+router.get('/sync', authenticate, async (req: Request<object, unknown, unknown, { lastSyncToken?: string }>, res: Response) => {
   try {
     const { lastSyncToken } = req.query;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const changes = await pool.query(
       `SELECT * FROM library_changes
        WHERE user_id = $1 AND sync_token > $2
        ORDER BY sync_token ASC`,
-      [userId, parseInt(lastSyncToken) || 0]
+      [userId, parseInt(lastSyncToken || '0')]
     );
 
     // Get current sync token
@@ -225,7 +252,7 @@ router.get('/sync', authenticate, async (req, res) => {
     );
 
     res.json({
-      changes: changes.rows.map(c => ({
+      changes: changes.rows.map((c: { change_type: string; item_type: string; item_id: string; created_at: Date }) => ({
         type: c.change_type,
         itemType: c.item_type,
         itemId: c.item_id,
@@ -240,10 +267,10 @@ router.get('/sync', authenticate, async (req, res) => {
 });
 
 // Record listening history
-router.post('/history', authenticate, async (req, res) => {
+router.post('/history', authenticate, async (req: Request<object, unknown, RecordHistoryBody>, res: Response) => {
   try {
     const { trackId, durationPlayedMs, contextType, contextId, completed } = req.body;
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     await pool.query(
       `INSERT INTO listening_history
@@ -285,10 +312,10 @@ router.post('/history', authenticate, async (req, res) => {
 });
 
 // Get listening history
-router.get('/history', authenticate, async (req, res) => {
+router.get('/history', authenticate, async (req: Request<object, unknown, unknown, { limit?: string; offset?: string }>, res: Response) => {
   try {
-    const { limit = 50, offset = 0 } = req.query;
-    const userId = req.user.id;
+    const { limit = '50', offset = '0' } = req.query;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `SELECT lh.*, t.title, t.duration_ms, a.name as artist_name, al.title as album_title, al.artwork_url
@@ -310,10 +337,10 @@ router.get('/history', authenticate, async (req, res) => {
 });
 
 // Get recently played
-router.get('/recently-played', authenticate, async (req, res) => {
+router.get('/recently-played', authenticate, async (req: Request<object, unknown, unknown, { limit?: string }>, res: Response) => {
   try {
-    const { limit = 20 } = req.query;
-    const userId = req.user.id;
+    const { limit = '20' } = req.query;
+    const userId = req.user!.id;
 
     const result = await pool.query(
       `SELECT DISTINCT ON (t.id) lh.played_at, t.*, a.name as artist_name, al.title as album_title, al.artwork_url
@@ -328,7 +355,9 @@ router.get('/recently-played', authenticate, async (req, res) => {
     );
 
     // Re-sort by played_at after DISTINCT ON
-    result.rows.sort((a, b) => new Date(b.played_at) - new Date(a.played_at));
+    result.rows.sort((a: { played_at: string }, b: { played_at: string }) =>
+      new Date(b.played_at).getTime() - new Date(a.played_at).getTime()
+    );
 
     res.json({ tracks: result.rows });
   } catch (error) {

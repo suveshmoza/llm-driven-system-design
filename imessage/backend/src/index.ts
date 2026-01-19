@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
+import { Logger } from 'pino';
 import { setupWebSocket } from './services/websocket.js';
 
 // Routes
@@ -14,10 +15,18 @@ import usersRoutes from './routes/users.js';
 import redis, { pubClient, subClient } from './redis.js';
 
 // Shared modules
-import logger, { requestLogger, createLogger } from './shared/logger.js';
+import logger, { requestLogger, createLogger, LoggedRequest } from './shared/logger.js';
 import { metricsHandler } from './shared/metrics.js';
 import { livenessHandler, readinessHandler, healthHandler } from './shared/health.js';
-import { loginRateLimiter } from './shared/rate-limiter.js';
+
+interface ErrorWithStack extends Error {
+  stack?: string;
+}
+
+interface RequestWithLog extends Request {
+  log?: Logger;
+  user?: { id: string };
+}
 
 const appLogger = createLogger('app');
 const app = express();
@@ -56,12 +65,12 @@ app.use('/api/messages', messagesRoutes);
 app.use('/api/users', usersRoutes);
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
 // Error handling
-app.use((err, req, res, next) => {
+app.use((err: ErrorWithStack, req: RequestWithLog, res: Response, next: NextFunction) => {
   const log = req.log || appLogger;
 
   log.error({
@@ -79,7 +88,7 @@ app.use((err, req, res, next) => {
 });
 
 // Initialize Redis connections
-async function initRedis() {
+async function initRedis(): Promise<void> {
   try {
     await redis.connect();
     await pubClient.connect();
@@ -94,10 +103,10 @@ async function initRedis() {
 // Setup WebSocket
 setupWebSocket(server);
 
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000');
 
 // Start server
-async function start() {
+async function start(): Promise<void> {
   await initRedis();
 
   server.listen(PORT, () => {
@@ -141,3 +150,5 @@ start().catch((error) => {
   appLogger.fatal({ error }, 'Failed to start server');
   process.exit(1);
 });
+
+export { app, server };

@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { query, getClient } from '../utils/db.js';
 import { auditService } from './auditService.js';
-import { emailService } from './emailService.js';
+import { emailService, Recipient, Envelope } from './emailService.js';
 import {
   publishNotification,
   publishWorkflowEvent,
@@ -16,7 +16,7 @@ import { envelopesCreated } from '../shared/metrics.js';
 import logger from '../shared/logger.js';
 
 // Valid state transitions
-const ENVELOPE_STATES = {
+const ENVELOPE_STATES: Record<string, string[]> = {
   draft: ['sent', 'voided'],
   sent: ['delivered', 'voided'],
   delivered: ['signed', 'declined', 'voided'],
@@ -26,16 +26,55 @@ const ENVELOPE_STATES = {
   completed: []
 };
 
+interface EnvelopeRow {
+  id: string;
+  name: string;
+  status: string;
+  message?: string;
+  sender_id: string;
+  sender_name?: string;
+  sender_email?: string;
+  created_at: string;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+interface RecipientRow {
+  id: string;
+  envelope_id: string;
+  name: string;
+  email: string;
+  role: string;
+  routing_order: number;
+  status: string;
+  access_token: string;
+  phone?: string;
+  access_code?: string;
+  ip_address?: string;
+  user_agent?: string;
+  completed_at?: string;
+}
+
+interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface CountRow {
+  count: string;
+}
+
 class WorkflowEngine {
   // Validate state transition
-  canTransition(currentState, newState) {
+  canTransition(currentState: string, newState: string): boolean {
     const allowedTransitions = ENVELOPE_STATES[currentState] || [];
     return allowedTransitions.includes(newState);
   }
 
   // Transition envelope state
-  async transitionState(envelopeId, newState, actor = 'system') {
-    const result = await query(
+  async transitionState(envelopeId: string, newState: string, actor: string = 'system'): Promise<string> {
+    const result = await query<{ status: string }>(
       'SELECT status FROM envelopes WHERE id = $1',
       [envelopeId]
     );
@@ -51,7 +90,7 @@ class WorkflowEngine {
     }
 
     const updates = ['status = $2', 'updated_at = NOW()'];
-    const params = [envelopeId, newState];
+    const params: unknown[] = [envelopeId, newState];
 
     if (newState === 'completed') {
       updates.push('completed_at = NOW()');
@@ -77,16 +116,17 @@ class WorkflowEngine {
         });
       }
     } catch (error) {
-      logger.warn({ error: error.message }, 'Failed to publish workflow event');
+      const err = error as Error;
+      logger.warn({ error: err.message }, 'Failed to publish workflow event');
     }
 
     return newState;
   }
 
   // Validate envelope before sending
-  async validateEnvelope(envelopeId) {
+  async validateEnvelope(envelopeId: string): Promise<boolean> {
     // Check for documents
-    const docsResult = await query(
+    const docsResult = await query<CountRow>(
       'SELECT COUNT(*) as count FROM documents WHERE envelope_id = $1',
       [envelopeId]
     );
@@ -95,7 +135,7 @@ class WorkflowEngine {
     }
 
     // Check for recipients
-    const recipientsResult = await query(
+    const recipientsResult = await query<CountRow>(
       'SELECT COUNT(*) as count FROM recipients WHERE envelope_id = $1',
       [envelopeId]
     );
@@ -104,7 +144,7 @@ class WorkflowEngine {
     }
 
     // Check that signer recipients have signature fields
-    const signersResult = await query(
+    const signersResult = await query<{ id: string; name: string; email: string }>(
       `SELECT r.id, r.name, r.email
        FROM recipients r
        WHERE r.envelope_id = $1 AND r.role = 'signer'`,
@@ -112,7 +152,7 @@ class WorkflowEngine {
     );
 
     for (const signer of signersResult.rows) {
-      const fieldsResult = await query(
+      const fieldsResult = await query<CountRow>(
         `SELECT COUNT(*) as count
          FROM document_fields df
          JOIN documents d ON df.document_id = d.id
@@ -129,11 +169,11 @@ class WorkflowEngine {
   }
 
   // Send envelope to recipients - WITH IDEMPOTENCY
-  async sendEnvelope(envelopeId, senderId) {
+  async sendEnvelope(envelopeId: string, senderId: string): Promise<EnvelopeRow> {
     // Generate idempotency key for send operation
     const idempotencyKey = generateSendIdempotencyKey(envelopeId, senderId);
 
-    const { data: envelope, cached } = await executeWithIdempotency(
+    const { data: envelope, cached } = await executeWithIdempotency<EnvelopeRow>(
       idempotencyKey,
       async () => {
         const client = await getClient();
@@ -141,7 +181,7 @@ class WorkflowEngine {
         try {
           await client.query('BEGIN');
 
-          const envelopeResult = await client.query(
+          const envelopeResult = await client.query<EnvelopeRow>(
             'SELECT * FROM envelopes WHERE id = $1 FOR UPDATE',
             [envelopeId]
           );
@@ -166,7 +206,7 @@ class WorkflowEngine {
           );
 
           // Generate access tokens for recipients
-          const recipientsResult = await client.query(
+          const recipientsResult = await client.query<RecipientRow>(
             'SELECT * FROM recipients WHERE envelope_id = $1 ORDER BY routing_order ASC',
             [envelopeId]
           );
@@ -200,14 +240,14 @@ class WorkflowEngine {
           });
 
           // Get updated envelope and recipients for notification
-          const updatedEnvelopeResult = await query(
+          const updatedEnvelopeResult = await query<EnvelopeRow>(
             'SELECT * FROM envelopes WHERE id = $1',
             [envelopeId]
           );
           const updatedEnvelope = updatedEnvelopeResult.rows[0];
 
           // Get updated recipients with access tokens
-          const updatedRecipientsResult = await query(
+          const updatedRecipientsResult = await query<RecipientRow>(
             'SELECT * FROM recipients WHERE envelope_id = $1 ORDER BY routing_order ASC',
             [envelopeId]
           );
@@ -241,8 +281,8 @@ class WorkflowEngine {
   }
 
   // Get next recipients based on routing order
-  async getNextRecipients(envelopeId) {
-    const result = await query(
+  async getNextRecipients(envelopeId: string): Promise<RecipientRow[]> {
+    const result = await query<RecipientRow>(
       `SELECT * FROM recipients
        WHERE envelope_id = $1 AND role = 'signer'
        ORDER BY routing_order ASC`,
@@ -259,7 +299,7 @@ class WorkflowEngine {
   }
 
   // Notify recipient to sign - with async queue support
-  async notifyRecipient(recipient, envelope) {
+  async notifyRecipient(recipient: RecipientRow, envelope: EnvelopeRow): Promise<void> {
     // Update recipient status to delivered
     await query(
       'UPDATE recipients SET status = $2 WHERE id = $1',
@@ -287,13 +327,20 @@ class WorkflowEngine {
           envelopeId: recipient.envelope_id,
         }, 'Notification queued for async delivery');
       } catch (error) {
-        logger.warn({ error: error.message }, 'Queue publish failed, falling back to sync');
+        const err = error as Error;
+        logger.warn({ error: err.message }, 'Queue publish failed, falling back to sync');
         // Fall back to synchronous email
-        await emailService.sendSigningRequest(recipient, envelope);
+        await emailService.sendSigningRequest(
+          recipient as Recipient,
+          envelope as Envelope
+        );
       }
     } else {
       // Queue not available, send synchronously
-      await emailService.sendSigningRequest(recipient, envelope);
+      await emailService.sendSigningRequest(
+        recipient as Recipient,
+        envelope as Envelope
+      );
     }
 
     // Log audit events
@@ -312,8 +359,8 @@ class WorkflowEngine {
   }
 
   // Complete a recipient (all fields signed)
-  async completeRecipient(recipientId, ipAddress, userAgent) {
-    const result = await query(
+  async completeRecipient(recipientId: string, ipAddress: string, userAgent: string): Promise<RecipientRow> {
+    const result = await query<RecipientRow>(
       `UPDATE recipients
        SET status = 'completed', completed_at = NOW(), ip_address = $2, user_agent = $3
        WHERE id = $1
@@ -343,7 +390,7 @@ class WorkflowEngine {
     });
 
     // Check if all recipients at this routing order are done
-    const siblingsResult = await query(
+    const siblingsResult = await query<RecipientRow>(
       `SELECT * FROM recipients
        WHERE envelope_id = $1 AND routing_order = $2`,
       [recipient.envelope_id, recipient.routing_order]
@@ -360,7 +407,7 @@ class WorkflowEngine {
         await this.completeEnvelope(recipient.envelope_id);
       } else {
         // Get envelope for notification
-        const envelopeResult = await query(
+        const envelopeResult = await query<EnvelopeRow>(
           'SELECT * FROM envelopes WHERE id = $1',
           [recipient.envelope_id]
         );
@@ -377,7 +424,7 @@ class WorkflowEngine {
   }
 
   // Complete an envelope (all signatures collected)
-  async completeEnvelope(envelopeId) {
+  async completeEnvelope(envelopeId: string): Promise<void> {
     await query(
       `UPDATE envelopes
        SET status = 'completed', completed_at = NOW(), updated_at = NOW()
@@ -394,12 +441,12 @@ class WorkflowEngine {
     });
 
     // Send completion notifications to all recipients
-    const recipientsResult = await query(
+    const recipientsResult = await query<RecipientRow>(
       'SELECT * FROM recipients WHERE envelope_id = $1',
       [envelopeId]
     );
 
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow>(
       'SELECT * FROM envelopes WHERE id = $1',
       [envelopeId]
     );
@@ -416,21 +463,32 @@ class WorkflowEngine {
             channels: ['email'],
           });
         } catch (error) {
-          logger.warn({ error: error.message }, 'Queue publish failed for completion');
-          await emailService.sendCompletionNotification(recipient, envelope);
+          const err = error as Error;
+          logger.warn({ error: err.message }, 'Queue publish failed for completion');
+          await emailService.sendCompletionNotification(
+            recipient as Recipient,
+            envelope as Envelope
+          );
         }
       } else {
-        await emailService.sendCompletionNotification(recipient, envelope);
+        await emailService.sendCompletionNotification(
+          recipient as Recipient,
+          envelope as Envelope
+        );
       }
     }
 
     // Also notify sender
-    const senderResult = await query(
+    const senderResult = await query<UserRow>(
       'SELECT * FROM users WHERE id = $1',
       [envelope.sender_id]
     );
     if (senderResult.rows.length > 0) {
-      await emailService.sendCompletionNotification(senderResult.rows[0], envelope);
+      const sender = senderResult.rows[0];
+      await emailService.sendCompletionNotification(
+        { ...sender, access_token: '', envelope_id: envelopeId } as Recipient,
+        envelope as Envelope
+      );
     }
 
     // Publish workflow event for any downstream processing
@@ -442,14 +500,15 @@ class WorkflowEngine {
           data: { completedAt: new Date().toISOString() },
         });
       } catch (error) {
-        logger.warn({ error: error.message }, 'Failed to publish completion event');
+        const err = error as Error;
+        logger.warn({ error: err.message }, 'Failed to publish completion event');
       }
     }
   }
 
   // Decline an envelope
-  async declineEnvelope(recipientId, reason, ipAddress, userAgent) {
-    const recipientResult = await query(
+  async declineEnvelope(recipientId: string, reason: string, ipAddress: string, userAgent: string): Promise<RecipientRow> {
+    const recipientResult = await query<RecipientRow>(
       `UPDATE recipients
        SET status = 'declined', ip_address = $2, user_agent = $3
        WHERE id = $1
@@ -483,7 +542,7 @@ class WorkflowEngine {
     });
 
     // Notify sender
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow & { sender_email: string; sender_name: string }>(
       `SELECT e.*, u.email as sender_email, u.name as sender_name
        FROM envelopes e
        JOIN users u ON e.sender_id = u.id
@@ -492,14 +551,18 @@ class WorkflowEngine {
     );
     const envelope = envelopeResult.rows[0];
 
-    await emailService.sendDeclineNotification(recipient, envelope, reason);
+    await emailService.sendDeclineNotification(
+      recipient as Recipient,
+      envelope as Envelope,
+      reason
+    );
 
     return recipient;
   }
 
   // Void an envelope
-  async voidEnvelope(envelopeId, reason, userId) {
-    const result = await query(
+  async voidEnvelope(envelopeId: string, reason: string, userId: string): Promise<void> {
+    const result = await query<{ status: string }>(
       'SELECT status FROM envelopes WHERE id = $1',
       [envelopeId]
     );
@@ -531,24 +594,28 @@ class WorkflowEngine {
     });
 
     // Notify all recipients
-    const recipientsResult = await query(
+    const recipientsResult = await query<RecipientRow>(
       'SELECT * FROM recipients WHERE envelope_id = $1',
       [envelopeId]
     );
 
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow>(
       'SELECT * FROM envelopes WHERE id = $1',
       [envelopeId]
     );
 
     for (const recipient of recipientsResult.rows) {
-      await emailService.sendVoidNotification(recipient, envelopeResult.rows[0], reason);
+      await emailService.sendVoidNotification(
+        recipient as Recipient,
+        envelopeResult.rows[0] as Envelope,
+        reason
+      );
     }
   }
 
   // Check if recipient has completed all required fields
-  async checkRecipientCompletion(recipientId) {
-    const result = await query(
+  async checkRecipientCompletion(recipientId: string): Promise<boolean> {
+    const result = await query<CountRow>(
       `SELECT COUNT(*) as count
        FROM document_fields df
        JOIN documents d ON df.document_id = d.id

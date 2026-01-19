@@ -1,20 +1,21 @@
-import { Router } from 'express';
-import { authenticateRequest } from '../middleware/auth.js';
+import { Router, Response } from 'express';
+import { authenticateRequest, AuthenticatedRequest } from '../middleware/auth.js';
 import { searchUsers, getUserById, updateUser } from '../services/users.js';
 
 const router = Router();
 
-router.use(authenticateRequest);
+router.use(authenticateRequest as any);
 
-router.get('/search', async (req, res) => {
+router.get('/search', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { q, limit } = req.query;
 
-    if (!q || q.length < 2) {
-      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    if (!q || (q as string).length < 2) {
+      res.status(400).json({ error: 'Search query must be at least 2 characters' });
+      return;
     }
 
-    const users = await searchUsers(q, req.user.id, limit ? parseInt(limit) : 20);
+    const users = await searchUsers(q as string, req.user.id, limit ? parseInt(limit as string) : 20);
     res.json({ users });
   } catch (error) {
     console.error('Search users error:', error);
@@ -22,11 +23,12 @@ router.get('/search', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const user = await getUserById(req.params.id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
     res.json({ user });
   } catch (error) {
@@ -35,7 +37,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.patch('/me', async (req, res) => {
+router.patch('/me', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { displayName, avatarUrl } = req.body;
     const user = await updateUser(req.user.id, {

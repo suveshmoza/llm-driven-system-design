@@ -1,22 +1,24 @@
-import express from 'express';
+import express, { Request, Response, Router } from 'express';
 import { authService } from '../services/authService.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name } = req.body as { email?: string; password?: string; name?: string };
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return;
     }
 
-    const result = await authService.register(email, password, name);
+    const result = await authService.register(email, password, name || '');
 
     res.status(201).json({
       user: result.user,
@@ -24,8 +26,9 @@ router.post('/register', async (req, res) => {
       expiresAt: result.session.expiresAt
     });
   } catch (error) {
-    if (error.message.includes('already exists')) {
-      return res.status(409).json({ error: error.message });
+    if ((error as Error).message.includes('already exists')) {
+      res.status(409).json({ error: (error as Error).message });
+      return;
     }
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Registration failed' });
@@ -33,12 +36,13 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body as { email?: string; password?: string };
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
     }
 
     const result = await authService.login(email, password);
@@ -49,8 +53,9 @@ router.post('/login', async (req, res) => {
       expiresAt: result.session.expiresAt
     });
   } catch (error) {
-    if (error.message.includes('Invalid')) {
-      return res.status(401).json({ error: error.message });
+    if ((error as Error).message.includes('Invalid')) {
+      res.status(401).json({ error: (error as Error).message });
+      return;
     }
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
@@ -58,7 +63,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Logout
-router.post('/logout', async (req, res) => {
+router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -73,23 +78,26 @@ router.post('/logout', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', async (req, res) => {
+router.get('/me', async (req: Request, res: Response): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
     }
 
     const token = authHeader.substring(7);
     const userId = await authService.validateSession(token);
 
     if (!userId) {
-      return res.status(401).json({ error: 'Invalid or expired session' });
+      res.status(401).json({ error: 'Invalid or expired session' });
+      return;
     }
 
     const user = await authService.getUser(userId);
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     res.json({ user });

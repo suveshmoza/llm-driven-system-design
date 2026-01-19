@@ -7,12 +7,12 @@ import redis from '../db/redis.js';
 
 dotenv.config();
 
-const AGGREGATION_INTERVAL = parseInt(process.env.VOTE_AGGREGATION_INTERVAL) || 5000;
+const AGGREGATION_INTERVAL = parseInt(process.env.VOTE_AGGREGATION_INTERVAL ?? '', 10) || 5000;
 
 let lastAggregationTime = Date.now();
 let isShuttingDown = false;
 
-const run = async () => {
+const run = async (): Promise<void> => {
   logger.info({
     interval: AGGREGATION_INTERVAL,
   }, 'Vote aggregator started');
@@ -24,7 +24,7 @@ const run = async () => {
   }, 1000);
 
   // Periodic aggregation
-  const runAggregation = async () => {
+  const runAggregation = async (): Promise<void> => {
     if (isShuttingDown) return;
 
     const start = Date.now();
@@ -35,7 +35,7 @@ const run = async () => {
       voteAggregationDuration.observe(duration);
       lastAggregationTime = Date.now();
 
-      if (result.postsAggregated > 0 || result.commentsAggregated > 0) {
+      if ((result.postsAggregated && result.postsAggregated > 0) || (result.commentsAggregated && result.commentsAggregated > 0)) {
         logger.debug({
           postsAggregated: result.postsAggregated,
           commentsAggregated: result.commentsAggregated,
@@ -55,7 +55,7 @@ const run = async () => {
 };
 
 // Graceful shutdown
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Vote aggregator shutting down');
   isShuttingDown = true;
 

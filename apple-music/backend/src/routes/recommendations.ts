@@ -1,24 +1,40 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/index.js';
 import { redis } from '../services/redis.js';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 
 const router = Router();
 
+interface GenreRow {
+  genre: string;
+  score: number;
+}
+
+interface RecentlyPlayedRow {
+  played_at: string;
+  [key: string]: unknown;
+}
+
 // Get personalized "For You" recommendations
-router.get('/for-you', authenticate, async (req, res) => {
+router.get('/for-you', authenticate, async (req: Request, res: Response) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     // Cache key for recommendations
     const cacheKey = `recommendations:${userId}`;
     const cached = await redis.get(cacheKey);
 
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
-    const sections = [];
+    const sections: Array<{
+      id: string;
+      title: string;
+      type: string;
+      items: unknown[];
+    }> = [];
 
     // 1. Heavy Rotation - Recently played and favorited albums
     const heavyRotation = await pool.query(
@@ -58,7 +74,9 @@ router.get('/for-you', authenticate, async (req, res) => {
 
     if (recentlyPlayed.rows.length > 0) {
       // Re-sort by played_at
-      recentlyPlayed.rows.sort((a, b) => new Date(b.played_at) - new Date(a.played_at));
+      recentlyPlayed.rows.sort((a: RecentlyPlayedRow, b: RecentlyPlayedRow) =>
+        new Date(b.played_at).getTime() - new Date(a.played_at).getTime()
+      );
       sections.push({
         id: 'recently-played',
         title: 'Recently Played',
@@ -98,7 +116,7 @@ router.get('/for-you', authenticate, async (req, res) => {
       [userId]
     );
 
-    for (const genre of topGenres.rows) {
+    for (const genre of topGenres.rows as GenreRow[]) {
       const genreTracks = await pool.query(
         `SELECT t.*, a.name as artist_name, al.title as album_title, al.artwork_url
          FROM tracks t
@@ -175,10 +193,10 @@ router.get('/for-you', authenticate, async (req, res) => {
 });
 
 // Get similar tracks to a given track
-router.get('/similar/:trackId', optionalAuth, async (req, res) => {
+router.get('/similar/:trackId', optionalAuth, async (req: Request<{ trackId: string }, unknown, unknown, { limit?: string }>, res: Response) => {
   try {
     const { trackId } = req.params;
-    const { limit = 10 } = req.query;
+    const { limit = '10' } = req.query;
 
     // Get track info and genres
     const trackResult = await pool.query(
@@ -191,7 +209,8 @@ router.get('/similar/:trackId', optionalAuth, async (req, res) => {
     );
 
     if (trackResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Track not found' });
+      res.status(404).json({ error: 'Track not found' });
+      return;
     }
 
     const track = trackResult.rows[0];
@@ -224,10 +243,10 @@ router.get('/similar/:trackId', optionalAuth, async (req, res) => {
 });
 
 // Get similar artists
-router.get('/similar-artists/:artistId', optionalAuth, async (req, res) => {
+router.get('/similar-artists/:artistId', optionalAuth, async (req: Request<{ artistId: string }, unknown, unknown, { limit?: string }>, res: Response) => {
   try {
     const { artistId } = req.params;
-    const { limit = 10 } = req.query;
+    const { limit = '10' } = req.query;
 
     // Get artist genres
     const artistResult = await pool.query(
@@ -236,7 +255,8 @@ router.get('/similar-artists/:artistId', optionalAuth, async (req, res) => {
     );
 
     if (artistResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Artist not found' });
+      res.status(404).json({ error: 'Artist not found' });
+      return;
     }
 
     const artist = artistResult.rows[0];
@@ -260,16 +280,22 @@ router.get('/similar-artists/:artistId', optionalAuth, async (req, res) => {
 });
 
 // Get browse sections (for non-authenticated users or general browsing)
-router.get('/browse', optionalAuth, async (req, res) => {
+router.get('/browse', optionalAuth, async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'browse:sections';
     const cached = await redis.get(cacheKey);
 
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
-    const sections = [];
+    const sections: Array<{
+      id: string;
+      title: string;
+      type: string;
+      items: unknown[];
+    }> = [];
 
     // New Music
     const newMusic = await pool.query(

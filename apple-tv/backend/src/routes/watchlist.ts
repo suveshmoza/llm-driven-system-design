@@ -1,16 +1,32 @@
-const express = require('express');
-const db = require('../db');
-const { isAuthenticated } = require('../middleware/auth');
-const router = express.Router();
+import express, { Request, Response, Router } from 'express';
+import * as db from '../db/index.js';
+import { isAuthenticated } from '../middleware/auth.js';
+
+const router: Router = express.Router();
+
+interface WatchlistContentRow {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string;
+  banner_url: string;
+  content_type: string;
+  duration: number;
+  rating: string;
+  genres: string[];
+  release_date: Date;
+  added_at: Date;
+}
 
 // Get watchlist (My List)
-router.get('/', isAuthenticated, async (req, res) => {
+router.get('/', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.session.profileId) {
-      return res.status(400).json({ error: 'Profile not selected' });
+      res.status(400).json({ error: 'Profile not selected' });
+      return;
     }
 
-    const result = await db.query(`
+    const result = await db.query<WatchlistContentRow>(`
       SELECT
         c.id,
         c.title,
@@ -37,21 +53,23 @@ router.get('/', isAuthenticated, async (req, res) => {
 });
 
 // Add to watchlist
-router.post('/:contentId', isAuthenticated, async (req, res) => {
+router.post('/:contentId', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.session.profileId) {
-      return res.status(400).json({ error: 'Profile not selected' });
+      res.status(400).json({ error: 'Profile not selected' });
+      return;
     }
 
     const { contentId } = req.params;
 
     // Verify content exists
-    const content = await db.query(`
+    const content = await db.query<{ id: string }>(`
       SELECT id FROM content WHERE id = $1
     `, [contentId]);
 
     if (content.rows.length === 0) {
-      return res.status(404).json({ error: 'Content not found' });
+      res.status(404).json({ error: 'Content not found' });
+      return;
     }
 
     await db.query(`
@@ -68,10 +86,11 @@ router.post('/:contentId', isAuthenticated, async (req, res) => {
 });
 
 // Remove from watchlist
-router.delete('/:contentId', isAuthenticated, async (req, res) => {
+router.delete('/:contentId', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.session.profileId) {
-      return res.status(400).json({ error: 'Profile not selected' });
+      res.status(400).json({ error: 'Profile not selected' });
+      return;
     }
 
     const { contentId } = req.params;
@@ -89,10 +108,11 @@ router.delete('/:contentId', isAuthenticated, async (req, res) => {
 });
 
 // Check if content is in watchlist
-router.get('/check/:contentId', isAuthenticated, async (req, res) => {
+router.get('/check/:contentId', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.session.profileId) {
-      return res.status(400).json({ error: 'Profile not selected' });
+      res.status(400).json({ error: 'Profile not selected' });
+      return;
     }
 
     const { contentId } = req.params;
@@ -109,4 +129,4 @@ router.get('/check/:contentId', isAuthenticated, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

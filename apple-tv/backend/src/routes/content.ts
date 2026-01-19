@@ -1,13 +1,62 @@
-const express = require('express');
-const db = require('../db');
-const { client: redis } = require('../db/redis');
-const { isAuthenticated } = require('../middleware/auth');
-const router = express.Router();
+import express, { Request, Response, Router } from 'express';
+import * as db from '../db/index.js';
+import { client as redis } from '../db/redis.js';
+
+const router: Router = express.Router();
+
+interface ContentRow {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+  release_date: Date;
+  content_type: string;
+  series_id: string | null;
+  season_number: number | null;
+  episode_number: number | null;
+  rating: string;
+  genres: string[];
+  thumbnail_url: string;
+  banner_url: string;
+  status: string;
+  featured: boolean;
+  view_count: number;
+  master_resolution?: number;
+  hdr_format?: string;
+  episodes?: ContentRow[];
+  seasons?: Record<number, ContentRow[]>;
+  variants?: VariantRow[];
+  audioTracks?: AudioTrackRow[];
+  subtitles?: SubtitleRow[];
+}
+
+interface VariantRow {
+  id: string;
+  resolution: number;
+  codec: string;
+  hdr: boolean;
+  bitrate: number;
+}
+
+interface AudioTrackRow {
+  id: string;
+  language: string;
+  name: string;
+  codec: string;
+  channels: number;
+}
+
+interface SubtitleRow {
+  id: string;
+  language: string;
+  name: string;
+  type: string;
+}
 
 // Get all content (browse)
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { type, genre, search, limit = 20, offset = 0 } = req.query;
+    const { type, genre, search, limit = '20', offset = '0' } = req.query as Record<string, string>;
 
     let query = `
       SELECT id, title, description, duration, release_date, content_type,
@@ -16,7 +65,7 @@ router.get('/', async (req, res) => {
       FROM content
       WHERE status = 'ready' AND content_type != 'episode'
     `;
-    const params = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (type) {
@@ -38,7 +87,7 @@ router.get('/', async (req, res) => {
     query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(parseInt(limit), parseInt(offset));
 
-    const result = await db.query(query, params);
+    const result = await db.query<ContentRow>(query, params);
 
     res.json(result.rows);
   } catch (error) {
@@ -48,15 +97,16 @@ router.get('/', async (req, res) => {
 });
 
 // Get featured content
-router.get('/featured', async (req, res) => {
+router.get('/featured', async (req: Request, res: Response): Promise<void> => {
   try {
     // Try cache first
     const cached = await redis.get('content:featured');
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
-    const result = await db.query(`
+    const result = await db.query<ContentRow>(`
       SELECT id, title, description, duration, release_date, content_type,
              rating, genres, thumbnail_url, banner_url
       FROM content
@@ -76,11 +126,11 @@ router.get('/featured', async (req, res) => {
 });
 
 // Get content by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
-    const result = await db.query(`
+    const result = await db.query<ContentRow>(`
       SELECT id, title, description, duration, release_date, content_type,
              series_id, season_number, episode_number, rating, genres,
              thumbnail_url, banner_url, master_resolution, hdr_format, status, view_count
@@ -89,14 +139,15 @@ router.get('/:id', async (req, res) => {
     `, [id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Content not found' });
+      res.status(404).json({ error: 'Content not found' });
+      return;
     }
 
-    const content = result.rows[0];
+    const content: ContentRow = result.rows[0];
 
     // If it's a series, get episodes
     if (content.content_type === 'series') {
-      const episodes = await db.query(`
+      const episodes = await db.query<ContentRow>(`
         SELECT id, title, description, duration, season_number, episode_number,
                thumbnail_url, rating
         FROM content
@@ -107,18 +158,19 @@ router.get('/:id', async (req, res) => {
       content.episodes = episodes.rows;
 
       // Group by season
-      const seasons = {};
+      const seasons: Record<number, ContentRow[]> = {};
       for (const episode of episodes.rows) {
-        if (!seasons[episode.season_number]) {
-          seasons[episode.season_number] = [];
+        const seasonNum = episode.season_number ?? 0;
+        if (!seasons[seasonNum]) {
+          seasons[seasonNum] = [];
         }
-        seasons[episode.season_number].push(episode);
+        seasons[seasonNum].push(episode);
       }
       content.seasons = seasons;
     }
 
     // Get encoded variants
-    const variants = await db.query(`
+    const variants = await db.query<VariantRow>(`
       SELECT id, resolution, codec, hdr, bitrate
       FROM encoded_variants
       WHERE content_id = $1
@@ -128,7 +180,7 @@ router.get('/:id', async (req, res) => {
     content.variants = variants.rows;
 
     // Get audio tracks
-    const audioTracks = await db.query(`
+    const audioTracks = await db.query<AudioTrackRow>(`
       SELECT id, language, name, codec, channels
       FROM audio_tracks
       WHERE content_id = $1
@@ -137,7 +189,7 @@ router.get('/:id', async (req, res) => {
     content.audioTracks = audioTracks.rows;
 
     // Get subtitles
-    const subtitles = await db.query(`
+    const subtitles = await db.query<SubtitleRow>(`
       SELECT id, language, name, type
       FROM subtitles
       WHERE content_id = $1
@@ -153,11 +205,11 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get series details with all seasons
-router.get('/:id/seasons', async (req, res) => {
+router.get('/:id/seasons', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
-    const episodes = await db.query(`
+    const episodes = await db.query<ContentRow>(`
       SELECT id, title, description, duration, season_number, episode_number,
              thumbnail_url, rating
       FROM content
@@ -166,12 +218,13 @@ router.get('/:id/seasons', async (req, res) => {
     `, [id]);
 
     // Group by season
-    const seasons = {};
+    const seasons: Record<number, ContentRow[]> = {};
     for (const episode of episodes.rows) {
-      if (!seasons[episode.season_number]) {
-        seasons[episode.season_number] = [];
+      const seasonNum = episode.season_number ?? 0;
+      if (!seasons[seasonNum]) {
+        seasons[seasonNum] = [];
       }
-      seasons[episode.season_number].push(episode);
+      seasons[seasonNum].push(episode);
     }
 
     res.json(seasons);
@@ -182,14 +235,15 @@ router.get('/:id/seasons', async (req, res) => {
 });
 
 // Get genres
-router.get('/meta/genres', async (req, res) => {
+router.get('/meta/genres', async (req: Request, res: Response): Promise<void> => {
   try {
     const cached = await redis.get('content:genres');
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
-    const result = await db.query(`
+    const result = await db.query<{ genre: string }>(`
       SELECT DISTINCT unnest(genres) as genre
       FROM content
       WHERE status = 'ready'
@@ -208,7 +262,7 @@ router.get('/meta/genres', async (req, res) => {
 });
 
 // Increment view count
-router.post('/:id/view', async (req, res) => {
+router.post('/:id/view', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -223,4 +277,4 @@ router.post('/:id/view', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

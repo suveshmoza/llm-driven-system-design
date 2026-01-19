@@ -239,17 +239,17 @@ export function createDatabaseCircuitBreaker<T>(name: string, dbFn: AsyncFunctio
  * Circuit breaker for external notification service
  */
 export function createNotificationCircuitBreaker<T>(notifyFn: AsyncFunction<T>): CircuitBreaker<unknown[], T | NotificationFallbackResult> {
-  return createCircuitBreaker(
+  return createCircuitBreaker<T | NotificationFallbackResult>(
     'notification',
-    notifyFn,
+    notifyFn as AsyncFunction<T | NotificationFallbackResult>,
     {
       timeout: 15000,             // 15 second timeout for external service
       errorThresholdPercentage: 70, // Very tolerant
       resetTimeout: 60000,         // Wait longer before retry
     },
     // Fallback: queue for later
-    async (notification: unknown): Promise<NotificationFallbackResult> => {
-      log.warn({ notification }, 'Notification circuit breaker fallback - queuing for later');
+    async (_notification: unknown): Promise<T | NotificationFallbackResult> => {
+      log.warn({ notification: _notification }, 'Notification circuit breaker fallback - queuing for later');
       return { queued: true, error: 'Notification service unavailable' };
     }
   );

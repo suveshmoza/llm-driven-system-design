@@ -1,16 +1,11 @@
 import { pool } from '../db.js';
 import bcrypt from 'bcrypt';
-import type { User, UserRegistration, UserLogin, UserProfileUpdate } from '../types.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const SALT_ROUNDS = 10;
 
 // Register a new user
-export async function register({
-  email,
-  password,
-  username,
-  displayName,
-}: UserRegistration): Promise<User> {
+export async function register({ email, password, username, displayName }) {
   // Check if user already exists
   const existingUser = await pool.query(
     'SELECT id FROM users WHERE email = $1',
@@ -30,11 +25,11 @@ export async function register({
     [email, passwordHash, username, displayName || username]
   );
 
-  return result.rows[0] as User;
+  return result.rows[0];
 }
 
 // Login user
-export async function login({ email, password }: UserLogin): Promise<User> {
+export async function login({ email, password }) {
   const result = await pool.query(
     'SELECT * FROM users WHERE email = $1',
     [email]
@@ -44,8 +39,8 @@ export async function login({ email, password }: UserLogin): Promise<User> {
     throw new Error('Invalid email or password');
   }
 
-  const user = result.rows[0] as User;
-  const isValidPassword = await bcrypt.compare(password, user.password_hash || '');
+  const user = result.rows[0];
+  const isValidPassword = await bcrypt.compare(password, user.password_hash);
 
   if (!isValidPassword) {
     throw new Error('Invalid email or password');
@@ -53,34 +48,29 @@ export async function login({ email, password }: UserLogin): Promise<User> {
 
   // Return user without password
   const { password_hash, ...safeUser } = user;
-  return safeUser as User;
+  return safeUser;
 }
 
 // Get user by ID
-export async function getUserById(userId: string): Promise<User | null> {
+export async function getUserById(userId) {
   const result = await pool.query(
     `SELECT id, email, username, display_name, avatar_url, is_premium, role, created_at
      FROM users WHERE id = $1`,
     [userId]
   );
 
-  return (result.rows[0] as User) || null;
+  return result.rows[0] || null;
 }
 
 // Update user profile
-export async function updateProfile(
-  userId: string,
-  updates: UserProfileUpdate
-): Promise<User> {
+export async function updateProfile(userId, updates) {
   const allowedFields = ['display_name', 'avatar_url'];
   const updateEntries = Object.entries(updates).filter(([key]) =>
     allowedFields.includes(key)
   );
 
   if (updateEntries.length === 0) {
-    const user = await getUserById(userId);
-    if (!user) throw new Error('User not found');
-    return user;
+    return await getUserById(userId);
   }
 
   const setClause = updateEntries
@@ -95,7 +85,7 @@ export async function updateProfile(
     [userId, ...values]
   );
 
-  return result.rows[0] as User;
+  return result.rows[0];
 }
 
 export default {

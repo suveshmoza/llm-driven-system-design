@@ -1,22 +1,40 @@
-const express = require('express');
-const db = require('../db');
-const { isAuthenticated } = require('../middleware/auth');
-const router = express.Router();
+import express, { Request, Response, Router } from 'express';
+import * as db from '../db/index.js';
+import { isAuthenticated } from '../middleware/auth.js';
+
+const router: Router = express.Router();
+
+interface SubscriptionRow {
+  subscription_tier: string;
+  subscription_expires_at: Date | null;
+}
+
+interface Plan {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  interval: string;
+  savings?: string;
+  features: string[];
+}
 
 // Get subscription status
-router.get('/status', isAuthenticated, async (req, res) => {
+router.get('/status', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await db.query(`
+    const result = await db.query<SubscriptionRow>(`
       SELECT subscription_tier, subscription_expires_at
       FROM users WHERE id = $1
     `, [req.session.userId]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     const user = result.rows[0];
     const isActive = user.subscription_tier !== 'free' &&
+                     user.subscription_expires_at !== null &&
                      new Date(user.subscription_expires_at) > new Date();
 
     res.json({
@@ -31,8 +49,8 @@ router.get('/status', isAuthenticated, async (req, res) => {
 });
 
 // Get subscription plans
-router.get('/plans', async (req, res) => {
-  res.json([
+router.get('/plans', async (_req: Request, res: Response): Promise<void> => {
+  const plans: Plan[] = [
     {
       id: 'monthly',
       name: 'Monthly',
@@ -65,16 +83,18 @@ router.get('/plans', async (req, res) => {
         'Save 17% vs monthly'
       ]
     }
-  ]);
+  ];
+  res.json(plans);
 });
 
 // Subscribe (simulated - in production would integrate with payment provider)
-router.post('/subscribe', isAuthenticated, async (req, res) => {
+router.post('/subscribe', isAuthenticated, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { planId } = req.body;
+    const { planId } = req.body as { planId?: string };
 
-    if (!['monthly', 'yearly'].includes(planId)) {
-      return res.status(400).json({ error: 'Invalid plan' });
+    if (!planId || !['monthly', 'yearly'].includes(planId)) {
+      res.status(400).json({ error: 'Invalid plan' });
+      return;
     }
 
     // Calculate expiration
@@ -109,7 +129,7 @@ router.post('/subscribe', isAuthenticated, async (req, res) => {
 });
 
 // Cancel subscription
-router.post('/cancel', isAuthenticated, async (req, res) => {
+router.post('/cancel', isAuthenticated, async (_req: Request, res: Response): Promise<void> => {
   try {
     // In production, this would cancel with payment provider
     // For now, we'll just mark as expiring at current end date
@@ -124,4 +144,4 @@ router.post('/cancel', isAuthenticated, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

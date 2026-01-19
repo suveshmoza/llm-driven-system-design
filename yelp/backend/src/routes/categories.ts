@@ -1,19 +1,31 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../utils/db.js';
 import { cache } from '../utils/redis.js';
 
 const router = Router();
 
+// Category interface
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  parent_id: string | null;
+  parent_name?: string | null;
+  parent_slug?: string | null;
+  business_count: number;
+  subcategories?: Category[];
+}
+
 // Get all categories
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<void | Response> => {
   try {
     const cacheKey = 'categories:all';
-    const cached = await cache.get(cacheKey);
+    const cached = await cache.get<Category[]>(cacheKey);
     if (cached) {
       return res.json({ categories: cached });
     }
 
-    const result = await pool.query(`
+    const result = await pool.query<Category>(`
       SELECT c.*,
              p.name as parent_name, p.slug as parent_slug,
              (SELECT COUNT(*) FROM business_categories bc WHERE bc.category_id = c.id) as business_count
@@ -24,12 +36,14 @@ router.get('/', async (req, res) => {
 
     // Organize into tree structure
     const categories = result.rows;
-    const parentCategories = categories.filter(c => !c.parent_id);
-    const childCategories = categories.filter(c => c.parent_id);
+    const parentCategories = categories.filter((c) => !c.parent_id);
+    const childCategories = categories.filter((c) => c.parent_id);
 
-    const categoryTree = parentCategories.map(parent => ({
+    const categoryTree = parentCategories.map((parent) => ({
       ...parent,
-      subcategories: childCategories.filter(child => child.parent_id === parent.id)
+      subcategories: childCategories.filter(
+        (child) => child.parent_id === parent.id
+      ),
     }));
 
     // Cache for 1 hour
@@ -43,33 +57,39 @@ router.get('/', async (req, res) => {
 });
 
 // Get category by slug
-router.get('/:slug', async (req, res) => {
+router.get('/:slug', async (req: Request, res: Response): Promise<void | Response> => {
   try {
     const { slug } = req.params;
 
-    const result = await pool.query(`
+    const result = await pool.query<Category>(
+      `
       SELECT c.*,
              p.name as parent_name, p.slug as parent_slug,
              (SELECT COUNT(*) FROM business_categories bc WHERE bc.category_id = c.id) as business_count
       FROM categories c
       LEFT JOIN categories p ON c.parent_id = p.id
       WHERE c.slug = $1
-    `, [slug]);
+    `,
+      [slug]
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: { message: 'Category not found' } });
     }
 
-    const category = result.rows[0];
+    const category: Category & { subcategories?: Category[] } = result.rows[0];
 
     // Get subcategories
-    const subResult = await pool.query(`
+    const subResult = await pool.query<Category>(
+      `
       SELECT c.*,
              (SELECT COUNT(*) FROM business_categories bc WHERE bc.category_id = c.id) as business_count
       FROM categories c
       WHERE c.parent_id = $1
       ORDER BY c.name
-    `, [category.id]);
+    `,
+      [category.id]
+    );
 
     category.subcategories = subResult.rows;
 
@@ -81,11 +101,23 @@ router.get('/:slug', async (req, res) => {
 });
 
 // Get businesses in a category
-router.get('/:slug/businesses', async (req, res) => {
+router.get('/:slug/businesses', async (req: Request, res: Response): Promise<void> => {
   try {
     const { slug } = req.params;
-    const { page = 1, limit = 20, city, minRating, sortBy = 'rating' } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const {
+      page = '1',
+      limit = '20',
+      city,
+      minRating,
+      sortBy = 'rating',
+    } = req.query as {
+      page?: string;
+      limit?: string;
+      city?: string;
+      minRating?: string;
+      sortBy?: string;
+    };
+    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
     let orderBy = 'b.rating DESC, b.review_count DESC';
     if (sortBy === 'review_count') orderBy = 'b.review_count DESC, b.rating DESC';
@@ -103,7 +135,7 @@ router.get('/:slug/businesses', async (req, res) => {
       WHERE c.slug = $1 OR c.parent_id = (SELECT id FROM categories WHERE slug = $1)
     `;
 
-    const params = [slug];
+    const params: unknown[] = [slug];
     let paramIndex = 2;
 
     if (city) {
@@ -118,7 +150,7 @@ router.get('/:slug/businesses', async (req, res) => {
 
     query += ` GROUP BY b.id ORDER BY ${orderBy}`;
     query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(parseInt(limit, 10), offset);
 
     const result = await pool.query(query, params);
 
@@ -130,7 +162,7 @@ router.get('/:slug/businesses', async (req, res) => {
       JOIN categories c ON bc.category_id = c.id
       WHERE c.slug = $1 OR c.parent_id = (SELECT id FROM categories WHERE slug = $1)
     `;
-    const countParams = [slug];
+    const countParams: unknown[] = [slug];
     let countParamIndex = 2;
 
     if (city) {
@@ -142,16 +174,18 @@ router.get('/:slug/businesses', async (req, res) => {
       countParams.push(parseFloat(minRating));
     }
 
-    const countResult = await pool.query(countQuery, countParams);
+    const countResult = await pool.query<{ count: string }>(countQuery, countParams);
 
     res.json({
       businesses: result.rows,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: parseInt(countResult.rows[0].count),
-        pages: Math.ceil(countResult.rows[0].count / parseInt(limit))
-      }
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total: parseInt(countResult.rows[0].count, 10),
+        pages: Math.ceil(
+          parseInt(countResult.rows[0].count, 10) / parseInt(limit, 10)
+        ),
+      },
     });
   } catch (error) {
     console.error('Get category businesses error:', error);

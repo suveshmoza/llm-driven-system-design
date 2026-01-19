@@ -1,8 +1,34 @@
+import { Client } from '@elastic/elasticsearch';
 import { esClient } from '../index.js';
 
+export interface IndexConfig {
+  name: string;
+  mappings: Record<string, unknown>;
+  settings: Record<string, unknown>;
+}
+
+export interface SearchOptions {
+  limit?: number;
+  types?: string[];
+}
+
+export interface SearchResult {
+  id: string;
+  type: string;
+  score: number | null;
+  [key: string]: unknown;
+}
+
+export interface SuggestionResult {
+  id: string;
+  type: string;
+  name: string;
+  [key: string]: unknown;
+}
+
 // Initialize Elasticsearch indices with proper mappings
-export async function initializeElasticsearch(client) {
-  const indices = [
+export async function initializeElasticsearch(client: Client): Promise<void> {
+  const indices: IndexConfig[] = [
     {
       name: 'spotlight_files',
       mappings: {
@@ -191,7 +217,7 @@ export async function initializeElasticsearch(client) {
 }
 
 // Search across all indices
-export async function searchAll(query, options = {}) {
+export async function searchAll(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
   const { limit = 20, types = ['files', 'apps', 'contacts', 'web'] } = options;
 
   const indices = types.map(t => `spotlight_${t}`);
@@ -264,12 +290,12 @@ export async function searchAll(query, options = {}) {
     id: hit._id,
     type: hit._index.replace('spotlight_', ''),
     score: hit._score,
-    ...hit._source
+    ...(hit._source as Record<string, unknown>)
   }));
 }
 
 // Index a document
-export async function indexDocument(indexName, id, document) {
+export async function indexDocument(indexName: string, id: string, document: Record<string, unknown>): Promise<void> {
   await esClient.index({
     index: `spotlight_${indexName}`,
     id,
@@ -279,7 +305,7 @@ export async function indexDocument(indexName, id, document) {
 }
 
 // Delete a document
-export async function deleteDocument(indexName, id) {
+export async function deleteDocument(indexName: string, id: string): Promise<void> {
   try {
     await esClient.delete({
       index: `spotlight_${indexName}`,
@@ -287,14 +313,15 @@ export async function deleteDocument(indexName, id) {
       refresh: true
     });
   } catch (error) {
-    if (error.meta?.statusCode !== 404) {
+    const err = error as { meta?: { statusCode?: number } };
+    if (err.meta?.statusCode !== 404) {
       throw error;
     }
   }
 }
 
 // Get suggestions based on prefix
-export async function getSuggestions(prefix, limit = 10) {
+export async function getSuggestions(prefix: string, limit: number = 10): Promise<SuggestionResult[]> {
   const response = await esClient.search({
     index: ['spotlight_files', 'spotlight_apps', 'spotlight_contacts', 'spotlight_web'],
     body: {
@@ -325,10 +352,13 @@ export async function getSuggestions(prefix, limit = 10) {
     }
   });
 
-  return response.hits.hits.map(hit => ({
-    id: hit._id,
-    type: hit._index.replace('spotlight_', ''),
-    name: hit._source.name || hit._source.title,
-    ...hit._source
-  }));
+  return response.hits.hits.map(hit => {
+    const source = hit._source as Record<string, unknown>;
+    return {
+      id: hit._id,
+      type: hit._index.replace('spotlight_', ''),
+      name: (source.name || source.title) as string,
+      ...source
+    };
+  });
 }

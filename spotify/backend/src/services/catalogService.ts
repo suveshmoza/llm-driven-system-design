@@ -1,62 +1,24 @@
-import { pool, redisClient } from '../db.js';
-import type {
-  Artist,
-  ArtistWithDetails,
-  Album,
-  AlbumWithArtist,
-  AlbumWithTracks,
-  Track,
-  TrackWithDetails,
-  TrackWithArtists,
-  PaginationParams,
-  SearchParams,
-  SearchResults,
-} from '../types.js';
+import { pool } from '../db.js';
+import { redisClient } from '../db.js';
+import { getPublicUrl, COVERS_BUCKET } from '../storage.js';
 
 const CACHE_TTL = 300; // 5 minutes
 
-interface ArtistQueryParams extends PaginationParams {
-  search?: string;
-}
-
-interface AlbumQueryParams extends PaginationParams {
-  search?: string;
-  artistId?: string;
-}
-
-interface ArtistsResponse {
-  artists: Artist[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-interface AlbumsResponse {
-  albums: AlbumWithArtist[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 // Get all artists with pagination
-export async function getArtists({
-  limit = 20,
-  offset = 0,
-  search = '',
-}: ArtistQueryParams): Promise<ArtistsResponse> {
+export async function getArtists({ limit = 20, offset = 0, search = '' }) {
   const cacheKey = `artists:${limit}:${offset}:${search}`;
 
   // Try cache first
   const cached = await redisClient.get(cacheKey);
   if (cached) {
-    return JSON.parse(cached) as ArtistsResponse;
+    return JSON.parse(cached);
   }
 
   let query = `
     SELECT id, name, image_url, verified, monthly_listeners
     FROM artists
   `;
-  const params: unknown[] = [];
+  const params = [];
 
   if (search) {
     query += ` WHERE name ILIKE $1`;
@@ -70,16 +32,16 @@ export async function getArtists({
 
   // Get total count
   let countQuery = 'SELECT COUNT(*) FROM artists';
-  const countParams: unknown[] = [];
+  const countParams = [];
   if (search) {
     countQuery += ' WHERE name ILIKE $1';
     countParams.push(`%${search}%`);
   }
   const countResult = await pool.query(countQuery, countParams);
 
-  const response: ArtistsResponse = {
-    artists: result.rows as Artist[],
-    total: parseInt(countResult.rows[0].count as string),
+  const response = {
+    artists: result.rows,
+    total: parseInt(countResult.rows[0].count),
     limit,
     offset,
   };
@@ -91,12 +53,12 @@ export async function getArtists({
 }
 
 // Get artist by ID with albums
-export async function getArtistById(artistId: string): Promise<ArtistWithDetails | null> {
+export async function getArtistById(artistId) {
   const cacheKey = `artist:${artistId}`;
 
   const cached = await redisClient.get(cacheKey);
   if (cached) {
-    return JSON.parse(cached) as ArtistWithDetails;
+    return JSON.parse(cached);
   }
 
   const artistResult = await pool.query(
@@ -129,10 +91,10 @@ export async function getArtistById(artistId: string): Promise<ArtistWithDetails
     [artistId]
   );
 
-  const response: ArtistWithDetails = {
-    ...(artistResult.rows[0] as Artist),
-    albums: albumsResult.rows as Album[],
-    topTracks: topTracksResult.rows as TrackWithDetails[],
+  const response = {
+    ...artistResult.rows[0],
+    albums: albumsResult.rows,
+    topTracks: topTracksResult.rows,
   };
 
   await redisClient.setEx(cacheKey, CACHE_TTL, JSON.stringify(response));
@@ -141,19 +103,14 @@ export async function getArtistById(artistId: string): Promise<ArtistWithDetails
 }
 
 // Get all albums with pagination
-export async function getAlbums({
-  limit = 20,
-  offset = 0,
-  search = '',
-  artistId = undefined,
-}: AlbumQueryParams): Promise<AlbumsResponse> {
+export async function getAlbums({ limit = 20, offset = 0, search = '', artistId = null }) {
   let query = `
     SELECT a.*, ar.name as artist_name
     FROM albums a
     JOIN artists ar ON a.artist_id = ar.id
     WHERE 1=1
   `;
-  const params: unknown[] = [];
+  const params = [];
 
   if (search) {
     params.push(`%${search}%`);
@@ -172,7 +129,7 @@ export async function getAlbums({
 
   // Get total count
   let countQuery = 'SELECT COUNT(*) FROM albums a WHERE 1=1';
-  const countParams: unknown[] = [];
+  const countParams = [];
   if (search) {
     countParams.push(`%${search}%`);
     countQuery += ` AND a.title ILIKE $${countParams.length}`;
@@ -184,20 +141,20 @@ export async function getAlbums({
   const countResult = await pool.query(countQuery, countParams);
 
   return {
-    albums: result.rows as AlbumWithArtist[],
-    total: parseInt(countResult.rows[0].count as string),
+    albums: result.rows,
+    total: parseInt(countResult.rows[0].count),
     limit,
     offset,
   };
 }
 
 // Get album by ID with tracks
-export async function getAlbumById(albumId: string): Promise<AlbumWithTracks | null> {
+export async function getAlbumById(albumId) {
   const cacheKey = `album:${albumId}`;
 
   const cached = await redisClient.get(cacheKey);
   if (cached) {
-    return JSON.parse(cached) as AlbumWithTracks;
+    return JSON.parse(cached);
   }
 
   const albumResult = await pool.query(
@@ -224,9 +181,9 @@ export async function getAlbumById(albumId: string): Promise<AlbumWithTracks | n
     [albumId]
   );
 
-  const response: AlbumWithTracks = {
-    ...(albumResult.rows[0] as AlbumWithArtist),
-    tracks: tracksResult.rows as TrackWithArtists[],
+  const response = {
+    ...albumResult.rows[0],
+    tracks: tracksResult.rows,
   };
 
   await redisClient.setEx(cacheKey, CACHE_TTL, JSON.stringify(response));
@@ -235,7 +192,7 @@ export async function getAlbumById(albumId: string): Promise<AlbumWithTracks | n
 }
 
 // Get track by ID
-export async function getTrackById(trackId: string): Promise<TrackWithDetails | null> {
+export async function getTrackById(trackId) {
   const result = await pool.query(
     `SELECT t.*,
             a.title as album_title, a.cover_url as album_cover_url, a.id as album_id,
@@ -247,11 +204,11 @@ export async function getTrackById(trackId: string): Promise<TrackWithDetails | 
     [trackId]
   );
 
-  return (result.rows[0] as TrackWithDetails) || null;
+  return result.rows[0] || null;
 }
 
 // Get tracks by IDs
-export async function getTracksByIds(trackIds: string[]): Promise<TrackWithDetails[]> {
+export async function getTracksByIds(trackIds) {
   if (!trackIds || trackIds.length === 0) return [];
 
   const result = await pool.query(
@@ -265,15 +222,12 @@ export async function getTracksByIds(trackIds: string[]): Promise<TrackWithDetai
     [trackIds]
   );
 
-  return result.rows as TrackWithDetails[];
+  return result.rows;
 }
 
 // Search across all content
-export async function search(
-  query: string,
-  { limit = 20, types = ['artists', 'albums', 'tracks'] }: SearchParams
-): Promise<SearchResults> {
-  const results: SearchResults = {};
+export async function search(query, { limit = 20, types = ['artists', 'albums', 'tracks'] }) {
+  const results = {};
   const searchTerm = `%${query}%`;
 
   if (types.includes('artists')) {
@@ -285,7 +239,7 @@ export async function search(
        LIMIT $2`,
       [searchTerm, limit]
     );
-    results.artists = artistsResult.rows as Artist[];
+    results.artists = artistsResult.rows;
   }
 
   if (types.includes('albums')) {
@@ -298,7 +252,7 @@ export async function search(
        LIMIT $2`,
       [searchTerm, limit]
     );
-    results.albums = albumsResult.rows as AlbumWithArtist[];
+    results.albums = albumsResult.rows;
   }
 
   if (types.includes('tracks')) {
@@ -314,14 +268,14 @@ export async function search(
        LIMIT $2`,
       [searchTerm, limit]
     );
-    results.tracks = tracksResult.rows as TrackWithDetails[];
+    results.tracks = tracksResult.rows;
   }
 
   return results;
 }
 
 // Get new releases
-export async function getNewReleases({ limit = 20 }: PaginationParams): Promise<AlbumWithArtist[]> {
+export async function getNewReleases({ limit = 20 }) {
   const result = await pool.query(
     `SELECT a.*, ar.name as artist_name
      FROM albums a
@@ -331,11 +285,11 @@ export async function getNewReleases({ limit = 20 }: PaginationParams): Promise<
     [limit]
   );
 
-  return result.rows as AlbumWithArtist[];
+  return result.rows;
 }
 
 // Get featured/popular tracks
-export async function getFeaturedTracks({ limit = 20 }: PaginationParams): Promise<TrackWithDetails[]> {
+export async function getFeaturedTracks({ limit = 20 }) {
   const result = await pool.query(
     `SELECT t.*,
             a.title as album_title, a.cover_url as album_cover_url,
@@ -348,7 +302,7 @@ export async function getFeaturedTracks({ limit = 20 }: PaginationParams): Promi
     [limit]
   );
 
-  return result.rows as TrackWithDetails[];
+  return result.rows;
 }
 
 export default {

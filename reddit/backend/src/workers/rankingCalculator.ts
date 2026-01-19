@@ -8,18 +8,25 @@ import redis from '../db/redis.js';
 
 dotenv.config();
 
-const RANKING_INTERVAL = parseInt(process.env.RANKING_CALCULATION_INTERVAL) || 60000;
+const RANKING_INTERVAL = parseInt(process.env.RANKING_CALCULATION_INTERVAL ?? '', 10) || 60000;
 
 let isShuttingDown = false;
 
-const recalculateHotScores = async () => {
+interface PostRow {
+  id: number;
+  upvotes: number;
+  downvotes: number;
+  created_at: Date;
+}
+
+const recalculateHotScores = async (): Promise<void> => {
   if (isShuttingDown) return;
 
   const start = Date.now();
 
   try {
     // Get all posts from the last 7 days (older posts don't need recalculation)
-    const result = await query(`
+    const result = await query<PostRow>(`
       SELECT id, upvotes, downvotes, created_at
       FROM posts
       WHERE created_at > NOW() - INTERVAL '7 days'
@@ -50,7 +57,7 @@ const recalculateHotScores = async () => {
   }
 };
 
-const run = async () => {
+const run = async (): Promise<void> => {
   logger.info({
     interval: RANKING_INTERVAL,
   }, 'Ranking calculator started');
@@ -63,7 +70,7 @@ const run = async () => {
 };
 
 // Graceful shutdown
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Ranking calculator shutting down');
   isShuttingDown = true;
 

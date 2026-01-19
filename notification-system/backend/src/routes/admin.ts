@@ -1,19 +1,72 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../utils/database.js';
 import { redis } from '../utils/redis.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import { deliveryTracker } from '../services/delivery.js';
 import { rateLimiter } from '../services/rateLimiter.js';
 
-const router = Router();
+const router: Router = Router();
+
+interface NotificationStatsRow {
+  total: string;
+  delivered: string;
+  pending: string;
+  failed: string;
+}
+
+interface UserStatsRow {
+  total_users: string;
+  new_users: string;
+}
+
+interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  role: string;
+  email_verified: boolean;
+  phone_verified: boolean;
+  created_at: Date;
+  channels?: Record<string, unknown>;
+  categories?: Record<string, unknown>;
+  quiet_hours_start?: number | null;
+  quiet_hours_end?: number | null;
+  timezone?: string;
+}
+
+interface AnalyticsRow {
+  date: string;
+  total: string;
+  delivered: string;
+  failed: string;
+}
+
+interface EventAnalyticsRow {
+  date: string;
+  event_type: string;
+  channel: string;
+  count: string;
+}
+
+interface FailedNotificationRow {
+  id: string;
+  user_id: string;
+  channel: string;
+  details: Record<string, unknown>;
+  attempts: number;
+  [key: string]: unknown;
+}
+
+type QueueDepth = Record<string, Record<string, number>>;
 
 // All admin routes require admin role
 router.use(adminMiddleware);
 
 // Dashboard stats
-router.get('/stats', async (req, res) => {
+router.get('/stats', async (req: Request, res: Response): Promise<void> => {
   try {
-    const timeRange = req.query.timeRange || '24 hours';
+    const timeRange = (req.query.timeRange as string) || '24 hours';
 
     // Get various stats in parallel
     const [
@@ -23,7 +76,7 @@ router.get('/stats', async (req, res) => {
       queueDepth,
     ] = await Promise.all([
       // Total notifications
-      query(
+      query<NotificationStatsRow>(
         `SELECT
            COUNT(*) as total,
            COUNT(*) FILTER (WHERE status = 'delivered') as delivered,
@@ -38,7 +91,7 @@ router.get('/stats', async (req, res) => {
       deliveryTracker.getDeliveryStats(timeRange),
 
       // User stats
-      query(
+      query<UserStatsRow>(
         `SELECT
            COUNT(*) as total_users,
            COUNT(*) FILTER (WHERE created_at >= NOW() - $1::interval) as new_users
@@ -64,12 +117,12 @@ router.get('/stats', async (req, res) => {
 });
 
 // Get all users
-router.get('/users', async (req, res) => {
+router.get('/users', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { limit = 50, offset = 0, role } = req.query;
+    const { limit = '50', offset = '0', role } = req.query;
 
     let queryStr = `SELECT id, email, name, phone, role, email_verified, phone_verified, created_at FROM users`;
-    const params = [];
+    const params: unknown[] = [];
 
     if (role) {
       params.push(role);
@@ -77,9 +130,9 @@ router.get('/users', async (req, res) => {
     }
 
     queryStr += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(parseInt(limit as string), parseInt(offset as string));
 
-    const result = await query(queryStr, params);
+    const result = await query<UserRow>(queryStr, params);
     res.json({ users: result.rows });
   } catch (error) {
     console.error('Get users error:', error);
@@ -88,9 +141,9 @@ router.get('/users', async (req, res) => {
 });
 
 // Get user by ID
-router.get('/users/:id', async (req, res) => {
+router.get('/users/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(
+    const result = await query<UserRow>(
       `SELECT u.*, np.channels, np.categories, np.quiet_hours_start, np.quiet_hours_end, np.timezone
        FROM users u
        LEFT JOIN notification_preferences np ON u.id = np.user_id
@@ -99,7 +152,8 @@ router.get('/users/:id', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     const user = result.rows[0];
@@ -108,7 +162,7 @@ router.get('/users/:id', async (req, res) => {
     const rateLimitUsage = await rateLimiter.getUsage(user.id);
 
     // Get recent notifications count
-    const notificationCount = await query(
+    const notificationCount = await query<{ count: string }>(
       `SELECT COUNT(*) as count FROM notifications WHERE user_id = $1`,
       [user.id]
     );
@@ -125,21 +179,23 @@ router.get('/users/:id', async (req, res) => {
 });
 
 // Update user role
-router.patch('/users/:id/role', async (req, res) => {
+router.patch('/users/:id/role', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { role } = req.body;
+    const { role } = req.body as { role: string };
 
     if (!['user', 'admin'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
+      res.status(400).json({ error: 'Invalid role' });
+      return;
     }
 
-    const result = await query(
+    const result = await query<{ id: string; email: string; name: string; role: string }>(
       `UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1 RETURNING id, email, name, role`,
       [req.params.id, role]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     res.json(result.rows[0]);
@@ -150,7 +206,7 @@ router.patch('/users/:id/role', async (req, res) => {
 });
 
 // Reset user rate limits
-router.post('/users/:id/reset-rate-limit', async (req, res) => {
+router.post('/users/:id/reset-rate-limit', async (req: Request, res: Response): Promise<void> => {
   try {
     await rateLimiter.resetUserLimit(req.params.id);
     res.json({ message: 'Rate limits reset' });
@@ -161,11 +217,11 @@ router.post('/users/:id/reset-rate-limit', async (req, res) => {
 });
 
 // Get notification analytics
-router.get('/analytics/notifications', async (req, res) => {
+router.get('/analytics/notifications', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { days = 7 } = req.query;
+    const { days = '7' } = req.query;
 
-    const result = await query(
+    const result = await query<AnalyticsRow>(
       `SELECT
          DATE(created_at) as date,
          COUNT(*) as total,
@@ -175,7 +231,7 @@ router.get('/analytics/notifications', async (req, res) => {
        WHERE created_at >= NOW() - INTERVAL '1 day' * $1
        GROUP BY DATE(created_at)
        ORDER BY date DESC`,
-      [parseInt(days)]
+      [parseInt(days as string)]
     );
 
     res.json({ analytics: result.rows });
@@ -186,11 +242,11 @@ router.get('/analytics/notifications', async (req, res) => {
 });
 
 // Get event analytics (opens, clicks)
-router.get('/analytics/events', async (req, res) => {
+router.get('/analytics/events', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { days = 7 } = req.query;
+    const { days = '7' } = req.query;
 
-    const result = await query(
+    const result = await query<EventAnalyticsRow>(
       `SELECT
          DATE(occurred_at) as date,
          event_type,
@@ -200,7 +256,7 @@ router.get('/analytics/events', async (req, res) => {
        WHERE occurred_at >= NOW() - INTERVAL '1 day' * $1
        GROUP BY DATE(occurred_at), event_type, channel
        ORDER BY date DESC`,
-      [parseInt(days)]
+      [parseInt(days as string)]
     );
 
     res.json({ analytics: result.rows });
@@ -211,9 +267,9 @@ router.get('/analytics/events', async (req, res) => {
 });
 
 // Get failed notifications for retry
-router.get('/failed-notifications', async (req, res) => {
+router.get('/failed-notifications', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await query(
+    const result = await query<FailedNotificationRow>(
       `SELECT n.*, ds.channel, ds.details, ds.attempts
        FROM notifications n
        JOIN delivery_status ds ON n.id = ds.notification_id
@@ -230,10 +286,10 @@ router.get('/failed-notifications', async (req, res) => {
 });
 
 // Helper function to get queue depth
-async function getQueueDepth() {
+async function getQueueDepth(): Promise<QueueDepth> {
   const channels = ['push', 'email', 'sms'];
   const priorities = ['critical', 'high', 'normal', 'low'];
-  const depth = {};
+  const depth: QueueDepth = {};
 
   for (const channel of channels) {
     depth[channel] = {};

@@ -1,18 +1,34 @@
-import { getSession, getUserById } from '../services/auth.js';
+import type { Request, Response, NextFunction } from 'express';
+import { getSession, getUserById, User } from '../services/auth.js';
 
-export async function authMiddleware(req, res, next) {
+// Extend Express Request to include user property
+declare global {
+  namespace Express {
+    interface Request {
+      user?: User | null;
+    }
+  }
+}
+
+export async function authMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
   const sessionId = req.cookies?.session;
 
   if (!sessionId) {
     req.user = null;
-    return next();
+    next();
+    return;
   }
 
   try {
     const session = await getSession(sessionId);
     if (!session) {
       req.user = null;
-      return next();
+      next();
+      return;
     }
 
     const user = await getUserById(session.userId);
@@ -25,20 +41,25 @@ export async function authMiddleware(req, res, next) {
   }
 }
 
-export function requireAuth(req, res, next) {
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    res.status(401).json({ error: 'Authentication required' });
+    return;
   }
   next();
 }
 
-export function requireRole(...roles) {
-  return (req, res, next) => {
+export function requireRole(
+  ...roles: string[]
+): (req: Request, res: Response, next: NextFunction) => void {
+  return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ error: 'Authentication required' });
+      return;
     }
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+      res.status(403).json({ error: 'Insufficient permissions' });
+      return;
     }
     next();
   };

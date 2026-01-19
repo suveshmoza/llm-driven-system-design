@@ -1,18 +1,32 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/index.js';
 import { redis } from '../services/redis.js';
 import { optionalAuth, authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+interface RadioStationRow {
+  id: string;
+  type: string;
+  seed_genre: string;
+  seed_artist_id: string;
+}
+
+interface CreatePersonalRadioBody {
+  seedType: 'artist' | 'track' | 'genre';
+  seedId: string;
+  name?: string;
+}
+
 // Get all radio stations
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', optionalAuth, async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'radio:stations';
     const cached = await redis.get(cacheKey);
 
     if (cached) {
-      return res.json(JSON.parse(cached));
+      res.json(JSON.parse(cached));
+      return;
     }
 
     const result = await pool.query(
@@ -34,7 +48,7 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // Get radio station details with tracks
-router.get('/:id', optionalAuth, async (req, res) => {
+router.get('/:id', optionalAuth, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -47,7 +61,8 @@ router.get('/:id', optionalAuth, async (req, res) => {
     );
 
     if (stationResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Radio station not found' });
+      res.status(404).json({ error: 'Radio station not found' });
+      return;
     }
 
     // Get station tracks
@@ -73,10 +88,10 @@ router.get('/:id', optionalAuth, async (req, res) => {
 });
 
 // Get tracks for a radio station (with shuffle option)
-router.get('/:id/tracks', optionalAuth, async (req, res) => {
+router.get('/:id/tracks', optionalAuth, async (req: Request<{ id: string }, unknown, unknown, { shuffle?: string; limit?: string }>, res: Response) => {
   try {
     const { id } = req.params;
-    const { shuffle = 'false', limit = 25 } = req.query;
+    const { shuffle = 'false', limit = '25' } = req.query;
 
     const station = await pool.query(
       'SELECT * FROM radio_stations WHERE id = $1',
@@ -84,13 +99,15 @@ router.get('/:id/tracks', optionalAuth, async (req, res) => {
     );
 
     if (station.rows.length === 0) {
-      return res.status(404).json({ error: 'Radio station not found' });
+      res.status(404).json({ error: 'Radio station not found' });
+      return;
     }
 
-    let tracksQuery;
-    let tracksParams;
+    const stationRow = station.rows[0] as RadioStationRow;
+    let tracksQuery: string;
+    let tracksParams: (string | number)[];
 
-    if (station.rows[0].type === 'curated') {
+    if (stationRow.type === 'curated') {
       // Get curated tracks
       tracksQuery = `
         SELECT rst.position, t.*, ar.name as artist_name, al.title as album_title, al.artwork_url
@@ -103,7 +120,7 @@ router.get('/:id/tracks', optionalAuth, async (req, res) => {
         LIMIT $2
       `;
       tracksParams = [id, parseInt(limit)];
-    } else if (station.rows[0].type === 'genre') {
+    } else if (stationRow.type === 'genre') {
       // Get tracks by genre
       tracksQuery = `
         SELECT t.*, ar.name as artist_name, al.title as album_title, al.artwork_url
@@ -115,8 +132,8 @@ router.get('/:id/tracks', optionalAuth, async (req, res) => {
         ${shuffle === 'true' ? 'ORDER BY RANDOM()' : 'ORDER BY t.play_count DESC'}
         LIMIT $2
       `;
-      tracksParams = [station.rows[0].seed_genre, parseInt(limit)];
-    } else if (station.rows[0].type === 'artist') {
+      tracksParams = [stationRow.seed_genre, parseInt(limit)];
+    } else if (stationRow.type === 'artist') {
       // Get tracks by artist and similar artists
       tracksQuery = `
         SELECT t.*, ar.name as artist_name, al.title as album_title, al.artwork_url
@@ -127,7 +144,7 @@ router.get('/:id/tracks', optionalAuth, async (req, res) => {
         ${shuffle === 'true' ? 'ORDER BY RANDOM()' : 'ORDER BY t.play_count DESC'}
         LIMIT $2
       `;
-      tracksParams = [station.rows[0].seed_artist_id, parseInt(limit)];
+      tracksParams = [stationRow.seed_artist_id, parseInt(limit)];
     } else {
       // Generic fallback
       tracksQuery = `
@@ -151,23 +168,24 @@ router.get('/:id/tracks', optionalAuth, async (req, res) => {
 });
 
 // Create personal radio station (based on a seed track or artist)
-router.post('/personal', authenticate, async (req, res) => {
+router.post('/personal', authenticate, async (req: Request<object, unknown, CreatePersonalRadioBody>, res: Response) => {
   try {
     const { seedType, seedId, name } = req.body;
-    const userId = req.user.id;
 
     if (!seedType || !seedId) {
-      return res.status(400).json({ error: 'Seed type and ID required' });
+      res.status(400).json({ error: 'Seed type and ID required' });
+      return;
     }
 
     let stationName = name;
-    let seedArtistId = null;
-    let seedGenre = null;
+    let seedArtistId: string | null = null;
+    let seedGenre: string | null = null;
 
     if (seedType === 'artist') {
       const artist = await pool.query('SELECT name FROM artists WHERE id = $1', [seedId]);
       if (artist.rows.length === 0) {
-        return res.status(404).json({ error: 'Artist not found' });
+        res.status(404).json({ error: 'Artist not found' });
+        return;
       }
       stationName = stationName || `${artist.rows[0].name} Radio`;
       seedArtistId = seedId;
@@ -180,7 +198,8 @@ router.post('/personal', authenticate, async (req, res) => {
         [seedId]
       );
       if (track.rows.length === 0) {
-        return res.status(404).json({ error: 'Track not found' });
+        res.status(404).json({ error: 'Track not found' });
+        return;
       }
       stationName = stationName || `${track.rows[0].title} Radio`;
       seedArtistId = track.rows[0].artist_id;
@@ -209,8 +228,8 @@ router.post('/personal', authenticate, async (req, res) => {
     const station = result.rows[0];
 
     // Generate tracks for the station
-    let tracksQuery;
-    let tracksParams;
+    let tracksQuery: string;
+    let tracksParams: string[];
 
     if (seedGenre) {
       tracksQuery = `
@@ -255,7 +274,7 @@ router.post('/personal', authenticate, async (req, res) => {
 });
 
 // Get stations by genre
-router.get('/genre/:genre', optionalAuth, async (req, res) => {
+router.get('/genre/:genre', optionalAuth, async (req: Request<{ genre: string }>, res: Response) => {
   try {
     const { genre } = req.params;
 

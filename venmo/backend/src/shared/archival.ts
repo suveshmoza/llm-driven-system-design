@@ -30,11 +30,53 @@
  * - Costs saved on storage must outweigh archival infrastructure costs
  */
 
-const { pool } = require('../db/pool');
-const { logger } = require('./logger');
+import { pool } from '../db/pool.js';
+import { logger } from './logger.js';
+
+export interface RetentionConfig {
+  hotRetentionDays: number;
+  warmRetentionDays: number;
+  totalRetentionDays: number;
+  archivalBatchSize: number;
+  archivableTables: string[];
+}
+
+export interface ArchivalResult {
+  table: string;
+  archived: number;
+}
+
+export interface StorageStats {
+  [tableName: string]: {
+    rowCount?: number;
+    sizeBytes?: number;
+    sizeMB?: string;
+    error?: string;
+    note?: string;
+  };
+}
+
+export interface QueryHistoricalOptions {
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+  includeArchive?: boolean;
+}
+
+export interface TransferRow {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  amount: number;
+  note: string;
+  visibility: string;
+  status: string;
+  created_at: Date;
+  storage_tier?: string;
+}
 
 // Retention configuration
-const RETENTION_CONFIG = {
+export const RETENTION_CONFIG: RetentionConfig = {
   // How long to keep transactions in hot storage (active table)
   hotRetentionDays: 90,
 
@@ -56,7 +98,7 @@ const RETENTION_CONFIG = {
  *
  * This should be run as a scheduled job (e.g., daily via cron)
  */
-async function archiveOldTransfers() {
+export async function archiveOldTransfers(): Promise<ArchivalResult> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - RETENTION_CONFIG.hotRetentionDays);
 
@@ -118,7 +160,7 @@ async function archiveOldTransfers() {
     logger.error({
       event: 'archival_failed',
       table: 'transfers',
-      error: error.message,
+      error: (error as Error).message,
       totalArchived,
       batch,
     });
@@ -129,7 +171,7 @@ async function archiveOldTransfers() {
 /**
  * Archive old cashouts
  */
-async function archiveOldCashouts() {
+export async function archiveOldCashouts(): Promise<ArchivalResult> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - RETENTION_CONFIG.hotRetentionDays);
 
@@ -154,7 +196,7 @@ async function archiveOldCashouts() {
       [cutoffDate]
     );
 
-    totalArchived = result.rowCount;
+    totalArchived = result.rowCount || 0;
 
     logger.info({
       event: 'archival_completed',
@@ -167,7 +209,7 @@ async function archiveOldCashouts() {
     logger.error({
       event: 'archival_failed',
       table: 'cashouts',
-      error: error.message,
+      error: (error as Error).message,
     });
     throw error;
   }
@@ -177,7 +219,7 @@ async function archiveOldCashouts() {
  * Purge data older than total retention period
  * This permanently deletes data - used for compliance
  */
-async function purgeExpiredData() {
+export async function purgeExpiredData(): Promise<Record<string, number>> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - RETENTION_CONFIG.totalRetentionDays);
 
@@ -187,7 +229,7 @@ async function purgeExpiredData() {
     warning: 'Permanently deleting data older than retention period',
   });
 
-  const results = {};
+  const results: Record<string, number> = {};
 
   // Purge from archive tables
   const archiveTables = ['transfers_archive', 'cashouts_archive', 'audit_log_archive'];
@@ -195,7 +237,7 @@ async function purgeExpiredData() {
   for (const table of archiveTables) {
     try {
       const result = await pool.query(`DELETE FROM ${table} WHERE created_at < $1`, [cutoffDate]);
-      results[table] = result.rowCount;
+      results[table] = result.rowCount || 0;
 
       logger.info({
         event: 'purge_table_complete',
@@ -204,12 +246,13 @@ async function purgeExpiredData() {
       });
     } catch (error) {
       // Table might not exist yet
-      if (error.code !== '42P01') {
+      const pgError = error as { code?: string };
+      if (pgError.code !== '42P01') {
         // 42P01 = undefined_table
         logger.error({
           event: 'purge_table_failed',
           table,
-          error: error.message,
+          error: (error as Error).message,
         });
       }
     }
@@ -226,17 +269,20 @@ async function purgeExpiredData() {
 /**
  * Query historical transactions (checks both hot and warm storage)
  */
-async function queryHistoricalTransfers(userId, options = {}) {
+export async function queryHistoricalTransfers(
+  userId: string,
+  options: QueryHistoricalOptions = {}
+): Promise<TransferRow[]> {
   const { startDate, endDate, limit = 100, includeArchive = true } = options;
 
-  let transfers = [];
+  let transfers: TransferRow[] = [];
 
   // Query hot storage first
   let hotQuery = `
     SELECT *, 'hot' as storage_tier FROM transfers
     WHERE (sender_id = $1 OR receiver_id = $1)
   `;
-  const params = [userId];
+  const params: unknown[] = [userId];
   let paramIndex = 2;
 
   if (startDate) {
@@ -263,7 +309,7 @@ async function queryHistoricalTransfers(userId, options = {}) {
       SELECT *, 'warm' as storage_tier FROM transfers_archive
       WHERE (sender_id = $1 OR receiver_id = $1)
     `;
-    const archiveParams = [userId];
+    const archiveParams: unknown[] = [userId];
     let archiveParamIndex = 2;
 
     if (startDate) {
@@ -294,8 +340,8 @@ async function queryHistoricalTransfers(userId, options = {}) {
 /**
  * Get storage statistics for monitoring
  */
-async function getStorageStats() {
-  const stats = {};
+export async function getStorageStats(): Promise<StorageStats> {
+  const stats: StorageStats = {};
 
   // Get row counts and sizes
   const tables = ['transfers', 'cashouts', 'payment_requests', 'audit_log'];
@@ -329,12 +375,3 @@ async function getStorageStats() {
 
   return stats;
 }
-
-module.exports = {
-  RETENTION_CONFIG,
-  archiveOldTransfers,
-  archiveOldCashouts,
-  purgeExpiredData,
-  queryHistoricalTransfers,
-  getStorageStats,
-};

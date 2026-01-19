@@ -8,45 +8,68 @@
  * TTLs are configured per data type based on update frequency and staleness tolerance.
  */
 
+import type { Redis } from 'ioredis';
+import type { Pool } from 'pg';
 import { cacheHits, cacheMisses } from './metrics.js';
 import logger from './logger.js';
 
 // TTL configuration in seconds
-const TTL = {
+export const TTL = {
   FILE_METADATA: 3600,        // 1 hour - files change infrequently
   USER_STORAGE: 300,          // 5 minutes - storage changes on upload/delete
   SYNC_STATE: 86400,          // 24 hours - device sync cursors
   CHUNK_EXISTS: 3600,         // 1 hour - chunk existence for dedup
   DEVICE_LIST: 900,           // 15 minutes - device registration
   IDEMPOTENCY: 86400,         // 24 hours - idempotency keys
-};
+} as const;
 
-export { TTL };
+export interface FileMetadata {
+  id: string;
+  name: string;
+  path: string;
+  mime_type: string | null;
+  size: number;
+  content_hash: string | null;
+  version_vector: Record<string, number> | null;
+  is_folder: boolean;
+  is_deleted: boolean;
+  created_at: Date;
+  modified_at: Date;
+}
+
+export interface StorageInfo {
+  storage_quota: number;
+  storage_used: number;
+}
+
+export interface SyncData {
+  cursor?: unknown;
+  lastSyncAt?: string;
+}
 
 /**
  * Cache-aside pattern implementation
  * Used for read-heavy data where stale reads are acceptable
  */
 export class CacheAside {
-  constructor(redis, cacheType = 'general') {
+  protected redis: Redis;
+  protected cacheType: string;
+
+  constructor(redis: Redis, cacheType: string = 'general') {
     this.redis = redis;
     this.cacheType = cacheType;
   }
 
   /**
    * Get value from cache, falling back to getter function on miss
-   * @param {string} key - Cache key
-   * @param {Function} getter - Async function to fetch data on cache miss
-   * @param {number} ttl - TTL in seconds
-   * @returns {Promise<any>} - Cached or fetched value
    */
-  async get(key, getter, ttl) {
+  async get<T>(key: string, getter: () => Promise<T>, ttl: number): Promise<T> {
     try {
       // Try cache first
       const cached = await this.redis.get(key);
       if (cached !== null) {
         cacheHits.inc({ cache_type: this.cacheType });
-        return JSON.parse(cached);
+        return JSON.parse(cached) as T;
       }
 
       cacheMisses.inc({ cache_type: this.cacheType });
@@ -70,7 +93,7 @@ export class CacheAside {
   /**
    * Invalidate a cache key
    */
-  async invalidate(key) {
+  async invalidate(key: string): Promise<void> {
     try {
       await this.redis.del(key);
     } catch (error) {
@@ -81,7 +104,7 @@ export class CacheAside {
   /**
    * Invalidate multiple keys matching a pattern
    */
-  async invalidatePattern(pattern) {
+  async invalidatePattern(pattern: string): Promise<void> {
     try {
       let cursor = '0';
       do {
@@ -108,7 +131,9 @@ export class CacheAside {
  * File metadata cache
  */
 export class FileMetadataCache extends CacheAside {
-  constructor(redis, pool) {
+  private pool: Pool;
+
+  constructor(redis: Redis, pool: Pool) {
     super(redis, 'file_metadata');
     this.pool = pool;
   }
@@ -116,9 +141,9 @@ export class FileMetadataCache extends CacheAside {
   /**
    * Get file metadata by ID
    */
-  async getFileById(fileId, userId) {
+  async getFileById(fileId: string, userId: string): Promise<FileMetadata | null> {
     const key = `file:meta:${fileId}`;
-    return this.get(
+    return this.get<FileMetadata | null>(
       key,
       async () => {
         const result = await this.pool.query(
@@ -137,7 +162,7 @@ export class FileMetadataCache extends CacheAside {
   /**
    * Invalidate file cache on update
    */
-  async onFileUpdated(fileId, userId) {
+  async onFileUpdated(fileId: string, userId: string): Promise<void> {
     await Promise.all([
       this.invalidate(`file:meta:${fileId}`),
       this.invalidate(`user:storage:${userId}`),
@@ -149,7 +174,9 @@ export class FileMetadataCache extends CacheAside {
  * User storage quota cache
  */
 export class StorageQuotaCache extends CacheAside {
-  constructor(redis, pool) {
+  private pool: Pool;
+
+  constructor(redis: Redis, pool: Pool) {
     super(redis, 'storage_quota');
     this.pool = pool;
   }
@@ -157,9 +184,9 @@ export class StorageQuotaCache extends CacheAside {
   /**
    * Get user's storage usage and quota
    */
-  async getUserStorage(userId) {
+  async getUserStorage(userId: string): Promise<StorageInfo | null> {
     const key = `user:storage:${userId}`;
-    return this.get(
+    return this.get<StorageInfo | null>(
       key,
       async () => {
         const result = await this.pool.query(
@@ -175,7 +202,7 @@ export class StorageQuotaCache extends CacheAside {
   /**
    * Update storage used and invalidate cache
    */
-  async updateStorageUsed(userId, bytesChange) {
+  async updateStorageUsed(userId: string, bytesChange: number): Promise<void> {
     await this.pool.query(
       `UPDATE users SET storage_used = storage_used + $1 WHERE id = $2`,
       [bytesChange, userId]
@@ -188,7 +215,7 @@ export class StorageQuotaCache extends CacheAside {
  * Chunk existence cache for deduplication
  */
 export class ChunkExistsCache extends CacheAside {
-  constructor(redis) {
+  constructor(redis: Redis) {
     super(redis, 'chunk_exists');
   }
 
@@ -196,9 +223,9 @@ export class ChunkExistsCache extends CacheAside {
    * Check if a chunk hash exists in storage
    * Returns true if chunk exists, false otherwise
    */
-  async checkExists(chunkHash, checkFn) {
+  async checkExists(chunkHash: string, checkFn: (hash: string) => Promise<boolean>): Promise<boolean> {
     const key = `chunk:exists:${chunkHash}`;
-    const exists = await this.get(
+    const exists = await this.get<number>(
       key,
       async () => {
         const result = await checkFn(chunkHash);
@@ -212,7 +239,7 @@ export class ChunkExistsCache extends CacheAside {
   /**
    * Mark chunk as existing in cache
    */
-  async setExists(chunkHash) {
+  async setExists(chunkHash: string): Promise<void> {
     await this.redis.setex(`chunk:exists:${chunkHash}`, TTL.CHUNK_EXISTS, '1');
   }
 }
@@ -222,7 +249,10 @@ export class ChunkExistsCache extends CacheAside {
  * Used for critical sync state that must remain consistent
  */
 export class SyncStateCache {
-  constructor(redis, pool) {
+  private redis: Redis;
+  private pool: Pool;
+
+  constructor(redis: Redis, pool: Pool) {
     this.redis = redis;
     this.pool = pool;
   }
@@ -230,7 +260,7 @@ export class SyncStateCache {
   /**
    * Update sync state with write-through to both cache and DB
    */
-  async updateSyncState(deviceId, userId, syncData) {
+  async updateSyncState(deviceId: string, userId: string, syncData: SyncData): Promise<SyncData & { lastSyncAt: string }> {
     const key = `sync:state:${deviceId}:${userId}`;
     const data = {
       ...syncData,
@@ -254,13 +284,13 @@ export class SyncStateCache {
   /**
    * Get sync state, checking cache first
    */
-  async getSyncState(deviceId, userId) {
+  async getSyncState(deviceId: string, userId: string): Promise<SyncData | null> {
     const key = `sync:state:${deviceId}:${userId}`;
 
     const cached = await this.redis.get(key);
     if (cached) {
       cacheHits.inc({ cache_type: 'sync_state' });
-      return JSON.parse(cached);
+      return JSON.parse(cached) as SyncData;
     }
 
     cacheMisses.inc({ cache_type: 'sync_state' });
@@ -272,7 +302,7 @@ export class SyncStateCache {
     );
 
     if (result.rows[0]) {
-      const data = {
+      const data: SyncData = {
         lastSyncAt: result.rows[0].last_sync_at,
         cursor: result.rows[0].sync_cursor,
       };
@@ -284,10 +314,18 @@ export class SyncStateCache {
   }
 }
 
+export interface Caches {
+  fileMetadata: FileMetadataCache;
+  storageQuota: StorageQuotaCache;
+  chunkExists: ChunkExistsCache;
+  syncState: SyncStateCache;
+  general: CacheAside;
+}
+
 /**
  * Factory function to create all cache instances
  */
-export function createCaches(redis, pool) {
+export function createCaches(redis: Redis, pool: Pool): Caches {
   return {
     fileMetadata: new FileMetadataCache(redis, pool),
     storageQuota: new StorageQuotaCache(redis, pool),

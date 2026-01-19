@@ -4,17 +4,18 @@
   "description": "Scalable API backend with gateway, load balancer, and API servers",
   "type": "module",
   "scripts": {
-    "dev:gateway": "node --watch gateway/src/index.js",
-    "dev:lb": "node --watch load-balancer/src/index.js",
-    "dev:server1": "PORT=3001 INSTANCE_ID=api-1 node --watch api-server/src/index.js",
-    "dev:server2": "PORT=3002 INSTANCE_ID=api-2 node --watch api-server/src/index.js",
-    "dev:server3": "PORT=3003 INSTANCE_ID=api-3 node --watch api-server/src/index.js",
+    "dev:gateway": "tsx watch gateway/src/index.ts",
+    "dev:lb": "tsx watch load-balancer/src/index.ts",
+    "dev:server1": "PORT=3001 INSTANCE_ID=api-1 tsx watch api-server/src/index.ts",
+    "dev:server2": "PORT=3002 INSTANCE_ID=api-2 tsx watch api-server/src/index.ts",
+    "dev:server3": "PORT=3003 INSTANCE_ID=api-3 tsx watch api-server/src/index.ts",
     "dev:all": "concurrently \"npm run dev:gateway\" \"npm run dev:lb\" \"npm run dev:server1\" \"npm run dev:server2\" \"npm run dev:server3\"",
-    "start:gateway": "node gateway/src/index.js",
-    "start:lb": "node load-balancer/src/index.js",
-    "start:server": "node api-server/src/index.js",
+    "start:gateway": "tsx gateway/src/index.ts",
+    "start:lb": "tsx load-balancer/src/index.ts",
+    "start:server": "tsx api-server/src/index.ts",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "amqplib": "^0.10.9",
@@ -31,9 +32,18 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/compression": "^1.7.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.6",
+    "@types/uuid": "^10.0.0",
     "concurrently": "^8.2.2",
     "eslint": "^8.56.0",
-    "prettier": "^3.1.1"
+    "prettier": "^3.1.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
   },
   "engines": {
     "node": ">=18.0.0"

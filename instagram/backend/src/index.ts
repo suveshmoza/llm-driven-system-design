@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import session from 'express-session';
 import RedisStore from 'connect-redis';
 import cors from 'cors';
@@ -6,9 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import config from './config/index.js';
 import redis from './services/redis.js';
 import { ensureBucket } from './services/storage.js';
-import logger, { logRequest, logError } from './services/logger.js';
-import { register, metricsMiddleware, httpRequestDuration } from './services/metrics.js';
-import { attachUserContext } from './middleware/auth.js';
+import logger, { logRequest, logError, ExtendedRequest } from './services/logger.js';
+import { register, metricsMiddleware } from './services/metrics.js';
+import { attachUserContext, AuthenticatedRequest } from './middleware/auth.js';
 import { generalRateLimiter } from './services/rateLimiter.js';
 import pool from './services/db.js';
 import { initCassandra, closeCassandra, isCassandraConnected } from './services/cassandra.js';
@@ -41,14 +41,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Request ID / Trace ID middleware
-app.use((req, res, next) => {
-  req.traceId = req.headers['x-trace-id'] || uuidv4();
+app.use((req: ExtendedRequest, res: Response, next: NextFunction) => {
+  req.traceId = (req.headers['x-trace-id'] as string) || uuidv4();
   res.setHeader('x-trace-id', req.traceId);
   next();
 });
 
 // Request timing and logging middleware
-app.use((req, res, next) => {
+app.use((req: ExtendedRequest, res: Response, next: NextFunction) => {
   const startTime = Date.now();
 
   res.on('finish', () => {
@@ -84,7 +84,7 @@ app.use(
 );
 
 // Attach user context for logging
-app.use(attachUserContext);
+app.use(attachUserContext as express.RequestHandler);
 
 // General rate limiter (applies to all routes)
 app.use('/api/', generalRateLimiter);
@@ -93,16 +93,37 @@ app.use('/api/', generalRateLimiter);
 // Health and Metrics Endpoints
 // ============================================
 
+interface HealthResponse {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  version?: string;
+  uptime?: number;
+  components?: Record<string, ComponentHealth>;
+  memory?: {
+    heapUsedMB: number;
+    heapTotalMB: number;
+    rssMB: number;
+  };
+}
+
+interface ComponentHealth {
+  status: 'ok' | 'error' | 'unavailable';
+  latencyMs?: number;
+  error?: string;
+  note?: string;
+}
+
 /**
  * Prometheus metrics endpoint
  * Exposes all collected metrics in Prometheus format
  */
-app.get('/metrics', async (req, res) => {
+app.get('/metrics', async (_req: Request, res: Response) => {
   try {
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());
   } catch (error) {
-    logError(error, { endpoint: '/metrics' });
+    const err = error as Error;
+    logError(err, { endpoint: '/metrics' });
     res.status(500).json({ error: 'Failed to collect metrics' });
   }
 });
@@ -110,7 +131,7 @@ app.get('/metrics', async (req, res) => {
 /**
  * Simple health check - returns 200 if server is running
  */
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -118,8 +139,8 @@ app.get('/api/health', (req, res) => {
  * Comprehensive health check - checks all dependencies
  * Returns detailed status of each component
  */
-app.get('/api/health/detailed', async (req, res) => {
-  const health = {
+app.get('/api/health/detailed', async (_req: Request, res: Response) => {
+  const health: HealthResponse = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
@@ -131,15 +152,16 @@ app.get('/api/health/detailed', async (req, res) => {
   try {
     const start = Date.now();
     await pool.query('SELECT 1');
-    health.components.database = {
+    health.components!.database = {
       status: 'ok',
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     health.status = 'degraded';
-    health.components.database = {
+    health.components!.database = {
       status: 'error',
-      error: error.message,
+      error: err.message,
     };
   }
 
@@ -147,15 +169,16 @@ app.get('/api/health/detailed', async (req, res) => {
   try {
     const start = Date.now();
     await redis.ping();
-    health.components.redis = {
+    health.components!.redis = {
       status: 'ok',
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     health.status = 'degraded';
-    health.components.redis = {
+    health.components!.redis = {
       status: 'error',
-      error: error.message,
+      error: err.message,
     };
   }
 
@@ -163,26 +186,27 @@ app.get('/api/health/detailed', async (req, res) => {
   try {
     const start = Date.now();
     await ensureBucket();
-    health.components.storage = {
+    health.components!.storage = {
       status: 'ok',
       latencyMs: Date.now() - start,
     };
   } catch (error) {
+    const err = error as Error;
     health.status = 'degraded';
-    health.components.storage = {
+    health.components!.storage = {
       status: 'error',
-      error: error.message,
+      error: err.message,
     };
   }
 
   // Check Cassandra (for Direct Messages)
-  health.components.cassandra = {
+  health.components!.cassandra = {
     status: isCassandraConnected() ? 'ok' : 'unavailable',
     note: 'Direct messaging service',
   };
 
   // Check RabbitMQ (for async image processing)
-  health.components.rabbitmq = {
+  health.components!.rabbitmq = {
     status: isQueueReady() ? 'ok' : 'unavailable',
     note: 'Async image processing',
   };
@@ -202,20 +226,21 @@ app.get('/api/health/detailed', async (req, res) => {
 /**
  * Liveness probe - returns 200 if process is alive
  */
-app.get('/api/health/live', (req, res) => {
+app.get('/api/health/live', (_req: Request, res: Response) => {
   res.json({ status: 'alive' });
 });
 
 /**
  * Readiness probe - returns 200 if ready to accept traffic
  */
-app.get('/api/health/ready', async (req, res) => {
+app.get('/api/health/ready', async (_req: Request, res: Response) => {
   try {
     // Quick checks that we can handle traffic
     await Promise.all([pool.query('SELECT 1'), redis.ping()]);
     res.json({ status: 'ready' });
   } catch (error) {
-    res.status(503).json({ status: 'not_ready', error: error.message });
+    const err = error as Error;
+    res.status(503).json({ status: 'not_ready', error: err.message });
   }
 });
 
@@ -235,69 +260,82 @@ app.use('/api/v1/messages', messageRoutes);
 // Error Handling
 // ============================================
 
+interface HttpError extends Error {
+  statusCode?: number;
+}
+
 // 404 handler
-app.use((req, res) => {
+app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
 // Global error handler
-app.use((err, req, res, next) => {
+const errorHandler: ErrorRequestHandler = (err: HttpError, req: Request, res: Response, _next: NextFunction): void => {
+  const extReq = req as AuthenticatedRequest;
   logError(err, {
-    requestId: req.traceId,
+    requestId: (req as ExtendedRequest).traceId,
     method: req.method,
     path: req.path,
-    userId: req.session?.userId,
+    userId: extReq.session?.userId,
   });
 
   // Handle known error types
   if (err.statusCode) {
-    return res.status(err.statusCode).json({ error: err.message });
+    res.status(err.statusCode).json({ error: err.message });
+    return;
   }
 
   // Handle rate limit errors
   if (err.name === 'RateLimitError') {
-    return res.status(429).json({ error: 'Too many requests' });
+    res.status(429).json({ error: 'Too many requests' });
+    return;
   }
 
   // Default to 500
   res.status(500).json({ error: 'Internal server error' });
-});
+};
+
+app.use(errorHandler);
 
 // ============================================
 // Server Startup
 // ============================================
 
-const startServer = async () => {
+const startServer = async (): Promise<void> => {
   try {
     // Ensure MinIO bucket exists
     await ensureBucket();
 
     // Initialize Cassandra for DMs (non-blocking - DMs are optional)
-    initCassandra().catch((err) => {
+    initCassandra().catch((err: Error) => {
       logger.warn({ error: err.message }, 'Cassandra initialization failed - DMs will be unavailable');
     });
 
     // Initialize RabbitMQ for async image processing (non-blocking)
-    initializeQueue().catch((err) => {
+    initializeQueue().catch((err: Error) => {
       logger.warn({ error: err.message }, 'RabbitMQ initialization failed - posts will not process');
     });
 
     // Start the server
     app.listen(config.port, () => {
-      logger.info({
-        port: config.port,
-        env: config.nodeEnv,
-        pid: process.pid,
-      }, `Instagram API server running on port ${config.port}`);
+      logger.info(
+        {
+          port: config.port,
+          env: config.nodeEnv,
+          pid: process.pid,
+        },
+        `Instagram API server running on port ${config.port}`
+      );
     });
   } catch (error) {
-    logError(error, { context: 'startup' });
+    const err = error as Error;
+    logError(err, { context: 'startup' });
     process.exit(1);
   }
 };
 
 // Graceful shutdown
-const gracefulShutdown = async (signal) => {
+const gracefulShutdown = async (signal: string): Promise<void> => {
   logger.info({ signal }, `Received ${signal}, starting graceful shutdown`);
 
   // Close database pool
@@ -305,7 +343,7 @@ const gracefulShutdown = async (signal) => {
     await pool.end();
     logger.info('Database connections closed');
   } catch (err) {
-    logError(err, { context: 'shutdown', component: 'database' });
+    logError(err as Error, { context: 'shutdown', component: 'database' });
   }
 
   // Close Redis connection
@@ -313,7 +351,7 @@ const gracefulShutdown = async (signal) => {
     await redis.quit();
     logger.info('Redis connection closed');
   } catch (err) {
-    logError(err, { context: 'shutdown', component: 'redis' });
+    logError(err as Error, { context: 'shutdown', component: 'redis' });
   }
 
   // Close Cassandra connection
@@ -321,7 +359,7 @@ const gracefulShutdown = async (signal) => {
     await closeCassandra();
     logger.info('Cassandra connection closed');
   } catch (err) {
-    logError(err, { context: 'shutdown', component: 'cassandra' });
+    logError(err as Error, { context: 'shutdown', component: 'cassandra' });
   }
 
   // Close RabbitMQ connection
@@ -329,7 +367,7 @@ const gracefulShutdown = async (signal) => {
     await closeQueue();
     logger.info('RabbitMQ connection closed');
   } catch (err) {
-    logError(err, { context: 'shutdown', component: 'rabbitmq' });
+    logError(err as Error, { context: 'shutdown', component: 'rabbitmq' });
   }
 
   process.exit(0);

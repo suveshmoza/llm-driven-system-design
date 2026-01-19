@@ -1,11 +1,26 @@
+import { Request, Response } from 'express';
 import { queryWithTenant } from '../services/db.js';
 
+// Collection interface
+interface Collection {
+  id: number;
+  store_id: number;
+  handle: string;
+  title: string;
+  description: string | null;
+  image_url: string | null;
+  created_at: Date;
+  updated_at: Date;
+  product_count?: number;
+  products?: unknown[];
+}
+
 // List collections
-export async function listCollections(req, res) {
+export async function listCollections(req: Request, res: Response): Promise<void> {
   const { storeId } = req;
 
   const result = await queryWithTenant(
-    storeId,
+    storeId!,
     `SELECT c.*,
             (SELECT COUNT(*) FROM collection_products cp WHERE cp.collection_id = c.id) as product_count
      FROM collections c
@@ -16,12 +31,12 @@ export async function listCollections(req, res) {
 }
 
 // Get single collection with products
-export async function getCollection(req, res) {
+export async function getCollection(req: Request, res: Response): Promise<void | Response> {
   const { storeId } = req;
   const { collectionId } = req.params;
 
   const result = await queryWithTenant(
-    storeId,
+    storeId!,
     `SELECT c.*,
             (SELECT json_agg(json_build_object(
               'id', p.id,
@@ -45,7 +60,7 @@ export async function getCollection(req, res) {
 }
 
 // Create collection
-export async function createCollection(req, res) {
+export async function createCollection(req: Request, res: Response): Promise<void | Response> {
   const { storeId } = req;
   const { title, description, handle, image_url, productIds } = req.body;
 
@@ -56,20 +71,20 @@ export async function createCollection(req, res) {
   const collectionHandle = handle || title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
   const result = await queryWithTenant(
-    storeId,
+    storeId!,
     `INSERT INTO collections (store_id, title, description, handle, image_url)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [storeId, title, description || null, collectionHandle, image_url || null]
   );
 
-  const collection = result.rows[0];
+  const collection = result.rows[0] as Collection;
 
   // Add products if provided
-  if (productIds && productIds.length > 0) {
+  if (productIds && Array.isArray(productIds) && productIds.length > 0) {
     for (let i = 0; i < productIds.length; i++) {
       await queryWithTenant(
-        storeId,
+        storeId!,
         `INSERT INTO collection_products (collection_id, product_id, position)
          VALUES ($1, $2, $3)
          ON CONFLICT (collection_id, product_id) DO UPDATE SET position = $3`,
@@ -82,13 +97,13 @@ export async function createCollection(req, res) {
 }
 
 // Update collection
-export async function updateCollection(req, res) {
+export async function updateCollection(req: Request, res: Response): Promise<void> {
   const { storeId } = req;
   const { collectionId } = req.params;
   const { title, description, handle, image_url, productIds } = req.body;
 
-  const updates = [];
-  const values = [];
+  const updates: string[] = [];
+  const values: unknown[] = [];
   let paramCount = 1;
 
   if (title !== undefined) {
@@ -113,17 +128,17 @@ export async function updateCollection(req, res) {
     values.push(collectionId);
 
     await queryWithTenant(
-      storeId,
+      storeId!,
       `UPDATE collections SET ${updates.join(', ')} WHERE id = $${paramCount}`,
       values
     );
   }
 
   // Update products if provided
-  if (productIds !== undefined) {
+  if (productIds !== undefined && Array.isArray(productIds)) {
     // Remove existing
     await queryWithTenant(
-      storeId,
+      storeId!,
       'DELETE FROM collection_products WHERE collection_id = $1',
       [collectionId]
     );
@@ -131,7 +146,7 @@ export async function updateCollection(req, res) {
     // Add new
     for (let i = 0; i < productIds.length; i++) {
       await queryWithTenant(
-        storeId,
+        storeId!,
         `INSERT INTO collection_products (collection_id, product_id, position)
          VALUES ($1, $2, $3)`,
         [collectionId, productIds[i], i]
@@ -141,7 +156,7 @@ export async function updateCollection(req, res) {
 
   // Fetch updated collection
   const result = await queryWithTenant(
-    storeId,
+    storeId!,
     'SELECT * FROM collections WHERE id = $1',
     [collectionId]
   );
@@ -150,12 +165,12 @@ export async function updateCollection(req, res) {
 }
 
 // Delete collection
-export async function deleteCollection(req, res) {
+export async function deleteCollection(req: Request, res: Response): Promise<void | Response> {
   const { storeId } = req;
   const { collectionId } = req.params;
 
   const result = await queryWithTenant(
-    storeId,
+    storeId!,
     'DELETE FROM collections WHERE id = $1 RETURNING id',
     [collectionId]
   );
@@ -170,7 +185,7 @@ export async function deleteCollection(req, res) {
 // === Storefront Routes ===
 
 // List collections (storefront)
-export async function listStorefrontCollections(req, res) {
+export async function listStorefrontCollections(req: Request, res: Response): Promise<void | Response> {
   const { storeId } = req;
 
   if (!storeId) {
@@ -191,7 +206,7 @@ export async function listStorefrontCollections(req, res) {
 }
 
 // Get collection by handle (storefront)
-export async function getStorefrontCollection(req, res) {
+export async function getStorefrontCollection(req: Request, res: Response): Promise<void | Response> {
   const { storeId } = req;
   const { handle } = req.params;
 

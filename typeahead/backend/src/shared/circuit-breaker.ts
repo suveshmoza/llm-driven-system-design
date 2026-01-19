@@ -11,8 +11,27 @@ import CircuitBreaker from 'opossum';
 import logger, { auditLogger } from './logger.js';
 import { circuitBreakerMetrics } from './metrics.js';
 
+// Circuit breaker options interface
+interface CircuitBreakerOptions {
+  timeout?: number;
+  errorThresholdPercentage?: number;
+  resetTimeout?: number;
+  volumeThreshold?: number;
+}
+
+// Circuit status interface
+interface CircuitStatus {
+  state: 'open' | 'half-open' | 'closed';
+  stats: unknown;
+  options: {
+    timeout: number;
+    errorThresholdPercentage: number;
+    resetTimeout: number;
+  };
+}
+
 // Default circuit breaker options
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: CircuitBreakerOptions = {
   timeout: 100, // 100ms timeout (typeahead needs to be fast)
   errorThresholdPercentage: 50, // Open circuit if 50% of requests fail
   resetTimeout: 10000, // Try again after 10 seconds
@@ -20,18 +39,19 @@ const DEFAULT_OPTIONS = {
 };
 
 // Map to store circuit breakers by name
-const circuits = new Map();
+const circuits = new Map<string, CircuitBreaker>();
 
 /**
  * Create or get a circuit breaker for a named operation
- * @param {string} name - Unique name for this circuit
- * @param {Function} action - The async function to wrap
- * @param {Object} options - Circuit breaker options
- * @param {Function} fallback - Fallback function when circuit is open
  */
-export function createCircuitBreaker(name, action, options = {}, fallback = null) {
+export function createCircuitBreaker<T, A extends unknown[]>(
+  name: string,
+  action: (...args: A) => Promise<T>,
+  options: CircuitBreakerOptions = {},
+  fallback: ((...args: A) => Promise<T>) | null = null
+): CircuitBreaker<T, A> {
   if (circuits.has(name)) {
-    return circuits.get(name);
+    return circuits.get(name) as CircuitBreaker<T, A>;
   }
 
   const circuitOptions = {
@@ -46,7 +66,7 @@ export function createCircuitBreaker(name, action, options = {}, fallback = null
     circuitBreakerMetrics.state.set({ circuit_name: name }, 0); // 0 = closed
   });
 
-  breaker.on('failure', (error) => {
+  breaker.on('failure', (error: Error) => {
     logger.warn({
       event: 'circuit_failure',
       circuit: name,
@@ -95,24 +115,24 @@ export function createCircuitBreaker(name, action, options = {}, fallback = null
   circuitBreakerMetrics.state.set({ circuit_name: name }, 0);
 
   circuits.set(name, breaker);
-  return breaker;
+  return breaker as CircuitBreaker<T, A>;
 }
 
 /**
  * Get circuit breaker by name
  */
-export function getCircuitBreaker(name) {
+export function getCircuitBreaker(name: string): CircuitBreaker | undefined {
   return circuits.get(name);
 }
 
 /**
  * Get all circuit breaker statuses
  */
-export function getCircuitStatus() {
-  const status = {};
+export function getCircuitStatus(): Record<string, CircuitStatus> {
+  const status: Record<string, CircuitStatus> = {};
   for (const [name, breaker] of circuits) {
     status[name] = {
-      state: breaker.opened ? 'open' : (breaker.halfOpen ? 'half-open' : 'closed'),
+      state: breaker.opened ? 'open' : breaker.halfOpen ? 'half-open' : 'closed',
       stats: breaker.stats,
       options: {
         timeout: breaker.options.timeout,
@@ -127,7 +147,7 @@ export function getCircuitStatus() {
 /**
  * Reset all circuits (for testing)
  */
-export function resetAllCircuits() {
+export function resetAllCircuits(): void {
   for (const breaker of circuits.values()) {
     breaker.close();
   }
@@ -137,7 +157,10 @@ export function resetAllCircuits() {
  * Create a suggestion service circuit breaker
  * Used to wrap trie queries with circuit breaker protection
  */
-export function createSuggestionCircuitBreaker(suggestionFn, fallbackFn) {
+export function createSuggestionCircuitBreaker<T, A extends unknown[]>(
+  suggestionFn: (...args: A) => Promise<T>,
+  fallbackFn: (...args: A) => Promise<T>
+): CircuitBreaker<T, A> {
   return createCircuitBreaker(
     'suggestion_service',
     suggestionFn,
@@ -155,7 +178,10 @@ export function createSuggestionCircuitBreaker(suggestionFn, fallbackFn) {
  * Create a database circuit breaker
  * Used to wrap PostgreSQL queries
  */
-export function createDatabaseCircuitBreaker(dbFn, fallbackFn) {
+export function createDatabaseCircuitBreaker<T, A extends unknown[]>(
+  dbFn: (...args: A) => Promise<T>,
+  fallbackFn: (...args: A) => Promise<T>
+): CircuitBreaker<T, A> {
   return createCircuitBreaker(
     'database',
     dbFn,
@@ -173,7 +199,10 @@ export function createDatabaseCircuitBreaker(dbFn, fallbackFn) {
  * Create a Redis circuit breaker
  * Used to wrap Redis cache operations
  */
-export function createRedisCircuitBreaker(redisFn, fallbackFn) {
+export function createRedisCircuitBreaker<T, A extends unknown[]>(
+  redisFn: (...args: A) => Promise<T>,
+  fallbackFn: (...args: A) => Promise<T>
+): CircuitBreaker<T, A> {
   return createCircuitBreaker(
     'redis_cache',
     redisFn,

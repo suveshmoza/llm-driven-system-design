@@ -8,6 +8,7 @@
  * - Error rates help identify degradation patterns
  */
 import client from 'prom-client';
+import type { TrieStats } from '../data-structures/trie.js';
 
 // Create a registry for metrics
 const register = new client.Registry();
@@ -22,7 +23,7 @@ client.collectDefaultMetrics({ register });
 export const suggestionLatency = new client.Histogram({
   name: 'typeahead_suggestion_latency_seconds',
   help: 'Latency of suggestion requests in seconds',
-  labelNames: ['endpoint', 'cache_hit', 'status'],
+  labelNames: ['endpoint', 'cache_hit', 'status'] as const,
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0], // 5ms to 1s
   registers: [register],
 });
@@ -34,7 +35,7 @@ export const suggestionLatency = new client.Histogram({
 export const suggestionRequests = new client.Counter({
   name: 'typeahead_suggestion_requests_total',
   help: 'Total suggestion requests',
-  labelNames: ['endpoint', 'status'],
+  labelNames: ['endpoint', 'status'] as const,
   registers: [register],
 });
 
@@ -45,7 +46,7 @@ export const suggestionRequests = new client.Counter({
 export const cacheOperations = new client.Counter({
   name: 'typeahead_cache_operations_total',
   help: 'Total cache operations',
-  labelNames: ['operation', 'result'], // operation: get/set, result: hit/miss
+  labelNames: ['operation', 'result'] as const, // operation: get/set, result: hit/miss
   registers: [register],
 });
 
@@ -56,7 +57,7 @@ export const cacheOperations = new client.Counter({
 export const cacheHitRate = new client.Gauge({
   name: 'typeahead_cache_hit_rate',
   help: 'Cache hit rate (0-1)',
-  labelNames: ['cache_type'],
+  labelNames: ['cache_type'] as const,
   registers: [register],
 });
 
@@ -101,7 +102,7 @@ export const aggregationMetrics = {
   queriesFiltered: new client.Counter({
     name: 'typeahead_queries_filtered_total',
     help: 'Queries filtered out',
-    labelNames: ['reason'], // low_quality, inappropriate, duplicate
+    labelNames: ['reason'] as const, // low_quality, inappropriate, duplicate
     registers: [register],
   }),
 };
@@ -114,19 +115,19 @@ export const circuitBreakerMetrics = {
   state: new client.Gauge({
     name: 'typeahead_circuit_breaker_state',
     help: 'Circuit breaker state (0=closed, 1=half-open, 2=open)',
-    labelNames: ['circuit_name'],
+    labelNames: ['circuit_name'] as const,
     registers: [register],
   }),
   failures: new client.Counter({
     name: 'typeahead_circuit_breaker_failures_total',
     help: 'Total circuit breaker failures',
-    labelNames: ['circuit_name'],
+    labelNames: ['circuit_name'] as const,
     registers: [register],
   }),
   fallbacks: new client.Counter({
     name: 'typeahead_circuit_breaker_fallbacks_total',
     help: 'Total circuit breaker fallback invocations',
-    labelNames: ['circuit_name'],
+    labelNames: ['circuit_name'] as const,
     registers: [register],
   }),
 };
@@ -139,13 +140,13 @@ export const rateLimitMetrics = {
   hits: new client.Counter({
     name: 'typeahead_rate_limit_hits_total',
     help: 'Total rate limit hits',
-    labelNames: ['endpoint'],
+    labelNames: ['endpoint'] as const,
     registers: [register],
   }),
   allowed: new client.Counter({
     name: 'typeahead_rate_limit_allowed_total',
     help: 'Total requests allowed through rate limiter',
-    labelNames: ['endpoint'],
+    labelNames: ['endpoint'] as const,
     registers: [register],
   }),
 };
@@ -158,13 +159,13 @@ export const idempotencyMetrics = {
   duplicates: new client.Counter({
     name: 'typeahead_idempotency_duplicates_total',
     help: 'Total duplicate requests detected',
-    labelNames: ['operation'],
+    labelNames: ['operation'] as const,
     registers: [register],
   }),
   processed: new client.Counter({
     name: 'typeahead_idempotency_processed_total',
     help: 'Total requests processed (non-duplicates)',
-    labelNames: ['operation'],
+    labelNames: ['operation'] as const,
     registers: [register],
   }),
 };
@@ -191,7 +192,7 @@ export const queryAnalytics = {
 /**
  * Update trie metrics from trie stats
  */
-export function updateTrieMetrics(stats) {
+export function updateTrieMetrics(stats: TrieStats | null): void {
   if (stats) {
     trieMetrics.phraseCount.set(stats.phraseCount || 0);
     trieMetrics.nodeCount.set(stats.nodeCount || 0);
@@ -202,7 +203,7 @@ export function updateTrieMetrics(stats) {
 /**
  * Update aggregation buffer size
  */
-export function updateAggregationMetrics(bufferSize) {
+export function updateAggregationMetrics(bufferSize: number): void {
   aggregationMetrics.bufferSize.set(bufferSize);
 }
 
@@ -212,19 +213,19 @@ export function updateAggregationMetrics(bufferSize) {
 let cacheHits = 0;
 let cacheMisses = 0;
 
-export function recordCacheHit() {
+export function recordCacheHit(): void {
   cacheHits++;
   cacheOperations.inc({ operation: 'get', result: 'hit' });
   updateCacheHitRate();
 }
 
-export function recordCacheMiss() {
+export function recordCacheMiss(): void {
   cacheMisses++;
   cacheOperations.inc({ operation: 'get', result: 'miss' });
   updateCacheHitRate();
 }
 
-function updateCacheHitRate() {
+function updateCacheHitRate(): void {
   const total = cacheHits + cacheMisses;
   if (total > 0) {
     cacheHitRate.set({ cache_type: 'redis' }, cacheHits / total);
@@ -234,14 +235,14 @@ function updateCacheHitRate() {
 /**
  * Get metrics in Prometheus format
  */
-export async function getMetrics() {
+export async function getMetrics(): Promise<string> {
   return register.metrics();
 }
 
 /**
  * Get content type for metrics endpoint
  */
-export function getMetricsContentType() {
+export function getMetricsContentType(): string {
   return register.contentType;
 }
 

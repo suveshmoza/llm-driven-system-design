@@ -6,10 +6,11 @@
  * key SLIs (sync latency, error rates, cache hit rates) to ensure service health.
  */
 
-import client from 'prom-client';
+import client, { Registry, Histogram, Counter, Gauge } from 'prom-client';
+import type { Request, Response, NextFunction } from 'express';
 
 // Create a custom registry to avoid default metrics conflicts
-export const registry = new client.Registry();
+export const registry: Registry = new client.Registry();
 
 // Add default Node.js metrics (memory, CPU, event loop lag)
 client.collectDefaultMetrics({ register: registry });
@@ -18,18 +19,18 @@ client.collectDefaultMetrics({ register: registry });
 // HTTP Request Metrics
 // =============================================================================
 
-export const httpRequestDuration = new client.Histogram({
+export const httpRequestDuration: Histogram<string> = new client.Histogram({
   name: 'icloud_http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
-  labelNames: ['method', 'route', 'status_code'],
+  labelNames: ['method', 'route', 'status_code'] as const,
   buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10],
   registers: [registry],
 });
 
-export const httpRequestsTotal = new client.Counter({
+export const httpRequestsTotal: Counter<string> = new client.Counter({
   name: 'icloud_http_requests_total',
   help: 'Total number of HTTP requests',
-  labelNames: ['method', 'route', 'status_code'],
+  labelNames: ['method', 'route', 'status_code'] as const,
   registers: [registry],
 });
 
@@ -37,25 +38,25 @@ export const httpRequestsTotal = new client.Counter({
 // Sync Metrics
 // =============================================================================
 
-export const syncDuration = new client.Histogram({
+export const syncDuration: Histogram<string> = new client.Histogram({
   name: 'icloud_sync_duration_seconds',
   help: 'Duration of sync operations in seconds',
-  labelNames: ['operation', 'result'],
+  labelNames: ['operation', 'result'] as const,
   buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
   registers: [registry],
 });
 
-export const syncOperationsTotal = new client.Counter({
+export const syncOperationsTotal: Counter<string> = new client.Counter({
   name: 'icloud_sync_operations_total',
   help: 'Total number of sync operations',
-  labelNames: ['operation', 'result'],
+  labelNames: ['operation', 'result'] as const,
   registers: [registry],
 });
 
-export const conflictsTotal = new client.Counter({
+export const conflictsTotal: Counter<string> = new client.Counter({
   name: 'icloud_conflicts_total',
   help: 'Total number of sync conflicts detected',
-  labelNames: ['conflict_type', 'resolution'],
+  labelNames: ['conflict_type', 'resolution'] as const,
   registers: [registry],
 });
 
@@ -63,27 +64,27 @@ export const conflictsTotal = new client.Counter({
 // Storage Metrics
 // =============================================================================
 
-export const chunkOperationDuration = new client.Histogram({
+export const chunkOperationDuration: Histogram<string> = new client.Histogram({
   name: 'icloud_chunk_operation_duration_seconds',
   help: 'Duration of chunk storage operations',
-  labelNames: ['operation'],
+  labelNames: ['operation'] as const,
   buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5],
   registers: [registry],
 });
 
-export const dedupHitsTotal = new client.Counter({
+export const dedupHitsTotal: Counter<string> = new client.Counter({
   name: 'icloud_dedup_hits_total',
   help: 'Number of chunks skipped due to deduplication',
   registers: [registry],
 });
 
-export const bytesUploaded = new client.Counter({
+export const bytesUploaded: Counter<string> = new client.Counter({
   name: 'icloud_bytes_uploaded_total',
   help: 'Total bytes uploaded to storage',
   registers: [registry],
 });
 
-export const bytesDownloaded = new client.Counter({
+export const bytesDownloaded: Counter<string> = new client.Counter({
   name: 'icloud_bytes_downloaded_total',
   help: 'Total bytes downloaded from storage',
   registers: [registry],
@@ -93,17 +94,17 @@ export const bytesDownloaded = new client.Counter({
 // Cache Metrics
 // =============================================================================
 
-export const cacheHits = new client.Counter({
+export const cacheHits: Counter<string> = new client.Counter({
   name: 'icloud_cache_hits_total',
   help: 'Number of cache hits',
-  labelNames: ['cache_type'],
+  labelNames: ['cache_type'] as const,
   registers: [registry],
 });
 
-export const cacheMisses = new client.Counter({
+export const cacheMisses: Counter<string> = new client.Counter({
   name: 'icloud_cache_misses_total',
   help: 'Number of cache misses',
-  labelNames: ['cache_type'],
+  labelNames: ['cache_type'] as const,
   registers: [registry],
 });
 
@@ -111,17 +112,17 @@ export const cacheMisses = new client.Counter({
 // Circuit Breaker Metrics
 // =============================================================================
 
-export const circuitBreakerState = new client.Gauge({
+export const circuitBreakerState: Gauge<string> = new client.Gauge({
   name: 'icloud_circuit_breaker_state',
   help: 'Current state of circuit breakers (0=closed, 1=open, 2=half-open)',
-  labelNames: ['breaker_name'],
+  labelNames: ['breaker_name'] as const,
   registers: [registry],
 });
 
-export const circuitBreakerFailures = new client.Counter({
+export const circuitBreakerFailures: Counter<string> = new client.Counter({
   name: 'icloud_circuit_breaker_failures_total',
   help: 'Total failures that triggered circuit breaker',
-  labelNames: ['breaker_name'],
+  labelNames: ['breaker_name'] as const,
   registers: [registry],
 });
 
@@ -129,7 +130,7 @@ export const circuitBreakerFailures = new client.Counter({
 // WebSocket Metrics
 // =============================================================================
 
-export const websocketConnections = new client.Gauge({
+export const websocketConnections: Gauge<string> = new client.Gauge({
   name: 'icloud_websocket_connections',
   help: 'Current number of active WebSocket connections',
   registers: [registry],
@@ -142,7 +143,7 @@ export const websocketConnections = new client.Gauge({
 /**
  * Middleware to track HTTP request metrics
  */
-export function metricsMiddleware(req, res, next) {
+export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
 
   res.on('finish', () => {
@@ -164,12 +165,12 @@ export function metricsMiddleware(req, res, next) {
 /**
  * Metrics endpoint handler for Prometheus scraping
  */
-export async function metricsHandler(req, res) {
+export async function metricsHandler(_req: Request, res: Response): Promise<void> {
   try {
     res.set('Content-Type', registry.contentType);
     res.end(await registry.metrics());
   } catch (error) {
-    res.status(500).end(error.message);
+    res.status(500).end((error as Error).message);
   }
 }
 
@@ -177,13 +178,17 @@ export async function metricsHandler(req, res) {
 // Helper Functions
 // =============================================================================
 
+export interface TimerResult {
+  end: (extraLabels?: Record<string, string>) => number;
+}
+
 /**
  * Timer helper for measuring operation duration
  */
-export function startTimer(histogram, labels = {}) {
+export function startTimer(histogram: Histogram<string>, labels: Record<string, string> = {}): TimerResult {
   const startTime = Date.now();
   return {
-    end: (extraLabels = {}) => {
+    end: (extraLabels: Record<string, string> = {}): number => {
       const duration = (Date.now() - startTime) / 1000;
       histogram.observe({ ...labels, ...extraLabels }, duration);
       return duration;

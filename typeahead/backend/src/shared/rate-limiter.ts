@@ -8,17 +8,31 @@
  * - Maintains low latency for legitimate users
  */
 import rateLimit from 'express-rate-limit';
+import type { Request, Response, NextFunction } from 'express';
+import type Redis from 'ioredis';
 import logger, { auditLogger } from './logger.js';
 import { rateLimitMetrics } from './metrics.js';
+
+interface RateLimiterOptions {
+  windowMs?: number;
+  max?: number;
+  keyPrefix?: string;
+}
+
+interface RateLimitInfo {
+  current: number;
+  max: number;
+  windowMs: number;
+}
 
 /**
  * Key generator for rate limiting
  * Uses X-Forwarded-For header or IP address
  */
-function getClientIdentifier(req) {
+function getClientIdentifier(req: Request): string {
   return (
-    req.headers['x-user-id'] ||
-    req.headers['x-forwarded-for']?.split(',')[0] ||
+    (req.headers['x-user-id'] as string) ||
+    (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
     req.ip ||
     'anonymous'
   );
@@ -34,7 +48,7 @@ export const suggestionRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req, res, next, options) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
     const clientId = getClientIdentifier(req);
 
     // Log rate limit hit
@@ -47,15 +61,7 @@ export const suggestionRateLimiter = rateLimit({
       retryAfter: Math.ceil(options.windowMs / 1000),
     });
   },
-  onLimitReached: (req, res, options) => {
-    logger.warn({
-      event: 'rate_limit_reached',
-      clientId: getClientIdentifier(req),
-      endpoint: 'suggestions',
-      limit: options.max,
-    });
-  },
-  skip: (req) => {
+  skip: () => {
     // Count allowed requests
     rateLimitMetrics.allowed.inc({ endpoint: 'suggestions' });
     return false;
@@ -72,7 +78,7 @@ export const logRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req, res, next, options) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
     const clientId = getClientIdentifier(req);
 
     auditLogger.logRateLimitViolation(clientId, 'log', options.current, options.max);
@@ -84,7 +90,7 @@ export const logRateLimiter = rateLimit({
       retryAfter: Math.ceil(options.windowMs / 1000),
     });
   },
-  skip: (req) => {
+  skip: () => {
     rateLimitMetrics.allowed.inc({ endpoint: 'log' });
     return false;
   },
@@ -100,7 +106,7 @@ export const adminRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req, res, next, options) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
     const clientId = getClientIdentifier(req);
 
     auditLogger.logRateLimitViolation(clientId, 'admin', options.current, options.max);
@@ -112,7 +118,7 @@ export const adminRateLimiter = rateLimit({
       retryAfter: Math.ceil(options.windowMs / 1000),
     });
   },
-  skip: (req) => {
+  skip: () => {
     rateLimitMetrics.allowed.inc({ endpoint: 'admin' });
     return false;
   },
@@ -128,7 +134,7 @@ export const globalRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIdentifier,
-  handler: (req, res, next, options) => {
+  handler: (req: Request, res: Response, _next: NextFunction, options: RateLimitInfo) => {
     const clientId = getClientIdentifier(req);
 
     auditLogger.logRateLimitViolation(clientId, 'global', options.current, options.max);
@@ -140,7 +146,7 @@ export const globalRateLimiter = rateLimit({
       retryAfter: Math.ceil(options.windowMs / 1000),
     });
   },
-  skip: (req) => {
+  skip: (req: Request) => {
     // Skip health checks and metrics
     if (req.path === '/health' || req.path === '/metrics') {
       return true;
@@ -154,14 +160,13 @@ export const globalRateLimiter = rateLimit({
  * Create a Redis-backed rate limiter (for distributed deployments)
  * Requires redis client to be passed
  */
-export function createRedisRateLimiter(redis, options = {}) {
-  const {
-    windowMs = 1000,
-    max = 20,
-    keyPrefix = 'rl',
-  } = options;
+export function createRedisRateLimiter(
+  redis: Redis,
+  options: RateLimiterOptions = {}
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
+  const { windowMs = 1000, max = 20, keyPrefix = 'rl' } = options;
 
-  return async (req, res, next) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const clientId = getClientIdentifier(req);
     const key = `${keyPrefix}:${clientId}`;
 
@@ -177,13 +182,14 @@ export function createRedisRateLimiter(redis, options = {}) {
         auditLogger.logRateLimitViolation(clientId, keyPrefix, current, max);
         rateLimitMetrics.hits.inc({ endpoint: keyPrefix });
 
-        return res.status(429).json({
+        res.status(429).json({
           error: 'Too Many Requests',
           message: 'Rate limit exceeded.',
           retryAfter: Math.ceil(windowMs / 1000),
           current,
           limit: max,
         });
+        return;
       }
 
       rateLimitMetrics.allowed.inc({ endpoint: keyPrefix });
@@ -192,7 +198,7 @@ export function createRedisRateLimiter(redis, options = {}) {
       // If Redis fails, allow the request (fail open)
       logger.error({
         event: 'rate_limit_error',
-        error: error.message,
+        error: (error as Error).message,
         clientId,
       });
       next();

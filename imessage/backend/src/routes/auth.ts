@@ -1,19 +1,24 @@
-import { Router } from 'express';
+import { Router, Response } from 'express';
 import { register, login, logout, getUserDevices, deactivateDevice } from '../services/auth.js';
-import { authenticateRequest } from '../middleware/auth.js';
-import { loginRateLimiter, deviceRegistrationRateLimiter } from '../shared/rate-limiter.js';
-import { createLogger } from '../shared/logger.js';
+import { authenticateRequest, AuthenticatedRequest } from '../middleware/auth.js';
+import { loginRateLimiter } from '../shared/rate-limiter.js';
+import { createLogger, LoggedRequest } from '../shared/logger.js';
 import { authAttempts } from '../shared/metrics.js';
 
 const router = Router();
 const logger = createLogger('auth-routes');
 
-router.post('/register', async (req, res) => {
+interface DbError extends Error {
+  code?: string;
+}
+
+router.post('/register', async (req: LoggedRequest, res: Response): Promise<void> => {
   try {
     const { username, email, password, displayName, deviceName, deviceType } = req.body;
 
     if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Username, email, and password are required' });
+      res.status(400).json({ error: 'Username, email, and password are required' });
+      return;
     }
 
     const result = await register(username, email, password, displayName, deviceName, deviceType);
@@ -24,20 +29,23 @@ router.post('/register', async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     logger.error({ error }, 'Registration error');
-    if (error.code === '23505') {
-      return res.status(409).json({ error: 'Username or email already exists' });
+    const dbError = error as DbError;
+    if (dbError.code === '23505') {
+      res.status(409).json({ error: 'Username or email already exists' });
+      return;
     }
     res.status(500).json({ error: 'Registration failed' });
   }
 });
 
 // Rate limited: 5 attempts per 15 minutes per IP
-router.post('/login', loginRateLimiter, async (req, res) => {
+router.post('/login', loginRateLimiter, async (req: LoggedRequest, res: Response): Promise<void> => {
   try {
     const { usernameOrEmail, password, deviceName, deviceType } = req.body;
 
     if (!usernameOrEmail || !password) {
-      return res.status(400).json({ error: 'Username/email and password are required' });
+      res.status(400).json({ error: 'Username/email and password are required' });
+      return;
     }
 
     const result = await login(usernameOrEmail, password, deviceName, deviceType);
@@ -47,17 +55,18 @@ router.post('/login', loginRateLimiter, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    if (error.message === 'Invalid credentials') {
-      logger.warn({ usernameOrEmail, ip: req.ip }, 'Failed login attempt');
+    if ((error as Error).message === 'Invalid credentials') {
+      logger.warn({ usernameOrEmail: req.body.usernameOrEmail, ip: req.ip }, 'Failed login attempt');
       authAttempts.inc({ result: 'failure' });
-      return res.status(401).json({ error: 'Invalid credentials' });
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
     }
     logger.error({ error }, 'Login error');
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
-router.post('/logout', authenticateRequest, async (req, res) => {
+router.post('/logout', authenticateRequest as any, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const token = req.headers.authorization?.substring(7);
     await logout(token);
@@ -71,14 +80,14 @@ router.post('/logout', authenticateRequest, async (req, res) => {
   }
 });
 
-router.get('/me', authenticateRequest, async (req, res) => {
+router.get('/me', authenticateRequest as any, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   res.json({
     user: req.user,
     deviceId: req.deviceId,
   });
 });
 
-router.get('/devices', authenticateRequest, async (req, res) => {
+router.get('/devices', authenticateRequest as any, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const devices = await getUserDevices(req.user.id);
     res.json({ devices });
@@ -88,7 +97,7 @@ router.get('/devices', authenticateRequest, async (req, res) => {
   }
 });
 
-router.delete('/devices/:deviceId', authenticateRequest, async (req, res) => {
+router.delete('/devices/:deviceId', authenticateRequest as any, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     await deactivateDevice(req.user.id, req.params.deviceId);
 

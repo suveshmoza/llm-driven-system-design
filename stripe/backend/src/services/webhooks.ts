@@ -1,11 +1,51 @@
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { query } from '../db/pool.js';
-import { Queue, Worker } from 'bullmq';
+import { Queue, Worker, Job } from 'bullmq';
 import redis from '../db/redis.js';
 
+// Interfaces
+export interface WebhookEvent {
+  id: string;
+  type: string;
+  data: Record<string, unknown>;
+  created: number;
+  api_version: string;
+  livemode: boolean;
+}
+
+export interface WebhookJobData {
+  eventId: string;
+  merchantId: string;
+  url: string;
+  event: WebhookEvent;
+  signature: string;
+}
+
+export interface WebhookDeliveryResult {
+  success: boolean;
+  status: number;
+  statusText?: string;
+  error?: string;
+}
+
+export interface WebhookEventRow {
+  id: string;
+  type: string;
+  data: WebhookEvent;
+  status: string;
+  attempts: number;
+  last_error: string | null;
+  delivered_at: Date | null;
+  created_at: Date;
+}
+
+export interface RetryWebhookResult {
+  queued: boolean;
+}
+
 // BullMQ queue for webhook delivery
-const webhookQueue = new Queue('webhook_delivery', {
+const webhookQueue = new Queue<WebhookJobData>('webhook_delivery', {
   connection: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379'),
@@ -21,11 +61,18 @@ const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000];
 /**
  * Create and queue a webhook event
  */
-export async function sendWebhook(merchantId, eventType, data) {
+export async function sendWebhook(
+  merchantId: string,
+  eventType: string,
+  data: Record<string, unknown>
+): Promise<WebhookEvent | null> {
   // Get merchant webhook configuration
-  const merchantResult = await query(`
+  const merchantResult = await query<{ webhook_url: string | null; webhook_secret: string | null }>(
+    `
     SELECT webhook_url, webhook_secret FROM merchants WHERE id = $1
-  `, [merchantId]);
+  `,
+    [merchantId]
+  );
 
   if (merchantResult.rows.length === 0) {
     console.log(`Merchant ${merchantId} not found for webhook`);
@@ -41,7 +88,7 @@ export async function sendWebhook(merchantId, eventType, data) {
 
   // Create event record
   const eventId = uuidv4();
-  const event = {
+  const event: WebhookEvent = {
     id: `evt_${eventId.replace(/-/g, '')}`,
     type: eventType,
     data,
@@ -51,34 +98,44 @@ export async function sendWebhook(merchantId, eventType, data) {
   };
 
   // Store event in database
-  await query(`
+  await query(
+    `
     INSERT INTO webhook_events (id, merchant_id, type, data)
     VALUES ($1, $2, $3, $4)
-  `, [eventId, merchantId, eventType, JSON.stringify(event)]);
+  `,
+    [eventId, merchantId, eventType, JSON.stringify(event)]
+  );
 
   // Create signature
   const signature = signPayload(event, merchant.webhook_secret);
 
   // Queue for delivery
-  await webhookQueue.add('deliver', {
-    eventId,
-    merchantId,
-    url: merchant.webhook_url,
-    event,
-    signature,
-  }, {
-    attempts: MAX_ATTEMPTS,
-    backoff: {
-      type: 'exponential',
-      delay: 1000,
+  await webhookQueue.add(
+    'deliver',
+    {
+      eventId,
+      merchantId,
+      url: merchant.webhook_url,
+      event,
+      signature,
     },
-  });
+    {
+      attempts: MAX_ATTEMPTS,
+      backoff: {
+        type: 'exponential',
+        delay: 1000,
+      },
+    }
+  );
 
   // Create delivery record
-  await query(`
+  await query(
+    `
     INSERT INTO webhook_deliveries (event_id, merchant_id, url, status)
     VALUES ($1, $2, $3, 'pending')
-  `, [eventId, merchantId, merchant.webhook_url]);
+  `,
+    [eventId, merchantId, merchant.webhook_url]
+  );
 
   return event;
 }
@@ -87,7 +144,7 @@ export async function sendWebhook(merchantId, eventType, data) {
  * Sign webhook payload
  * Format: t=timestamp,v1=signature
  */
-export function signPayload(payload, secret) {
+export function signPayload(payload: unknown, secret: string | null): string {
   const timestamp = Math.floor(Date.now() / 1000);
   const payloadString = JSON.stringify(payload);
   const signedPayload = `${timestamp}.${payloadString}`;
@@ -103,10 +160,15 @@ export function signPayload(payload, secret) {
 /**
  * Verify webhook signature
  */
-export function verifySignature(payload, signature, secret, tolerance = 300) {
+export function verifySignature(
+  payload: unknown,
+  signature: string,
+  secret: string,
+  tolerance: number = 300
+): boolean {
   const parts = signature.split(',');
-  const timestampPart = parts.find(p => p.startsWith('t='));
-  const signaturePart = parts.find(p => p.startsWith('v1='));
+  const timestampPart = parts.find((p) => p.startsWith('t='));
+  const signaturePart = parts.find((p) => p.startsWith('v1='));
 
   if (!timestampPart || !signaturePart) {
     return false;
@@ -124,21 +186,19 @@ export function verifySignature(payload, signature, secret, tolerance = 300) {
   // Reconstruct and verify signature
   const payloadString = JSON.stringify(payload);
   const signedPayload = `${timestamp}.${payloadString}`;
-  const expectedSignature = crypto
-    .createHmac('sha256', secret)
-    .update(signedPayload)
-    .digest('hex');
+  const expectedSignature = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
 
-  return crypto.timingSafeEqual(
-    Buffer.from(providedSignature),
-    Buffer.from(expectedSignature)
-  );
+  return crypto.timingSafeEqual(Buffer.from(providedSignature), Buffer.from(expectedSignature));
 }
 
 /**
  * Attempt to deliver a webhook
  */
-export async function deliverWebhook(url, event, signature) {
+export async function deliverWebhook(
+  url: string,
+  event: WebhookEvent,
+  signature: string
+): Promise<WebhookDeliveryResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
 
@@ -166,7 +226,7 @@ export async function deliverWebhook(url, event, signature) {
     return {
       success: false,
       status: 0,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 }
@@ -174,59 +234,68 @@ export async function deliverWebhook(url, event, signature) {
 /**
  * Start webhook delivery worker
  */
-export function startWebhookWorker() {
-  const worker = new Worker('webhook_delivery', async (job) => {
-    const { eventId, merchantId, url, event, signature } = job.data;
+export function startWebhookWorker(): Worker<WebhookJobData> {
+  const worker = new Worker<WebhookJobData>(
+    'webhook_delivery',
+    async (job: Job<WebhookJobData>) => {
+      const { eventId, merchantId, url, event, signature } = job.data;
 
-    console.log(`Delivering webhook ${event.id} to ${url} (attempt ${job.attemptsMade + 1})`);
+      console.log(`Delivering webhook ${event.id} to ${url} (attempt ${job.attemptsMade + 1})`);
 
-    const result = await deliverWebhook(url, event, signature);
+      const result = await deliverWebhook(url, event, signature);
 
-    // Update delivery record
-    if (result.success) {
-      await query(`
+      // Update delivery record
+      if (result.success) {
+        await query(
+          `
         UPDATE webhook_deliveries
         SET status = 'delivered', response_status = $2, delivered_at = NOW(), attempts = $3
         WHERE event_id = $1
-      `, [eventId, result.status, job.attemptsMade + 1]);
+      `,
+          [eventId, result.status, job.attemptsMade + 1]
+        );
 
-      console.log(`Webhook ${event.id} delivered successfully`);
-    } else {
-      const nextRetry = job.attemptsMade < MAX_ATTEMPTS - 1
-        ? new Date(Date.now() + BACKOFF_DELAYS[job.attemptsMade])
-        : null;
+        console.log(`Webhook ${event.id} delivered successfully`);
+      } else {
+        const nextRetry =
+          job.attemptsMade < MAX_ATTEMPTS - 1 ? new Date(Date.now() + BACKOFF_DELAYS[job.attemptsMade]) : null;
 
-      await query(`
+        await query(
+          `
         UPDATE webhook_deliveries
         SET attempts = $2, last_error = $3, response_status = $4, next_retry_at = $5,
             status = CASE WHEN $6 THEN 'failed' ELSE 'pending' END
         WHERE event_id = $1
-      `, [
-        eventId,
-        job.attemptsMade + 1,
-        result.error || result.statusText,
-        result.status,
-        nextRetry,
-        job.attemptsMade >= MAX_ATTEMPTS - 1
-      ]);
+      `,
+          [
+            eventId,
+            job.attemptsMade + 1,
+            result.error || result.statusText,
+            result.status,
+            nextRetry,
+            job.attemptsMade >= MAX_ATTEMPTS - 1,
+          ]
+        );
 
-      // Throw to trigger retry
-      throw new Error(`Webhook delivery failed: ${result.error || result.statusText}`);
-    }
-  }, {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
+        // Throw to trigger retry
+        throw new Error(`Webhook delivery failed: ${result.error || result.statusText}`);
+      }
     },
-    concurrency: 10,
-  });
+    {
+      connection: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+      },
+      concurrency: 10,
+    }
+  );
 
-  worker.on('completed', (job) => {
+  worker.on('completed', (job: Job<WebhookJobData>) => {
     console.log(`Webhook job ${job.id} completed`);
   });
 
-  worker.on('failed', (job, err) => {
-    console.log(`Webhook job ${job.id} failed: ${err.message}`);
+  worker.on('failed', (job: Job<WebhookJobData> | undefined, err: Error) => {
+    console.log(`Webhook job ${job?.id} failed: ${err.message}`);
   });
 
   return worker;
@@ -235,8 +304,13 @@ export function startWebhookWorker() {
 /**
  * Get webhook events for a merchant
  */
-export async function getWebhookEvents(merchantId, limit = 50, offset = 0) {
-  const result = await query(`
+export async function getWebhookEvents(
+  merchantId: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<WebhookEventRow[]> {
+  const result = await query<WebhookEventRow>(
+    `
     SELECT
       we.id, we.type, we.data, we.created_at,
       wd.status, wd.attempts, wd.last_error, wd.delivered_at
@@ -245,7 +319,9 @@ export async function getWebhookEvents(merchantId, limit = 50, offset = 0) {
     WHERE we.merchant_id = $1
     ORDER BY we.created_at DESC
     LIMIT $2 OFFSET $3
-  `, [merchantId, limit, offset]);
+  `,
+    [merchantId, limit, offset]
+  );
 
   return result.rows;
 }
@@ -253,13 +329,22 @@ export async function getWebhookEvents(merchantId, limit = 50, offset = 0) {
 /**
  * Retry failed webhook
  */
-export async function retryWebhook(eventId) {
-  const result = await query(`
+export async function retryWebhook(eventId: string): Promise<RetryWebhookResult> {
+  const result = await query<{
+    id: string;
+    merchant_id: string;
+    data: WebhookEvent;
+    webhook_url: string;
+    webhook_secret: string;
+  }>(
+    `
     SELECT we.*, m.webhook_url, m.webhook_secret
     FROM webhook_events we
     JOIN merchants m ON m.id = we.merchant_id
     WHERE we.id = $1
-  `, [eventId]);
+  `,
+    [eventId]
+  );
 
   if (result.rows.length === 0) {
     throw new Error('Webhook event not found');
@@ -279,11 +364,14 @@ export async function retryWebhook(eventId) {
   });
 
   // Reset delivery status
-  await query(`
+  await query(
+    `
     UPDATE webhook_deliveries
     SET status = 'pending', next_retry_at = NULL
     WHERE event_id = $1
-  `, [eventId]);
+  `,
+    [eventId]
+  );
 
   return { queued: true };
 }

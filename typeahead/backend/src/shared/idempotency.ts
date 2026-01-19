@@ -8,31 +8,64 @@
  * - Allows clients to safely retry without side effects
  */
 import crypto from 'crypto';
+import type { Request, Response, NextFunction } from 'express';
+import type Redis from 'ioredis';
 import logger, { auditLogger } from './logger.js';
 import { idempotencyMetrics } from './metrics.js';
+
+interface IdempotencyEntry {
+  result: CachedResult;
+  timestamp: number;
+}
+
+interface CachedResult {
+  statusCode: number;
+  body: unknown;
+}
+
+interface IdempotencyHandlerOptions {
+  prefix?: string;
+  expirySeconds?: number;
+}
+
+interface ProcessResult<T> {
+  processed: boolean;
+  duplicate: boolean;
+  result: T;
+}
+
+// Extend Express Request to include idempotencyKey
+declare global {
+  namespace Express {
+    interface Request {
+      idempotencyKey?: string;
+    }
+  }
+}
 
 /**
  * In-memory idempotency store with TTL
  * For production, use Redis for distributed deduplication
  */
 class IdempotencyStore {
-  constructor() {
-    this.store = new Map();
-    this.expiryMs = 5 * 60 * 1000; // 5 minute TTL
-    this.cleanupInterval = 60 * 1000; // Clean up every minute
+  private store: Map<string, IdempotencyEntry> = new Map();
+  private expiryMs: number = 5 * 60 * 1000; // 5 minute TTL
+  private cleanupInterval: number = 60 * 1000; // Clean up every minute
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
+  constructor() {
     // Periodic cleanup
     this.cleanupTimer = setInterval(() => this.cleanup(), this.cleanupInterval);
   }
 
-  set(key, result) {
+  set(key: string, result: CachedResult): void {
     this.store.set(key, {
       result,
       timestamp: Date.now(),
     });
   }
 
-  get(key) {
+  get(key: string): CachedResult | null {
     const entry = this.store.get(key);
     if (!entry) return null;
 
@@ -45,11 +78,11 @@ class IdempotencyStore {
     return entry.result;
   }
 
-  has(key) {
+  has(key: string): boolean {
     return this.get(key) !== null;
   }
 
-  cleanup() {
+  cleanup(): void {
     const now = Date.now();
     for (const [key, entry] of this.store) {
       if (now - entry.timestamp > this.expiryMs) {
@@ -58,7 +91,7 @@ class IdempotencyStore {
     }
   }
 
-  destroy() {
+  destroy(): void {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
     }
@@ -71,7 +104,7 @@ const inMemoryStore = new IdempotencyStore();
 /**
  * Generate an idempotency key from request data
  */
-export function generateIdempotencyKey(operation, data) {
+export function generateIdempotencyKey(operation: string, data: Record<string, unknown>): string {
   const payload = JSON.stringify({
     operation,
     ...data,
@@ -85,14 +118,16 @@ export function generateIdempotencyKey(operation, data) {
  * Middleware to handle idempotency for POST/PUT/DELETE requests
  * Uses X-Idempotency-Key header or generates one from request body
  */
-export function idempotencyMiddleware(operation) {
-  return async (req, res, next) => {
+export function idempotencyMiddleware(
+  operation: string
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Get or generate idempotency key
-    let idempotencyKey = req.headers['x-idempotency-key'];
+    let idempotencyKey = req.headers['x-idempotency-key'] as string | undefined;
 
     if (!idempotencyKey) {
       // Generate from request body for implicit idempotency
-      idempotencyKey = generateIdempotencyKey(operation, req.body);
+      idempotencyKey = generateIdempotencyKey(operation, req.body as Record<string, unknown>);
     }
 
     req.idempotencyKey = idempotencyKey;
@@ -110,16 +145,17 @@ export function idempotencyMiddleware(operation) {
       });
 
       // Return cached result
-      return res.status(cachedResult.statusCode).json(cachedResult.body);
+      res.status(cachedResult.statusCode).json(cachedResult.body);
+      return;
     }
 
     // Store the original json method
     const originalJson = res.json.bind(res);
 
     // Override json to capture the response
-    res.json = (body) => {
+    res.json = (body: unknown): Response => {
       // Store the result for idempotency
-      inMemoryStore.set(idempotencyKey, {
+      inMemoryStore.set(idempotencyKey!, {
         statusCode: res.statusCode,
         body,
       });
@@ -144,7 +180,11 @@ export function idempotencyMiddleware(operation) {
  * Redis-based idempotency handler for distributed deployments
  */
 export class RedisIdempotencyHandler {
-  constructor(redis, options = {}) {
+  private redis: Redis;
+  private prefix: string;
+  private expirySeconds: number;
+
+  constructor(redis: Redis, options: IdempotencyHandlerOptions = {}) {
     this.redis = redis;
     this.prefix = options.prefix || 'idem';
     this.expirySeconds = options.expirySeconds || 300; // 5 minutes
@@ -152,9 +192,8 @@ export class RedisIdempotencyHandler {
 
   /**
    * Check if operation was already processed
-   * @returns {Object|null} Cached result or null if not found
    */
-  async check(idempotencyKey) {
+  async check(idempotencyKey: string): Promise<{ result: unknown } | null> {
     try {
       const result = await this.redis.get(`${this.prefix}:${idempotencyKey}`);
       if (result) {
@@ -164,7 +203,7 @@ export class RedisIdempotencyHandler {
       logger.error({
         event: 'idempotency_check_error',
         idempotencyKey,
-        error: error.message,
+        error: (error as Error).message,
       });
     }
     return null;
@@ -173,7 +212,7 @@ export class RedisIdempotencyHandler {
   /**
    * Store operation result
    */
-  async store(idempotencyKey, operation, result) {
+  async store(idempotencyKey: string, operation: string, result: unknown): Promise<void> {
     try {
       await this.redis.setex(
         `${this.prefix}:${idempotencyKey}`,
@@ -194,19 +233,19 @@ export class RedisIdempotencyHandler {
       logger.error({
         event: 'idempotency_store_error',
         idempotencyKey,
-        error: error.message,
+        error: (error as Error).message,
       });
     }
   }
 
   /**
    * Process operation with idempotency
-   * @param {string} idempotencyKey - Unique key for this operation
-   * @param {string} operation - Operation name
-   * @param {Function} fn - Async function to execute
-   * @returns {Object} Result with processed flag
    */
-  async process(idempotencyKey, operation, fn) {
+  async process<T>(
+    idempotencyKey: string,
+    operation: string,
+    fn: () => Promise<T>
+  ): Promise<ProcessResult<T>> {
     // Check if already processed
     const cached = await this.check(idempotencyKey);
     if (cached) {
@@ -216,7 +255,7 @@ export class RedisIdempotencyHandler {
       return {
         processed: false,
         duplicate: true,
-        result: cached.result,
+        result: cached.result as T,
       };
     }
 
@@ -239,7 +278,7 @@ export class RedisIdempotencyHandler {
         return {
           processed: false,
           duplicate: true,
-          result: retryResult.result,
+          result: retryResult.result as T,
         };
       }
 
@@ -269,14 +308,17 @@ export class RedisIdempotencyHandler {
 /**
  * Create idempotency handler from Redis client
  */
-export function createRedisIdempotencyHandler(redis, options = {}) {
+export function createRedisIdempotencyHandler(
+  redis: Redis,
+  options: IdempotencyHandlerOptions = {}
+): RedisIdempotencyHandler {
   return new RedisIdempotencyHandler(redis, options);
 }
 
 /**
  * Cleanup function for graceful shutdown
  */
-export function cleanup() {
+export function cleanup(): void {
   inMemoryStore.destroy();
 }
 

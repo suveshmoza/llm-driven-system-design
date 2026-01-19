@@ -1,6 +1,7 @@
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket, RawData } from 'ws';
+import { Server as HttpServer, IncomingMessage } from 'http';
 import { v4 as uuid } from 'uuid';
-import { authenticateWs } from '../middleware/auth.js';
+import { authenticateWs, User } from '../middleware/auth.js';
 import { sendMessage, markAsRead, addReaction, removeReaction, getMessage } from '../services/messages.js';
 import { isParticipant, getParticipantIds } from '../services/conversations.js';
 import {
@@ -9,33 +10,85 @@ import {
   setPresence,
   deletePresence,
   setTyping,
-  getTypingUsers,
   addConnection,
   removeConnection,
   getUserConnections,
   getOfflineMessages,
   queueOfflineMessage,
+  OfflineMessage,
 } from '../redis.js';
+import { query } from '../db.js';
+
+interface ExtendedWebSocket extends WebSocket {
+  isAlive: boolean;
+}
+
+interface SendMessagePayload {
+  conversationId: string;
+  content: string;
+  contentType?: string;
+  replyToId?: string;
+  clientMessageId?: string;
+}
+
+interface TypingPayload {
+  conversationId: string;
+  isTyping: boolean;
+}
+
+interface ReadPayload {
+  conversationId: string;
+  messageId: string;
+}
+
+interface ReactionPayload {
+  messageId: string;
+  reaction: string;
+  remove?: boolean;
+}
+
+interface ClientMessage {
+  type: string;
+  [key: string]: unknown;
+}
+
+interface PubSubMessageData {
+  type?: string;
+  message?: unknown;
+  participantIds?: string[];
+  senderId?: string;
+  senderDeviceId?: string;
+  conversationId?: string;
+  userId?: string;
+  username?: string;
+  displayName?: string;
+  isTyping?: boolean;
+  messageId?: string;
+  reaction?: string;
+  remove?: boolean;
+  status?: string;
+}
 
 // Store active connections: userId -> Map<deviceId, ws>
-const connections = new Map();
+const connections = new Map<string, Map<string, ExtendedWebSocket>>();
 
 // Server ID for distributed routing
 const SERVER_ID = process.env.PORT || uuid();
 
-export function setupWebSocket(server) {
+export function setupWebSocket(server: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   // Subscribe to Redis channels for cross-server messaging
   subClient.subscribe('messages', 'typing', 'presence', 'read_receipts', 'reactions');
 
-  subClient.on('message', (channel, message) => {
-    const data = JSON.parse(message);
+  subClient.on('message', (channel: string, message: string) => {
+    const data = JSON.parse(message) as PubSubMessageData;
     handlePubSubMessage(channel, data);
   });
 
-  wss.on('connection', async (ws, req) => {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+  wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+    const extWs = ws as ExtendedWebSocket;
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
     const token = url.searchParams.get('token');
 
     const authResult = await authenticateWs(token);
@@ -50,10 +103,10 @@ export function setupWebSocket(server) {
     if (!connections.has(user.id)) {
       connections.set(user.id, new Map());
     }
-    connections.get(user.id).set(deviceId, ws);
+    connections.get(user.id)!.set(deviceId, extWs);
 
     // Register connection in Redis for distributed routing
-    await addConnection(user.id, deviceId, SERVER_ID);
+    await addConnection(user.id, deviceId, SERVER_ID as string);
     await setPresence(user.id, deviceId, 'online');
 
     console.log(`User ${user.username} connected on device ${deviceId}`);
@@ -75,17 +128,17 @@ export function setupWebSocket(server) {
     }
 
     // Setup heartbeat
-    ws.isAlive = true;
+    extWs.isAlive = true;
     ws.on('pong', () => {
-      ws.isAlive = true;
+      extWs.isAlive = true;
       setPresence(user.id, deviceId, 'online');
     });
 
     // Handle messages
-    ws.on('message', async (data) => {
+    ws.on('message', async (data: RawData) => {
       try {
-        const message = JSON.parse(data.toString());
-        await handleClientMessage(ws, user, deviceId, message);
+        const message = JSON.parse(data.toString()) as ClientMessage;
+        await handleClientMessage(extWs, user, deviceId, message);
       } catch (error) {
         console.error('WebSocket message error:', error);
         ws.send(JSON.stringify({
@@ -121,10 +174,11 @@ export function setupWebSocket(server) {
   // Heartbeat interval
   const heartbeatInterval = setInterval(() => {
     wss.clients.forEach((ws) => {
-      if (!ws.isAlive) {
+      const extWs = ws as ExtendedWebSocket;
+      if (!extWs.isAlive) {
         return ws.terminate();
       }
-      ws.isAlive = false;
+      extWs.isAlive = false;
       ws.ping();
     });
   }, parseInt(process.env.WS_HEARTBEAT_INTERVAL || '30000'));
@@ -136,28 +190,33 @@ export function setupWebSocket(server) {
   return wss;
 }
 
-async function handleClientMessage(ws, user, deviceId, message) {
+async function handleClientMessage(
+  ws: ExtendedWebSocket,
+  user: User,
+  deviceId: string,
+  message: ClientMessage
+): Promise<void> {
   const { type, ...payload } = message;
 
   switch (type) {
     case 'send_message':
-      await handleSendMessage(ws, user, deviceId, payload);
+      await handleSendMessage(ws, user, deviceId, payload as SendMessagePayload);
       break;
 
     case 'typing':
-      await handleTyping(user, payload);
+      await handleTyping(user, payload as TypingPayload);
       break;
 
     case 'read':
-      await handleRead(user, deviceId, payload);
+      await handleRead(user, deviceId, payload as ReadPayload);
       break;
 
     case 'reaction':
-      await handleReaction(user, payload);
+      await handleReaction(user, payload as ReactionPayload);
       break;
 
     case 'sync':
-      await handleSync(ws, user, deviceId, payload);
+      await handleSync(ws);
       break;
 
     default:
@@ -168,7 +227,12 @@ async function handleClientMessage(ws, user, deviceId, message) {
   }
 }
 
-async function handleSendMessage(ws, user, deviceId, payload) {
+async function handleSendMessage(
+  ws: ExtendedWebSocket,
+  user: User,
+  deviceId: string,
+  payload: SendMessagePayload
+): Promise<void> {
   const { conversationId, content, contentType, replyToId, clientMessageId } = payload;
 
   // Verify user is participant
@@ -207,7 +271,7 @@ async function handleSendMessage(ws, user, deviceId, payload) {
   }));
 }
 
-async function handleTyping(user, payload) {
+async function handleTyping(user: User, payload: TypingPayload): Promise<void> {
   const { conversationId, isTyping } = payload;
 
   // Verify user is participant
@@ -232,7 +296,7 @@ async function handleTyping(user, payload) {
   }));
 }
 
-async function handleRead(user, deviceId, payload) {
+async function handleRead(user: User, deviceId: string, payload: ReadPayload): Promise<void> {
   const { conversationId, messageId } = payload;
 
   // Verify user is participant
@@ -255,7 +319,7 @@ async function handleRead(user, deviceId, payload) {
   }));
 }
 
-async function handleReaction(user, payload) {
+async function handleReaction(user: User, payload: ReactionPayload): Promise<void> {
   const { messageId, reaction, remove } = payload;
 
   const message = await getMessage(messageId);
@@ -286,7 +350,7 @@ async function handleReaction(user, payload) {
   }));
 }
 
-async function handleSync(ws, user, deviceId, payload) {
+async function handleSync(ws: ExtendedWebSocket): Promise<void> {
   // Client requests sync after reconnection
   // This is handled by the offline message queue
   ws.send(JSON.stringify({
@@ -294,7 +358,7 @@ async function handleSync(ws, user, deviceId, payload) {
   }));
 }
 
-function handlePubSubMessage(channel, data) {
+function handlePubSubMessage(channel: string, data: PubSubMessageData): void {
   switch (channel) {
     case 'messages':
       deliverMessage(data);
@@ -318,8 +382,10 @@ function handlePubSubMessage(channel, data) {
   }
 }
 
-async function deliverMessage(data) {
+async function deliverMessage(data: PubSubMessageData): Promise<void> {
   const { message, participantIds, senderId, senderDeviceId } = data;
+
+  if (!participantIds) return;
 
   for (const participantId of participantIds) {
     const userConnections = connections.get(participantId);
@@ -347,7 +413,7 @@ async function deliverMessage(data) {
           await queueOfflineMessage(participantId, device.id, {
             type: 'new_message',
             message,
-          });
+          } as OfflineMessage);
         }
       }
       // If connected to another server, they'll receive via their own pub/sub
@@ -355,8 +421,10 @@ async function deliverMessage(data) {
   }
 }
 
-async function deliverTyping(data) {
+async function deliverTyping(data: PubSubMessageData): Promise<void> {
   const { conversationId, userId, username, displayName, isTyping, participantIds } = data;
+
+  if (!participantIds) return;
 
   for (const participantId of participantIds) {
     if (participantId === userId) continue;
@@ -377,8 +445,10 @@ async function deliverTyping(data) {
   }
 }
 
-async function deliverReadReceipt(data) {
+async function deliverReadReceipt(data: PubSubMessageData): Promise<void> {
   const { conversationId, userId, messageId, participantIds } = data;
+
+  if (!participantIds) return;
 
   for (const participantId of participantIds) {
     if (participantId === userId) continue;
@@ -397,8 +467,10 @@ async function deliverReadReceipt(data) {
   }
 }
 
-async function deliverReaction(data) {
+async function deliverReaction(data: PubSubMessageData): Promise<void> {
   const { conversationId, messageId, userId, reaction, remove, participantIds } = data;
+
+  if (!participantIds) return;
 
   for (const participantId of participantIds) {
     const userConnections = connections.get(participantId);
@@ -417,7 +489,7 @@ async function deliverReaction(data) {
   }
 }
 
-function deliverPresence(data) {
+function deliverPresence(data: PubSubMessageData): void {
   const { userId, status } = data;
 
   // Broadcast to all connected users who have conversations with this user
@@ -433,10 +505,8 @@ function deliverPresence(data) {
 }
 
 // Helper to get user devices from database
-import { query } from '../db.js';
-
-async function getUserDevicesFromDb(userId) {
-  const result = await query(
+async function getUserDevicesFromDb(userId: string): Promise<{ id: string }[]> {
+  const result = await query<{ id: string }>(
     'SELECT id FROM devices WHERE user_id = $1 AND is_active = true',
     [userId]
   );

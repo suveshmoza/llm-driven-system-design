@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import db from '../db/index.js';
 import { isAuthenticated } from '../middleware/auth.js';
 
@@ -16,12 +16,91 @@ const logger = createLogger('shops');
 
 const router = Router();
 
-// Get all shops (with pagination)
-router.get('/', async (req, res) => {
-  try {
-    const { limit = 20, offset = 0 } = req.query;
+interface ShopRow {
+  id: number;
+  owner_id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  location: string | null;
+  banner_image: string | null;
+  logo_image: string | null;
+  rating: number;
+  review_count: number;
+  sales_count: number;
+  is_active: boolean;
+  shipping_policy: object | null;
+  return_policy: string | null;
+  created_at: Date;
+  updated_at: Date;
+  owner_username?: string;
+  owner_name?: string;
+  product_count?: string;
+}
 
-    const result = await db.query(
+interface ProductRow {
+  id: number;
+  title: string;
+  price: string;
+  category_name?: string;
+}
+
+interface OrderRow {
+  id: number;
+  buyer_username?: string;
+  buyer_email?: string;
+  items?: OrderItemRow[];
+}
+
+interface OrderItemRow {
+  id: number;
+  order_id: number;
+  product_id: number;
+  quantity: number;
+  price: string;
+  title: string;
+}
+
+interface CountRow {
+  count: string;
+}
+
+interface ShopStatsRow {
+  sales_count: number;
+  rating: number;
+  review_count: number;
+  pending_orders?: string;
+  shipped_orders?: string;
+  delivered_orders?: string;
+  total_revenue?: string;
+  total_views?: string;
+  total_favorites?: string;
+}
+
+interface CreateShopBody {
+  name: string;
+  description?: string;
+  location?: string;
+  shippingPolicy?: object;
+  returnPolicy?: string;
+}
+
+interface UpdateShopBody {
+  name?: string;
+  description?: string;
+  location?: string;
+  bannerImage?: string;
+  logoImage?: string;
+  shippingPolicy?: object;
+  returnPolicy?: string;
+}
+
+// Get all shops (with pagination)
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const { limit = '20', offset = '0' } = req.query as { limit?: string; offset?: string };
+
+    const result = await db.query<ShopRow>(
       `SELECT s.*, u.username as owner_username,
               (SELECT COUNT(*) FROM products p WHERE p.shop_id = s.id AND p.is_active = true) as product_count
        FROM shops s
@@ -32,7 +111,7 @@ router.get('/', async (req, res) => {
       [parseInt(limit), parseInt(offset)]
     );
 
-    const countResult = await db.query('SELECT COUNT(*) FROM shops WHERE is_active = true');
+    const countResult = await db.query<CountRow>('SELECT COUNT(*) FROM shops WHERE is_active = true');
 
     res.json({
       shops: result.rows,
@@ -45,12 +124,12 @@ router.get('/', async (req, res) => {
 });
 
 // Get shop by slug (with caching)
-router.get('/slug/:slug', async (req, res) => {
+router.get('/slug/:slug', async (req: Request<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
 
-    const shop = await getCachedShop(slug, async () => {
-      const result = await db.query(
+    const shop = await getCachedShop<ShopRow | null>(slug, async () => {
+      const result = await db.query<ShopRow>(
         `SELECT s.*, u.username as owner_username, u.full_name as owner_name,
                 (SELECT COUNT(*) FROM products p WHERE p.shop_id = s.id AND p.is_active = true) as product_count
          FROM shops s
@@ -73,13 +152,13 @@ router.get('/slug/:slug', async (req, res) => {
 });
 
 // Get shop by ID (with caching)
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = parseInt(id);
 
-    const shop = await getCachedShop(shopId, async () => {
-      const result = await db.query(
+    const shop = await getCachedShop<ShopRow | null>(shopId, async () => {
+      const result = await db.query<ShopRow>(
         `SELECT s.*, u.username as owner_username, u.full_name as owner_name,
                 (SELECT COUNT(*) FROM products p WHERE p.shop_id = s.id AND p.is_active = true) as product_count
          FROM shops s
@@ -102,18 +181,23 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get shop products (with caching)
-router.get('/:id/products', async (req, res) => {
+router.get('/:id/products', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = parseInt(id);
-    const { limit = 20, offset = 0 } = req.query;
+    const { limit = '20', offset = '0' } = req.query as { limit?: string; offset?: string };
 
     const cacheKey = `${CACHE_KEYS.SHOP_PRODUCTS}${shopId}:${limit}:${offset}`;
 
-    const data = await cacheAside(
+    interface ShopProductsData {
+      products: ProductRow[];
+      total: number;
+    }
+
+    const data = await cacheAside<ShopProductsData>(
       cacheKey,
       async () => {
-        const result = await db.query(
+        const result = await db.query<ProductRow>(
           `SELECT p.*, c.name as category_name
            FROM products p
            LEFT JOIN categories c ON p.category_id = c.id
@@ -123,7 +207,7 @@ router.get('/:id/products', async (req, res) => {
           [shopId, parseInt(limit), parseInt(offset)]
         );
 
-        const countResult = await db.query(
+        const countResult = await db.query<CountRow>(
           'SELECT COUNT(*) FROM products WHERE shop_id = $1 AND is_active = true',
           [shopId]
         );
@@ -145,7 +229,7 @@ router.get('/:id/products', async (req, res) => {
 });
 
 // Create shop (requires auth)
-router.post('/', isAuthenticated, async (req, res) => {
+router.post('/', isAuthenticated, async (req: Request<object, object, CreateShopBody>, res: Response) => {
   try {
     const { name, description, location, shippingPolicy, returnPolicy } = req.body;
 
@@ -157,7 +241,7 @@ router.post('/', isAuthenticated, async (req, res) => {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
     // Check if shop name or slug exists
-    const existing = await db.query(
+    const existing = await db.query<{ id: number }>(
       'SELECT id FROM shops WHERE name = $1 OR slug = $2',
       [name, slug]
     );
@@ -165,7 +249,7 @@ router.post('/', isAuthenticated, async (req, res) => {
       return res.status(400).json({ error: 'Shop name already exists' });
     }
 
-    const result = await db.query(
+    const result = await db.query<ShopRow>(
       `INSERT INTO shops (owner_id, name, slug, description, location, shipping_policy, return_policy)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
@@ -197,7 +281,7 @@ router.post('/', isAuthenticated, async (req, res) => {
 });
 
 // Update shop (requires auth and ownership)
-router.put('/:id', isAuthenticated, async (req, res) => {
+router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, UpdateShopBody>, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = parseInt(id);
@@ -208,12 +292,12 @@ router.put('/:id', isAuthenticated, async (req, res) => {
     }
 
     // Get current shop data to get slug for cache invalidation
-    const currentShop = await db.query('SELECT slug FROM shops WHERE id = $1', [shopId]);
+    const currentShop = await db.query<{ slug: string }>('SELECT slug FROM shops WHERE id = $1', [shopId]);
     const oldSlug = currentShop.rows[0]?.slug;
 
     const { name, description, location, bannerImage, logoImage, shippingPolicy, returnPolicy } = req.body;
 
-    const result = await db.query(
+    const result = await db.query<ShopRow>(
       `UPDATE shops SET
         name = COALESCE($1, name),
         description = COALESCE($2, description),
@@ -258,7 +342,7 @@ router.put('/:id', isAuthenticated, async (req, res) => {
 });
 
 // Get shop orders (for seller dashboard)
-router.get('/:id/orders', isAuthenticated, async (req, res) => {
+router.get('/:id/orders', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = parseInt(id);
@@ -268,7 +352,7 @@ router.get('/:id/orders', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'You do not own this shop' });
     }
 
-    const { status, limit = 20, offset = 0 } = req.query;
+    const { status, limit = '20', offset = '0' } = req.query as { status?: string; limit?: string; offset?: string };
 
     let query = `
       SELECT o.*, u.username as buyer_username, u.email as buyer_email
@@ -276,7 +360,7 @@ router.get('/:id/orders', isAuthenticated, async (req, res) => {
       LEFT JOIN users u ON o.buyer_id = u.id
       WHERE o.shop_id = $1
     `;
-    const params = [shopId];
+    const params: (number | string)[] = [shopId];
 
     if (status) {
       query += ` AND o.status = $${params.length + 1}`;
@@ -286,11 +370,11 @@ router.get('/:id/orders', isAuthenticated, async (req, res) => {
     query += ` ORDER BY o.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(parseInt(limit), parseInt(offset));
 
-    const result = await db.query(query, params);
+    const result = await db.query<OrderRow>(query, params);
 
     // Get order items for each order
     for (const order of result.rows) {
-      const itemsResult = await db.query(
+      const itemsResult = await db.query<OrderItemRow>(
         'SELECT * FROM order_items WHERE order_id = $1',
         [order.id]
       );
@@ -305,7 +389,7 @@ router.get('/:id/orders', isAuthenticated, async (req, res) => {
 });
 
 // Get shop stats (for seller dashboard)
-router.get('/:id/stats', isAuthenticated, async (req, res) => {
+router.get('/:id/stats', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
     const shopId = parseInt(id);
@@ -315,17 +399,17 @@ router.get('/:id/stats', isAuthenticated, async (req, res) => {
       return res.status(403).json({ error: 'You do not own this shop' });
     }
 
-    const shopResult = await db.query(
+    const shopResult = await db.query<ShopStatsRow>(
       'SELECT sales_count, rating, review_count FROM shops WHERE id = $1',
       [shopId]
     );
 
-    const productCountResult = await db.query(
+    const productCountResult = await db.query<CountRow>(
       'SELECT COUNT(*) FROM products WHERE shop_id = $1 AND is_active = true',
       [shopId]
     );
 
-    const orderStatsResult = await db.query(
+    const orderStatsResult = await db.query<ShopStatsRow>(
       `SELECT
         COUNT(*) FILTER (WHERE status = 'pending') as pending_orders,
         COUNT(*) FILTER (WHERE status = 'shipped') as shipped_orders,
@@ -335,12 +419,12 @@ router.get('/:id/stats', isAuthenticated, async (req, res) => {
       [shopId]
     );
 
-    const viewsResult = await db.query(
+    const viewsResult = await db.query<{ total_views: string }>(
       'SELECT COALESCE(SUM(view_count), 0) as total_views FROM products WHERE shop_id = $1',
       [shopId]
     );
 
-    const favoritesResult = await db.query(
+    const favoritesResult = await db.query<{ total_favorites: string }>(
       'SELECT COALESCE(SUM(favorite_count), 0) as total_favorites FROM products WHERE shop_id = $1',
       [shopId]
     );

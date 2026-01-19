@@ -1,42 +1,53 @@
 import express from 'express';
+import type { Response } from 'express';
 import { createComment, findCommentById, getCommentSubtree } from '../models/comment.js';
 import { findPostById } from '../models/post.js';
 import { requireAuth } from '../middleware/auth.js';
+import type { AuthenticatedRequest } from '../shared/logger.js';
+
+interface CreateCommentBody {
+  content: string;
+  parentId?: number;
+}
 
 const router = express.Router();
 
 // Create comment on post
-router.post('/posts/:postId/comments', requireAuth, async (req, res) => {
+router.post('/posts/:postId/comments', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const postId = parseInt(req.params.postId);
+    const postId = parseInt(req.params.postId, 10);
     if (isNaN(postId)) {
-      return res.status(400).json({ error: 'Invalid post ID' });
+      res.status(400).json({ error: 'Invalid post ID' });
+      return;
     }
 
-    const { content, parentId } = req.body;
+    const { content, parentId } = req.body as CreateCommentBody;
 
     if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'Comment content is required' });
+      res.status(400).json({ error: 'Comment content is required' });
+      return;
     }
 
     const post = await findPostById(postId);
     if (!post) {
-      return res.status(404).json({ error: 'Post not found' });
+      res.status(404).json({ error: 'Post not found' });
+      return;
     }
 
     // Validate parent comment if provided
     if (parentId) {
       const parentComment = await findCommentById(parentId);
       if (!parentComment || parentComment.post_id !== postId) {
-        return res.status(400).json({ error: 'Invalid parent comment' });
+        res.status(400).json({ error: 'Invalid parent comment' });
+        return;
       }
     }
 
-    const comment = await createComment(postId, req.user.id, content.trim(), parentId || null);
+    const comment = await createComment(postId, req.user!.id, content.trim(), parentId || null);
 
     res.status(201).json({
       ...comment,
-      author_username: req.user.username,
+      author_username: req.user!.username,
       replies: [],
     });
   } catch (error) {
@@ -46,16 +57,18 @@ router.post('/posts/:postId/comments', requireAuth, async (req, res) => {
 });
 
 // Get comment and its subtree
-router.get('/comments/:id', async (req, res) => {
+router.get('/comments/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const commentId = parseInt(req.params.id);
+    const commentId = parseInt(req.params.id, 10);
     if (isNaN(commentId)) {
-      return res.status(400).json({ error: 'Invalid comment ID' });
+      res.status(400).json({ error: 'Invalid comment ID' });
+      return;
     }
 
     const tree = await getCommentSubtree(commentId);
     if (!tree) {
-      return res.status(404).json({ error: 'Comment not found' });
+      res.status(404).json({ error: 'Comment not found' });
+      return;
     }
 
     res.json(tree);

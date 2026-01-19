@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { createClient, RedisClientType } from 'redis';
+import { createClient } from 'redis';
 
 const { Pool } = pg;
 
@@ -16,13 +16,13 @@ export const pool = new Pool({
 });
 
 // Redis client
-export const redisClient: RedisClientType = createClient({
+export const redisClient = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379',
 });
 
-redisClient.on('error', (err: Error) => console.error('Redis Client Error', err));
+redisClient.on('error', (err) => console.error('Redis Client Error', err));
 
-export async function initializeDatabase(): Promise<void> {
+export async function initializeDatabase() {
   await redisClient.connect();
   console.log('Connected to Redis');
 

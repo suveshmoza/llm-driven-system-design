@@ -1,17 +1,32 @@
-import express from 'express';
+import express, { Request, Response, NextFunction, Router } from 'express';
 import { query } from '../db.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { createLogger } from '../shared/logger.js';
 import { getRateLimiters } from '../index.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 const logger = createLogger('users');
+
+// User row type
+interface UserRow {
+  id: number;
+  username: string;
+  email?: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  follower_count: number;
+  following_count: number;
+  video_count: number;
+  like_count: number;
+  created_at: string;
+}
 
 // Helper to get rate limiters
 const getLimiters = () => getRateLimiters();
 
 // Get user profile by username
-router.get('/:username', optionalAuth, async (req, res) => {
+router.get('/:username', optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.params;
 
@@ -23,10 +38,11 @@ router.get('/:username', optionalAuth, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
-    const user = result.rows[0];
+    const user = result.rows[0] as UserRow;
 
     // Check if current user follows this user
     let isFollowing = false;
@@ -53,17 +69,21 @@ router.get('/:username', optionalAuth, async (req, res) => {
       isOwnProfile: req.session?.userId === user.id,
     });
   } catch (error) {
-    logger.error({ error: error.message, username: req.params.username }, 'Get user error');
+    logger.error({ error: (error as Error).message, username: req.params.username }, 'Get user error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Update current user profile
-router.patch('/me', requireAuth, async (req, res) => {
+router.patch('/me', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { displayName, bio, avatarUrl } = req.body;
-    const updates = [];
-    const values = [];
+    const { displayName, bio, avatarUrl } = req.body as {
+      displayName?: string;
+      bio?: string;
+      avatarUrl?: string;
+    };
+    const updates: string[] = [];
+    const values: unknown[] = [];
     let paramIndex = 1;
 
     if (displayName !== undefined) {
@@ -80,7 +100,8 @@ router.patch('/me', requireAuth, async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
+      res.status(400).json({ error: 'No fields to update' });
+      return;
     }
 
     values.push(req.session.userId);
@@ -93,7 +114,7 @@ router.patch('/me', requireAuth, async (req, res) => {
       values
     );
 
-    const user = result.rows[0];
+    const user = result.rows[0] as UserRow;
 
     logger.debug({ userId: req.session.userId, updates: Object.keys(req.body) }, 'User profile updated');
 
@@ -110,37 +131,40 @@ router.patch('/me', requireAuth, async (req, res) => {
       createdAt: user.created_at,
     });
   } catch (error) {
-    logger.error({ error: error.message, userId: req.session.userId }, 'Update user error');
+    logger.error({ error: (error as Error).message, userId: req.session.userId }, 'Update user error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Follow a user
-router.post('/:username/follow', requireAuth, async (req, res, next) => {
+router.post('/:username/follow', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // Apply rate limiting
   const limiters = getLimiters();
   if (limiters?.follow) {
-    return limiters.follow(req, res, async () => {
+    limiters.follow(req, res, async () => {
       await handleFollow(req, res, next);
     });
+    return;
   }
   await handleFollow(req, res, next);
 });
 
-async function handleFollow(req, res, next) {
+async function handleFollow(req: Request, res: Response, _next: NextFunction): Promise<void> {
   try {
     const { username } = req.params;
 
     // Get target user
     const userResult = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
-    const targetUserId = userResult.rows[0].id;
+    const targetUserId = (userResult.rows[0] as { id: number }).id;
 
     if (targetUserId === req.session.userId) {
-      return res.status(400).json({ error: 'Cannot follow yourself' });
+      res.status(400).json({ error: 'Cannot follow yourself' });
+      return;
     }
 
     // Check if already following
@@ -150,7 +174,8 @@ async function handleFollow(req, res, next) {
     );
 
     if (existingFollow.rows.length > 0) {
-      return res.status(409).json({ error: 'Already following' });
+      res.status(409).json({ error: 'Already following' });
+      return;
     }
 
     // Create follow
@@ -173,34 +198,36 @@ async function handleFollow(req, res, next) {
 
     res.json({ message: 'Followed successfully', isFollowing: true });
   } catch (error) {
-    logger.error({ error: error.message, username: req.params.username }, 'Follow error');
+    logger.error({ error: (error as Error).message, username: req.params.username }, 'Follow error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Unfollow a user
-router.delete('/:username/follow', requireAuth, async (req, res, next) => {
+router.delete('/:username/follow', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   // Apply rate limiting
   const limiters = getLimiters();
   if (limiters?.follow) {
-    return limiters.follow(req, res, async () => {
+    limiters.follow(req, res, async () => {
       await handleUnfollow(req, res, next);
     });
+    return;
   }
   await handleUnfollow(req, res, next);
 });
 
-async function handleUnfollow(req, res, next) {
+async function handleUnfollow(req: Request, res: Response, _next: NextFunction): Promise<void> {
   try {
     const { username } = req.params;
 
     // Get target user
     const userResult = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
-    const targetUserId = userResult.rows[0].id;
+    const targetUserId = (userResult.rows[0] as { id: number }).id;
 
     // Delete follow
     const deleteResult = await query(
@@ -209,7 +236,8 @@ async function handleUnfollow(req, res, next) {
     );
 
     if (deleteResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Not following this user' });
+      res.status(404).json({ error: 'Not following this user' });
+      return;
     }
 
     // Update counts
@@ -226,21 +254,22 @@ async function handleUnfollow(req, res, next) {
 
     res.json({ message: 'Unfollowed successfully', isFollowing: false });
   } catch (error) {
-    logger.error({ error: error.message, username: req.params.username }, 'Unfollow error');
+    logger.error({ error: (error as Error).message, username: req.params.username }, 'Unfollow error');
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
 // Get user's followers
-router.get('/:username/followers', async (req, res) => {
+router.get('/:username/followers', async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
 
     const userResult = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     const result = await query(
@@ -250,11 +279,11 @@ router.get('/:username/followers', async (req, res) => {
        WHERE f.following_id = $1
        ORDER BY f.created_at DESC
        LIMIT $2 OFFSET $3`,
-      [userResult.rows[0].id, limit, offset]
+      [(userResult.rows[0] as { id: number }).id, limit, offset]
     );
 
     res.json({
-      followers: result.rows.map(user => ({
+      followers: result.rows.map((user: UserRow) => ({
         id: user.id,
         username: user.username,
         displayName: user.display_name,
@@ -265,21 +294,22 @@ router.get('/:username/followers', async (req, res) => {
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, username: req.params.username }, 'Get followers error');
+    logger.error({ error: (error as Error).message, username: req.params.username }, 'Get followers error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Get user's following
-router.get('/:username/following', async (req, res) => {
+router.get('/:username/following', async (req: Request, res: Response): Promise<void> => {
   try {
     const { username } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const offset = parseInt(req.query.offset) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
 
     const userResult = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'User not found' });
+      return;
     }
 
     const result = await query(
@@ -289,11 +319,11 @@ router.get('/:username/following', async (req, res) => {
        WHERE f.follower_id = $1
        ORDER BY f.created_at DESC
        LIMIT $2 OFFSET $3`,
-      [userResult.rows[0].id, limit, offset]
+      [(userResult.rows[0] as { id: number }).id, limit, offset]
     );
 
     res.json({
-      following: result.rows.map(user => ({
+      following: result.rows.map((user: UserRow) => ({
         id: user.id,
         username: user.username,
         displayName: user.display_name,
@@ -304,7 +334,7 @@ router.get('/:username/following', async (req, res) => {
       hasMore: result.rows.length === limit,
     });
   } catch (error) {
-    logger.error({ error: error.message, username: req.params.username }, 'Get following error');
+    logger.error({ error: (error as Error).message, username: req.params.username }, 'Get following error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

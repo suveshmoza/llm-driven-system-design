@@ -1,5 +1,5 @@
-import { Router } from 'express';
-import { authenticateRequest } from '../middleware/auth.js';
+import { Router, Response } from 'express';
+import { authenticateRequest, AuthenticatedRequest } from '../middleware/auth.js';
 import { isParticipant } from '../services/conversations.js';
 import {
   getMessages,
@@ -19,10 +19,10 @@ import { createLogger } from '../shared/logger.js';
 const router = Router();
 const logger = createLogger('messages-routes');
 
-router.use(authenticateRequest);
+router.use(authenticateRequest as any);
 
 // Get messages for a conversation
-router.get('/conversation/:conversationId', async (req, res) => {
+router.get('/conversation/:conversationId', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
     const { limit, before, after } = req.query;
@@ -30,13 +30,14 @@ router.get('/conversation/:conversationId', async (req, res) => {
     // Verify user is participant
     const isParticipantResult = await isParticipant(conversationId, req.user.id);
     if (!isParticipantResult) {
-      return res.status(403).json({ error: 'Not a participant of this conversation' });
+      res.status(403).json({ error: 'Not a participant of this conversation' });
+      return;
     }
 
     const messages = await getMessages(conversationId, req.user.id, {
-      limit: limit ? parseInt(limit) : 50,
-      before,
-      after,
+      limit: limit ? parseInt(limit as string) : 50,
+      before: before as string | undefined,
+      after: after as string | undefined,
     });
 
     res.json({ messages });
@@ -47,17 +48,19 @@ router.get('/conversation/:conversationId', async (req, res) => {
 });
 
 // Get a single message
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const message = await getMessage(req.params.id);
     if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
+      res.status(404).json({ error: 'Message not found' });
+      return;
     }
 
     // Verify user is participant
     const isParticipantResult = await isParticipant(message.conversation_id, req.user.id);
     if (!isParticipantResult) {
-      return res.status(403).json({ error: 'Not a participant of this conversation' });
+      res.status(403).json({ error: 'Not a participant of this conversation' });
+      return;
     }
 
     res.json({ message });
@@ -73,25 +76,27 @@ router.get('/:id', async (req, res) => {
 router.post('/conversation/:conversationId',
   messageRateLimiter,
   idempotencyMiddleware,
-  async (req, res) => {
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const { conversationId } = req.params;
       const { content, contentType, replyToId, clientMessageId } = req.body;
 
       if (!content) {
-        return res.status(400).json({ error: 'Content is required' });
+        res.status(400).json({ error: 'Content is required' });
+        return;
       }
 
       // Verify user is participant
       const isParticipantResult = await isParticipant(conversationId, req.user.id);
       if (!isParticipantResult) {
-        return res.status(403).json({ error: 'Not a participant of this conversation' });
+        res.status(403).json({ error: 'Not a participant of this conversation' });
+        return;
       }
 
       const message = await sendMessage(conversationId, req.user.id, content, {
         contentType,
         replyToId,
-        clientMessageId: clientMessageId || req.headers['x-idempotency-key'],
+        clientMessageId: clientMessageId || req.headers['x-idempotency-key'] as string,
       });
 
       // Return 200 if duplicate, 201 if new
@@ -108,46 +113,50 @@ router.post('/conversation/:conversationId',
 );
 
 // Edit a message
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { content } = req.body;
 
     if (!content) {
-      return res.status(400).json({ error: 'Content is required' });
+      res.status(400).json({ error: 'Content is required' });
+      return;
     }
 
     const message = await editMessage(req.params.id, req.user.id, content);
     res.json({ message });
   } catch (error) {
     logger.error({ error, userId: req.user?.id }, 'Edit message error');
-    if (error.message.includes('not found')) {
-      return res.status(404).json({ error: error.message });
+    if ((error as Error).message.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
+      return;
     }
     res.status(500).json({ error: 'Failed to edit message' });
   }
 });
 
 // Delete a message
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     await deleteMessage(req.params.id, req.user.id);
     res.json({ message: 'Message deleted' });
   } catch (error) {
     logger.error({ error, userId: req.user?.id }, 'Delete message error');
-    if (error.message.includes('not found')) {
-      return res.status(404).json({ error: error.message });
+    if ((error as Error).message.includes('not found')) {
+      res.status(404).json({ error: (error as Error).message });
+      return;
     }
     res.status(500).json({ error: 'Failed to delete message' });
   }
 });
 
 // Add reaction
-router.post('/:id/reactions', async (req, res) => {
+router.post('/:id/reactions', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { reaction } = req.body;
 
     if (!reaction) {
-      return res.status(400).json({ error: 'Reaction is required' });
+      res.status(400).json({ error: 'Reaction is required' });
+      return;
     }
 
     const result = await addReaction(req.params.id, req.user.id, reaction);
@@ -159,7 +168,7 @@ router.post('/:id/reactions', async (req, res) => {
 });
 
 // Remove reaction
-router.delete('/:id/reactions/:reaction', async (req, res) => {
+router.delete('/:id/reactions/:reaction', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     await removeReaction(req.params.id, req.user.id, req.params.reaction);
     res.json({ message: 'Reaction removed' });
@@ -170,19 +179,21 @@ router.delete('/:id/reactions/:reaction', async (req, res) => {
 });
 
 // Mark as read
-router.post('/conversation/:conversationId/read', async (req, res) => {
+router.post('/conversation/:conversationId/read', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
     const { messageId } = req.body;
 
     if (!messageId) {
-      return res.status(400).json({ error: 'Message ID is required' });
+      res.status(400).json({ error: 'Message ID is required' });
+      return;
     }
 
     // Verify user is participant
     const isParticipantResult = await isParticipant(conversationId, req.user.id);
     if (!isParticipantResult) {
-      return res.status(403).json({ error: 'Not a participant of this conversation' });
+      res.status(403).json({ error: 'Not a participant of this conversation' });
+      return;
     }
 
     await markAsRead(conversationId, req.user.id, req.deviceId, messageId);
@@ -194,14 +205,15 @@ router.post('/conversation/:conversationId/read', async (req, res) => {
 });
 
 // Get read receipts for a conversation
-router.get('/conversation/:conversationId/read-receipts', async (req, res) => {
+router.get('/conversation/:conversationId/read-receipts', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
 
     // Verify user is participant
     const isParticipantResult = await isParticipant(conversationId, req.user.id);
     if (!isParticipantResult) {
-      return res.status(403).json({ error: 'Not a participant of this conversation' });
+      res.status(403).json({ error: 'Not a participant of this conversation' });
+      return;
     }
 
     const receipts = await getReadReceipts(conversationId);

@@ -9,17 +9,59 @@
  * - Graceful degradation when processor is unavailable
  */
 
-import {
-  cardNetworkBreaker,
-  CardNetworkUnavailableError,
-  executeWithDegradation,
-} from '../shared/circuitBreaker.js';
+import { cardNetworkBreaker, CardNetworkUnavailableError } from '../shared/circuitBreaker.js';
 import logger from '../shared/logger.js';
-import {
-  paymentRequestDuration,
-  recordPaymentSuccess,
-  recordPaymentFailure,
-} from '../shared/metrics.js';
+import { paymentRequestDuration, recordPaymentSuccess, recordPaymentFailure } from '../shared/metrics.js';
+
+// Interfaces
+export interface AuthorizeParams {
+  amount: number;
+  currency: string;
+  cardToken: string | undefined;
+  merchantId: string;
+}
+
+export interface AuthorizeResult {
+  approved: boolean;
+  authCode?: string;
+  network: string;
+  networkTransactionId?: string;
+  declineCode?: string;
+}
+
+export interface CaptureParams {
+  authCode: string | null;
+  amount: number;
+  currency: string;
+}
+
+export interface CaptureResult {
+  captured: boolean;
+  captureId?: string;
+  error?: string;
+}
+
+export interface RefundParams {
+  authCode: string | null;
+  amount: number;
+  currency: string;
+}
+
+export interface RefundResult {
+  refunded: boolean;
+  refundId?: string;
+  error?: string;
+}
+
+export interface CircuitBreakerStatus {
+  state: string;
+}
+
+interface TestCardResult {
+  approved: boolean;
+  declineCode?: string;
+  simulateNetworkFailure?: boolean;
+}
 
 // Simulated decline codes
 const DECLINE_CODES = {
@@ -30,10 +72,10 @@ const DECLINE_CODES = {
   PROCESSING_ERROR: 'processing_error',
   FRAUD_SUSPECTED: 'fraudulent',
   NETWORK_UNAVAILABLE: 'network_unavailable',
-};
+} as const;
 
 // Test card numbers for different scenarios
-const TEST_CARDS = {
+const TEST_CARDS: Record<string, TestCardResult> = {
   '4242424242424242': { approved: true }, // Success
   '4000000000000002': { approved: false, declineCode: DECLINE_CODES.CARD_DECLINED },
   '4000000000009995': { approved: false, declineCode: DECLINE_CODES.INSUFFICIENT_FUNDS },
@@ -42,13 +84,13 @@ const TEST_CARDS = {
   '4000000000000119': { approved: false, declineCode: DECLINE_CODES.PROCESSING_ERROR },
   '4100000000000019': { approved: false, declineCode: DECLINE_CODES.FRAUD_SUSPECTED },
   // Special test card to simulate network failure (for testing circuit breaker)
-  '4000000000009999': { simulateNetworkFailure: true },
+  '4000000000009999': { approved: false, simulateNetworkFailure: true },
 };
 
 /**
  * Generate a random auth code
  */
-function generateAuthCode() {
+function generateAuthCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
@@ -60,20 +102,23 @@ function generateAuthCode() {
 /**
  * Internal authorization logic (called within circuit breaker)
  */
-async function authorizeInternal({ amount, currency, cardToken, merchantId }) {
+async function authorizeInternal({
+  amount,
+  currency,
+  cardToken,
+  merchantId,
+}: AuthorizeParams): Promise<AuthorizeResult> {
   // Simulate network latency (50-150ms)
-  await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+  await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));
 
   // Check for test card patterns
   const last4 = cardToken?.slice(-4) || '';
 
   // Find matching test card by last 4 digits
-  const testCard = Object.entries(TEST_CARDS).find(
-    ([number]) => number.endsWith(last4)
-  );
+  const testCard = Object.entries(TEST_CARDS).find(([number]) => number.endsWith(last4));
 
   if (testCard) {
-    const [_, result] = testCard;
+    const [, result] = testCard;
 
     // Simulate network failure for testing circuit breaker
     if (result.simulateNetworkFailure) {
@@ -122,7 +167,12 @@ async function authorizeInternal({ amount, currency, cardToken, merchantId }) {
  * - Card processor outages
  * - Cascading failures
  */
-export async function authorize({ amount, currency, cardToken, merchantId }) {
+export async function authorize({
+  amount,
+  currency,
+  cardToken,
+  merchantId,
+}: AuthorizeParams): Promise<AuthorizeResult> {
   const startTime = process.hrtime();
 
   try {
@@ -143,7 +193,7 @@ export async function authorize({ amount, currency, cardToken, merchantId }) {
     if (result.approved) {
       recordPaymentSuccess(amount, currency, 'card');
     } else {
-      recordPaymentFailure(result.declineCode, currency, amount);
+      recordPaymentFailure(result.declineCode || 'unknown', currency, amount);
     }
 
     // Log successful authorization
@@ -166,8 +216,10 @@ export async function authorize({ amount, currency, cardToken, merchantId }) {
       durationSeconds
     );
 
+    const err = error as Error & { isBrokenCircuitError?: boolean };
+
     // Check if circuit breaker is open
-    if (error.isBrokenCircuitError || error.message?.includes('circuit is open')) {
+    if (err.isBrokenCircuitError || err.message?.includes('circuit is open')) {
       logger.warn({
         event: 'card_network_circuit_open',
         message: 'Card network circuit breaker is open',
@@ -182,7 +234,7 @@ export async function authorize({ amount, currency, cardToken, merchantId }) {
     // Log the error
     logger.error({
       event: 'card_network_error',
-      error_message: error.message,
+      error_message: err.message,
       duration_ms: (durationSeconds * 1000).toFixed(2),
     });
 
@@ -195,13 +247,13 @@ export async function authorize({ amount, currency, cardToken, merchantId }) {
  * Simulate card capture (for manual capture flow)
  * Also protected by circuit breaker
  */
-export async function capture({ authCode, amount, currency }) {
+export async function capture({ authCode, amount, currency }: CaptureParams): Promise<CaptureResult> {
   const startTime = process.hrtime();
 
   try {
     const result = await cardNetworkBreaker.execute(async () => {
       // Simulate network latency
-      await new Promise(resolve => setTimeout(resolve, 30 + Math.random() * 50));
+      await new Promise((resolve) => setTimeout(resolve, 30 + Math.random() * 50));
 
       // Captures almost always succeed if auth was successful
       if (Math.random() < 0.99) {
@@ -222,12 +274,13 @@ export async function capture({ authCode, amount, currency }) {
       event: 'card_network_capture',
       captured: result.captured,
       auth_code: authCode,
-      duration_ms: ((s * 1000) + (ns / 1e6)).toFixed(2),
+      duration_ms: (s * 1000 + ns / 1e6).toFixed(2),
     });
 
     return result;
   } catch (error) {
-    if (error.isBrokenCircuitError || error.message?.includes('circuit is open')) {
+    const err = error as Error & { isBrokenCircuitError?: boolean };
+    if (err.isBrokenCircuitError || err.message?.includes('circuit is open')) {
       throw new CardNetworkUnavailableError('Unable to capture payment. Please try again.');
     }
     throw error;
@@ -238,13 +291,13 @@ export async function capture({ authCode, amount, currency }) {
  * Simulate refund through card network
  * Also protected by circuit breaker
  */
-export async function refund({ authCode, amount, currency }) {
+export async function refund({ authCode, amount, currency }: RefundParams): Promise<RefundResult> {
   const startTime = process.hrtime();
 
   try {
     const result = await cardNetworkBreaker.execute(async () => {
       // Simulate network latency
-      await new Promise(resolve => setTimeout(resolve, 40 + Math.random() * 80));
+      await new Promise((resolve) => setTimeout(resolve, 40 + Math.random() * 80));
 
       // Refunds have 98% success rate
       if (Math.random() < 0.98) {
@@ -266,12 +319,13 @@ export async function refund({ authCode, amount, currency }) {
       refunded: result.refunded,
       amount,
       currency,
-      duration_ms: ((s * 1000) + (ns / 1e6)).toFixed(2),
+      duration_ms: (s * 1000 + ns / 1e6).toFixed(2),
     });
 
     return result;
   } catch (error) {
-    if (error.isBrokenCircuitError || error.message?.includes('circuit is open')) {
+    const err = error as Error & { isBrokenCircuitError?: boolean };
+    if (err.isBrokenCircuitError || err.message?.includes('circuit is open')) {
       throw new CardNetworkUnavailableError('Unable to process refund. Please try again.');
     }
     throw error;
@@ -281,7 +335,7 @@ export async function refund({ authCode, amount, currency }) {
 /**
  * Determine card network from token/number
  */
-function determineNetwork(cardToken) {
+function determineNetwork(cardToken: string | undefined): string {
   if (!cardToken) return 'unknown';
 
   const firstDigit = cardToken.charAt(0);
@@ -302,7 +356,7 @@ function determineNetwork(cardToken) {
 /**
  * Validate card expiration
  */
-export function isCardExpired(expMonth, expYear) {
+export function isCardExpired(expMonth: number, expYear: number): boolean {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
@@ -315,7 +369,7 @@ export function isCardExpired(expMonth, expYear) {
 /**
  * Get card brand from card number
  */
-export function getCardBrand(cardNumber) {
+export function getCardBrand(cardNumber: string): string {
   const cleaned = cardNumber.replace(/\s/g, '');
 
   if (/^4/.test(cleaned)) return 'visa';
@@ -331,7 +385,7 @@ export function getCardBrand(cardNumber) {
 /**
  * Get circuit breaker status for monitoring
  */
-export function getCircuitBreakerStatus() {
+export function getCircuitBreakerStatus(): CircuitBreakerStatus {
   const stateNames = ['closed', 'half-open', 'open'];
   return {
     state: stateNames[cardNetworkBreaker.state] || 'unknown',

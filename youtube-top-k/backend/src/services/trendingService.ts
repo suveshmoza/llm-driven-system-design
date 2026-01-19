@@ -1,6 +1,6 @@
-import { WindowedViewCounter, getRedisClient } from './redis.js';
+import type { Response } from 'express';
+import { WindowedViewCounter, getRedisClient, TopKResult } from './redis.js';
 import { query } from '../models/database.js';
-import { TopK } from '../utils/topk.js';
 
 // Import shared modules
 import { WINDOW_CONFIG, TOP_K_CONFIG, CACHE_CONFIG, RETENTION_CONFIG } from '../shared/config.js';
@@ -17,6 +17,42 @@ import {
   sseConnectionsTotal,
   redisBucketKeyCount,
 } from '../shared/metrics.js';
+
+export interface VideoRecord {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail_url: string;
+  channel_name: string;
+  category: string;
+  duration_seconds: number;
+  total_views: number;
+  created_at: Date;
+}
+
+export interface TrendingVideo extends VideoRecord {
+  windowViews: number;
+  rank: number;
+}
+
+export interface TrendingCacheEntry {
+  videos: TrendingVideo[];
+  updatedAt: Date;
+}
+
+export interface TrendingStats {
+  totalViews: number;
+  uniqueVideos: number;
+  activeCategories: number;
+  connectedClients: number;
+  lastUpdate: Date | null;
+  cacheHitRate: string;
+  config: {
+    windowMinutes: number;
+    topK: number;
+    updateIntervalSeconds: number;
+  };
+}
 
 /**
  * TrendingService manages trending video calculations
@@ -36,9 +72,18 @@ import {
  * - Metrics help tune the balance between accuracy and compute cost
  */
 export class TrendingService {
-  static instance = null;
+  private static instance: TrendingService | null = null;
 
-  static getInstance() {
+  private viewCounter: WindowedViewCounter;
+  private topK: number;
+  private updateInterval: number;
+  private trendingCache: Map<string, TrendingCacheEntry>;
+  private trendingCacheTimestamps: Map<string, number>;
+  private sseClients: Set<Response>;
+  public intervalId: ReturnType<typeof setInterval> | null;
+  private cacheAccesses: { hits: number; misses: number };
+
+  static getInstance(): TrendingService {
     if (!TrendingService.instance) {
       TrendingService.instance = new TrendingService();
     }
@@ -74,7 +119,7 @@ export class TrendingService {
   /**
    * Start the trending calculation background job
    */
-  async start() {
+  async start(): Promise<void> {
     // Initial calculation
     await this.updateTrending();
 
@@ -83,7 +128,7 @@ export class TrendingService {
       try {
         await this.updateTrending();
       } catch (error) {
-        logError(error, { context: 'trending_update' });
+        logError(error as Error, { context: 'trending_update' });
       }
     }, this.updateInterval);
 
@@ -96,7 +141,7 @@ export class TrendingService {
   /**
    * Stop the trending calculation background job
    */
-  stop() {
+  stop(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -107,7 +152,7 @@ export class TrendingService {
   /**
    * Record a view for a video
    */
-  async recordView(videoId, category = 'all') {
+  async recordView(videoId: string, category = 'all'): Promise<void> {
     const start = process.hrtime.bigint();
 
     try {
@@ -145,7 +190,7 @@ export class TrendingService {
   /**
    * Update trending videos for all categories
    */
-  async updateTrending() {
+  async updateTrending(): Promise<void> {
     const categories = ['all', 'music', 'gaming', 'sports', 'news', 'entertainment', 'education'];
 
     for (const category of categories) {
@@ -167,7 +212,7 @@ export class TrendingService {
 
         logTrendingCalculation(category, trending.length, duration * 1000);
       } catch (error) {
-        logError(error, { context: 'trending_calculation', category });
+        logError(error as Error, { context: 'trending_calculation', category });
       }
     }
 
@@ -180,7 +225,7 @@ export class TrendingService {
         redisBucketKeyCount.set({ category }, keys.length);
       }
     } catch (error) {
-      logError(error, { context: 'redis_key_count' });
+      logError(error as Error, { context: 'redis_key_count' });
     }
 
     // Notify SSE clients
@@ -190,9 +235,9 @@ export class TrendingService {
   /**
    * Calculate trending videos for a category
    */
-  async calculateTrending(category = 'all') {
+  async calculateTrending(category = 'all'): Promise<TrendingVideo[]> {
     // Get top K from windowed counts
-    const topVideos = await this.viewCounter.getTopK(this.topK, category);
+    const topVideos: TopKResult[] = await this.viewCounter.getTopK(this.topK, category);
 
     if (topVideos.length === 0) {
       return [];
@@ -202,7 +247,7 @@ export class TrendingService {
     const videoIds = topVideos.map((v) => v.videoId);
     const placeholders = videoIds.map((_, i) => `$${i + 1}`).join(',');
 
-    const result = await query(
+    const result = await query<VideoRecord>(
       `SELECT id, title, description, thumbnail_url, channel_name, category,
               duration_seconds, total_views, created_at
        FROM videos
@@ -215,16 +260,16 @@ export class TrendingService {
 
     // Merge view counts with video details
     const trendingVideos = topVideos
-      .map((item) => {
+      .map((item, index) => {
         const video = videoMap.get(item.videoId);
         if (!video) return null;
         return {
           ...video,
           windowViews: item.viewCount,
-          rank: topVideos.indexOf(item) + 1,
+          rank: index + 1,
         };
       })
-      .filter(Boolean);
+      .filter((v): v is TrendingVideo => v !== null);
 
     return trendingVideos;
   }
@@ -232,14 +277,10 @@ export class TrendingService {
   /**
    * Get cached trending videos for a category
    */
-  getTrending(category = 'all') {
+  getTrending(category = 'all'): TrendingCacheEntry {
     const cached = this.trendingCache.get(category);
 
     if (cached) {
-      // Check if cache is still fresh
-      const age = Date.now() - cached.updatedAt.getTime();
-      const isFresh = age < CACHE_CONFIG.trendingCacheTtlSeconds * 1000;
-
       // Record cache access
       recordCacheAccess('trending', true);
       logCacheAccess('trending', true, category);
@@ -251,13 +292,13 @@ export class TrendingService {
     recordCacheAccess('trending', false);
     logCacheAccess('trending', false, category);
 
-    return { videos: [], updatedAt: null };
+    return { videos: [], updatedAt: new Date(0) };
   }
 
   /**
    * Register an SSE client for real-time updates
    */
-  registerSSEClient(res) {
+  registerSSEClient(res: Response): void {
     this.sseClients.add(res);
 
     // Update metrics
@@ -284,14 +325,14 @@ export class TrendingService {
   /**
    * Notify all SSE clients of trending updates
    */
-  notifyClients() {
+  notifyClients(): void {
     const data = JSON.stringify({
       type: 'trending-update',
       timestamp: new Date().toISOString(),
       trending: Object.fromEntries(
-        Array.from(this.trendingCache.entries()).map(([category, data]) => [
+        Array.from(this.trendingCache.entries()).map(([category, cacheData]) => [
           category,
-          { videos: data.videos, updatedAt: data.updatedAt },
+          { videos: cacheData.videos, updatedAt: cacheData.updatedAt },
         ])
       ),
     });
@@ -301,7 +342,7 @@ export class TrendingService {
       try {
         client.write(`data: ${data}\n\n`);
       } catch (error) {
-        logError(error, { context: 'sse_send' });
+        logError(error as Error, { context: 'sse_send' });
         this.sseClients.delete(client);
         sseConnectionsTotal.inc({ status: 'error' });
         errorCount++;
@@ -316,8 +357,8 @@ export class TrendingService {
   /**
    * Get available categories
    */
-  async getCategories() {
-    const result = await query(
+  async getCategories(): Promise<string[]> {
+    const result = await query<{ category: string }>(
       'SELECT DISTINCT category FROM videos ORDER BY category'
     );
     return result.rows.map((r) => r.category);
@@ -326,7 +367,7 @@ export class TrendingService {
   /**
    * Get trending statistics
    */
-  async getStats() {
+  async getStats(): Promise<TrendingStats> {
     const client = await getRedisClient();
 
     // Get total view count from hash

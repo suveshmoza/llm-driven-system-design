@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, Router } from 'express';
 import { pool } from '../index.js';
 import { indexDocument, deleteDocument } from '../services/elasticsearch.js';
 import { indexRateLimiter, bulkRateLimiter } from '../shared/rateLimiter.js';
@@ -7,18 +7,64 @@ import { createCircuitBreaker } from '../shared/circuitBreaker.js';
 import { indexOperationLatency, indexOperationsTotal } from '../shared/metrics.js';
 import { logIndexOperation } from '../shared/logger.js';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // Apply rate limiting to all index routes
 router.use(indexRateLimiter);
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface IndexParams {
+  id: string;
+  document: Record<string, unknown>;
+}
+
+interface FileRequestBody {
+  path: string;
+  name: string;
+  content?: string;
+  type?: string;
+  size?: number;
+  modified_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface AppRequestBody {
+  bundle_id: string;
+  name: string;
+  path?: string;
+  category?: string;
+}
+
+interface ContactRequestBody {
+  name: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  notes?: string;
+}
+
+interface WebRequestBody {
+  url: string;
+  title: string;
+  description?: string;
+  favicon_url?: string;
+}
+
+interface BulkFileRequestBody {
+  files: FileRequestBody[];
+}
 
 // ============================================================================
 // Circuit Breakers for Elasticsearch Operations
 // ============================================================================
 
 // Circuit breaker for file indexing
-const fileIndexBreaker = createCircuitBreaker('es_index_files', async (params) => {
-  return indexDocument('files', params.id, params.document);
+const fileIndexBreaker = createCircuitBreaker('es_index_files', async (params: unknown) => {
+  const p = params as IndexParams;
+  return indexDocument('files', p.id, p.document);
 }, {
   timeout: 5000,
   errorThresholdPercentage: 30,
@@ -26,28 +72,39 @@ const fileIndexBreaker = createCircuitBreaker('es_index_files', async (params) =
 });
 
 // Circuit breaker for app indexing
-const appIndexBreaker = createCircuitBreaker('es_index_apps', async (params) => {
-  return indexDocument('apps', params.id, params.document);
+const appIndexBreaker = createCircuitBreaker('es_index_apps', async (params: unknown) => {
+  const p = params as IndexParams;
+  return indexDocument('apps', p.id, p.document);
 });
 
 // Circuit breaker for contact indexing
-const contactIndexBreaker = createCircuitBreaker('es_index_contacts', async (params) => {
-  return indexDocument('contacts', params.id, params.document);
+const contactIndexBreaker = createCircuitBreaker('es_index_contacts', async (params: unknown) => {
+  const p = params as IndexParams;
+  return indexDocument('contacts', p.id, p.document);
 });
 
 // Circuit breaker for web indexing
-const webIndexBreaker = createCircuitBreaker('es_index_web', async (params) => {
-  return indexDocument('web', params.id, params.document);
+const webIndexBreaker = createCircuitBreaker('es_index_web', async (params: unknown) => {
+  const p = params as IndexParams;
+  return indexDocument('web', p.id, p.document);
 });
+
+// Type for circuit breaker
+type CircuitBreakerType = typeof fileIndexBreaker;
 
 // ============================================================================
 // Index Operations Helper
 // ============================================================================
 
-async function executeIndexOperation(breaker, indexType, id, document, operation, idempotencyKey) {
+async function executeIndexOperation(
+  breaker: CircuitBreakerType,
+  indexType: string,
+  id: string,
+  document: Record<string, unknown>,
+  operation: string,
+  idempotencyKey?: string
+): Promise<{ success: boolean }> {
   const startTime = Date.now();
-  let success = true;
-  let error = null;
 
   try {
     // Execute with circuit breaker
@@ -70,8 +127,7 @@ async function executeIndexOperation(breaker, indexType, id, document, operation
 
     return { success: true };
   } catch (err) {
-    success = false;
-    error = err.message;
+    const error = err as Error;
 
     const duration = (Date.now() - startTime) / 1000;
     indexOperationLatency.labels(operation, indexType).observe(duration);
@@ -83,7 +139,7 @@ async function executeIndexOperation(breaker, indexType, id, document, operation
       documentId: id,
       latencyMs: Date.now() - startTime,
       success: false,
-      error: err.message,
+      error: error.message,
       idempotencyKey
     });
 
@@ -94,15 +150,16 @@ async function executeIndexOperation(breaker, indexType, id, document, operation
 // ============================================================================
 // Index a File
 // ============================================================================
-router.post('/files', idempotencyMiddleware('index_file'), async (req, res) => {
+router.post('/files', idempotencyMiddleware('index_file'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { path, name, content, type = 'file', size, modified_at, metadata = {} } = req.body;
+    const { path, name, content, type = 'file', size, modified_at, metadata = {} } = req.body as FileRequestBody;
 
     if (!path || !name) {
-      return res.status(400).json({ error: 'Path and name are required' });
+      res.status(400).json({ error: 'Path and name are required' });
+      return;
     }
 
-    const idempotencyKey = req.headers['idempotency-key'];
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
     // Use idempotency wrapper for the entire operation
     const result = await withIdempotency(
@@ -146,11 +203,13 @@ router.post('/files', idempotencyMiddleware('index_file'), async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    if (error.code === 'EOPENBREAKER') {
-      return res.status(503).json({
+    const err = error as { code?: string };
+    if (err.code === 'EOPENBREAKER') {
+      res.status(503).json({
         error: 'Index service temporarily unavailable',
         code: 'CIRCUIT_BREAKER_OPEN'
       });
+      return;
     }
     console.error('Index file error:', error);
     res.status(500).json({ error: 'Failed to index file' });
@@ -160,7 +219,7 @@ router.post('/files', idempotencyMiddleware('index_file'), async (req, res) => {
 // ============================================================================
 // Delete a File from Index
 // ============================================================================
-router.delete('/files/:path(*)', async (req, res) => {
+router.delete('/files/:path(*)', async (req: Request, res: Response): Promise<void> => {
   try {
     const { path } = req.params;
     const startTime = Date.now();
@@ -193,15 +252,16 @@ router.delete('/files/:path(*)', async (req, res) => {
 // ============================================================================
 // Index an Application
 // ============================================================================
-router.post('/apps', idempotencyMiddleware('index_app'), async (req, res) => {
+router.post('/apps', idempotencyMiddleware('index_app'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { bundle_id, name, path, category } = req.body;
+    const { bundle_id, name, path, category } = req.body as AppRequestBody;
 
     if (!bundle_id || !name) {
-      return res.status(400).json({ error: 'Bundle ID and name are required' });
+      res.status(400).json({ error: 'Bundle ID and name are required' });
+      return;
     }
 
-    const idempotencyKey = req.headers['idempotency-key'];
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
     const result = await withIdempotency(
       idempotencyKey || generateIdempotencyKey('index_app', { bundle_id }),
@@ -243,11 +303,13 @@ router.post('/apps', idempotencyMiddleware('index_app'), async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    if (error.code === 'EOPENBREAKER') {
-      return res.status(503).json({
+    const err = error as { code?: string };
+    if (err.code === 'EOPENBREAKER') {
+      res.status(503).json({
         error: 'Index service temporarily unavailable',
         code: 'CIRCUIT_BREAKER_OPEN'
       });
+      return;
     }
     console.error('Index app error:', error);
     res.status(500).json({ error: 'Failed to index app' });
@@ -257,15 +319,16 @@ router.post('/apps', idempotencyMiddleware('index_app'), async (req, res) => {
 // ============================================================================
 // Index a Contact
 // ============================================================================
-router.post('/contacts', idempotencyMiddleware('index_contact'), async (req, res) => {
+router.post('/contacts', idempotencyMiddleware('index_contact'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, phone, company, notes } = req.body;
+    const { name, email, phone, company, notes } = req.body as ContactRequestBody;
 
     if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
+      res.status(400).json({ error: 'Name is required' });
+      return;
     }
 
-    const idempotencyKey = req.headers['idempotency-key'];
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
     const result = await withIdempotency(
       idempotencyKey || generateIdempotencyKey('index_contact', { name, email }),
@@ -306,11 +369,13 @@ router.post('/contacts', idempotencyMiddleware('index_contact'), async (req, res
 
     res.json(result);
   } catch (error) {
-    if (error.code === 'EOPENBREAKER') {
-      return res.status(503).json({
+    const err = error as { code?: string };
+    if (err.code === 'EOPENBREAKER') {
+      res.status(503).json({
         error: 'Index service temporarily unavailable',
         code: 'CIRCUIT_BREAKER_OPEN'
       });
+      return;
     }
     console.error('Index contact error:', error);
     res.status(500).json({ error: 'Failed to index contact' });
@@ -320,15 +385,16 @@ router.post('/contacts', idempotencyMiddleware('index_contact'), async (req, res
 // ============================================================================
 // Index a Web Item (bookmark/history)
 // ============================================================================
-router.post('/web', idempotencyMiddleware('index_web'), async (req, res) => {
+router.post('/web', idempotencyMiddleware('index_web'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { url, title, description, favicon_url } = req.body;
+    const { url, title, description, favicon_url } = req.body as WebRequestBody;
 
     if (!url || !title) {
-      return res.status(400).json({ error: 'URL and title are required' });
+      res.status(400).json({ error: 'URL and title are required' });
+      return;
     }
 
-    const idempotencyKey = req.headers['idempotency-key'];
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
     const result = await withIdempotency(
       idempotencyKey || generateIdempotencyKey('index_web', { url }),
@@ -371,11 +437,13 @@ router.post('/web', idempotencyMiddleware('index_web'), async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    if (error.code === 'EOPENBREAKER') {
-      return res.status(503).json({
+    const err = error as { code?: string };
+    if (err.code === 'EOPENBREAKER') {
+      res.status(503).json({
         error: 'Index service temporarily unavailable',
         code: 'CIRCUIT_BREAKER_OPEN'
       });
+      return;
     }
     console.error('Index web error:', error);
     res.status(500).json({ error: 'Failed to index web item' });
@@ -385,15 +453,16 @@ router.post('/web', idempotencyMiddleware('index_web'), async (req, res) => {
 // ============================================================================
 // Bulk Index Files
 // ============================================================================
-router.post('/bulk/files', bulkRateLimiter, idempotencyMiddleware('bulk_index'), async (req, res) => {
+router.post('/bulk/files', bulkRateLimiter, idempotencyMiddleware('bulk_index'), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { files } = req.body;
+    const { files } = req.body as BulkFileRequestBody;
 
     if (!Array.isArray(files)) {
-      return res.status(400).json({ error: 'Files array is required' });
+      res.status(400).json({ error: 'Files array is required' });
+      return;
     }
 
-    const idempotencyKey = req.headers['idempotency-key'];
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
     const startTime = Date.now();
 
     const result = await withIdempotency(
@@ -434,7 +503,8 @@ router.post('/bulk/files', bulkRateLimiter, idempotencyMiddleware('bulk_index'),
 
             indexed++;
           } catch (err) {
-            if (err.code === 'EOPENBREAKER') {
+            const e = err as { code?: string };
+            if (e.code === 'EOPENBREAKER') {
               skipped++;
             } else {
               failed++;

@@ -33,7 +33,7 @@ export const minioClient = new Minio.Client({
 });
 
 // Test connections - dynamically import logger to avoid circular dependencies
-export async function testConnections() {
+export async function testConnections(): Promise<boolean> {
   // Lazy load logger to avoid circular dependency during startup
   const { default: logger } = await import('./shared/logger.js');
 
@@ -52,13 +52,13 @@ export async function testConnections() {
 
     return true;
   } catch (error) {
-    logger.error({ error: error.message }, 'Connection test failed');
+    logger.error({ error: (error as Error).message }, 'Connection test failed');
     return false;
   }
 }
 
 // Graceful shutdown
-export async function closeConnections() {
+export async function closeConnections(): Promise<void> {
   const { default: logger } = await import('./shared/logger.js');
 
   await pool.end();

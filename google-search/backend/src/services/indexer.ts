@@ -62,7 +62,10 @@ class Indexer {
     // Create circuit breaker for bulk indexing
     this.bulkIndexBreaker = createCircuitBreaker(
       'elasticsearch-bulk-index',
-      async (docs: SearchDocument[]) => bulkIndexDocuments(docs),
+      async (...args: unknown[]) => {
+        const docs = args[0] as SearchDocument[];
+        return bulkIndexDocuments(docs);
+      },
       {
         timeout: 30000, // Bulk operations can take time
         errorThresholdPercentage: 40,
@@ -73,7 +76,10 @@ class Indexer {
     // Create circuit breaker for single document indexing
     this.singleIndexBreaker = createCircuitBreaker(
       'elasticsearch-single-index',
-      async (doc: SearchDocument) => indexDocument(doc),
+      async (...args: unknown[]) => {
+        const doc = args[0] as SearchDocument;
+        return indexDocument(doc);
+      },
       {
         timeout: 10000,
         errorThresholdPercentage: 50,

@@ -1,9 +1,28 @@
 import { pool } from '../index.js';
 
+export interface SuggestionContext {
+  hour?: number;
+  dayOfWeek?: number;
+}
+
+export interface Suggestion {
+  type: string;
+  name: string;
+  bundleId?: string;
+  path?: string;
+  itemId?: string;
+  metadata?: Record<string, unknown>;
+  email?: string;
+  phone?: string;
+  reason: string;
+  icon: string;
+  score: number;
+}
+
 // Get Siri-style suggestions based on usage patterns
-export async function getSuggestions(context = {}) {
+export async function getSuggestions(context: SuggestionContext = {}): Promise<Suggestion[]> {
   const { hour = new Date().getHours(), dayOfWeek = new Date().getDay() } = context;
-  const suggestions = [];
+  const suggestions: Suggestion[] = [];
 
   // Time-based app suggestions
   const timeBasedApps = await getTimeBasedApps(hour, dayOfWeek);
@@ -23,7 +42,7 @@ export async function getSuggestions(context = {}) {
 }
 
 // Get apps typically used at this time
-async function getTimeBasedApps(hour, dayOfWeek) {
+async function getTimeBasedApps(hour: number, dayOfWeek: number): Promise<Suggestion[]> {
   try {
     const result = await pool.query(`
       SELECT
@@ -55,7 +74,7 @@ async function getTimeBasedApps(hour, dayOfWeek) {
 }
 
 // Get recent activity items
-async function getRecentActivity() {
+async function getRecentActivity(): Promise<Suggestion[]> {
   try {
     const result = await pool.query(`
       SELECT DISTINCT ON (item_id)
@@ -84,7 +103,7 @@ async function getRecentActivity() {
 }
 
 // Get frequently contacted people
-async function getFrequentContacts() {
+async function getFrequentContacts(): Promise<Suggestion[]> {
   try {
     const result = await pool.query(`
       SELECT
@@ -107,15 +126,15 @@ async function getFrequentContacts() {
       phone: row.phone,
       reason: 'Frequently contacted',
       icon: 'user',
-      score: Math.min(80, row.contact_count * 5 + 20)
+      score: Math.min(80, Number(row.contact_count) * 5 + 20)
     }));
   } catch {
     return [];
   }
 }
 
-function getIconForType(type) {
-  const icons = {
+function getIconForType(type: string): string {
+  const icons: Record<string, string> = {
     file: 'document',
     app: 'squares-2x2',
     contact: 'user',
@@ -125,7 +144,7 @@ function getIconForType(type) {
 }
 
 // Record app launch for pattern learning
-export async function recordAppLaunch(bundleId) {
+export async function recordAppLaunch(bundleId: string): Promise<void> {
   const hour = new Date().getHours();
   const dayOfWeek = new Date().getDay();
 
@@ -148,7 +167,12 @@ export async function recordAppLaunch(bundleId) {
 }
 
 // Record activity for recent items
-export async function recordActivity(type, itemId, itemName, metadata = {}) {
+export async function recordActivity(
+  type: string,
+  itemId: string,
+  itemName: string,
+  metadata: Record<string, unknown> = {}
+): Promise<void> {
   try {
     await pool.query(`
       INSERT INTO recent_activity (type, item_id, item_name, metadata)

@@ -1,13 +1,11 @@
-import pino, { Logger } from 'pino';
+import pino from 'pino';
 import crypto from 'crypto';
-import type { Request, Response, NextFunction } from 'express';
-import type { AuthenticatedRequest } from '../types.js';
 
 // Create base logger with structured JSON output
-export const logger: Logger = pino({
+export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   formatters: {
-    level: (label: string) => ({ level: label }),
+    level: (label) => ({ level: label }),
   },
   base: {
     service: 'spotify-api',
@@ -28,12 +26,8 @@ export const logger: Logger = pino({
 });
 
 // Request logging middleware
-export function requestLogger(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void {
-  const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+export function requestLogger(req, res, next) {
+  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
   const startTime = Date.now();
 
   // Attach child logger and requestId to request
@@ -70,11 +64,11 @@ export function requestLogger(
     };
 
     if (res.statusCode >= 500) {
-      req.log?.error(logData, 'request completed with server error');
+      req.log.error(logData, 'request completed with server error');
     } else if (res.statusCode >= 400) {
-      req.log?.warn(logData, 'request completed with client error');
+      req.log.warn(logData, 'request completed with client error');
     } else {
-      req.log?.info(logData, 'request completed');
+      req.log.info(logData, 'request completed');
     }
   });
 

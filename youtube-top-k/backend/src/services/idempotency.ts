@@ -20,14 +20,36 @@ import { IDEMPOTENCY_CONFIG } from '../shared/config.js';
 import { logIdempotencyCheck } from '../shared/logger.js';
 import { duplicateViewEvents } from '../shared/metrics.js';
 
+export interface IdempotencyCheckResult {
+  isDuplicate: boolean;
+  key: string;
+}
+
+export interface ProcessViewResult {
+  processed: boolean;
+  duplicate: boolean;
+  key: string;
+}
+
+export interface IdempotencyOptions {
+  sessionId?: string;
+  requestId?: string;
+}
+
+export interface IdempotencyStats {
+  keyCount: number;
+  prefix: string;
+  ttlSeconds: number;
+}
+
 /**
  * Generate an idempotency key for a view event
- * @param {string} videoId - The video ID being viewed
- * @param {string} sessionId - The session or user ID
- * @param {string} [requestId] - Optional request ID from headers
- * @returns {string} Idempotency key
  */
-export function generateIdempotencyKey(videoId, sessionId, requestId) {
+export function generateIdempotencyKey(
+  videoId: string,
+  sessionId?: string,
+  requestId?: string
+): string {
   // If a request ID is provided (e.g., from X-Request-Id header), use it
   if (requestId) {
     return `${IDEMPOTENCY_CONFIG.keyPrefix}${requestId}`;
@@ -44,11 +66,10 @@ export function generateIdempotencyKey(videoId, sessionId, requestId) {
  *
  * Uses Redis SETNX (SET if Not eXists) for atomic check-and-set.
  * This is a common pattern for distributed idempotency.
- *
- * @param {string} idempotencyKey - The idempotency key to check
- * @returns {Promise<{isDuplicate: boolean, key: string}>}
  */
-export async function checkAndMarkProcessed(idempotencyKey) {
+export async function checkAndMarkProcessed(
+  idempotencyKey: string
+): Promise<IdempotencyCheckResult> {
   const client = await getRedisClient();
 
   // Use SET with NX (only set if not exists) and EX (expiration)
@@ -72,11 +93,8 @@ export async function checkAndMarkProcessed(idempotencyKey) {
  * Check if a view event is a duplicate (without marking)
  *
  * Useful for read-only checks or reporting.
- *
- * @param {string} idempotencyKey - The idempotency key to check
- * @returns {Promise<boolean>} True if duplicate
  */
-export async function isDuplicate(idempotencyKey) {
+export async function isDuplicate(idempotencyKey: string): Promise<boolean> {
   const client = await getRedisClient();
   const exists = await client.exists(idempotencyKey);
   return exists === 1;
@@ -87,23 +105,22 @@ export async function isDuplicate(idempotencyKey) {
  *
  * This is the main function to use for view event processing.
  * It wraps the idempotency check and provides a clean interface.
- *
- * @param {string} videoId - The video ID
- * @param {string} category - The video category
- * @param {object} options - Options including sessionId and requestId
- * @param {function} processCallback - Async function to call if not duplicate
- * @returns {Promise<{processed: boolean, duplicate: boolean, key: string}>}
  */
-export async function processViewWithIdempotency(videoId, category, options, processCallback) {
+export async function processViewWithIdempotency(
+  videoId: string,
+  category: string,
+  options: IdempotencyOptions,
+  processCallback: () => Promise<void>
+): Promise<ProcessViewResult> {
   const { sessionId, requestId } = options;
 
   // Generate idempotency key
   const key = generateIdempotencyKey(videoId, sessionId, requestId);
 
   // Check if duplicate
-  const { isDuplicate } = await checkAndMarkProcessed(key);
+  const result = await checkAndMarkProcessed(key);
 
-  if (isDuplicate) {
+  if (result.isDuplicate) {
     // Track duplicate for metrics
     duplicateViewEvents.inc({ category: category || 'all' });
 
@@ -126,11 +143,8 @@ export async function processViewWithIdempotency(videoId, category, options, pro
 
 /**
  * Clear an idempotency key (for testing or rollback)
- *
- * @param {string} idempotencyKey - The key to clear
- * @returns {Promise<boolean>} True if key was deleted
  */
-export async function clearIdempotencyKey(idempotencyKey) {
+export async function clearIdempotencyKey(idempotencyKey: string): Promise<boolean> {
   const client = await getRedisClient();
   const result = await client.del(idempotencyKey);
   return result === 1;
@@ -138,10 +152,8 @@ export async function clearIdempotencyKey(idempotencyKey) {
 
 /**
  * Get statistics about idempotency keys (for monitoring)
- *
- * @returns {Promise<{keyCount: number, memoryBytes: number}>}
  */
-export async function getIdempotencyStats() {
+export async function getIdempotencyStats(): Promise<IdempotencyStats> {
   const client = await getRedisClient();
 
   // Count idempotency keys

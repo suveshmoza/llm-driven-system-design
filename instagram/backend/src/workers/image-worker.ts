@@ -9,20 +9,25 @@
  * 4. Upload processed versions to MinIO
  * 5. Update database with processed URLs and status
  */
-import { consumeImageProcessingJobs, initializeQueue, closeQueue } from '../services/queue.js';
+import { consumeImageProcessingJobs, initializeQueue, closeQueue, ImageProcessingJob } from '../services/queue.js';
 import { processStoredImage, deleteObject, ensureBucket } from '../services/storage.js';
 import { query, getClient } from '../services/db.js';
 import { timelineAdd } from '../services/redis.js';
 import logger from '../services/logger.js';
-import {
-  imageProcessingDuration,
-  imageProcessingErrors,
-} from '../services/metrics.js';
+import { imageProcessingDuration, imageProcessingErrors } from '../services/metrics.js';
+
+interface FollowerRow {
+  follower_id: string;
+}
+
+interface PostRow {
+  created_at: Date;
+}
 
 /**
  * Process a single image processing job.
  */
-async function processImageJob(job) {
+async function processImageJob(job: ImageProcessingJob): Promise<void> {
   const { postId, userId, mediaItems } = job;
   const startTime = Date.now();
   const client = await getClient();
@@ -34,12 +39,15 @@ async function processImageJob(job) {
     for (const item of mediaItems) {
       const { originalKey, filterName, orderIndex } = item;
 
-      logger.info({
-        type: 'image_processing_start',
-        postId,
-        orderIndex,
-        originalKey,
-      }, `Processing image ${orderIndex} for post ${postId}`);
+      logger.info(
+        {
+          type: 'image_processing_start',
+          postId,
+          orderIndex,
+          originalKey,
+        },
+        `Processing image ${orderIndex} for post ${postId}`
+      );
 
       // Process the image
       const result = await processStoredImage(originalKey, filterName);
@@ -59,32 +67,29 @@ async function processImageJob(job) {
       // Delete original after processing
       await deleteObject(originalKey);
 
-      logger.info({
-        type: 'image_processing_complete',
-        postId,
-        orderIndex,
-        width: result.width,
-        height: result.height,
-      }, `Processed image ${orderIndex} for post ${postId}`);
+      logger.info(
+        {
+          type: 'image_processing_complete',
+          postId,
+          orderIndex,
+          width: result.width,
+          height: result.height,
+        },
+        `Processed image ${orderIndex} for post ${postId}`
+      );
     }
 
     // Update post status to published
-    await client.query(
-      `UPDATE posts SET status = 'published', updated_at = NOW() WHERE id = $1`,
-      [postId]
-    );
+    await client.query(`UPDATE posts SET status = 'published', updated_at = NOW() WHERE id = $1`, [postId]);
 
     await client.query('COMMIT');
 
     // Fan out to followers' timelines
-    const post = await query('SELECT created_at FROM posts WHERE id = $1', [postId]);
+    const post = await query<PostRow>('SELECT created_at FROM posts WHERE id = $1', [postId]);
     if (post.rows.length > 0) {
       const timestamp = new Date(post.rows[0].created_at).getTime();
 
-      const followers = await query(
-        'SELECT follower_id FROM follows WHERE following_id = $1',
-        [userId]
-      );
+      const followers = await query<FollowerRow>('SELECT follower_id FROM follows WHERE following_id = $1', [userId]);
 
       for (const follower of followers.rows) {
         await timelineAdd(follower.follower_id, postId, timestamp);
@@ -96,29 +101,33 @@ async function processImageJob(job) {
     const duration = (Date.now() - startTime) / 1000;
     imageProcessingDuration.labels('all').observe(duration);
 
-    logger.info({
-      type: 'post_published',
-      postId,
-      userId,
-      mediaCount: mediaItems.length,
-      durationSeconds: duration,
-    }, `Post ${postId} published after processing`);
+    logger.info(
+      {
+        type: 'post_published',
+        postId,
+        userId,
+        mediaCount: mediaItems.length,
+        durationSeconds: duration,
+      },
+      `Post ${postId} published after processing`
+    );
   } catch (error) {
     await client.query('ROLLBACK');
 
     // Update post status to failed
-    await query(
-      `UPDATE posts SET status = 'failed', updated_at = NOW() WHERE id = $1`,
-      [postId]
+    await query(`UPDATE posts SET status = 'failed', updated_at = NOW() WHERE id = $1`, [postId]);
+
+    const err = error as Error;
+    imageProcessingErrors.labels(err.name || 'unknown').inc();
+
+    logger.error(
+      {
+        type: 'image_processing_error',
+        postId,
+        error: err.message,
+      },
+      `Failed to process images for post ${postId}`
     );
-
-    imageProcessingErrors.labels(error.name || 'unknown').inc();
-
-    logger.error({
-      type: 'image_processing_error',
-      postId,
-      error: error.message,
-    }, `Failed to process images for post ${postId}`);
 
     throw error;
   } finally {
@@ -129,7 +138,7 @@ async function processImageJob(job) {
 /**
  * Main worker entry point.
  */
-async function main() {
+async function main(): Promise<void> {
   logger.info('Starting image processing worker');
 
   // Ensure MinIO bucket exists
@@ -144,7 +153,7 @@ async function main() {
   logger.info('Image worker ready and consuming jobs');
 
   // Graceful shutdown
-  const shutdown = async (signal) => {
+  const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutting down worker');
     await closeQueue();
     process.exit(0);
@@ -154,7 +163,7 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-main().catch((error) => {
+main().catch((error: Error) => {
   logger.error({ error: error.message }, 'Worker failed to start');
   process.exit(1);
 });

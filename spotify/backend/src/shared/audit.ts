@@ -1,6 +1,5 @@
 import { pool } from '../db.js';
 import logger from './logger.js';
-import type { AuthenticatedRequest, AuditLogFilters, AuditLogQueryResult, AuditLogEntry } from '../types.js';
 
 /**
  * Audit logging for sensitive operations.
@@ -62,21 +61,26 @@ export const AuditActions = {
   // Data export (GDPR)
   DATA_EXPORT_REQUEST: 'data.export_request',
   DATA_DELETE_REQUEST: 'data.delete_request',
-} as const;
-
-export type AuditAction = typeof AuditActions[keyof typeof AuditActions];
+};
 
 /**
  * Log an audit event to the database.
+ *
+ * @param {Object} req - Express request object (for actor info)
+ * @param {string} action - Action being audited (from AuditActions)
+ * @param {string} resourceType - Type of resource being acted upon
+ * @param {string|null} resourceId - ID of the resource (can be null)
+ * @param {Object} details - Additional details about the action
+ * @param {boolean} success - Whether the action succeeded
  */
 export async function auditLog(
-  req: AuthenticatedRequest | null,
-  action: AuditAction,
-  resourceType: string,
-  resourceId: string | null,
-  details: Record<string, unknown> = {},
-  success: boolean = true
-): Promise<void> {
+  req,
+  action,
+  resourceType,
+  resourceId,
+  details = {},
+  success = true
+) {
   const log = req?.log || logger;
 
   try {
@@ -121,10 +125,9 @@ export async function auditLog(
     }
   } catch (error) {
     // Don't fail the request if audit logging fails
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error(
       {
-        error: errorMessage,
+        error: error.message,
         action,
         resourceType,
         resourceId,
@@ -136,22 +139,23 @@ export async function auditLog(
 
 /**
  * Query audit logs (for admin dashboard).
+ *
+ * @param {Object} filters - Filter options
+ * @returns {Promise<Array>} Matching audit log entries
  */
-export async function queryAuditLogs(filters: AuditLogFilters): Promise<AuditLogQueryResult> {
-  const {
-    actorId = null,
-    action = null,
-    resourceType = null,
-    resourceId = null,
-    startDate = null,
-    endDate = null,
-    success = null,
-    limit = 100,
-    offset = 0,
-  } = filters;
-
-  const conditions: string[] = [];
-  const params: unknown[] = [];
+export async function queryAuditLogs({
+  actorId = null,
+  action = null,
+  resourceType = null,
+  resourceId = null,
+  startDate = null,
+  endDate = null,
+  success = null,
+  limit = 100,
+  offset = 0,
+}) {
+  const conditions = [];
+  const params = [];
   let paramIndex = 1;
 
   if (actorId) {
@@ -201,8 +205,8 @@ export async function queryAuditLogs(filters: AuditLogFilters): Promise<AuditLog
   );
 
   return {
-    logs: result.rows as AuditLogEntry[],
-    total: parseInt(countResult.rows[0].count as string),
+    logs: result.rows,
+    total: parseInt(countResult.rows[0].count),
     limit,
     offset,
   };

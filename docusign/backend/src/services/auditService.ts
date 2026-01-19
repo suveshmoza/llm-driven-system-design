@@ -2,16 +2,98 @@ import crypto from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { query } from '../utils/db.js';
 
+export interface AuditEvent {
+  id: string;
+  envelopeId: string;
+  eventType: string;
+  data: Record<string, unknown>;
+  timestamp: string;
+  actor: string;
+  previousHash?: string;
+  hash?: string;
+}
+
+export interface AuditEventRow {
+  id: string;
+  envelope_id: string;
+  event_type: string;
+  data: string | Record<string, unknown>;
+  timestamp: string;
+  actor: string;
+  previous_hash: string;
+  hash: string;
+}
+
+export interface ChainVerificationResult {
+  valid: boolean;
+  eventCount?: number;
+  error?: string;
+  eventId?: string;
+  expected?: string;
+  found?: string;
+}
+
+export interface CertificateSigner {
+  name: string;
+  email: string;
+  signedAt: string;
+  ipAddress: string;
+}
+
+export interface CertificateEvent {
+  id: string;
+  time: string;
+  action: string;
+  actor: string;
+  details: string;
+  hash: string;
+}
+
+export interface CertificateData {
+  envelopeId: string;
+  envelopeName: string;
+  documentName: string;
+  status: string;
+  createdAt: string;
+  completedAt: string | null;
+  chainVerified: boolean;
+  signers: CertificateSigner[];
+  events: CertificateEvent[];
+  eventCount: number;
+}
+
+interface EnvelopeRow {
+  id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+  document_name?: string;
+}
+
+interface RecipientRow {
+  id: string;
+  name: string;
+  email: string;
+  completed_at: string;
+  ip_address: string;
+}
+
 class AuditService {
   // Log an event with hash chain integrity
-  async log(envelopeId, eventType, data, actor = 'system') {
-    const event = {
+  async log(
+    envelopeId: string,
+    eventType: string,
+    data: Record<string, unknown>,
+    actor: string = 'system'
+  ): Promise<AuditEvent> {
+    const event: AuditEvent = {
       id: uuid(),
       envelopeId,
       eventType,
       data,
       timestamp: new Date().toISOString(),
-      actor: data.recipientId || data.userId || actor
+      actor: (data.recipientId as string) || (data.userId as string) || actor
     };
 
     // Get previous event's hash for chain
@@ -34,7 +116,7 @@ class AuditService {
   }
 
   // Calculate SHA-256 hash for event
-  calculateHash(event) {
+  calculateHash(event: AuditEvent): string {
     const payload = JSON.stringify({
       id: event.id,
       envelopeId: event.envelopeId,
@@ -48,8 +130,8 @@ class AuditService {
   }
 
   // Get the last event for an envelope
-  async getLastEvent(envelopeId) {
-    const result = await query(
+  async getLastEvent(envelopeId: string): Promise<AuditEventRow | null> {
+    const result = await query<AuditEventRow>(
       `SELECT * FROM audit_events
        WHERE envelope_id = $1
        ORDER BY timestamp DESC
@@ -60,8 +142,8 @@ class AuditService {
   }
 
   // Get all events for an envelope
-  async getEvents(envelopeId) {
-    const result = await query(
+  async getEvents(envelopeId: string): Promise<AuditEventRow[]> {
+    const result = await query<AuditEventRow>(
       `SELECT * FROM audit_events
        WHERE envelope_id = $1
        ORDER BY timestamp ASC`,
@@ -71,7 +153,7 @@ class AuditService {
   }
 
   // Verify the integrity of the audit chain
-  async verifyChain(envelopeId) {
+  async verifyChain(envelopeId: string): Promise<ChainVerificationResult> {
     const events = await this.getEvents(envelopeId);
     let previousHash = '0'.repeat(64);
 
@@ -92,9 +174,10 @@ class AuditService {
         id: event.id,
         envelopeId: event.envelope_id,
         eventType: event.event_type,
-        data: event.data,
+        data: typeof event.data === 'string' ? JSON.parse(event.data) : event.data,
         timestamp: event.timestamp,
-        previousHash: event.previous_hash
+        previousHash: event.previous_hash,
+        actor: event.actor
       });
 
       if (calculatedHash !== event.hash) {
@@ -114,7 +197,7 @@ class AuditService {
   }
 
   // Format event details for display
-  formatEventDetails(event) {
+  formatEventDetails(event: AuditEventRow): string {
     const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
 
     switch (event.event_type) {
@@ -148,12 +231,12 @@ class AuditService {
   }
 
   // Generate certificate data for an envelope
-  async generateCertificateData(envelopeId) {
+  async generateCertificateData(envelopeId: string): Promise<CertificateData> {
     const events = await this.getEvents(envelopeId);
     const verification = await this.verifyChain(envelopeId);
 
     // Get envelope and document info
-    const envelopeResult = await query(
+    const envelopeResult = await query<EnvelopeRow>(
       `SELECT e.*, d.name as document_name
        FROM envelopes e
        LEFT JOIN documents d ON d.envelope_id = e.id
@@ -163,7 +246,7 @@ class AuditService {
     const envelope = envelopeResult.rows[0];
 
     // Get completed recipients
-    const recipientsResult = await query(
+    const recipientsResult = await query<RecipientRow>(
       `SELECT * FROM recipients
        WHERE envelope_id = $1 AND status = 'completed'
        ORDER BY completed_at ASC`,
@@ -173,7 +256,7 @@ class AuditService {
     return {
       envelopeId,
       envelopeName: envelope.name,
-      documentName: envelope.document_name,
+      documentName: envelope.document_name || '',
       status: envelope.status,
       createdAt: envelope.created_at,
       completedAt: envelope.completed_at,
