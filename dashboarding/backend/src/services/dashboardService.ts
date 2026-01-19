@@ -6,7 +6,7 @@
  * and can be associated with users.
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as _uuidv4 } from 'uuid';
 import pool from '../db/pool.js';
 import type {
   Dashboard,

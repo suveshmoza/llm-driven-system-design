@@ -52,7 +52,7 @@ const startTime = Date.now();
 async function checkDatabase(): Promise<ComponentHealth> {
   const start = Date.now();
   try {
-    const result = await pool.query('SELECT 1 as ping');
+    const _result = await pool.query('SELECT 1 as ping');
     const latency = Date.now() - start;
 
     // Get pool statistics

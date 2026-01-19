@@ -24,7 +24,7 @@
  * @see architecture.md for network integration design
  */
 import CircuitBreaker from 'opossum';
-import { logger, createChildLogger } from './logger.js';
+import { _logger, createChildLogger } from './logger.js';
 import { circuitBreakerState, circuitBreakerEvents } from './metrics.js';
 
 const cbLogger = createChildLogger({ module: 'CircuitBreaker' });

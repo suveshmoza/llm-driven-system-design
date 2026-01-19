@@ -53,7 +53,7 @@ interface DeepHealthResponse {
 async function checkPostgres(): Promise<ComponentHealth> {
   const start = Date.now();
   try {
-    const result = await pool.query('SELECT 1');
+    const _result = await pool.query('SELECT 1');
     return {
       status: 'up',
       latencyMs: Date.now() - start,

@@ -41,7 +41,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       success: true,
       data: bookings,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get bookings',
@@ -63,7 +63,7 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
       success: true,
       data: stats,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get statistics',
@@ -93,7 +93,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: booking,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get booking',

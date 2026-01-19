@@ -137,7 +137,7 @@ export function generateSlots(
   bufferAfter: number = 0
 ): TimeInterval[] {
   const slots: TimeInterval[] = [];
-  const totalSlotTime = slotDuration + bufferBefore + bufferAfter;
+  const _totalSlotTime = slotDuration + bufferBefore + bufferAfter;
 
   for (const gap of gaps) {
     let slotStart = addMinutes(gap.start, bufferBefore);

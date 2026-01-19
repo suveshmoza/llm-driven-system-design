@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { userService } from '../services/userService.js';
-import { meetingTypeService } from '../services/meetingTypeService.js';
-import { bookingService } from '../services/booking/index.js';
+import { _meetingTypeService } from '../services/meetingTypeService.js';
+import { _bookingService } from '../services/booking/index.js';
 import { emailService } from '../services/emailService.js';
 import { pool } from '../db/index.js';
 import { requireAdmin } from '../middleware/auth.js';
@@ -51,7 +51,7 @@ router.get('/stats', async (req: Request, res: Response) => {
         emails_sent: parseInt(emailsResult.rows[0].count),
       },
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get statistics',
@@ -72,7 +72,7 @@ router.get('/users', async (req: Request, res: Response) => {
       success: true,
       data: users,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get users',
@@ -118,7 +118,7 @@ router.get('/bookings', async (req: Request, res: Response) => {
       success: true,
       data: result.rows,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get bookings',
@@ -141,7 +141,7 @@ router.get('/emails', async (req: Request, res: Response) => {
       success: true,
       data: emails,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get email logs',
@@ -180,7 +180,7 @@ router.delete('/users/:id', async (req: Request, res: Response) => {
       success: true,
       message: 'User deleted',
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to delete user',
@@ -211,7 +211,7 @@ router.get('/bookings/recent', async (req: Request, res: Response) => {
       success: true,
       data: result.rows,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get recent bookings',

@@ -301,7 +301,7 @@ metricsRouter.get('/metrics', async (req: Request, res: Response) => {
   try {
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());
-  } catch (error) {
+  } catch (_error) {
     res.status(500).end('Error collecting metrics');
   }
 });

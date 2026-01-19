@@ -26,7 +26,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       success: true,
       data: meetingTypes,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get meeting types',
@@ -56,7 +56,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       success: true,
       data: meetingType,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get meeting type',
@@ -186,7 +186,7 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
       success: true,
       message: 'Meeting type deleted',
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to delete meeting type',

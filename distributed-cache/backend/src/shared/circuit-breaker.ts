@@ -90,7 +90,7 @@ export function createCircuitBreaker(nodeUrl, requestFn, options = {}) {
     circuitBreakerState.labels(nodeUrl).set(stateValues.halfOpen);
   });
 
-  breaker.on('success', (result) => {
+  breaker.on('success', (_result) => {
     circuitBreakerLogger.debug(
       { nodeUrl, success: true },
       'circuit_breaker_success'
@@ -105,7 +105,7 @@ export function createCircuitBreaker(nodeUrl, requestFn, options = {}) {
     circuitBreakerLogger.warn({ nodeUrl }, 'circuit_breaker_reject');
   });
 
-  breaker.on('fallback', (result) => {
+  breaker.on('fallback', (_result) => {
     circuitBreakerLogger.debug({ nodeUrl }, 'circuit_breaker_fallback');
   });
 

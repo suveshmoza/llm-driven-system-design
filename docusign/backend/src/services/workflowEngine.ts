@@ -12,7 +12,7 @@ import {
   generateSendIdempotencyKey,
 } from '../shared/idempotency.js';
 import { logAuditEvent, AUDIT_EVENTS } from '../shared/auditLogger.js';
-import { envelopesCreated } from '../shared/metrics.js';
+import { _envelopesCreated } from '../shared/metrics.js';
 import logger from '../shared/logger.js';
 
 // Valid state transitions

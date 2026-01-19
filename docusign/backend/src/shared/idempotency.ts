@@ -1,5 +1,5 @@
-import { v4 as uuid } from 'uuid';
-import { query, getClient } from '../utils/db.js';
+import { v4 as _uuid } from 'uuid';
+import { query, _getClient } from '../utils/db.js';
 import { redisClient } from '../utils/redis.js';
 import logger, { auditLogger } from './logger.js';
 import { idempotencyHits, idempotencyMisses } from './metrics.js';

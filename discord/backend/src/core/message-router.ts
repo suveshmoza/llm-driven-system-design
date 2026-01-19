@@ -198,7 +198,7 @@ export class MessageRouter {
    * @returns Formatted string like "[room] user: content"
    */
   private formatMessage(message: ChatMessage): string {
-    const time = message.timestamp.toLocaleTimeString('en-US', {
+    const _time = message.timestamp.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
     });

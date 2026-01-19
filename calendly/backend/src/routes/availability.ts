@@ -26,7 +26,7 @@ router.get('/rules', requireAuth, async (req: Request, res: Response) => {
       success: true,
       data: rules,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get availability rules',
@@ -92,7 +92,7 @@ router.delete('/rules/:id', requireAuth, async (req: Request, res: Response) => 
       success: true,
       message: 'Availability rule deleted',
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to delete availability rule',

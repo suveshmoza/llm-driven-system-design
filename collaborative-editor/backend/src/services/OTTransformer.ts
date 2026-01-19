@@ -99,7 +99,7 @@ export class OTTransformer {
       }
       // Both are delete (they delete the same text, so cancel out)
       else if (isDelete(o1) && isDelete(o2)) {
-        const minLen = Math.min(o1.delete, o2.delete);
+        const _minLen = Math.min(o1.delete, o2.delete);
 
         if (o1.delete > o2.delete) {
           ops1[i1] = { delete: o1.delete - o2.delete };
@@ -239,7 +239,7 @@ export class OTTransformer {
       }
       // Insert from op1, delete from op2
       else if (isInsert(o1) && isDelete(o2)) {
-        const minLen = Math.min(o1.insert.length, o2.delete);
+        const _minLen = Math.min(o1.insert.length, o2.delete);
         // The insert is deleted, so nothing goes to composed
 
         if (o1.insert.length > o2.delete) {

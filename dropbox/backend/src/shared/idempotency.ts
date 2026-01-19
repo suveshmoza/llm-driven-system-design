@@ -188,7 +188,7 @@ export function idempotent(
       const originalSend = res.send.bind(res);
       const originalEnd = res.end.bind(res);
 
-      let responseBody: string | undefined;
+      let _responseBody: string | undefined;
       let responseCaptured = false;
 
       // Helper to update idempotency record on completion

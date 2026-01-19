@@ -4,7 +4,7 @@ import { client as redis } from '../db/redis.js';
 import { isAuthenticated } from '../middleware/auth.js';
 
 // Shared observability and resilience modules
-import { logger } from '../shared/logger.js';
+import { _logger } from '../shared/logger.js';
 import { watchProgressUpdates } from '../shared/metrics.js';
 import {
   watchProgressIdempotency,

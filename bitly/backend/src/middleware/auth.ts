@@ -37,7 +37,7 @@ export async function optionalAuth(
         req.user = user;
       }
     }
-  } catch (error) {
+  } catch (_error) {
     // Ignore auth errors for optional auth
   }
 

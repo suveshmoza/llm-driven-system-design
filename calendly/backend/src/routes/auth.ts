@@ -80,7 +80,7 @@ router.post('/login', async (req: Request, res: Response) => {
       success: true,
       data: user,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Login failed',
@@ -140,7 +140,7 @@ router.get('/me', async (req: Request, res: Response) => {
       success: true,
       data: user,
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: 'Failed to get user',

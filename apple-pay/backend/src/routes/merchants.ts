@@ -170,7 +170,7 @@ router.post(
 
       // Validate cryptogram (simplified)
       // In a real system, this would go through the card network
-      const expectedCryptogram = generateCryptogram(
+      const _expectedCryptogram = generateCryptogram(
         data.token_dpan,
         data.amount,
         merchant.rows[0].merchant_id,

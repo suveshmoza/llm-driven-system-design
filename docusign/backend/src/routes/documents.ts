@@ -81,7 +81,7 @@ router.post('/upload/:envelopeId', authenticate, upload.single('document'), asyn
     try {
       pdfDoc = await PDFDocument.load(req.file.buffer);
       pageCount = pdfDoc.getPageCount();
-    } catch (pdfError) {
+    } catch (_pdfError) {
       res.status(400).json({ error: 'Invalid PDF file' });
       return;
     }

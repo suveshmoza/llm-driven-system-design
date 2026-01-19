@@ -116,7 +116,7 @@ export class UserService {
     }
 
     // Remove password_hash before returning
-    const { password_hash, ...userWithoutPassword } = user;
+    const { _password_hash, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
 
