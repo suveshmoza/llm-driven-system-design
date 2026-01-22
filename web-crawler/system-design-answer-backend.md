@@ -2,7 +2,9 @@
 
 *45-minute system design interview format - Backend Engineer Position*
 
-## Introduction (2 minutes)
+---
+
+## 📋 Introduction (2 minutes)
 
 "Thank you for having me. Today I'll design a distributed web crawler for indexing the internet at scale. This system is fascinating from a backend perspective because it requires:
 
@@ -15,7 +17,7 @@ The core backend challenge is crawling billions of pages while being a good citi
 
 ---
 
-## Requirements Clarification (5 minutes)
+## 🎯 Requirements Clarification (5 minutes)
 
 ### Functional Requirements
 
@@ -43,7 +45,7 @@ The politeness constraint is critical - we must be good citizens or risk getting
 
 ---
 
-## High-Level Design (8 minutes)
+## 🏗️ High-Level Design (8 minutes)
 
 ### Architecture Overview
 
@@ -108,652 +110,527 @@ This separation ensures priority is respected while maintaining politeness."
 
 ---
 
-## Deep Dive: URL Frontier Implementation (10 minutes)
+## 🔍 Deep Dive: URL Frontier Implementation (10 minutes)
 
-### PostgreSQL Schema for Frontier
+### Database Schema for Frontier
 
-```sql
--- URL frontier with priority and domain separation
-CREATE TABLE url_frontier (
-    id              BIGSERIAL PRIMARY KEY,
-    url             TEXT NOT NULL,
-    url_hash        CHAR(64) NOT NULL,  -- SHA-256 for dedup
-    domain          TEXT NOT NULL,
-    priority        SMALLINT NOT NULL DEFAULT 1,  -- 0=high, 1=medium, 2=low
-    depth           SMALLINT NOT NULL DEFAULT 0,
-    discovered_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    scheduled_at    TIMESTAMPTZ,  -- When eligible for crawling
-    status          TEXT NOT NULL DEFAULT 'pending',
-    worker_id       TEXT,
-    locked_until    TIMESTAMPTZ,
-    retry_count     SMALLINT NOT NULL DEFAULT 0,
-    parent_url_id   BIGINT REFERENCES url_frontier(id),
+**url_frontier table:**
 
-    CONSTRAINT url_frontier_url_hash_unique UNIQUE (url_hash)
-);
+| Column | Type | Purpose |
+|--------|------|---------|
+| id | BIGSERIAL | Primary key |
+| url | TEXT | Full URL |
+| url_hash | CHAR(64) | SHA-256 for deduplication |
+| domain | TEXT | Extracted domain |
+| priority | SMALLINT | 0=high, 1=medium, 2=low |
+| depth | SMALLINT | Crawl depth from seed |
+| discovered_at | TIMESTAMPTZ | When URL was found |
+| scheduled_at | TIMESTAMPTZ | When eligible for crawl |
+| status | TEXT | pending/processing/completed/failed |
+| worker_id | TEXT | Assigned worker |
+| locked_until | TIMESTAMPTZ | Lock expiry |
+| retry_count | SMALLINT | Failed attempt count |
+| parent_url_id | BIGINT | Reference to parent URL |
 
--- Indexes for efficient queue operations
-CREATE INDEX idx_frontier_pending ON url_frontier (priority, scheduled_at)
-    WHERE status = 'pending' AND scheduled_at <= NOW();
-CREATE INDEX idx_frontier_domain ON url_frontier (domain, status);
-CREATE INDEX idx_frontier_worker ON url_frontier (worker_id, locked_until)
-    WHERE status = 'processing';
+**Indexes for efficient queue operations:**
 
--- Domain metadata for rate limiting and robots.txt
-CREATE TABLE domains (
-    id              SERIAL PRIMARY KEY,
-    domain          TEXT NOT NULL UNIQUE,
-    robots_txt      TEXT,
-    robots_fetched_at TIMESTAMPTZ,
-    crawl_delay     INTEGER DEFAULT 1000,  -- milliseconds
-    last_crawl_at   TIMESTAMPTZ,
-    total_pages     INTEGER DEFAULT 0,
-    avg_page_size   INTEGER,
-    is_blocked      BOOLEAN DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+| Index | Columns | Purpose |
+|-------|---------|---------|
+| idx_frontier_pending | priority, scheduled_at WHERE status='pending' | Fast dequeue |
+| idx_frontier_domain | domain, status | Per-domain queries |
+| idx_frontier_worker | worker_id, locked_until WHERE status='processing' | Lock cleanup |
 
--- Crawled pages for content storage
-CREATE TABLE crawled_pages (
-    id              BIGSERIAL PRIMARY KEY,
-    url_id          BIGINT REFERENCES url_frontier(id),
-    url             TEXT NOT NULL,
-    domain          TEXT NOT NULL,
-    status_code     SMALLINT,
-    content_type    TEXT,
-    content_hash    CHAR(64),  -- SimHash for near-duplicate detection
-    content_length  INTEGER,
-    title           TEXT,
-    crawled_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    response_time_ms INTEGER,
-    storage_path    TEXT  -- S3/MinIO path for content
-);
-```
+**domains table:**
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| id | SERIAL | Primary key |
+| domain | TEXT UNIQUE | Domain name |
+| robots_txt | TEXT | Cached robots.txt content |
+| robots_fetched_at | TIMESTAMPTZ | When robots.txt was fetched |
+| crawl_delay | INTEGER | Milliseconds between requests |
+| last_crawl_at | TIMESTAMPTZ | Last crawl timestamp |
+| total_pages | INTEGER | Pages crawled from domain |
+| is_blocked | BOOLEAN | Circuit breaker flag |
+
+**crawled_pages table:**
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| id | BIGSERIAL | Primary key |
+| url_id | BIGINT FK | Reference to frontier |
+| url | TEXT | Full URL |
+| domain | TEXT | Domain |
+| status_code | SMALLINT | HTTP status |
+| content_type | TEXT | MIME type |
+| content_hash | CHAR(64) | SimHash for near-dedup |
+| content_length | INTEGER | Bytes |
+| title | TEXT | Page title |
+| crawled_at | TIMESTAMPTZ | Crawl timestamp |
+| response_time_ms | INTEGER | Server response time |
+| storage_path | TEXT | S3/MinIO path |
 
 ### Fetching URLs with Distributed Locking
 
-```typescript
-interface FrontierURL {
-  id: number;
-  url: string;
-  domain: string;
-  priority: number;
-  depth: number;
-}
-
-async function fetchNextBatch(workerId: string, batchSize: number = 10): Promise<FrontierURL[]> {
-  const lockDuration = 300; // 5 minutes
-
-  return await pool.query(`
-    WITH eligible_domains AS (
-      -- Find domains that are ready for crawling (respecting rate limits)
-      SELECT DISTINCT domain
-      FROM url_frontier uf
-      JOIN domains d ON uf.domain = d.domain
-      WHERE uf.status = 'pending'
-        AND uf.scheduled_at <= NOW()
-        AND (d.last_crawl_at IS NULL OR
-             d.last_crawl_at + (d.crawl_delay || ' milliseconds')::INTERVAL <= NOW())
-        AND d.is_blocked = FALSE
-      LIMIT $2
-    ),
-    selected_urls AS (
-      -- Select one URL per eligible domain, ordered by priority
-      SELECT DISTINCT ON (uf.domain)
-        uf.id, uf.url, uf.domain, uf.priority, uf.depth
-      FROM url_frontier uf
-      JOIN eligible_domains ed ON uf.domain = ed.domain
-      WHERE uf.status = 'pending'
-        AND uf.scheduled_at <= NOW()
-      ORDER BY uf.domain, uf.priority, uf.discovered_at
-    )
-    UPDATE url_frontier
-    SET
-      status = 'processing',
-      worker_id = $1,
-      locked_until = NOW() + INTERVAL '${lockDuration} seconds'
-    FROM selected_urls
-    WHERE url_frontier.id = selected_urls.id
-    RETURNING url_frontier.id, url_frontier.url, url_frontier.domain,
-              url_frontier.priority, url_frontier.depth
-  `, [workerId, batchSize]);
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    URL Batch Fetch Algorithm                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Step 1: Find Eligible Domains                                          │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  SELECT DISTINCT domain FROM url_frontier                               │
+│  WHERE status = 'pending'                                               │
+│    AND scheduled_at <= NOW()                                            │
+│    AND domain satisfies rate limit (last_crawl + crawl_delay < NOW)     │
+│    AND domain is NOT blocked                                            │
+│                                                                          │
+│  Step 2: Select One URL Per Domain (Priority Order)                     │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  SELECT DISTINCT ON (domain)                                            │
+│    id, url, domain, priority, depth                                     │
+│  ORDER BY domain, priority, discovered_at                               │
+│                                                                          │
+│  Step 3: Acquire Lock via UPDATE                                        │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  UPDATE url_frontier                                                    │
+│  SET status = 'processing',                                             │
+│      worker_id = {worker},                                              │
+│      locked_until = NOW() + 5 minutes                                   │
+│  WHERE id IN (selected_urls)                                            │
+│  RETURNING id, url, domain, priority, depth                             │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Redis for Fast URL Deduplication
 
-```typescript
-import { createHash } from 'crypto';
-
-class URLDeduplicator {
-  private redis: Redis;
-  private bloomFilterKey = 'crawler:url_bloom';
-
-  constructor(redis: Redis) {
-    this.redis = redis;
-  }
-
-  // Check if URL was already seen using Bloom filter
-  async isURLSeen(url: string): Promise<boolean> {
-    const hash = this.hashURL(url);
-
-    // Use multiple hash functions for Bloom filter
-    const positions = this.getBloomPositions(hash, 10);
-
-    const pipeline = this.redis.pipeline();
-    for (const pos of positions) {
-      pipeline.getbit(this.bloomFilterKey, pos);
-    }
-
-    const results = await pipeline.exec();
-
-    // If all bits are set, URL is probably seen
-    return results?.every(([err, bit]) => bit === 1) ?? false;
-  }
-
-  // Mark URL as seen in Bloom filter
-  async markURLSeen(url: string): Promise<void> {
-    const hash = this.hashURL(url);
-    const positions = this.getBloomPositions(hash, 10);
-
-    const pipeline = this.redis.pipeline();
-    for (const pos of positions) {
-      pipeline.setbit(this.bloomFilterKey, pos, 1);
-    }
-    await pipeline.exec();
-  }
-
-  private hashURL(url: string): string {
-    // Normalize URL before hashing
-    const normalized = this.normalizeURL(url);
-    return createHash('sha256').update(normalized).digest('hex');
-  }
-
-  private normalizeURL(url: string): string {
-    const parsed = new URL(url);
-    // Remove fragments, normalize trailing slashes, lowercase
-    parsed.hash = '';
-    let path = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${parsed.protocol}//${parsed.host}${path}${parsed.search}`.toLowerCase();
-  }
-
-  private getBloomPositions(hash: string, count: number): number[] {
-    const positions: number[] = [];
-    const filterSize = 10_000_000_000; // 10 billion bits = ~1.25GB
-
-    for (let i = 0; i < count; i++) {
-      const subHash = createHash('md5')
-        .update(hash + i.toString())
-        .digest('hex');
-      const position = parseInt(subHash.substring(0, 15), 16) % filterSize;
-      positions.push(position);
-    }
-
-    return positions;
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Bloom Filter URL Deduplication                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Key: crawler:url_bloom                                                 │
+│  Size: 10 billion bits (~1.25 GB)                                       │
+│  Hash functions: 10                                                      │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                    URL Normalization                               │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ 1. Remove fragment (#hash)                                         │  │
+│  │ 2. Normalize trailing slashes                                      │  │
+│  │ 3. Lowercase protocol and host                                     │  │
+│  │ 4. Result: {protocol}://{host}{path}{query}                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│                              ▼                                           │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                    Hash Generation                                 │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ 1. SHA-256(normalized_url) → base_hash                            │  │
+│  │ 2. For i in 0..9:                                                  │  │
+│  │      MD5(base_hash + i) → position_hash                           │  │
+│  │      position = position_hash mod 10_000_000_000                  │  │
+│  │ 3. Return 10 bit positions                                         │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│                              ▼                                           │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                    Check / Mark Operations                         │  │
+│  ├───────────────────────────────────────────────────────────────────┤  │
+│  │ isURLSeen:                                                         │  │
+│  │   Redis GETBIT for all 10 positions                               │  │
+│  │   Return TRUE if ALL bits are 1                                   │  │
+│  │                                                                    │  │
+│  │ markURLSeen:                                                       │  │
+│  │   Redis SETBIT for all 10 positions to 1                          │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  False positive rate: ~1% at capacity                                   │
+│  False negatives: Never (safe for deduplication)                        │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Deep Dive: Politeness and Rate Limiting (8 minutes)
+## 🔍 Deep Dive: Politeness and Rate Limiting (8 minutes)
 
 ### robots.txt Caching
 
-```typescript
-import robotsParser from 'robots-parser';
-
-interface RobotsTxt {
-  content: string;
-  fetchedAt: Date;
-  crawlDelay: number;
-}
-
-class RobotsCache {
-  private redis: Redis;
-  private cacheTTL = 3600; // 1 hour
-
-  async getRobots(domain: string): Promise<RobotsTxt | null> {
-    // Check Redis cache first
-    const cached = await this.redis.get(`robots:${domain}`);
-    if (cached) {
-      return JSON.parse(cached);
-    }
-
-    // Fetch from origin
-    try {
-      const robotsUrl = `https://${domain}/robots.txt`;
-      const response = await fetch(robotsUrl, {
-        headers: { 'User-Agent': 'MyCrawler/1.0' },
-        signal: AbortSignal.timeout(10000)
-      });
-
-      if (response.ok) {
-        const content = await response.text();
-        const parser = robotsParser(robotsUrl, content);
-
-        const robots: RobotsTxt = {
-          content,
-          fetchedAt: new Date(),
-          crawlDelay: parser.getCrawlDelay('MyCrawler') || 1
-        };
-
-        // Cache in Redis
-        await this.redis.setex(
-          `robots:${domain}`,
-          this.cacheTTL,
-          JSON.stringify(robots)
-        );
-
-        // Also update PostgreSQL for persistence
-        await pool.query(`
-          INSERT INTO domains (domain, robots_txt, robots_fetched_at, crawl_delay)
-          VALUES ($1, $2, NOW(), $3)
-          ON CONFLICT (domain) DO UPDATE
-          SET robots_txt = $2, robots_fetched_at = NOW(), crawl_delay = $3
-        `, [domain, content, robots.crawlDelay * 1000]);
-
-        return robots;
-      }
-
-      return null;
-    } catch (error) {
-      // If fetch fails, allow crawling with default delay
-      return { content: '', fetchedAt: new Date(), crawlDelay: 1 };
-    }
-  }
-
-  isURLAllowed(robotsContent: string, url: string): boolean {
-    const parser = robotsParser(url, robotsContent);
-    return parser.isAllowed(url, 'MyCrawler') ?? true;
-  }
-}
 ```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    robots.txt Cache Strategy                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Request for domain "example.com"                                       │
+│                              │                                           │
+│                              ▼                                           │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  Check Redis: GET robots:example.com                               │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│            ┌─────────────────┴─────────────────┐                        │
+│            ▼ (cache hit)                       ▼ (cache miss)           │
+│  ┌─────────────────────┐             ┌─────────────────────┐            │
+│  │ Return cached data  │             │ Fetch from origin   │            │
+│  └─────────────────────┘             │ https://example.com │            │
+│                                      │ /robots.txt          │            │
+│                                      └─────────────────────┘            │
+│                                                 │                        │
+│                                                 ▼                        │
+│                                      ┌─────────────────────┐            │
+│                                      │ Parse robots.txt    │            │
+│                                      │ Extract crawl-delay │            │
+│                                      └─────────────────────┘            │
+│                                                 │                        │
+│                                                 ▼                        │
+│                          ┌──────────────────────┴──────────────────┐    │
+│                          ▼                                         ▼    │
+│               ┌─────────────────────┐              ┌─────────────────┐  │
+│               │ Cache in Redis      │              │ Persist in PG   │  │
+│               │ TTL: 1 hour         │              │ For durability  │  │
+│               └─────────────────────┘              └─────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**robots.txt cache structure:**
+
+| Field | Description |
+|-------|-------------|
+| content | Raw robots.txt text |
+| fetchedAt | Timestamp |
+| crawlDelay | Extracted Crawl-delay directive (default: 1 second) |
 
 ### Distributed Rate Limiting with Redis
 
-```typescript
-class DomainRateLimiter {
-  private redis: Redis;
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Per-Domain Rate Limiter                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Worker requests slot for domain "example.com"                          │
+│                              │                                           │
+│                              ▼                                           │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  Step 1: Check Last Crawl Time                                     │  │
+│  │  GET ratelimit:example.com → last_crawl_timestamp                 │  │
+│  │                                                                    │  │
+│  │  If (now - last_crawl) < crawl_delay_ms:                          │  │
+│  │    Return FALSE (rate limit not satisfied)                        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│                              ▼ (rate limit satisfied)                    │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  Step 2: Acquire Distributed Lock                                  │  │
+│  │  SET lock:domain:example.com "locked" PX {crawl_delay_ms} NX      │  │
+│  │                                                                    │  │
+│  │  If lock acquired (NX succeeded):                                 │  │
+│  │    SET ratelimit:example.com {now_ms} PX {crawl_delay_ms * 2}     │  │
+│  │    Return TRUE                                                     │  │
+│  │  Else:                                                             │  │
+│  │    Return FALSE (another worker holds lock)                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-  // Sliding window rate limiter per domain
-  async acquireSlot(domain: string, crawlDelayMs: number): Promise<boolean> {
-    const key = `ratelimit:${domain}`;
-    const now = Date.now();
+### Adaptive Rate Limiting
 
-    // Use Redis transaction for atomicity
-    const result = await this.redis
-      .multi()
-      .get(key)
-      .exec();
-
-    const lastCrawl = result?.[0]?.[1] as string | null;
-
-    if (lastCrawl) {
-      const elapsed = now - parseInt(lastCrawl, 10);
-      if (elapsed < crawlDelayMs) {
-        return false; // Rate limit not satisfied
-      }
-    }
-
-    // Acquire slot with distributed lock
-    const lockKey = `lock:domain:${domain}`;
-    const lockAcquired = await this.redis.set(
-      lockKey,
-      'locked',
-      'PX', crawlDelayMs,
-      'NX'
-    );
-
-    if (lockAcquired) {
-      await this.redis.set(key, now.toString(), 'PX', crawlDelayMs * 2);
-      return true;
-    }
-
-    return false;
-  }
-
-  // Adaptive rate limiting based on response times
-  async adjustCrawlDelay(domain: string, responseTimeMs: number): Promise<void> {
-    const key = `crawldelay:${domain}`;
-
-    // If server is slow, increase delay
-    if (responseTimeMs > 5000) {
-      await this.redis.incrbyfloat(key, 0.5);
-    } else if (responseTimeMs < 500) {
-      // Fast server, can slightly decrease (but respect robots.txt minimum)
-      const current = await this.redis.get(key);
-      if (current && parseFloat(current) > 1) {
-        await this.redis.incrbyfloat(key, -0.1);
-      }
-    }
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Adaptive Crawl Delay Adjustment                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  After each request, adjust delay based on server response:            │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ Response Time > 5000ms (slow server)                             │   │
+│  │ → INCRBYFLOAT crawldelay:domain 0.5                             │   │
+│  │ → Increase delay by 500ms                                        │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ Response Time < 500ms (fast server)                              │   │
+│  │ → If current_delay > robots.txt minimum:                         │   │
+│  │     INCRBYFLOAT crawldelay:domain -0.1                          │   │
+│  │ → Slightly decrease delay                                        │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  Note: Never go below robots.txt specified crawl-delay                 │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Deep Dive: Content Deduplication with SimHash (6 minutes)
+## 🔍 Deep Dive: Content Deduplication with SimHash (6 minutes)
 
-### Near-Duplicate Detection
+### Near-Duplicate Detection Algorithm
 
-```typescript
-class SimHasher {
-  private featureWeights: Map<string, number> = new Map();
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SimHash Algorithm                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Input: Page content (text)                                             │
+│  Output: 64-bit fingerprint                                             │
+│                                                                          │
+│  Step 1: Extract Features (k-shingles)                                  │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  "the quick brown fox" → {                                              │
+│    "the quick brown",                                                   │
+│    "quick brown fox"                                                    │
+│  }                                                                       │
+│  (using k=3 word shingles)                                              │
+│                                                                          │
+│  Step 2: Hash Each Shingle to 64 bits                                   │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  For each shingle:                                                       │
+│    hash = MD5(shingle)[0:16] → 64-bit integer                           │
+│                                                                          │
+│  Step 3: Build Vector (64 dimensions)                                   │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  vector[64] = all zeros                                                 │
+│  For each shingle_hash:                                                  │
+│    For each bit position i (0..63):                                     │
+│      if bit_i is 1: vector[i] += 1                                      │
+│      else:          vector[i] -= 1                                      │
+│                                                                          │
+│  Step 4: Reduce to Fingerprint                                          │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  simhash = 0                                                            │
+│  For each bit position i (0..63):                                       │
+│    if vector[i] > 0: set bit i in simhash                              │
+│                                                                          │
+│  Result: 64-bit simhash fingerprint                                     │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-  // Generate SimHash for content
-  computeSimHash(content: string): bigint {
-    // Extract features (shingles)
-    const shingles = this.getShingles(content, 3);
-    const hashBits = 64;
-    const vector = new Array(hashBits).fill(0);
+### Near-Duplicate Comparison
 
-    for (const shingle of shingles) {
-      const hash = this.hashShingle(shingle);
-      const weight = 1; // Could use TF-IDF weights
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Hamming Distance Comparison                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Two pages are near-duplicates if Hamming distance ≤ 3                  │
+│                                                                          │
+│  Hamming Distance = count of different bits                             │
+│                                                                          │
+│  Example:                                                                │
+│  Page A: 1101001010110100...                                            │
+│  Page B: 1101001010010100...                                            │
+│  XOR:    0000000000100000...                                            │
+│  Distance: 1 (near-duplicate!)                                          │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Threshold Guidelines:                                           │   │
+│  ├─────────────────────────────────────────────────────────────────┤   │
+│  │  Distance 0:      Exact duplicate                                │   │
+│  │  Distance 1-3:    Near-duplicate (skip crawling)                 │   │
+│  │  Distance 4-10:   Similar but distinct (crawl)                   │   │
+│  │  Distance > 10:   Different content (crawl)                      │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-      for (let i = 0; i < hashBits; i++) {
-        if ((hash >> BigInt(i)) & 1n) {
-          vector[i] += weight;
-        } else {
-          vector[i] -= weight;
-        }
-      }
-    }
+### Locality-Sensitive Hashing for Efficient Lookup
 
-    // Convert to final hash
-    let simhash = 0n;
-    for (let i = 0; i < hashBits; i++) {
-      if (vector[i] > 0) {
-        simhash |= (1n << BigInt(i));
-      }
-    }
-
-    return simhash;
-  }
-
-  // Check if two pages are near-duplicates
-  areNearDuplicates(hash1: bigint, hash2: bigint, threshold: number = 3): boolean {
-    const hammingDistance = this.hammingDistance(hash1, hash2);
-    return hammingDistance <= threshold;
-  }
-
-  private getShingles(text: string, k: number): Set<string> {
-    const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-    const words = normalized.split(' ');
-    const shingles = new Set<string>();
-
-    for (let i = 0; i <= words.length - k; i++) {
-      shingles.add(words.slice(i, i + k).join(' '));
-    }
-
-    return shingles;
-  }
-
-  private hashShingle(shingle: string): bigint {
-    // Use a 64-bit hash
-    const hash = createHash('md5').update(shingle).digest('hex');
-    return BigInt('0x' + hash.substring(0, 16));
-  }
-
-  private hammingDistance(a: bigint, b: bigint): number {
-    let xor = a ^ b;
-    let distance = 0;
-    while (xor > 0n) {
-      distance += Number(xor & 1n);
-      xor >>= 1n;
-    }
-    return distance;
-  }
-}
-
-// Find near-duplicates in database
-async function findNearDuplicates(newHash: string): Promise<number[]> {
-  // For efficiency, use locality-sensitive hashing (LSH)
-  // Split hash into bands and query by band matches
-
-  const bandSize = 8; // 8 bands of 8 bits each
-  const duplicateIds: number[] = [];
-
-  for (let band = 0; band < 8; band++) {
-    const bandHash = newHash.substring(band * 2, (band + 1) * 2);
-
-    const results = await pool.query(`
-      SELECT id, content_hash
-      FROM crawled_pages
-      WHERE SUBSTRING(content_hash FROM $1 FOR 2) = $2
-      LIMIT 100
-    `, [band * 2 + 1, bandHash]);
-
-    for (const row of results.rows) {
-      const distance = hammingDistance(newHash, row.content_hash);
-      if (distance <= 3) {
-        duplicateIds.push(row.id);
-      }
-    }
-  }
-
-  return duplicateIds;
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    LSH Band-Based Lookup                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Problem: Comparing against all stored hashes is O(n)                   │
+│  Solution: Split hash into bands for O(1) candidate generation          │
+│                                                                          │
+│  64-bit hash split into 8 bands of 8 bits each:                         │
+│                                                                          │
+│  ┌────┬────┬────┬────┬────┬────┬────┬────┐                              │
+│  │ B0 │ B1 │ B2 │ B3 │ B4 │ B5 │ B6 │ B7 │                              │
+│  └────┴────┴────┴────┴────┴────┴────┴────┘                              │
+│                                                                          │
+│  For each band:                                                          │
+│    Query: SELECT id, content_hash FROM crawled_pages                    │
+│           WHERE SUBSTRING(content_hash FROM {band*2+1} FOR 2) = ?       │
+│                                                                          │
+│  For candidate matches:                                                  │
+│    Compute full Hamming distance                                        │
+│    If distance ≤ 3: confirmed near-duplicate                           │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Deep Dive: Distributed Crawling with Consistent Hashing (5 minutes)
+## 🔍 Deep Dive: Distributed Crawling with Consistent Hashing (5 minutes)
 
-### Worker Assignment
+### Worker Assignment via Consistent Hash Ring
 
-```typescript
-import { createHash } from 'crypto';
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Consistent Hash Ring                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│                        Hash Ring (0 to 2^32-1)                          │
+│                                                                          │
+│                              0                                           │
+│                              │                                           │
+│                    Worker A  ●────────● Worker B                        │
+│                   (v1,v2,v3)          (v1,v2,v3)                        │
+│                         ╱                  ╲                             │
+│                        ╱                    ╲                            │
+│                       ╱   ● domain1.com      ╲                          │
+│                      ╱    ● domain2.com       ╲                         │
+│                     ╱                          ╲                         │
+│         Worker D   ●────────────────────────────● Worker C              │
+│        (v1,v2,v3)                              (v1,v2,v3)               │
+│                                                                          │
+│  Virtual nodes per worker: 150                                          │
+│  This ensures even distribution even with few physical workers          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-class ConsistentHashRing {
-  private ring: Map<number, string> = new Map();
-  private sortedKeys: number[] = [];
-  private virtualNodes = 150;
+**Domain-to-worker assignment:**
 
-  addWorker(workerId: string): void {
-    for (let i = 0; i < this.virtualNodes; i++) {
-      const key = this.hash(`${workerId}:${i}`);
-      this.ring.set(key, workerId);
-    }
-    this.sortedKeys = Array.from(this.ring.keys()).sort((a, b) => a - b);
-  }
+| Step | Operation |
+|------|-----------|
+| 1 | Hash domain name → position on ring |
+| 2 | Binary search for next worker position clockwise |
+| 3 | Return worker ID at that position |
+| 4 | Store assignment in Redis for workers to read |
 
-  removeWorker(workerId: string): void {
-    for (let i = 0; i < this.virtualNodes; i++) {
-      const key = this.hash(`${workerId}:${i}`);
-      this.ring.delete(key);
-    }
-    this.sortedKeys = Array.from(this.ring.keys()).sort((a, b) => a - b);
-  }
+**Benefits:**
+- Adding/removing workers only reassigns ~1/N domains
+- Each domain always goes to same worker (cache efficiency)
+- No central coordinator needed for assignment
 
-  // Get worker responsible for a domain
-  getWorkerForDomain(domain: string): string {
-    if (this.sortedKeys.length === 0) {
-      throw new Error('No workers available');
-    }
+### Worker Coordination Flow
 
-    const domainHash = this.hash(domain);
-
-    // Binary search for the first key >= domainHash
-    let left = 0;
-    let right = this.sortedKeys.length;
-
-    while (left < right) {
-      const mid = Math.floor((left + right) / 2);
-      if (this.sortedKeys[mid] >= domainHash) {
-        right = mid;
-      } else {
-        left = mid + 1;
-      }
-    }
-
-    // Wrap around to first key if needed
-    const keyIndex = left === this.sortedKeys.length ? 0 : left;
-    return this.ring.get(this.sortedKeys[keyIndex])!;
-  }
-
-  private hash(key: string): number {
-    const hash = createHash('md5').update(key).digest('hex');
-    return parseInt(hash.substring(0, 8), 16);
-  }
-}
-
-// Worker coordinator using consistent hashing
-class CrawlerCoordinator {
-  private hashRing: ConsistentHashRing;
-  private redis: Redis;
-
-  async assignDomainsToWorkers(): Promise<Map<string, string[]>> {
-    // Get all pending domains
-    const domains = await pool.query(`
-      SELECT DISTINCT domain
-      FROM url_frontier
-      WHERE status = 'pending'
-      LIMIT 10000
-    `);
-
-    const assignments = new Map<string, string[]>();
-
-    for (const row of domains.rows) {
-      const worker = this.hashRing.getWorkerForDomain(row.domain);
-
-      if (!assignments.has(worker)) {
-        assignments.set(worker, []);
-      }
-      assignments.get(worker)!.push(row.domain);
-    }
-
-    // Store assignments in Redis for workers to read
-    for (const [worker, domains] of assignments) {
-      await this.redis.sadd(`worker:${worker}:domains`, ...domains);
-      await this.redis.expire(`worker:${worker}:domains`, 300);
-    }
-
-    return assignments;
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Domain Assignment Flow                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    Coordinator Process                           │   │
+│  ├─────────────────────────────────────────────────────────────────┤   │
+│  │ 1. Query pending domains from PostgreSQL (LIMIT 10000)          │   │
+│  │ 2. For each domain: compute worker = hashRing.get(domain)       │   │
+│  │ 3. Group domains by assigned worker                              │   │
+│  │ 4. Store in Redis:                                               │   │
+│  │    SADD worker:{id}:domains domain1 domain2 domain3...          │   │
+│  │    EXPIRE worker:{id}:domains 300                                │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                              │                                           │
+│                              ▼                                           │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    Worker Process                                │   │
+│  ├─────────────────────────────────────────────────────────────────┤   │
+│  │ 1. SMEMBERS worker:{my_id}:domains                              │   │
+│  │ 2. For each assigned domain:                                     │   │
+│  │    - Check rate limit                                            │   │
+│  │    - Fetch next URL from frontier                                │   │
+│  │    - Crawl page                                                   │   │
+│  │    - Extract links                                                │   │
+│  │    - Store content                                                │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Deep Dive: Circuit Breaker per Domain (4 minutes)
+## 🔍 Deep Dive: Circuit Breaker per Domain (4 minutes)
 
-```typescript
-enum CircuitState {
-  CLOSED = 'closed',
-  OPEN = 'open',
-  HALF_OPEN = 'half_open'
-}
-
-class DomainCircuitBreaker {
-  private redis: Redis;
-  private failureThreshold = 5;
-  private recoveryTimeout = 300000; // 5 minutes
-
-  async recordSuccess(domain: string): Promise<void> {
-    const key = `circuit:${domain}`;
-    await this.redis
-      .multi()
-      .hset(key, 'failures', '0')
-      .hset(key, 'state', CircuitState.CLOSED)
-      .expire(key, 3600)
-      .exec();
-  }
-
-  async recordFailure(domain: string): Promise<void> {
-    const key = `circuit:${domain}`;
-
-    const failures = await this.redis.hincrby(key, 'failures', 1);
-
-    if (failures >= this.failureThreshold) {
-      await this.redis
-        .multi()
-        .hset(key, 'state', CircuitState.OPEN)
-        .hset(key, 'openedAt', Date.now().toString())
-        .expire(key, 3600)
-        .exec();
-
-      // Block domain temporarily
-      await pool.query(`
-        UPDATE domains
-        SET is_blocked = TRUE
-        WHERE domain = $1
-      `, [domain]);
-    }
-  }
-
-  async canRequest(domain: string): Promise<boolean> {
-    const key = `circuit:${domain}`;
-    const state = await this.redis.hget(key, 'state');
-
-    if (state === CircuitState.CLOSED || !state) {
-      return true;
-    }
-
-    if (state === CircuitState.OPEN) {
-      const openedAt = await this.redis.hget(key, 'openedAt');
-      if (openedAt && Date.now() - parseInt(openedAt) > this.recoveryTimeout) {
-        // Transition to half-open
-        await this.redis.hset(key, 'state', CircuitState.HALF_OPEN);
-        return true;
-      }
-      return false;
-    }
-
-    // Half-open: allow one request
-    return true;
-  }
-}
 ```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Circuit Breaker State Machine                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                         CLOSED                                     │  │
+│  │                   (Normal operation)                               │  │
+│  │                                                                    │  │
+│  │  On success: failures = 0                                         │  │
+│  │  On failure: failures++                                           │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│                              │ failures >= 5                             │
+│                              ▼                                           │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                          OPEN                                      │  │
+│  │              (Blocking all requests to domain)                     │  │
+│  │                                                                    │  │
+│  │  Block domain in PostgreSQL: is_blocked = TRUE                    │  │
+│  │  Record openedAt timestamp in Redis                               │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│                              │ After 5 minutes (recovery timeout)        │
+│                              ▼                                           │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                       HALF_OPEN                                    │  │
+│  │                  (Testing if domain recovered)                     │  │
+│  │                                                                    │  │
+│  │  Allow ONE request through                                         │  │
+│  │  On success: → CLOSED, unblock domain                             │  │
+│  │  On failure: → OPEN, restart recovery timer                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Redis circuit state storage:**
+
+| Key | Field | Value |
+|-----|-------|-------|
+| circuit:{domain} | failures | Integer count |
+| circuit:{domain} | state | closed/open/half_open |
+| circuit:{domain} | openedAt | Timestamp when opened |
 
 ---
 
-## API Design (3 minutes)
+## 📊 API Design (3 minutes)
 
 ### RESTful Endpoints
 
-```typescript
-// Seed URL management
-POST   /api/v1/urls/seed          // Add seed URLs
-GET    /api/v1/urls/pending       // Get pending URL count
-DELETE /api/v1/urls/:id           // Remove URL from frontier
-
-// Domain management
-GET    /api/v1/domains            // List all domains
-GET    /api/v1/domains/:domain    // Get domain stats
-PUT    /api/v1/domains/:domain/block    // Block domain
-DELETE /api/v1/domains/:domain/block    // Unblock domain
-
-// Crawl results
-GET    /api/v1/pages              // Search crawled pages
-GET    /api/v1/pages/:id          // Get page content
-GET    /api/v1/pages/:id/links    // Get outbound links
-
-// Worker management
-GET    /api/v1/workers            // List active workers
-GET    /api/v1/workers/:id/stats  // Worker statistics
-
-// System stats
-GET    /api/v1/stats              // Overall crawl statistics
-GET    /api/v1/stats/throughput   // Pages per second over time
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/v1/urls/seed | Add seed URLs to frontier |
+| GET | /api/v1/urls/pending | Get pending URL count |
+| DELETE | /api/v1/urls/:id | Remove URL from frontier |
+| GET | /api/v1/domains | List all domains |
+| GET | /api/v1/domains/:domain | Get domain stats |
+| PUT | /api/v1/domains/:domain/block | Block domain |
+| DELETE | /api/v1/domains/:domain/block | Unblock domain |
+| GET | /api/v1/pages | Search crawled pages |
+| GET | /api/v1/pages/:id | Get page content |
+| GET | /api/v1/pages/:id/links | Get outbound links |
+| GET | /api/v1/workers | List active workers |
+| GET | /api/v1/workers/:id/stats | Worker statistics |
+| GET | /api/v1/stats | Overall crawl statistics |
+| GET | /api/v1/stats/throughput | Pages per second over time |
 
 ---
 
-## Trade-offs and Alternatives (2 minutes)
+## ⚖️ Trade-offs and Alternatives (2 minutes)
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| URL Storage | PostgreSQL + Redis Bloom | Cassandra | PostgreSQL for learning; Cassandra for 10B+ URLs |
-| Rate Limiting | Redis locks | Token bucket | Simpler, lock-based is sufficient at this scale |
-| Content Dedup | SimHash | MinHash | SimHash is simpler, works well for documents |
-| Worker Coordination | Consistent hashing | Kafka partitions | More control over domain assignment |
-| Queue Design | Two-level (priority + domain) | Single priority queue | Ensures politeness and priority balance |
+| URL Storage | ✅ PostgreSQL + Redis Bloom | Cassandra | PostgreSQL for learning; Cassandra for 10B+ URLs |
+| Rate Limiting | ✅ Redis locks | Token bucket | Simpler, lock-based is sufficient at this scale |
+| Content Dedup | ✅ SimHash | MinHash | SimHash is simpler, works well for documents |
+| Worker Coordination | ✅ Consistent hashing | Kafka partitions | More control over domain assignment |
+| Queue Design | ✅ Two-level (priority + domain) | Single priority queue | Ensures politeness and priority balance |
 
 ---
 
-## Future Enhancements
+## 🚀 Future Enhancements
 
 With more time, I would add:
 
@@ -765,7 +642,7 @@ With more time, I would add:
 
 ---
 
-## Summary
+## 📝 Summary
 
 "I've designed a distributed web crawler with:
 

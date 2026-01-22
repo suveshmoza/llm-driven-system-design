@@ -2,7 +2,9 @@
 
 *45-minute system design interview format - Frontend Engineer Position*
 
-## Problem Statement
+---
+
+## 📋 Problem Statement
 
 Design the frontend dashboard for a real-time ad click analytics system. Key challenges include:
 - Real-time data visualization with high-frequency updates
@@ -11,7 +13,9 @@ Design the frontend dashboard for a real-time ad click analytics system. Key cha
 - Efficient state management for complex filter combinations
 - Performance optimization for large datasets
 
-## Requirements Clarification
+---
+
+## 🎯 Requirements Clarification
 
 ### Functional Requirements
 1. **Real-time Metrics Display**: Show live click counts, fraud rates, unique users
@@ -27,885 +31,612 @@ Design the frontend dashboard for a real-time ad click analytics system. Key cha
 4. **Accessibility**: WCAG 2.1 AA compliance for analytics tools
 
 ### Scale Estimates
-- Dashboard users: 100-1,000 concurrent
-- Data points per chart: Up to 10,000 (minute-level for 7 days)
-- Refresh interval: 5 seconds
-- Network payload: ~50KB per refresh (aggregated data)
 
-## High-Level Architecture
+| Metric | Value |
+|--------|-------|
+| Dashboard users | 100-1,000 concurrent |
+| Data points per chart | Up to 10,000 (minute-level for 7 days) |
+| Refresh interval | 5 seconds |
+| Network payload | ~50KB per refresh (aggregated data) |
+
+---
+
+## 🏗️ High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      React Application                               │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │  Dashboard  │  │  Campaign   │  │   Charts    │  │   Filters   │ │
-│  │   Layout    │  │   Table     │  │  (Recharts) │  │   Panel     │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘ │
-├─────────────────────────────────────────────────────────────────────┤
-│                     Zustand State Store                              │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │   Metrics Data  │  │  Filter State   │  │  UI State (modals)  │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────┘  │
-├─────────────────────────────────────────────────────────────────────┤
-│                     API Service Layer                                │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │  /api/analytics │  │  /api/clicks    │  │  Auto-refresh Hook  │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                         REACT APPLICATION                               │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│   │  Dashboard  │  │  Campaign   │  │   Charts    │  │   Filters   │  │
+│   │   Layout    │  │   Table     │  │  (Recharts) │  │   Panel     │  │
+│   └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  │
+│                                                                         │
+├────────────────────────────────────────────────────────────────────────┤
+│                        ZUSTAND STATE STORE                              │
+│                                                                         │
+│   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐   │
+│   │   Metrics Data  │  │  Filter State   │  │  UI State (modals)  │   │
+│   │                 │  │                 │  │                     │   │
+│   │ - timeSeries    │  │ - timeRange     │  │ - isLoading         │   │
+│   │ - byCampaign    │  │ - campaignId    │  │ - error             │   │
+│   │ - byCountry     │  │ - country       │  │ - lastUpdated       │   │
+│   │ - fraudRate     │  │ - deviceType    │  │                     │   │
+│   └─────────────────┘  └─────────────────┘  └─────────────────────┘   │
+│                                                                         │
+├────────────────────────────────────────────────────────────────────────┤
+│                        API SERVICE LAYER                                │
+│                                                                         │
+│   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐   │
+│   │  /api/analytics │  │  /api/clicks    │  │  Auto-refresh Hook  │   │
+│   │                 │  │                 │  │                     │   │
+│   │  GET aggregate  │  │  POST new click │  │  setInterval 5s     │   │
+│   │  GET campaigns  │  │  (test gen)     │  │  cleanup on unmount │   │
+│   └─────────────────┘  └─────────────────┘  └─────────────────────┘   │
+│                                                                         │
+└────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                        ┌───────────────────┐
+                        │   Backend API     │
+                        │   (Express)       │
+                        └───────────────────┘
 ```
 
-## Deep Dive: Real-Time Dashboard State
+---
 
-### Zustand Store Architecture
+## 📊 Deep Dive: Real-Time Dashboard State
 
-```typescript
-// stores/analyticsStore.ts
-import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+### State Store Architecture
 
-interface TimeRange {
-  start: Date;
-  end: Date;
-  granularity: 'minute' | 'hour' | 'day';
-}
+The store separates concerns into three domains:
 
-interface Filters {
-  campaignId: string | null;
-  advertiserId: string | null;
-  country: string | null;
-  deviceType: string | null;
-}
-
-interface MetricsData {
-  totalClicks: number;
-  uniqueUsers: number;
-  fraudRate: number;
-  timeSeries: TimeSeriesPoint[];
-  byCampaign: CampaignMetrics[];
-  byCountry: CountryMetrics[];
-}
-
-interface AnalyticsState {
-  // Data
-  metrics: MetricsData | null;
-  isLoading: boolean;
-  error: string | null;
-  lastUpdated: Date | null;
-
-  // Filters
-  timeRange: TimeRange;
-  filters: Filters;
-
-  // Actions
-  setTimeRange: (range: TimeRange) => void;
-  setFilters: (filters: Partial<Filters>) => void;
-  fetchMetrics: () => Promise<void>;
-  startAutoRefresh: () => () => void;
-}
-
-export const useAnalyticsStore = create<AnalyticsState>()(
-  subscribeWithSelector((set, get) => ({
-    metrics: null,
-    isLoading: false,
-    error: null,
-    lastUpdated: null,
-
-    timeRange: {
-      start: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      end: new Date(),
-      granularity: 'hour',
-    },
-
-    filters: {
-      campaignId: null,
-      advertiserId: null,
-      country: null,
-      deviceType: null,
-    },
-
-    setTimeRange: (range) => set({ timeRange: range }),
-
-    setFilters: (newFilters) =>
-      set((state) => ({
-        filters: { ...state.filters, ...newFilters },
-      })),
-
-    fetchMetrics: async () => {
-      set({ isLoading: true, error: null });
-      try {
-        const { timeRange, filters } = get();
-        const params = new URLSearchParams({
-          start_time: timeRange.start.toISOString(),
-          end_time: timeRange.end.toISOString(),
-          granularity: timeRange.granularity,
-          ...(filters.campaignId && { campaign_id: filters.campaignId }),
-          ...(filters.country && { country: filters.country }),
-        });
-
-        const response = await fetch(`/api/v1/analytics/aggregate?${params}`);
-        const data = await response.json();
-
-        set({
-          metrics: transformApiResponse(data),
-          lastUpdated: new Date(),
-          isLoading: false,
-        });
-      } catch (error) {
-        set({ error: (error as Error).message, isLoading: false });
-      }
-    },
-
-    startAutoRefresh: () => {
-      const interval = setInterval(() => {
-        get().fetchMetrics();
-      }, 5000);
-
-      return () => clearInterval(interval);
-    },
-  }))
-);
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     ANALYTICS STORE                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  DATA SLICE                 FILTER SLICE           UI SLICE     │
+│  ──────────                 ────────────           ────────     │
+│                                                                  │
+│  metrics: {                 timeRange: {           isLoading    │
+│    totalClicks              start: Date            error        │
+│    uniqueUsers              end: Date              lastUpdated  │
+│    fraudRate                granularity            activeModal  │
+│    timeSeries[]           }                                     │
+│    byCampaign[]                                                 │
+│    byCountry[]             filters: {                           │
+│  }                           campaignId                         │
+│                              advertiserId                       │
+│                              country                            │
+│                              deviceType                         │
+│                            }                                    │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                          ACTIONS                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  setTimeRange(range)   setFilters(partial)   fetchMetrics()    │
+│                                                                  │
+│  startAutoRefresh() ──────────────────────────► returns cleanup │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Auto-Refresh Hook
+### Zustand Selective Subscriptions
 
-```typescript
-// hooks/useAutoRefresh.ts
-import { useEffect, useRef } from 'react';
-import { useAnalyticsStore } from '../stores/analyticsStore';
+Key optimization: Components only re-render when their subscribed state changes.
 
-export function useAutoRefresh(enabled: boolean = true) {
-  const fetchMetrics = useAnalyticsStore((state) => state.fetchMetrics);
-  const timeRange = useAnalyticsStore((state) => state.timeRange);
-  const filters = useAnalyticsStore((state) => state.filters);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    // Initial fetch
-    fetchMetrics();
-
-    if (enabled) {
-      intervalRef.current = setInterval(fetchMetrics, 5000);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [enabled, fetchMetrics]);
-
-  // Refetch when filters change
-  useEffect(() => {
-    fetchMetrics();
-  }, [timeRange, filters, fetchMetrics]);
-}
+```
+┌────────────────┐       subscribes to        ┌─────────────────┐
+│  MetricCard    │ ──────────────────────────►│ metrics.total   │
+│  (Total Clicks)│                            │ isLoading       │
+└────────────────┘                            └─────────────────┘
+        │
+        │ does NOT re-render when
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  filters.campaignId changes   (different subscription)          │
+│  metrics.byCountry changes    (different subscription)          │
+│  timeRange changes            (different subscription)          │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Time-Series Visualization
+### Auto-Refresh Hook Flow
 
-### Recharts Integration
+```
+┌──────────────────┐
+│  useAutoRefresh  │
+│    (enabled)     │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────────┐        ┌────────────────────────┐
+    │ useEffect  │────────► Initial fetchMetrics() │
+    │ on mount   │        └────────────────────────┘
+    └────────────┘
+         │
+         │ if enabled
+         ▼
+    ┌────────────────────────────────────────┐
+    │ setInterval(fetchMetrics, 5000)        │
+    │                                         │
+    │  Every 5 seconds:                       │
+    │  ┌────────────────────────────────┐    │
+    │  │ 1. Set isLoading = true        │    │
+    │  │ 2. Build query from filters    │    │
+    │  │ 3. GET /api/v1/analytics       │    │
+    │  │ 4. Transform response          │    │
+    │  │ 5. Update metrics + timestamp  │    │
+    │  │ 6. Set isLoading = false       │    │
+    │  └────────────────────────────────┘    │
+    └────────────────────────────────────────┘
+         │
+         │ on unmount
+         ▼
+    ┌────────────────────┐
+    │ clearInterval()    │
+    │ (cleanup function) │
+    └────────────────────┘
 
-```tsx
-// components/ClicksChart.tsx
-import { useMemo } from 'react';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Brush,
-} from 'recharts';
-import { useAnalyticsStore } from '../stores/analyticsStore';
+    Filter changes ─────────────────────────────► Immediate refetch
+    (separate useEffect watches filters)
+```
 
-interface ChartDataPoint {
-  timestamp: number;
-  clicks: number;
-  uniqueUsers: number;
-  fraudClicks: number;
-}
+---
 
-export function ClicksChart() {
-  const timeSeries = useAnalyticsStore((state) => state.metrics?.timeSeries);
-  const granularity = useAnalyticsStore((state) => state.timeRange.granularity);
+## 📈 Deep Dive: Time-Series Visualization
 
-  // Memoize chart data transformation
-  const chartData = useMemo(() => {
-    if (!timeSeries) return [];
+### Chart Data Flow
 
-    return timeSeries.map((point) => ({
-      timestamp: new Date(point.time_bucket).getTime(),
-      clicks: point.click_count,
-      uniqueUsers: point.unique_users,
-      fraudClicks: point.fraud_count,
-    }));
-  }, [timeSeries]);
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   API Response  │────►│  useMemo        │────►│  Recharts       │
+│                 │     │  Transform      │     │  AreaChart      │
+│  time_bucket    │     │                 │     │                 │
+│  click_count    │     │  timestamp      │     │  Gradient fill  │
+│  unique_users   │     │  clicks         │     │  Custom tooltip │
+│  fraud_count    │     │  uniqueUsers    │     │  Brush zoom     │
+│                 │     │  fraudClicks    │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
 
-  // Format x-axis based on granularity
-  const formatXAxis = (timestamp: number) => {
-    const date = new Date(timestamp);
-    switch (granularity) {
-      case 'minute':
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      case 'hour':
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      case 'day':
-        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      default:
-        return date.toISOString();
-    }
-  };
+### Granularity-Based X-Axis Formatting
 
-  if (!chartData.length) {
-    return (
-      <div className="flex h-80 items-center justify-center text-gray-500">
-        No data available for the selected time range
-      </div>
-    );
-  }
+| Granularity | Format | Example |
+|-------------|--------|---------|
+| minute | HH:mm | 14:30 |
+| hour | HH:mm | 14:00 |
+| day | MMM dd | Jan 15 |
 
-  return (
-    <div className="h-80 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-          <defs>
-            <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8} />
-              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-            </linearGradient>
-            <linearGradient id="colorFraud" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8} />
-              <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
-          <XAxis
-            dataKey="timestamp"
-            tickFormatter={formatXAxis}
-            tick={{ fontSize: 12 }}
-            tickLine={false}
-          />
-          <YAxis
-            tickFormatter={(value) => value.toLocaleString()}
-            tick={{ fontSize: 12 }}
-            tickLine={false}
-            axisLine={false}
-          />
-          <Tooltip
-            content={<CustomTooltip />}
-            cursor={{ stroke: '#6B7280', strokeDasharray: '5 5' }}
-          />
-          <Area
-            type="monotone"
-            dataKey="clicks"
-            stroke="#3B82F6"
-            fillOpacity={1}
-            fill="url(#colorClicks)"
-            name="Total Clicks"
-          />
-          <Area
-            type="monotone"
-            dataKey="fraudClicks"
-            stroke="#EF4444"
-            fillOpacity={1}
-            fill="url(#colorFraud)"
-            name="Fraud Clicks"
-          />
-          {/* Brush for zoom/pan on large datasets */}
-          <Brush
-            dataKey="timestamp"
-            height={30}
-            stroke="#3B82F6"
-            tickFormatter={formatXAxis}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
+### Chart Components Hierarchy
 
-function CustomTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-
-  const date = new Date(label);
-
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
-      <p className="mb-2 text-sm font-medium text-gray-600">
-        {date.toLocaleString()}
-      </p>
-      {payload.map((entry: any, index: number) => (
-        <p key={index} className="text-sm" style={{ color: entry.stroke }}>
-          {entry.name}: {entry.value.toLocaleString()}
-        </p>
-      ))}
-      {payload[0] && payload[1] && (
-        <p className="mt-2 text-xs text-gray-500">
-          Fraud Rate: {((payload[1].value / payload[0].value) * 100).toFixed(2)}%
-        </p>
-      )}
-    </div>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          ClicksChart                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                     ResponsiveContainer                            │  │
+│  │                     (width: 100%, height: 100%)                    │  │
+│  │                                                                    │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │                       AreaChart                              │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌─────────────────────────────────────────────────────┐    │  │  │
+│  │  │  │ <defs>                                               │    │  │  │
+│  │  │  │   linearGradient id="colorClicks" (blue)            │    │  │  │
+│  │  │  │   linearGradient id="colorFraud" (red)              │    │  │  │
+│  │  │  └─────────────────────────────────────────────────────┘    │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌───────────────┬─────────────────┬────────────────────┐   │  │  │
+│  │  │  │ CartesianGrid │     XAxis       │       YAxis        │   │  │  │
+│  │  │  │ (dashed)      │ (formatted time)│ (formatted count)  │   │  │  │
+│  │  │  └───────────────┴─────────────────┴────────────────────┘   │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌─────────────────────────────────────────────────────┐    │  │  │
+│  │  │  │ Area: Total Clicks (blue gradient)                   │    │  │  │
+│  │  │  │ Area: Fraud Clicks (red gradient, stacked)          │    │  │  │
+│  │  │  └─────────────────────────────────────────────────────┘    │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌─────────────────────────────────────────────────────┐    │  │  │
+│  │  │  │ Tooltip: CustomTooltip component                     │    │  │  │
+│  │  │  │   - Date/time                                        │    │  │  │
+│  │  │  │   - Click count                                      │    │  │  │
+│  │  │  │   - Fraud count                                      │    │  │  │
+│  │  │  │   - Calculated fraud rate %                          │    │  │  │
+│  │  │  └─────────────────────────────────────────────────────┘    │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌─────────────────────────────────────────────────────┐    │  │  │
+│  │  │  │ Brush: Zoom/pan control (height: 30px)              │    │  │  │
+│  │  │  │   - Drag to select time range                       │    │  │  │
+│  │  │  │   - Shows thumbnail of full dataset                 │    │  │  │
+│  │  │  └─────────────────────────────────────────────────────┘    │  │  │
+│  │  │                                                              │  │  │
+│  │  └──────────────────────────────────────────────────────────┘  │  │
+│  │                                                                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Chart Performance Optimization
 
-```tsx
-// hooks/useChartData.ts
-import { useMemo, useCallback } from 'react';
+For large datasets (10,000+ points), we downsample before rendering:
 
-export function useChartData(rawData: TimeSeriesPoint[], maxPoints: number = 500) {
-  // Downsample data for performance
-  const downsampledData = useMemo(() => {
-    if (rawData.length <= maxPoints) return rawData;
-
-    const step = Math.ceil(rawData.length / maxPoints);
-    return rawData.filter((_, index) => index % step === 0);
-  }, [rawData, maxPoints]);
-
-  // Memoize expensive calculations
-  const statistics = useMemo(() => {
-    if (!rawData.length) return null;
-
-    const totalClicks = rawData.reduce((sum, p) => sum + p.click_count, 0);
-    const totalFraud = rawData.reduce((sum, p) => sum + p.fraud_count, 0);
-    const avgClicksPerBucket = totalClicks / rawData.length;
-    const maxClicks = Math.max(...rawData.map((p) => p.click_count));
-
-    return {
-      totalClicks,
-      totalFraud,
-      avgClicksPerBucket,
-      maxClicks,
-      fraudRate: (totalFraud / totalClicks) * 100,
-    };
-  }, [rawData]);
-
-  return { downsampledData, statistics };
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  useChartData Hook                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  INPUT                                                           │
+│  ─────                                                           │
+│  rawData: 10,000 points                                         │
+│  maxPoints: 500 (configurable)                                  │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  DOWNSAMPLING ALGORITHM                                          │
+│  ──────────────────────                                          │
+│                                                                  │
+│  if rawData.length <= maxPoints:                                │
+│      return rawData (no change)                                 │
+│                                                                  │
+│  else:                                                          │
+│      step = ceil(10000 / 500) = 20                              │
+│      return every 20th point                                    │
+│                                                                  │
+│  Result: 500 evenly-spaced points                               │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  MEMOIZED STATISTICS                                             │
+│  ───────────────────                                             │
+│                                                                  │
+│  totalClicks: sum of all click_count                            │
+│  totalFraud: sum of all fraud_count                             │
+│  avgClicksPerBucket: totalClicks / rawData.length               │
+│  maxClicks: max(click_count)                                    │
+│  fraudRate: (totalFraud / totalClicks) * 100                    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Dashboard Layout
+---
 
-### Responsive Grid System
+## 🎨 Deep Dive: Dashboard Layout
 
-```tsx
-// components/DashboardLayout.tsx
-export function DashboardLayout() {
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Ad Click Analytics
-          </h1>
-          <div className="flex items-center gap-4">
-            <LastUpdatedIndicator />
-            <RefreshButton />
-          </div>
-        </div>
-      </header>
+### Responsive Grid Structure
 
-      {/* Filters Bar */}
-      <div className="border-b border-gray-200 bg-white px-6 py-3">
-        <FilterControls />
-      </div>
-
-      {/* Main Content */}
-      <main className="p-6">
-        {/* KPI Cards */}
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            title="Total Clicks"
-            metric="totalClicks"
-            format="number"
-            icon={<ClickIcon />}
-          />
-          <MetricCard
-            title="Unique Users"
-            metric="uniqueUsers"
-            format="number"
-            icon={<UsersIcon />}
-          />
-          <MetricCard
-            title="Fraud Rate"
-            metric="fraudRate"
-            format="percent"
-            icon={<AlertIcon />}
-            threshold={{ warning: 3, critical: 5 }}
-          />
-          <MetricCard
-            title="Avg. Clicks/Min"
-            metric="avgClicksPerMinute"
-            format="number"
-            icon={<ChartIcon />}
-          />
-        </div>
-
-        {/* Charts Row */}
-        <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card title="Clicks Over Time">
-            <ClicksChart />
-          </Card>
-          <Card title="Geographic Distribution">
-            <CountryChart />
-          </Card>
-        </div>
-
-        {/* Tables Row */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card title="Campaign Performance">
-            <CampaignTable />
-          </Card>
-          <Card title="Recent Fraud Detections">
-            <FraudTable />
-          </Card>
-        </div>
-      </main>
-    </div>
-  );
-}
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  HEADER (sticky)                                                        │
+│  ┌──────────────────────────────────────┬─────────────────────────────┐│
+│  │  Ad Click Analytics                  │  Last Updated: 14:32:05     ││
+│  │  (h1, text-2xl, font-bold)           │  [Refresh Button]           ││
+│  └──────────────────────────────────────┴─────────────────────────────┘│
+├────────────────────────────────────────────────────────────────────────┤
+│  FILTERS BAR                                                            │
+│  ┌────────────────────────────────────────────────────────────────────┐│
+│  │  Time Range: [Last Hour] [Last 24h] [Last 7d] [Last 30d]          ││
+│  │  Campaign: [Dropdown ▼]   Country: [Dropdown ▼]   Device: [▼]     ││
+│  └────────────────────────────────────────────────────────────────────┘│
+├────────────────────────────────────────────────────────────────────────┤
+│  MAIN CONTENT (p-6)                                                     │
+│                                                                         │
+│  KPI CARDS ROW (grid: 1 col mobile, 2 col sm, 4 col lg)                │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │
+│  │ Total Clicks│ │Unique Users │ │ Fraud Rate  │ │Clicks/Min   │      │
+│  │             │ │             │ │             │ │             │      │
+│  │   1,234,567 │ │     89,432  │ │    2.34%    │ │       856   │      │
+│  │             │ │             │ │ [WARNING]   │ │             │      │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘      │
+│                                                                         │
+│  CHARTS ROW (grid: 1 col mobile, 2 col lg)                             │
+│  ┌─────────────────────────────┐ ┌─────────────────────────────┐      │
+│  │  Clicks Over Time           │ │  Geographic Distribution     │      │
+│  │  ┌─────────────────────┐    │ │  ┌─────────────────────┐    │      │
+│  │  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│    │ │  │ US ████████ 45%    │    │      │
+│  │  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  │    │ │  │ UK ████    18%     │    │      │
+│  │  │▓▓▓▓▓▓▓▓▓▓▓▓▓        │    │ │  │ DE ███     12%     │    │      │
+│  │  └─────────────────────┘    │ │  └─────────────────────┘    │      │
+│  │  [Brush zoom control]       │ │                              │      │
+│  └─────────────────────────────┘ └─────────────────────────────┘      │
+│                                                                         │
+│  TABLES ROW (grid: 1 col mobile, 2 col lg)                             │
+│  ┌─────────────────────────────┐ ┌─────────────────────────────┐      │
+│  │  Campaign Performance       │ │  Recent Fraud Detections    │      │
+│  │  ┌─────────────────────┐    │ │  ┌─────────────────────┐    │      │
+│  │  │ Campaign | Clicks   │    │ │  │ Time | IP | Reason  │    │      │
+│  │  │ Sale2024 | 45,678   │    │ │  │ 14:31| ***.* | Rate │    │      │
+│  │  │ Winter   | 34,567   │    │ │  │ 14:30| ***.* | Bot  │    │      │
+│  │  └─────────────────────┘    │ │  └─────────────────────┘    │      │
+│  └─────────────────────────────┘ └─────────────────────────────┘      │
+│                                                                         │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Metric Card Component
+### Metric Card States
 
-```tsx
-// components/MetricCard.tsx
-import { useAnalyticsStore } from '../stores/analyticsStore';
-import { cn } from '../utils/cn';
-
-interface MetricCardProps {
-  title: string;
-  metric: keyof MetricsData;
-  format: 'number' | 'percent' | 'currency';
-  icon: React.ReactNode;
-  threshold?: { warning: number; critical: number };
-}
-
-export function MetricCard({ title, metric, format, icon, threshold }: MetricCardProps) {
-  const value = useAnalyticsStore((state) => state.metrics?.[metric] ?? 0);
-  const isLoading = useAnalyticsStore((state) => state.isLoading);
-
-  const formattedValue = formatValue(value as number, format);
-
-  const status = threshold
-    ? getThresholdStatus(value as number, threshold)
-    : 'normal';
-
-  return (
-    <div
-      className={cn(
-        'rounded-lg border bg-white p-6 shadow-sm',
-        status === 'critical' && 'border-red-300 bg-red-50',
-        status === 'warning' && 'border-yellow-300 bg-yellow-50'
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <div className="text-gray-500">{icon}</div>
-        {status !== 'normal' && (
-          <span
-            className={cn(
-              'rounded-full px-2 py-1 text-xs font-medium',
-              status === 'critical' && 'bg-red-100 text-red-700',
-              status === 'warning' && 'bg-yellow-100 text-yellow-700'
-            )}
-          >
-            {status === 'critical' ? 'Critical' : 'Warning'}
-          </span>
-        )}
-      </div>
-      <div className="mt-4">
-        <p className="text-sm font-medium text-gray-600">{title}</p>
-        {isLoading ? (
-          <div className="mt-1 h-8 w-24 animate-pulse rounded bg-gray-200" />
-        ) : (
-          <p className="mt-1 text-3xl font-semibold text-gray-900">
-            {formattedValue}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function formatValue(value: number, format: 'number' | 'percent' | 'currency') {
-  switch (format) {
-    case 'number':
-      return value.toLocaleString();
-    case 'percent':
-      return `${value.toFixed(2)}%`;
-    case 'currency':
-      return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-  }
-}
-
-function getThresholdStatus(
-  value: number,
-  threshold: { warning: number; critical: number }
-): 'normal' | 'warning' | 'critical' {
-  if (value >= threshold.critical) return 'critical';
-  if (value >= threshold.warning) return 'warning';
-  return 'normal';
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     METRIC CARD STATES                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  NORMAL                    WARNING                   CRITICAL    │
+│  ──────                    ───────                   ────────    │
+│                                                                  │
+│  ┌─────────────┐          ┌─────────────┐          ┌───────────┐│
+│  │ border-gray │          │border-yellow│          │border-red ││
+│  │ bg-white    │          │bg-yellow-50 │          │bg-red-50  ││
+│  │             │          │             │          │           ││
+│  │ [icon]      │          │ [icon] WARN │          │[icon] CRIT││
+│  │             │          │             │          │           ││
+│  │ Fraud Rate  │          │ Fraud Rate  │          │ Fraud Rate││
+│  │   1.50%     │          │   3.50%     │          │  5.50%    ││
+│  │             │          │             │          │           ││
+│  └─────────────┘          └─────────────┘          └───────────┘│
+│                                                                  │
+│  Threshold values:                                               │
+│    warning: >= 3%                                               │
+│    critical: >= 5%                                              │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  LOADING STATE                                                   │
+│  ─────────────                                                   │
+│                                                                  │
+│  ┌─────────────┐                                                 │
+│  │ [icon]      │                                                 │
+│  │             │                                                 │
+│  │ Fraud Rate  │                                                 │
+│  │ ░░░░░░░░░░░ │  <── Animated skeleton (animate-pulse)         │
+│  │             │                                                 │
+│  └─────────────┘                                                 │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Filter Controls
+### Value Formatting Rules
 
-### Date Range Picker
+| Format | Input | Output |
+|--------|-------|--------|
+| number | 1234567 | 1,234,567 |
+| percent | 2.345 | 2.35% |
+| currency | 1234.56 | $1,234.56 |
 
-```tsx
-// components/DateRangePicker.tsx
-import { useState, useCallback } from 'react';
-import { useAnalyticsStore } from '../stores/analyticsStore';
+---
 
-const PRESETS = [
-  { label: 'Last Hour', hours: 1, granularity: 'minute' as const },
-  { label: 'Last 24 Hours', hours: 24, granularity: 'hour' as const },
-  { label: 'Last 7 Days', hours: 168, granularity: 'hour' as const },
-  { label: 'Last 30 Days', hours: 720, granularity: 'day' as const },
-];
+## 🔍 Deep Dive: Filter Controls
 
-export function DateRangePicker() {
-  const timeRange = useAnalyticsStore((state) => state.timeRange);
-  const setTimeRange = useAnalyticsStore((state) => state.setTimeRange);
-  const [activePreset, setActivePreset] = useState<number>(1); // Default: Last 24 Hours
+### Date Range Picker Presets
 
-  const handlePresetClick = useCallback((preset: typeof PRESETS[0], index: number) => {
-    const end = new Date();
-    const start = new Date(end.getTime() - preset.hours * 60 * 60 * 1000);
-
-    setTimeRange({
-      start,
-      end,
-      granularity: preset.granularity,
-    });
-    setActivePreset(index);
-  }, [setTimeRange]);
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-gray-600">Time Range:</span>
-      <div className="flex rounded-lg border border-gray-200 bg-white p-1">
-        {PRESETS.map((preset, index) => (
-          <button
-            key={preset.label}
-            onClick={() => handlePresetClick(preset, index)}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              activePreset === index
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-100'
-            )}
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 ```
+┌─────────────────────────────────────────────────────────────────┐
+│                   DATE RANGE PICKER                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Time Range:                                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ ┌──────────┐┌────────────┐┌───────────┐┌──────────────┐ │   │
+│  │ │Last Hour ││Last 24 hrs ││ Last 7d   ││  Last 30d    │ │   │
+│  │ │          ││ [ACTIVE]   ││           ││              │ │   │
+│  │ └──────────┘└────────────┘└───────────┘└──────────────┘ │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Preset Configuration
+
+| Preset | Hours | Granularity |
+|--------|-------|-------------|
+| Last Hour | 1 | minute |
+| Last 24 Hours | 24 | hour |
+| Last 7 Days | 168 | hour |
+| Last 30 Days | 720 | day |
 
 ### Campaign Filter Dropdown
 
-```tsx
-// components/CampaignFilter.tsx
-import { useState, useEffect } from 'react';
-import { useAnalyticsStore } from '../stores/analyticsStore';
-
-interface Campaign {
-  id: string;
-  name: string;
-  advertiser_name: string;
-}
-
-export function CampaignFilter() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-
-  const selectedCampaignId = useAnalyticsStore((state) => state.filters.campaignId);
-  const setFilters = useAnalyticsStore((state) => state.setFilters);
-
-  useEffect(() => {
-    fetch('/api/v1/campaigns')
-      .then((res) => res.json())
-      .then((data) => setCampaigns(data.campaigns));
-  }, []);
-
-  const filteredCampaigns = campaigns.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.advertiser_name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm"
-      >
-        <span className="text-gray-600">Campaign:</span>
-        <span className="font-medium">
-          {selectedCampaign?.name ?? 'All Campaigns'}
-        </span>
-        <ChevronDownIcon className="h-4 w-4" />
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
-          <div className="border-b p-2">
-            <input
-              type="text"
-              placeholder="Search campaigns..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="max-h-60 overflow-y-auto p-2">
-            <button
-              onClick={() => {
-                setFilters({ campaignId: null });
-                setIsOpen(false);
-              }}
-              className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-gray-100"
-            >
-              All Campaigns
-            </button>
-            {filteredCampaigns.map((campaign) => (
-              <button
-                key={campaign.id}
-                onClick={() => {
-                  setFilters({ campaignId: campaign.id });
-                  setIsOpen(false);
-                }}
-                className={cn(
-                  'w-full rounded-md px-3 py-2 text-left text-sm hover:bg-gray-100',
-                  campaign.id === selectedCampaignId && 'bg-blue-50'
-                )}
-              >
-                <p className="font-medium">{campaign.name}</p>
-                <p className="text-xs text-gray-500">{campaign.advertiser_name}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   CAMPAIGN FILTER                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌────────────────────────────────────┐                         │
+│  │ Campaign: All Campaigns        ▼  │  <── Trigger button      │
+│  └────────────────────────────────────┘                         │
+│                                                                  │
+│  When clicked:                                                   │
+│  ┌────────────────────────────────────┐                         │
+│  │ ┌──────────────────────────────┐  │                         │
+│  │ │ Search campaigns...          │  │  <── Search input        │
+│  │ └──────────────────────────────┘  │                         │
+│  ├────────────────────────────────────┤                         │
+│  │  All Campaigns                     │  <── Clear selection     │
+│  ├────────────────────────────────────┤                         │
+│  │  Winter Sale 2024                  │                         │
+│  │  ↳ Acme Corp                       │  <── Advertiser subtext  │
+│  ├────────────────────────────────────┤                         │
+│  │  Black Friday Promo  [SELECTED]    │  <── bg-blue-50          │
+│  │  ↳ MegaMart                        │                         │
+│  ├────────────────────────────────────┤                         │
+│  │  New Year Campaign                 │                         │
+│  │  ↳ TechGadgets Inc                 │                         │
+│  └────────────────────────────────────┘                         │
+│                                                                  │
+│  Features:                                                       │
+│  - Fetches campaigns list on mount via GET /api/v1/campaigns    │
+│  - Client-side search filters by name OR advertiser_name        │
+│  - max-height: 60 with overflow-y-auto for scrolling            │
+│  - Click outside or select to close dropdown                    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Test Click Generator
+---
 
-### Developer Tool Component
+## 🧪 Deep Dive: Test Click Generator
 
-```tsx
-// components/TestClickGenerator.tsx
-import { useState, useCallback } from 'react';
+### Developer Tool UI
 
-const COUNTRIES = ['US', 'UK', 'DE', 'FR', 'JP', 'CA', 'AU', 'BR'];
-const DEVICES = ['mobile', 'desktop', 'tablet'];
-
-export function TestClickGenerator() {
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [clicksPerSecond, setClicksPerSecond] = useState(10);
-  const [duration, setDuration] = useState(10);
-  const [stats, setStats] = useState({ sent: 0, success: 0, duplicate: 0, fraud: 0 });
-
-  const generateClicks = useCallback(async () => {
-    setIsGenerating(true);
-    setStats({ sent: 0, success: 0, duplicate: 0, fraud: 0 });
-
-    const totalClicks = clicksPerSecond * duration;
-    const interval = 1000 / clicksPerSecond;
-
-    for (let i = 0; i < totalClicks; i++) {
-      const click = {
-        ad_id: `ad_${Math.floor(Math.random() * 10)}`,
-        campaign_id: `camp_${Math.floor(Math.random() * 5)}`,
-        advertiser_id: `adv_${Math.floor(Math.random() * 3)}`,
-        country: COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)],
-        device_type: DEVICES[Math.floor(Math.random() * DEVICES.length)],
-      };
-
-      try {
-        const response = await fetch('/api/v1/clicks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(click),
-        });
-
-        const result = await response.json();
-
-        setStats((prev) => ({
-          sent: prev.sent + 1,
-          success: prev.success + (result.success && !result.is_duplicate ? 1 : 0),
-          duplicate: prev.duplicate + (result.is_duplicate ? 1 : 0),
-          fraud: prev.fraud + (result.is_fraudulent ? 1 : 0),
-        }));
-      } catch (error) {
-        console.error('Click generation error:', error);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, interval));
-    }
-
-    setIsGenerating(false);
-  }, [clicksPerSecond, duration]);
-
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <h3 className="mb-4 text-lg font-semibold">Test Click Generator</h3>
-
-      <div className="mb-4 grid grid-cols-2 gap-4">
-        <div>
-          <label className="text-sm text-gray-600">Clicks/Second</label>
-          <input
-            type="range"
-            min={1}
-            max={100}
-            value={clicksPerSecond}
-            onChange={(e) => setClicksPerSecond(Number(e.target.value))}
-            className="w-full"
-            disabled={isGenerating}
-          />
-          <span className="text-sm font-medium">{clicksPerSecond}</span>
-        </div>
-        <div>
-          <label className="text-sm text-gray-600">Duration (seconds)</label>
-          <input
-            type="range"
-            min={5}
-            max={60}
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className="w-full"
-            disabled={isGenerating}
-          />
-          <span className="text-sm font-medium">{duration}s</span>
-        </div>
-      </div>
-
-      <button
-        onClick={generateClicks}
-        disabled={isGenerating}
-        className={cn(
-          'w-full rounded-lg px-4 py-2 font-medium text-white',
-          isGenerating ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'
-        )}
-      >
-        {isGenerating ? `Generating... (${stats.sent} sent)` : 'Generate Test Clicks'}
-      </button>
-
-      {stats.sent > 0 && (
-        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-          <div className="rounded bg-gray-100 p-2">
-            <p className="text-xs text-gray-600">Sent</p>
-            <p className="text-lg font-semibold">{stats.sent}</p>
-          </div>
-          <div className="rounded bg-green-100 p-2">
-            <p className="text-xs text-gray-600">Success</p>
-            <p className="text-lg font-semibold text-green-700">{stats.success}</p>
-          </div>
-          <div className="rounded bg-yellow-100 p-2">
-            <p className="text-xs text-gray-600">Duplicate</p>
-            <p className="text-lg font-semibold text-yellow-700">{stats.duplicate}</p>
-          </div>
-          <div className="rounded bg-red-100 p-2">
-            <p className="text-xs text-gray-600">Fraud</p>
-            <p className="text-lg font-semibold text-red-700">{stats.fraud}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                TEST CLICK GENERATOR                              │
+│                (Development Tool)                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Clicks/Second                    Duration (seconds)             │
+│  ──────────────                   ─────────────────             │
+│  ░░░░░░░░░░░░░░░░████████████    ░░░░░░████████░░░░░░░         │
+│  1            [50]         100    5     [10]        60           │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              Generate Test Clicks                         │   │
+│  │                 (blue button)                             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  During generation:                                              │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │         Generating... (156 sent)                          │   │
+│  │                (gray, disabled)                           │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Results Display (after generation):                             │
+│                                                                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│  │   Sent   │ │ Success  │ │Duplicate │ │  Fraud   │           │
+│  │   gray   │ │  green   │ │  yellow  │ │   red    │           │
+│  │          │ │          │ │          │ │          │           │
+│  │   500    │ │   478    │ │    12    │ │    10    │           │
+│  │          │ │          │ │          │ │          │           │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Accessibility Considerations
+### Click Generation Flow
 
-### ARIA Labels and Keyboard Navigation
-
-```tsx
-// components/AccessibleChart.tsx
-export function AccessibleChart({ data, title }: { data: ChartData[]; title: string }) {
-  const summaryRef = useRef<HTMLParagraphElement>(null);
-
-  // Generate text summary for screen readers
-  const summary = useMemo(() => {
-    const total = data.reduce((sum, d) => sum + d.clicks, 0);
-    const max = Math.max(...data.map((d) => d.clicks));
-    const maxDate = data.find((d) => d.clicks === max);
-
-    return `${title}: Total ${total.toLocaleString()} clicks. Peak of ${max.toLocaleString()} clicks occurred at ${new Date(maxDate!.timestamp).toLocaleString()}.`;
-  }, [data, title]);
-
-  return (
-    <div role="figure" aria-labelledby="chart-title" aria-describedby="chart-summary">
-      <h3 id="chart-title" className="sr-only">{title}</h3>
-      <p id="chart-summary" ref={summaryRef} className="sr-only">
-        {summary}
-      </p>
-      <div aria-hidden="true">
-        <ResponsiveContainer>
-          <AreaChart data={data}>
-            {/* Chart implementation */}
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-      {/* Accessible data table alternative */}
-      <details className="mt-2">
-        <summary className="cursor-pointer text-sm text-blue-600">
-          View data as table
-        </summary>
-        <table className="mt-2 w-full text-sm">
-          <thead>
-            <tr>
-              <th scope="col">Time</th>
-              <th scope="col">Clicks</th>
-              <th scope="col">Unique Users</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, i) => (
-              <tr key={i}>
-                <td>{new Date(row.timestamp).toLocaleString()}</td>
-                <td>{row.clicks.toLocaleString()}</td>
-                <td>{row.uniqueUsers.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
-    </div>
-  );
-}
+```
+┌────────────────────────────────────────────────────────────────┐
+│                   GENERATION ALGORITHM                          │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Input: clicksPerSecond = 50, duration = 10s                   │
+│                                                                 │
+│  totalClicks = 50 * 10 = 500                                   │
+│  interval = 1000ms / 50 = 20ms between clicks                  │
+│                                                                 │
+│  For each click:                                                │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  1. Generate random click data:                          │   │
+│  │     - ad_id: random from 10 ads                          │   │
+│  │     - campaign_id: random from 5 campaigns               │   │
+│  │     - advertiser_id: random from 3 advertisers           │   │
+│  │     - country: random from [US,UK,DE,FR,JP,CA,AU,BR]     │   │
+│  │     - device_type: random from [mobile,desktop,tablet]   │   │
+│  │                                                           │   │
+│  │  2. POST to /api/v1/clicks                               │   │
+│  │                                                           │   │
+│  │  3. Parse response and update stats:                      │   │
+│  │     - success && !is_duplicate → increment success        │   │
+│  │     - is_duplicate → increment duplicate                  │   │
+│  │     - is_fraudulent → increment fraud                     │   │
+│  │                                                           │   │
+│  │  4. Wait 20ms before next click                          │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## Trade-offs Summary
+---
 
-| Decision | Pros | Cons |
-|----------|------|------|
-| Zustand over Context | Simple API, selective subscriptions | Learning curve for team |
-| Recharts | Easy integration, responsive | Less customizable than D3 |
-| 5-second refresh interval | Near real-time updates | Network overhead |
-| Client-side downsampling | Smooth chart rendering | Data loss in detailed view |
-| Tailwind CSS | Rapid prototyping, consistent | Large class strings |
+## ♿ Accessibility Considerations
 
-## Future Frontend Enhancements
+### Chart Accessibility Pattern
 
-1. **WebSocket Updates**: Replace polling with real-time push
-2. **D3.js Charts**: Custom visualizations for advanced analytics
-3. **Virtual Scrolling**: Virtualized tables for large datasets
-4. **Dashboard Builder**: Drag-and-drop widget arrangement
-5. **Export Functionality**: CSV/PDF report generation
-6. **Dark Mode**: Theme toggle with CSS variables
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               ACCESSIBLE CHART STRUCTURE                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  <div role="figure"                                              │
+│       aria-labelledby="chart-title"                             │
+│       aria-describedby="chart-summary">                         │
+│                                                                  │
+│      <!-- For screen readers -->                                │
+│      <h3 id="chart-title" class="sr-only">                     │
+│          Clicks Over Time                                       │
+│      </h3>                                                      │
+│                                                                  │
+│      <p id="chart-summary" class="sr-only">                    │
+│          "Clicks Over Time: Total 1,234,567 clicks.            │
+│           Peak of 12,345 clicks occurred at                     │
+│           January 15, 2024, 2:30 PM."                           │
+│      </p>                                                       │
+│                                                                  │
+│      <!-- Visual chart (hidden from screen readers) -->         │
+│      <div aria-hidden="true">                                   │
+│          <ResponsiveContainer>                                  │
+│              <AreaChart>...</AreaChart>                         │
+│          </ResponsiveContainer>                                 │
+│      </div>                                                     │
+│                                                                  │
+│      <!-- Accessible data table alternative -->                 │
+│      <details>                                                  │
+│          <summary>View data as table</summary>                  │
+│          <table>                                                │
+│              <thead>                                            │
+│                  <tr>                                           │
+│                      <th scope="col">Time</th>                  │
+│                      <th scope="col">Clicks</th>                │
+│                      <th scope="col">Unique Users</th>          │
+│                  </tr>                                          │
+│              </thead>                                           │
+│              <tbody>...</tbody>                                 │
+│          </table>                                               │
+│      </details>                                                 │
+│                                                                  │
+│  </div>                                                         │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Generated Summary Format
+
+The summary is computed from chart data and provides:
+- Total count across all data points
+- Peak value and when it occurred
+- Automatically updated when data changes (useMemo dependency)
+
+---
+
+## ⚖️ Trade-offs Summary
+
+| Decision | Alternative | Chosen | Rationale |
+|----------|-------------|--------|-----------|
+| State management | Context API | ✅ Zustand | Simple API, selective subscriptions prevent unnecessary re-renders |
+| | Redux | ❌ | Overkill for dashboard state, more boilerplate |
+| Charting library | D3.js | ❌ | Low-level, more control but slower development |
+| | Recharts | ✅ | React-native, declarative, good defaults, brush component built-in |
+| | Chart.js | ❌ | Canvas-based, less flexible for custom tooltips |
+| Data refresh | WebSocket | ❌ | More complex setup, polling sufficient for 5s interval |
+| | Polling (setInterval) | ✅ | Simple, reliable, easy to implement cleanup |
+| Large dataset handling | Server-side pagination | ❌ | More API calls, complex state management |
+| | Client-side downsampling | ✅ | Single fetch, smooth charts, acceptable data loss |
+| Styling | CSS Modules | ❌ | More files, less utility-first |
+| | Tailwind CSS | ✅ | Rapid prototyping, consistent design tokens |
+
+---
+
+## 🚀 Future Frontend Enhancements
+
+1. **WebSocket Updates**: Replace polling with real-time push for sub-second updates
+2. **D3.js Charts**: Custom visualizations for advanced analytics (heatmaps, network graphs)
+3. **Virtual Scrolling**: Virtualized tables for large campaign/fraud lists
+4. **Dashboard Builder**: Drag-and-drop widget arrangement with persistence
+5. **Export Functionality**: CSV/PDF report generation from current view
+6. **Dark Mode**: Theme toggle with CSS custom properties
