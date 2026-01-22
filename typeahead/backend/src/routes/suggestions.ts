@@ -10,6 +10,13 @@ import {
   recordCacheMiss,
 } from '../shared/metrics.js';
 import logger from '../shared/logger.js';
+import {
+  conditionalCache,
+  cacheTrending,
+  cacheUserSpecific,
+  cacheSuggestions,
+  noCache,
+} from '../shared/cache-headers.js';
 import type { SuggestionService, SuggestionOptions } from '../services/suggestion-service.js';
 import type { RankingService, RankedSuggestion } from '../services/ranking-service.js';
 import type { AggregationService } from '../services/aggregation-service.js';
@@ -71,7 +78,7 @@ function getSuggestionCircuit(
  * - userId: User ID for personalization (optional)
  * - fuzzy: Enable fuzzy matching (default: false)
  */
-router.get('/', suggestionRateLimiter, async (req: Request, res: Response) => {
+router.get('/', suggestionRateLimiter, conditionalCache('suggestions'), async (req: Request, res: Response) => {
   const timer = suggestionLatency.startTimer();
   const startTime = Date.now();
   let cacheHit = false;
@@ -181,7 +188,7 @@ router.get('/', suggestionRateLimiter, async (req: Request, res: Response) => {
  * - userId: User ID (optional)
  * - sessionId: Session ID (optional)
  */
-router.post('/log', logRateLimiter, async (req: Request, res: Response) => {
+router.post('/log', logRateLimiter, noCache, async (req: Request, res: Response) => {
   const timer = suggestionLatency.startTimer();
 
   try {
@@ -247,7 +254,7 @@ router.post('/log', logRateLimiter, async (req: Request, res: Response) => {
  * Query params:
  * - limit: Max number of trending queries (default: 10)
  */
-router.get('/trending', async (req: Request, res: Response) => {
+router.get('/trending', cacheTrending, async (req: Request, res: Response) => {
   const timer = suggestionLatency.startTimer();
 
   try {
@@ -289,7 +296,7 @@ router.get('/trending', async (req: Request, res: Response) => {
  * Query params:
  * - limit: Max number of queries (default: 10)
  */
-router.get('/popular', async (req: Request, res: Response) => {
+router.get('/popular', cacheSuggestions, async (req: Request, res: Response) => {
   const timer = suggestionLatency.startTimer();
 
   try {
