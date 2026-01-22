@@ -163,6 +163,12 @@ Each folder contains an independent implementation of a system design problem.
 | [iCloud Sync](./icloud/) | File and photo synchronization | ✅ Implemented |
 | [Scalable API](./scalable-api/) | API serving millions of users | ✅ Implemented |
 
+### UI Components & Patterns
+
+| Project | Description | Status |
+|---------|-------------|--------|
+| [Gallery](./gallery/) | Image gallery with Slideshow, Masonry, and Tiles views | ✅ Implemented |
+
 ### Personal Projects & Experiments
 
 External projects demonstrating system design concepts (with local architecture documentation):
