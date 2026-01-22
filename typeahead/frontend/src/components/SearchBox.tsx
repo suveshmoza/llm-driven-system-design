@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useId } from 'react';
 import { useSearchStore } from '../stores/search-store';
 import { useDebounce, useClickOutside, useKeyboard } from '../hooks';
 import type { Suggestion } from '../types';
@@ -14,6 +14,12 @@ export function SearchBox({ placeholder = 'Search...', onSearch, className = '' 
   const inputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [announcement, setAnnouncement] = useState('');
+
+  // Generate stable IDs for ARIA relationships
+  const instanceId = useId();
+  const listboxId = `searchbox-listbox-${instanceId}`;
+  const getOptionId = (index: number) => `searchbox-option-${instanceId}-${index}`;
 
   const {
     query,
@@ -33,6 +39,22 @@ export function SearchBox({ placeholder = 'Search...', onSearch, className = '' 
   const debouncedSearch = useDebounce((value: string) => {
     search(value);
   }, 150);
+
+  // Announce changes to screen readers
+  useEffect(() => {
+    if (isOpen && suggestions.length > 0) {
+      setAnnouncement(`${suggestions.length} suggestions available. Use up and down arrows to navigate.`);
+    } else if (isOpen && query.trim() && suggestions.length === 0 && !isLoading) {
+      setAnnouncement('No suggestions available.');
+    }
+  }, [suggestions.length, isOpen, query, isLoading]);
+
+  // Announce selected item
+  useEffect(() => {
+    if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+      setAnnouncement(`${suggestions[selectedIndex].phrase}, ${selectedIndex + 1} of ${suggestions.length}`);
+    }
+  }, [selectedIndex, suggestions]);
 
   // Handle input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,6 +156,9 @@ export function SearchBox({ placeholder = 'Search...', onSearch, className = '' 
     return (
       <li
         key={suggestion.phrase}
+        id={getOptionId(index)}
+        role="option"
+        aria-selected={isSelected}
         className={`px-4 py-2 cursor-pointer flex items-center justify-between transition-colors ${
           isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
         }`}
@@ -217,6 +242,13 @@ export function SearchBox({ placeholder = 'Search...', onSearch, className = '' 
             className="w-full px-4 py-3 pl-12 text-lg border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
             autoComplete="off"
             spellCheck="false"
+            role="combobox"
+            aria-expanded={isOpen}
+            aria-controls={listboxId}
+            aria-activedescendant={selectedIndex >= 0 ? getOptionId(selectedIndex) : undefined}
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-label="Search"
           />
           <div className="absolute left-4 top-1/2 -translate-y-1/2">
             <svg
@@ -244,7 +276,12 @@ export function SearchBox({ placeholder = 'Search...', onSearch, className = '' 
       {/* Dropdown */}
       {isOpen && (suggestions.length > 0 || recentSearches.length > 0 || error) && (
         <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden animate-fade-in">
-          <ul className="suggestions-dropdown max-h-80 overflow-y-auto">
+          <ul
+            id={listboxId}
+            role="listbox"
+            aria-label="Search suggestions"
+            className="suggestions-dropdown max-h-80 overflow-y-auto"
+          >
             {error ? (
               <li className="px-4 py-3 text-red-500 text-sm">{error}</li>
             ) : suggestions.length > 0 ? (
@@ -265,6 +302,16 @@ export function SearchBox({ placeholder = 'Search...', onSearch, className = '' 
           )}
         </div>
       )}
+
+      {/* Live region for screen reader announcements */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {announcement}
+      </div>
     </div>
   );
 }

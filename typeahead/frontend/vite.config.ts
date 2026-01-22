@@ -21,4 +21,21 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        sw: path.resolve(__dirname, 'src/sw.ts'),
+      },
+      output: {
+        entryFileNames: (chunkInfo) => {
+          // Output service worker at root level
+          if (chunkInfo.name === 'sw') {
+            return 'sw.js';
+          }
+          return 'assets/[name]-[hash].js';
+        },
+      },
+    },
+  },
 });
