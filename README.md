@@ -101,6 +101,7 @@ Each folder contains an independent implementation of a system design problem.
 | [Ticketmaster](./ticketmaster/) | Event ticketing and inventory management | ✅ Implemented |
 | [Hotel Booking](./hotel-booking/) | Hotel reservation and management system | ✅ Implemented |
 | [Calendly](./calendly/) | Meeting scheduling and calendar coordination | ✅ Implemented |
+| [Google Calendar](./google-calendar/) | Calendar with Month/Week/Day views and conflict detection | ✅ Implemented |
 
 ### Developer & Productivity Tools
 

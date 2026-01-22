@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .calendar-grid {
+    @apply grid grid-cols-7;
+  }
+
+  .calendar-header-cell {
+    @apply text-center text-sm font-medium text-gray-500 py-2;
+  }
+
+  .calendar-day-cell {
+    @apply border border-gray-100 min-h-[100px] p-1;
+  }
+
+  .calendar-event {
+    @apply text-xs rounded px-1 py-0.5 truncate cursor-pointer hover:opacity-80;
+  }
+}
