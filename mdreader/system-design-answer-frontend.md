@@ -2,783 +2,343 @@
 
 *45-minute system design interview format - Frontend Engineer Position*
 
-## Problem Statement
+---
 
-Design MD Reader, a Progressive Web App for editing and previewing Markdown in the browser. The frontend challenge focuses on Monaco Editor integration, real-time preview rendering, component architecture, and offline-first PWA implementation.
+## 📋 Introduction
 
-## Requirements Clarification
+"Today I'll design MD Reader, a Progressive Web App for editing and previewing Markdown in the browser. This is a client-focused challenge where we need to balance editor performance, real-time preview rendering, and offline-first architecture. Let me start by clarifying the requirements."
+
+---
+
+## 🎯 Requirements
 
 ### Functional Requirements
-- **Rich Editor**: Monaco Editor with Markdown syntax highlighting
-- **Live Preview**: Real-time rendering as the user types
-- **View Modes**: Editor-only, preview-only, and split view
-- **Document Management**: Create, switch, delete documents with auto-save
-- **Theme Support**: Light and dark mode toggle
+
+- Rich text editor with Markdown syntax highlighting
+- Live preview rendering as the user types
+- Multiple view modes: editor-only, preview-only, split view
+- Document management with auto-save to local storage
+- Light and dark theme support
+- PWA installation for offline use
 
 ### Non-Functional Requirements
-- **Responsiveness**: Preview updates within 150ms of typing pause
-- **Performance**: Handle 10,000+ line documents smoothly
-- **Accessibility**: Keyboard navigation, screen reader support
-- **Offline**: Full functionality without network connection
+
+- Preview updates within 150ms of typing pause
+- Smooth handling of 10,000+ line documents
+- Keyboard accessibility and screen reader support
+- Full functionality without network connection
 
 ### Scale Estimates
-- **Document Size**: Average 10KB, maximum 500KB
-- **Typing Rate**: 5-10 keystrokes/second during active editing
-- **Concurrent Documents**: Up to 100 documents stored locally
 
-## High-Level Architecture
+- Average document size: 10KB, maximum: 500KB
+- Typing rate: 5-10 keystrokes per second during active editing
+- Up to 100 documents stored locally per user
+
+---
+
+## 🏗️ High-Level Design
+
+"Let me sketch the overall application layout on the whiteboard."
 
 ```
 +------------------------------------------------------------------+
-|                        Application Shell                          |
+|                       Application Shell                           |
 +------------------------------------------------------------------+
 |  Toolbar                                                          |
 |  +-------------------------------------------------------------+  |
-|  | [New] [Import] [Export] | [Theme] | [Editor|Split|Preview]  |  |
+|  | [New] [Import] [Export]  |  [Theme]  |  [Edit|Split|View]   |  |
 |  +-------------------------------------------------------------+  |
 +------------------------------------------------------------------+
 |  Document Selector                                                |
 |  +-------------------------------------------------------------+  |
-|  | [Dropdown] Document Title (auto-generated)      [Delete]    |  |
+|  | [Dropdown: Document Title]                      [Delete]    |  |
 |  +-------------------------------------------------------------+  |
 +------------------------------------------------------------------+
 |  View Container                                                   |
 |  +---------------------------+-------------------------------+    |
-|  |       Monaco Editor       |       Preview Pane            |    |
 |  |                           |                               |    |
-|  |  - Syntax highlighting    |  - markdown-it rendered       |    |
-|  |  - Line numbers           |  - DOMPurify sanitized        |    |
-|  |  - Virtual scrolling      |  - Scroll synced              |    |
+|  |      Code Editor          |       Preview Pane            |    |
+|  |                           |                               |    |
+|  |  - Syntax highlighting    |  - Rendered HTML              |    |
+|  |  - Line numbers           |  - Sanitized output           |    |
+|  |  - Virtual scrolling      |  - Scroll synchronized        |    |
 |  |                           |                               |    |
 |  +---------------------------+-------------------------------+    |
 +------------------------------------------------------------------+
 ```
 
-## Deep Dives
+"The architecture has three main layers: the application shell with toolbar and document management, the dual-pane view container, and the underlying data layer using IndexedDB for persistence."
 
-### 1. Monaco Editor Integration
+---
 
-**Why Monaco?**
+## 🔍 Deep Dive
 
-Monaco provides a professional editing experience identical to VS Code:
+### 1. Code Editor Selection
 
-| Feature | Monaco | CodeMirror | Textarea |
-|---------|--------|------------|----------|
-| Syntax highlighting | Excellent | Good | None |
-| Large file support | Virtual scroll | Virtual scroll | Limited |
-| Bundle size | ~2MB | ~400KB | 0 |
-| TypeScript integration | Native | Plugin | None |
-| VS Code familiarity | Identical | Similar | N/A |
+"The first major decision is choosing a code editor. Let me compare the options."
 
-**Editor Component Architecture:**
+#### Why Monaco Over CodeMirror?
 
-```tsx
-interface EditorProps {
-  content: string;
-  onChange: (content: string) => void;
-  theme: 'vs' | 'vs-dark';
-  viewMode: ViewMode;
-}
+| Factor | Monaco | CodeMirror 6 | Plain Textarea | Winner |
+|--------|--------|--------------|----------------|--------|
+| Bundle size | ~2MB | ~400KB | 0 | Textarea |
+| Syntax highlighting | Excellent | Good | None | Monaco |
+| Large file handling | Virtual scrolling | Virtual scrolling | Poor | Tie |
+| VS Code familiarity | Identical | Similar | N/A | Monaco |
+| TypeScript support | Native | Plugin required | None | Monaco |
+| Extension ecosystem | Rich | Growing | None | Monaco |
 
-const Editor: React.FC<EditorProps> = ({ content, onChange, theme, viewMode }) => {
-  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+**Decision: Monaco Editor**
 
-  // Initialize Monaco Editor
-  useEffect(() => {
-    if (!containerRef.current || editorRef.current) return;
+"I'm choosing Monaco Editor despite its larger bundle size. The rationale is that our target users are developers who are already familiar with VS Code, so Monaco provides an immediately comfortable editing experience. The syntax highlighting quality is excellent, and we get virtual scrolling out of the box for handling large documents. The TypeScript integration is also valuable if we want to add language features later. The 2MB bundle is acceptable because we're building a PWA where assets get cached after first load."
 
-    editorRef.current = monaco.editor.create(containerRef.current, {
-      value: content,
-      language: 'markdown',
-      theme,
-      wordWrap: 'on',
-      lineNumbers: 'on',
-      minimap: { enabled: false },
-      fontSize: 14,
-      scrollBeyondLastLine: false,
-      automaticLayout: true,
-    });
+---
 
-    // Listen for content changes
-    editorRef.current.onDidChangeModelContent(() => {
-      const newContent = editorRef.current?.getValue() || '';
-      onChange(newContent);
-    });
+### 2. Markdown Parser Selection
 
-    return () => editorRef.current?.dispose();
-  }, []);
+"For converting Markdown to HTML, I'm evaluating two main options."
 
-  // Update theme dynamically
-  useEffect(() => {
-    monaco.editor.setTheme(theme);
-  }, [theme]);
+#### Why markdown-it Over remark/unified?
 
-  // Handle resize for split view changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      editorRef.current?.layout();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [viewMode]);
+| Factor | markdown-it | remark/unified | Winner |
+|--------|-------------|----------------|--------|
+| Parse speed | Very fast | Moderate | markdown-it |
+| Bundle size | ~25KB | ~150KB+ | markdown-it |
+| Plugin ecosystem | Rich | Extensive | Tie |
+| GFM support | Built-in | Plugin | markdown-it |
+| AST manipulation | Limited | Full control | remark |
+| Extensibility | Straightforward | More powerful | remark |
 
-  return <div ref={containerRef} className={styles.editor} />;
-};
-```
+**Decision: markdown-it**
 
-**Monaco Configuration for Markdown:**
+"I'm going with markdown-it because parsing speed is critical for real-time preview. markdown-it is significantly faster and has a smaller footprint. While remark gives more control over the AST, we don't need that level of manipulation for a preview renderer. markdown-it's plugin ecosystem covers our needs: task lists, code highlighting, and emoji support. The GFM support being built-in also reduces configuration complexity."
 
-```typescript
-// Register custom Markdown language features
-monaco.languages.registerCompletionItemProvider('markdown', {
-  provideCompletionItems: (model, position) => {
-    const suggestions: monaco.languages.CompletionItem[] = [
-      {
-        label: 'code block',
-        kind: monaco.languages.CompletionItemKind.Snippet,
-        insertText: '```${1:language}\n${2:code}\n```',
-        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        documentation: 'Insert a code block',
-      },
-      {
-        label: 'link',
-        kind: monaco.languages.CompletionItemKind.Snippet,
-        insertText: '[${1:text}](${2:url})',
-        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-        documentation: 'Insert a hyperlink',
-      },
-      // Additional snippets...
-    ];
-    return { suggestions };
-  },
-});
-```
+---
 
-### 2. Real-time Preview Pipeline
+### 3. HTML Sanitization
 
-**Rendering Flow:**
+"Since we're rendering user-generated Markdown as HTML, security is paramount."
+
+#### Why DOMPurify for Sanitization?
+
+| Factor | DOMPurify | sanitize-html | Built-in browser | Winner |
+|--------|-----------|---------------|------------------|--------|
+| Security track record | Excellent | Good | Varies | DOMPurify |
+| Performance | Very fast | Moderate | Fast | DOMPurify |
+| Bundle size | ~15KB | ~30KB | 0 | Built-in |
+| Configurability | Excellent | Good | Limited | DOMPurify |
+| Active maintenance | Very active | Active | N/A | DOMPurify |
+
+**Decision: DOMPurify**
+
+"DOMPurify is the industry standard for client-side HTML sanitization. It's battle-tested against XSS attacks and has an excellent security track record. The configuration options let us allow specific tags like task list checkboxes while blocking dangerous elements. It's also faster than sanitize-html because it uses the browser's native DOM parser rather than doing string manipulation. Even though markdown-it can disable raw HTML input, we still sanitize the output as defense in depth."
+
+---
+
+### 4. Preview Update Timing
+
+"Let me explain the debouncing strategy for preview updates."
+
+#### Why 150ms Debounce?
+
+| Debounce Time | Responsiveness | CPU Usage | User Perception | Winner |
+|---------------|----------------|-----------|-----------------|--------|
+| 50ms | Immediate | High | Flickering | - |
+| 100ms | Very fast | Medium-high | Slightly jumpy | - |
+| 150ms | Fast | Moderate | Smooth | 150ms |
+| 300ms | Noticeable lag | Low | Sluggish | - |
+| 500ms | Laggy | Very low | Frustrating | - |
+
+**Decision: 150ms debounce**
+
+"150 milliseconds is the sweet spot based on research into human perception. Below 100ms, users perceive changes as instantaneous, but we're doing expensive work like parsing and sanitizing that can cause UI jank. At 150ms, we're still under the 200ms threshold where users start perceiving delay, but we've consolidated multiple keystrokes into a single update. This dramatically reduces CPU usage during fast typing while feeling responsive. The preview catches up naturally during micro-pauses in typing."
 
 ```
-Keystroke → Monaco State → Debounce (150ms) → Parse → Sanitize → DOM Update
+Keystroke Flow:
+
+User Types:   [H] [e] [l] [l] [o]    [W] [o] [r] [l] [d]
+              |   |   |   |   |      |   |   |   |   |
+Time:         0  50  100 150 200    400 450 500 550 600 (ms)
+              |   |   |   |   |      |   |   |   |   |
+Timer:        +-->+-->+-->+-->X      +-->+-->+-->+-->X
+                          |                          |
+                          v                          v
+Render:                [Hello]                   [Hello World]
+
+Legend: + = timer starts, --> = timer running, X = timer fires
+```
+
+"Each keystroke resets the debounce timer. The render only fires when there's a 150ms gap in typing, which naturally happens between words."
+
+---
+
+### 5. Theming Approach
+
+"For implementing light and dark themes, I need to choose a styling strategy."
+
+#### Why CSS Variables Over CSS-in-JS?
+
+| Factor | CSS Variables | CSS-in-JS | Tailwind | Winner |
+|--------|---------------|-----------|----------|--------|
+| Runtime overhead | Zero | Medium | Zero | CSS Variables |
+| Bundle size impact | None | +20-50KB | None | CSS Variables |
+| Theme switching | Instant | Re-render | Instant | CSS Variables |
+| DevTools support | Excellent | Good | Good | CSS Variables |
+| Dynamic values | Supported | Native | Limited | Tie |
+| Monaco integration | Seamless | Complex | Complex | CSS Variables |
+
+**Decision: CSS Variables**
+
+"I'm using CSS Variables with a data attribute on the document root. The main advantage is zero runtime overhead for theme switching. When the user toggles themes, we change one attribute and the browser handles all the cascading updates natively. This is much faster than CSS-in-JS solutions that need to regenerate styles and trigger React re-renders. It also integrates cleanly with Monaco Editor, which has its own theme system that we can coordinate through CSS variable references."
+
+```
+Theme Architecture:
+
++----------------+     +-------------------+
+| Theme Toggle   |---->| data-theme attr   |
++----------------+     +-------------------+
                               |
-                              +-- Cancel timer on new keystroke
+                              v
+              +---------------+---------------+
+              |               |               |
+              v               v               v
+       +----------+    +----------+    +----------+
+       | Toolbar  |    |  Editor  |    | Preview  |
+       +----------+    +----------+    +----------+
+              ^               ^               ^
+              |               |               |
+              +-------+-------+-------+-------+
+                      |
+               CSS Variables
+           (--color-bg, --color-text, etc.)
+
 ```
 
-**Debounced Preview Hook:**
+---
 
-```typescript
-function useMarkdownPreview(content: string) {
-  const [preview, setPreview] = useState<string>('');
-  const [isRendering, setIsRendering] = useState(false);
+### 6. State Management
 
-  // Configure markdown-it with plugins
-  const md = useMemo(() => {
-    return markdownIt({
-      html: false,        // Disable raw HTML for security
-      linkify: true,      // Auto-convert URLs to links
-      typographer: true,  // Smart quotes, dashes
-    })
-      .use(markdownItAnchor)      // Header anchors
-      .use(markdownItTaskLists)   // GitHub-style task lists
-      .use(markdownItEmoji)       // Emoji shortcodes :smile:
-      .use(markdownItHighlightjs); // Code syntax highlighting
-  }, []);
+"For managing application state across components, let me compare approaches."
 
-  // Debounced rendering effect
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsRendering(true);
+#### Why Zustand Over Redux or Context?
 
-      // Parse markdown
-      const rawHtml = md.render(content);
+| Factor | Zustand | Redux | React Context | Winner |
+|--------|---------|-------|---------------|--------|
+| Boilerplate | Minimal | Heavy | Minimal | Zustand |
+| Bundle size | ~3KB | ~15KB | 0 | Context |
+| DevTools | Supported | Excellent | Limited | Redux |
+| Persistence | Built-in middleware | Requires setup | Manual | Zustand |
+| Provider nesting | None required | Single provider | Can nest deeply | Zustand |
+| TypeScript DX | Excellent | Good | Good | Zustand |
+| Learning curve | Low | High | Low | Zustand |
 
-      // Sanitize to prevent XSS
-      const safeHtml = DOMPurify.sanitize(rawHtml, {
-        ALLOWED_TAGS: [
-          'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-          'p', 'br', 'hr',
-          'ul', 'ol', 'li',
-          'blockquote', 'pre', 'code',
-          'strong', 'em', 'del', 's',
-          'a', 'img',
-          'table', 'thead', 'tbody', 'tr', 'th', 'td',
-          'input', // For task list checkboxes
-          'span', 'div',
-        ],
-        ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'id', 'type', 'checked', 'disabled'],
-        ALLOW_DATA_ATTR: false,
-      });
+**Decision: Zustand**
 
-      setPreview(safeHtml);
-      setIsRendering(false);
-    }, 150); // Debounce time
+"Zustand gives us the right balance for this application. We need to manage document state, view mode, theme preference, and sync settings across components, but Redux would be overkill. Context alone would require multiple providers and can cause unnecessary re-renders. Zustand's persist middleware is particularly valuable because we can automatically sync state to localStorage without additional code. The API is also more ergonomic, with hooks that subscribe only to the slices of state each component needs."
 
-    return () => clearTimeout(timer);
-  }, [content, md]);
+---
 
-  return { preview, isRendering };
-}
+### 7. Scroll Synchronization
+
+"Keeping the editor and preview scrolled to matching positions is tricky because they have different heights."
+
+#### Why Proportional Sync Over Pixel-Based?
+
+| Approach | Editor 1000px doc | Preview 2000px doc | Result | Winner |
+|----------|-------------------|--------------------|--------|--------|
+| Pixel sync | Scroll to 500px | Scroll to 500px | Preview at 25% | - |
+| Proportional | Scroll to 50% | Scroll to 50% | Both at midpoint | Proportional |
+| Line mapping | Line 100/200 | Find line 100 | Accurate but complex | - |
+
+**Decision: Proportional scroll synchronization**
+
+"The challenge is that the editor and preview have different total heights. A 100-line Markdown file might render to 2000 pixels in the editor but 3000 pixels in the preview due to images, code blocks with syntax highlighting, and other formatting. Pixel-based synchronization would leave them misaligned. Instead, I calculate the scroll ratio: where are you proportionally in the document? If the editor is scrolled 50% down, we scroll the preview to 50% as well. This keeps the conceptual position aligned even when the physical heights differ."
+
+```
+Proportional Scroll Calculation:
+
+     Editor                      Preview
+   +--------+                  +--------+
+   |        |                  |        |
+   |========| <- viewport      |        |
+   |        |    at 33%        |        |
+   +--------+                  |========| <- synced
+                               |        |    to 33%
+                               +--------+
+
+   scrollRatio = scrollTop / (scrollHeight - clientHeight)
+   targetScroll = scrollRatio * (targetScrollHeight - targetClientHeight)
 ```
 
-**Preview Component:**
+"I also track which pane initiated the scroll to prevent infinite loops. When the editor scrolls, we update the preview, but then suppress the preview's scroll event from updating the editor back."
 
-```tsx
-interface PreviewProps {
-  html: string;
-  theme: 'light' | 'dark';
-  onScroll?: (scrollRatio: number) => void;
-}
+---
 
-const Preview: React.FC<PreviewProps> = ({ html, theme, onScroll }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+## 📊 Data Flow
 
-  // Handle scroll for synchronization
-  const handleScroll = useCallback(() => {
-    if (!containerRef.current || !onScroll) return;
+"Let me trace how data flows through the application during typical usage."
 
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    const maxScroll = scrollHeight - clientHeight;
-    const ratio = maxScroll > 0 ? scrollTop / maxScroll : 0;
-    onScroll(ratio);
-  }, [onScroll]);
+```
+Document Editing Flow:
 
-  return (
-    <div
-      ref={containerRef}
-      className={cn(styles.preview, theme === 'dark' && styles.dark)}
-      onScroll={handleScroll}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-};
+  +-----------+
+  |   User    |
+  |  Types    |
+  +-----+-----+
+        |
+        v
+  +-----------+     +-------------+     +-------------+
+  |   Monaco  |---->|  Debounce   |---->|  markdown-it|
+  |   Editor  |     |   150ms     |     |   Parser    |
+  +-----------+     +-------------+     +-------------+
+        |                                     |
+        v                                     v
+  +-----------+                         +-------------+
+  |  Zustand  |                         |  DOMPurify  |
+  |   Store   |                         | Sanitizer   |
+  +-----------+                         +-------------+
+        |                                     |
+        v                                     v
+  +-----------+                         +-------------+
+  | IndexedDB |                         |   Preview   |
+  | Persist   |                         |    Pane     |
+  +-----------+                         +-------------+
 ```
 
-### 3. View Mode Management
+"On each keystroke, Monaco fires a change event. This updates the Zustand store immediately so the editor stays responsive. Separately, the debounce timer tracks the content. After 150ms of no typing, the markdown-it parser converts the text to HTML, DOMPurify sanitizes it, and the preview pane renders the result. The Zustand persist middleware handles saving to IndexedDB in the background."
 
-**View Mode State:**
+---
 
-```typescript
-type ViewMode = 'editor' | 'preview' | 'split';
+## ⚖️ Trade-offs Summary
 
-interface ViewModeState {
-  mode: ViewMode;
-  setMode: (mode: ViewMode) => void;
-  editorWidth: number;  // Percentage in split mode
-  setEditorWidth: (width: number) => void;
-}
+| Decision | Chosen | Alternative | Why This Choice |
+|----------|--------|-------------|-----------------|
+| Editor | Monaco | CodeMirror 6 | VS Code familiarity, better large file support |
+| Parser | markdown-it | remark/unified | Speed critical for real-time, smaller bundle |
+| Sanitizer | DOMPurify | sanitize-html | Industry standard, faster, better security |
+| Debounce | 150ms | 50ms or 300ms | Balances responsiveness with CPU efficiency |
+| Theming | CSS Variables | CSS-in-JS | Zero runtime overhead, instant switching |
+| State | Zustand | Redux/Context | Right-sized, built-in persistence |
+| Scroll sync | Proportional | Pixel or line | Works across different content heights |
 
-const useViewModeStore = create<ViewModeState>((set) => ({
-  mode: 'split',
-  setMode: (mode) => set({ mode }),
-  editorWidth: 50,
-  setEditorWidth: (editorWidth) => set({ editorWidth }),
-}));
-```
+---
 
-**Resizable Split View:**
+## 🚀 Future Enhancements
 
-```tsx
-const SplitView: React.FC<{ children: [React.ReactNode, React.ReactNode] }> = ({
-  children,
-}) => {
-  const { editorWidth, setEditorWidth } = useViewModeStore();
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+"If we have time to extend the design, here are the next priorities."
 
-  const handleMouseDown = useCallback(() => {
-    setIsDragging(true);
-    document.body.style.cursor = 'col-resize';
-  }, []);
+1. **Collaborative Editing** - Add WebRTC with Yjs for real-time multi-user editing. This would require conflict resolution and cursor awareness.
 
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDragging || !containerRef.current) return;
+2. **Export Options** - PDF and styled HTML export. We'd need a server-side rendering option for consistent PDF generation.
 
-      const rect = containerRef.current.getBoundingClientRect();
-      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+3. **Table of Contents** - Auto-generated sidebar navigation from headers. Helps navigation in long documents.
 
-      // Constrain between 20% and 80%
-      setEditorWidth(Math.max(20, Math.min(80, newWidth)));
-    },
-    [isDragging, setEditorWidth]
-  );
+4. **Vim/Emacs Keybindings** - Modal editing support. Monaco has APIs for custom keymaps.
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-    document.body.style.cursor = '';
-  }, []);
+5. **Image Paste** - Paste images from clipboard and store as Base64 or blobs in IndexedDB. Increases document size management complexity.
 
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+---
 
-  return (
-    <div ref={containerRef} className={styles.splitView}>
-      <div style={{ width: `${editorWidth}%` }}>{children[0]}</div>
-      <div className={styles.divider} onMouseDown={handleMouseDown} />
-      <div style={{ width: `${100 - editorWidth}%` }}>{children[1]}</div>
-    </div>
-  );
-};
-```
+## 📝 Summary
 
-### 4. Scroll Synchronization
-
-**Proportional Scroll Sync:**
-
-```typescript
-function useScrollSync(editorRef: RefObject<monaco.editor.IStandaloneCodeEditor>, previewRef: RefObject<HTMLDivElement>) {
-  const [syncEnabled, setSyncEnabled] = useState(true);
-  const syncSourceRef = useRef<'editor' | 'preview' | null>(null);
-
-  // Sync from editor to preview
-  useEffect(() => {
-    if (!syncEnabled || !editorRef.current) return;
-
-    const editor = editorRef.current;
-    const disposable = editor.onDidScrollChange((e) => {
-      if (syncSourceRef.current === 'preview') return;
-      if (!previewRef.current) return;
-
-      syncSourceRef.current = 'editor';
-
-      // Calculate scroll ratio
-      const editorMaxScroll = editor.getScrollHeight() - editor.getLayoutInfo().height;
-      const ratio = editorMaxScroll > 0 ? e.scrollTop / editorMaxScroll : 0;
-
-      // Apply to preview
-      const previewEl = previewRef.current;
-      const previewMaxScroll = previewEl.scrollHeight - previewEl.clientHeight;
-      previewEl.scrollTop = ratio * previewMaxScroll;
-
-      // Reset sync source after animation frame
-      requestAnimationFrame(() => {
-        syncSourceRef.current = null;
-      });
-    });
-
-    return () => disposable.dispose();
-  }, [syncEnabled, editorRef, previewRef]);
-
-  // Sync from preview to editor
-  useEffect(() => {
-    if (!syncEnabled || !previewRef.current) return;
-
-    const previewEl = previewRef.current;
-    const handleScroll = () => {
-      if (syncSourceRef.current === 'editor') return;
-      if (!editorRef.current) return;
-
-      syncSourceRef.current = 'preview';
-
-      const previewMaxScroll = previewEl.scrollHeight - previewEl.clientHeight;
-      const ratio = previewMaxScroll > 0 ? previewEl.scrollTop / previewMaxScroll : 0;
-
-      const editor = editorRef.current;
-      const editorMaxScroll = editor.getScrollHeight() - editor.getLayoutInfo().height;
-      editor.setScrollTop(ratio * editorMaxScroll);
-
-      requestAnimationFrame(() => {
-        syncSourceRef.current = null;
-      });
-    };
-
-    previewEl.addEventListener('scroll', handleScroll);
-    return () => previewEl.removeEventListener('scroll', handleScroll);
-  }, [syncEnabled, editorRef, previewRef]);
-
-  return { syncEnabled, setSyncEnabled };
-}
-```
-
-### 5. Document Management UI
-
-**Document Selector Component:**
-
-```tsx
-interface DocumentSelectorProps {
-  documents: DocumentMeta[];
-  currentId: string | null;
-  onSelect: (id: string) => void;
-  onCreate: () => void;
-  onDelete: (id: string) => void;
-}
-
-const DocumentSelector: React.FC<DocumentSelectorProps> = ({
-  documents,
-  currentId,
-  onSelect,
-  onCreate,
-  onDelete,
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Filter documents by search
-  const filteredDocs = useMemo(() => {
-    if (!searchQuery) return documents;
-    const query = searchQuery.toLowerCase();
-    return documents.filter((doc) =>
-      doc.title.toLowerCase().includes(query)
-    );
-  }, [documents, searchQuery]);
-
-  // Close on outside click
-  useClickOutside(dropdownRef, () => setIsOpen(false));
-
-  const currentDoc = documents.find((d) => d.id === currentId);
-
-  return (
-    <div className={styles.selector} ref={dropdownRef}>
-      <button
-        className={styles.trigger}
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
-        aria-haspopup="listbox"
-      >
-        <span className={styles.title}>
-          {currentDoc?.title || 'Untitled Document'}
-        </span>
-        <ChevronDownIcon className={styles.chevron} />
-      </button>
-
-      {isOpen && (
-        <div className={styles.dropdown} role="listbox">
-          <input
-            type="search"
-            placeholder="Search documents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={styles.search}
-            autoFocus
-          />
-
-          <button className={styles.newDoc} onClick={onCreate}>
-            <PlusIcon /> New Document
-          </button>
-
-          <div className={styles.list}>
-            {filteredDocs.map((doc) => (
-              <div
-                key={doc.id}
-                className={cn(styles.item, doc.id === currentId && styles.active)}
-                role="option"
-                aria-selected={doc.id === currentId}
-                onClick={() => {
-                  onSelect(doc.id);
-                  setIsOpen(false);
-                }}
-              >
-                <span className={styles.docTitle}>{doc.title}</span>
-                <span className={styles.docDate}>
-                  {formatRelativeTime(doc.updatedAt)}
-                </span>
-                <button
-                  className={styles.delete}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(doc.id);
-                  }}
-                  aria-label={`Delete ${doc.title}`}
-                >
-                  <TrashIcon />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-```
-
-### 6. Theme System
-
-**Theme Provider:**
-
-```tsx
-type Theme = 'light' | 'dark' | 'system';
-
-interface ThemeContextValue {
-  theme: 'light' | 'dark';
-  userPreference: Theme;
-  setTheme: (theme: Theme) => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null);
-
-const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [userPreference, setUserPreference] = useState<Theme>('system');
-
-  // Detect system preference
-  const systemTheme = useMediaQuery('(prefers-color-scheme: dark)') ? 'dark' : 'light';
-
-  // Resolve actual theme
-  const theme = userPreference === 'system' ? systemTheme : userPreference;
-
-  // Persist preference
-  useEffect(() => {
-    localStorage.setItem('mdreader-theme', userPreference);
-  }, [userPreference]);
-
-  // Initialize from storage
-  useEffect(() => {
-    const saved = localStorage.getItem('mdreader-theme') as Theme | null;
-    if (saved) setUserPreference(saved);
-  }, []);
-
-  // Apply theme class to document
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  return (
-    <ThemeContext.Provider
-      value={{ theme, userPreference, setTheme: setUserPreference }}
-    >
-      {children}
-    </ThemeContext.Provider>
-  );
-};
-```
-
-**CSS Variables for Theming:**
-
-```css
-:root {
-  /* Light theme (default) */
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f5f5f5;
-  --color-text-primary: #1a1a1a;
-  --color-text-secondary: #666666;
-  --color-border: #e0e0e0;
-  --color-accent: #0066cc;
-  --color-code-bg: #f4f4f4;
-}
-
-[data-theme='dark'] {
-  --color-bg-primary: #1e1e1e;
-  --color-bg-secondary: #252526;
-  --color-text-primary: #d4d4d4;
-  --color-text-secondary: #9d9d9d;
-  --color-border: #3c3c3c;
-  --color-accent: #4fc3f7;
-  --color-code-bg: #2d2d2d;
-}
-
-/* Preview styling adapts automatically */
-.preview {
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
-}
-
-.preview code {
-  background: var(--color-code-bg);
-}
-
-.preview a {
-  color: var(--color-accent);
-}
-```
-
-### 7. Accessibility Implementation
-
-**Keyboard Navigation:**
-
-```tsx
-const useKeyboardShortcuts = () => {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + S: Save (already auto-saves, show confirmation)
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        showSaveConfirmation();
-      }
-
-      // Cmd/Ctrl + N: New document
-      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
-        e.preventDefault();
-        createNewDocument();
-      }
-
-      // Cmd/Ctrl + P: Toggle preview mode
-      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
-        e.preventDefault();
-        toggleViewMode();
-      }
-
-      // Cmd/Ctrl + \: Toggle split view
-      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
-        e.preventDefault();
-        setViewMode('split');
-      }
-
-      // Cmd/Ctrl + D: Toggle dark mode
-      if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
-        e.preventDefault();
-        toggleTheme();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-};
-```
-
-**ARIA Labels and Roles:**
-
-```tsx
-const Toolbar: React.FC = () => {
-  const { theme, setTheme } = useTheme();
-  const { mode, setMode } = useViewModeStore();
-
-  return (
-    <nav
-      className={styles.toolbar}
-      role="toolbar"
-      aria-label="Document actions"
-    >
-      <div className={styles.group} role="group" aria-label="File operations">
-        <button aria-label="Create new document" onClick={handleNew}>
-          <PlusIcon aria-hidden="true" />
-          <span>New</span>
-        </button>
-        <button aria-label="Import markdown file" onClick={handleImport}>
-          <UploadIcon aria-hidden="true" />
-          <span>Import</span>
-        </button>
-        <button aria-label="Export as markdown" onClick={handleExport}>
-          <DownloadIcon aria-hidden="true" />
-          <span>Export</span>
-        </button>
-      </div>
-
-      <div className={styles.group} role="group" aria-label="View options">
-        <button
-          aria-label="Toggle theme"
-          aria-pressed={theme === 'dark'}
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-        </button>
-
-        <div role="radiogroup" aria-label="View mode">
-          {(['editor', 'split', 'preview'] as const).map((m) => (
-            <button
-              key={m}
-              role="radio"
-              aria-checked={mode === m}
-              onClick={() => setMode(m)}
-            >
-              {m === 'editor' && <EditIcon />}
-              {m === 'split' && <SplitIcon />}
-              {m === 'preview' && <EyeIcon />}
-            </button>
-          ))}
-        </div>
-      </div>
-    </nav>
-  );
-};
-```
-
-### 8. PWA Installation
-
-**Install Prompt Handling:**
-
-```tsx
-const useInstallPrompt = () => {
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-
-  useEffect(() => {
-    // Check if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setIsInstalled(true);
-      return;
-    }
-
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setInstallPrompt(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const install = async () => {
-    if (!installPrompt) return false;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    return outcome === 'accepted';
-  };
-
-  return { canInstall: !!installPrompt, isInstalled, install };
-};
-```
-
-**Install Banner Component:**
-
-```tsx
-const InstallBanner: React.FC = () => {
-  const { canInstall, install } = useInstallPrompt();
-  const [dismissed, setDismissed] = useState(false);
-
-  if (!canInstall || dismissed) return null;
-
-  return (
-    <div className={styles.installBanner} role="banner">
-      <p>Install MD Reader for offline access and a native app experience.</p>
-      <div className={styles.actions}>
-        <button onClick={() => setDismissed(true)}>Not now</button>
-        <button onClick={install} className={styles.primary}>
-          Install App
-        </button>
-      </div>
-    </div>
-  );
-};
-```
-
-## Trade-offs Summary
-
-| Decision | Chosen | Alternative | Rationale |
-|----------|--------|-------------|-----------|
-| Editor | Monaco Editor | CodeMirror 6 | VS Code familiarity, better TypeScript, richer features |
-| Markdown Parser | markdown-it | remark/unified | Faster, smaller bundle, rich plugin ecosystem |
-| Sanitizer | DOMPurify | sanitize-html | Industry standard, well-maintained, configurable |
-| State Management | Zustand | Redux/Context | Lightweight, simple API, built-in persistence |
-| View Layout | CSS Grid + Flexbox | CSS-in-JS | Native performance, no runtime overhead |
-| Theme Approach | CSS Variables | Styled-components | Better performance, no CSS-in-JS bundle |
-
-## Future Enhancements
-
-1. **Collaborative Editing**: WebRTC with Yjs for real-time multi-user editing
-2. **Multi-Tab Documents**: Tab bar for switching between multiple open documents
-3. **Export Options**: PDF and HTML export with custom styling
-4. **Custom Themes**: User-defined color schemes beyond light/dark
-5. **Vim/Emacs Keybindings**: Modal editing support for power users
-6. **Markdown Linting**: Real-time warnings for common Markdown issues
-7. **Table of Contents**: Auto-generated sidebar navigation from headers
-8. **Image Paste**: Paste images from clipboard with Base64 or blob storage
+"To summarize the design: MD Reader is a Progressive Web App for Markdown editing with a split-pane interface. Monaco Editor provides the editing experience, chosen for its VS Code familiarity and virtual scrolling. markdown-it handles parsing because speed is critical for real-time preview. We debounce at 150ms to balance responsiveness with efficiency, then sanitize with DOMPurify for security. Zustand manages state with automatic IndexedDB persistence, and CSS Variables power instant theme switching. Proportional scroll synchronization keeps editor and preview aligned despite different heights. The PWA service worker enables full offline functionality. This architecture delivers a responsive, secure, and offline-capable editing experience."

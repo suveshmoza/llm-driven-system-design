@@ -2,687 +2,409 @@
 
 *45-minute system design interview format - Backend Engineer Position*
 
-## Problem Statement
+---
 
-Design MD Reader, a Progressive Web App for editing and previewing Markdown. While primarily client-side, the "backend" challenge focuses on client-side data layer architecture: IndexedDB persistence, service worker caching, data integrity, and designing for future server sync capabilities.
+## 📋 Introduction
 
-## Requirements Clarification
+Today I'll design MD Reader, a Progressive Web App for editing and previewing Markdown documents. While this is primarily a client-side application, the "backend" challenge here focuses on the **client-side data layer architecture** - essentially building a local database system within the browser. This includes IndexedDB persistence, service worker caching, data integrity mechanisms, and designing the system to support future server synchronization.
+
+The interesting aspect of this problem is that we're essentially building a distributed system where the "server" lives in the browser. We need to think about durability, consistency, and recovery the same way we would for a traditional backend.
+
+---
+
+## 🎯 Requirements
 
 ### Functional Requirements
-- **Document Storage**: Create, read, update, delete documents locally
-- **Auto-Save**: Persist changes automatically as user types
-- **Offline Support**: Full functionality without network
-- **Document Management**: Multiple documents with metadata
+
+**Must Have:**
+- Document storage with full CRUD operations performed locally
+- Auto-save functionality that persists changes as the user types
+- Complete offline support with no degradation in core functionality
+- Document management supporting multiple documents with metadata
+
+**Nice to Have:**
+- Export and import capabilities for backup
+- Future cloud synchronization pathway
 
 ### Non-Functional Requirements
-- **Durability**: Zero document loss - survives browser restarts
-- **Latency**: Save operations < 100ms
-- **Storage Capacity**: Support 100+ documents (50MB+)
-- **Offline**: 100% functionality without internet
+
+| Requirement | Target | Rationale |
+|-------------|--------|-----------|
+| Durability | Zero document loss | User trust depends on never losing their work |
+| Save Latency | Under 100ms | User should never wait for saves |
+| Storage Capacity | 50MB+ total | Support 100+ documents with rich content |
+| Offline Availability | 100% functionality | Core value proposition of the app |
 
 ### Storage Estimates
-- **Active Documents**: 50-100 per user
-- **Document Size**: Avg 10KB, Max 500KB
-- **Total Storage**: Up to 50MB per user
 
-## High-Level Architecture
+Let me work through the capacity planning:
+
+- **Active documents per user:** 50 to 100
+- **Average document size:** 10KB of markdown content
+- **Maximum document size:** 500KB for very large documents
+- **Metadata overhead:** Approximately 1KB per document
+- **Total storage need:** Up to 50MB per user
+
+This immediately rules out localStorage as our primary storage mechanism, as we'll discuss shortly.
+
+---
+
+## 🏗️ High-Level Design
+
+Here's the overall architecture of the client-side data layer:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Browser (PWA Container)                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │                   Application Layer                      │   │
-│   │              (React + Monaco Editor)                     │   │
-│   └─────────────────────────────────────────────────────────┘   │
-│                             │                                    │
-│                             ▼                                    │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │                   State Layer (Zustand)                  │   │
-│   │  - Current document                                      │   │
-│   │  - Document list                                         │   │
-│   │  - UI preferences                                        │   │
-│   └─────────────────────────────────────────────────────────┘   │
-│                             │                                    │
-│           ┌─────────────────┴─────────────────┐                 │
-│           ▼                                   ▼                 │
-│   ┌───────────────────┐           ┌───────────────────┐         │
-│   │    IndexedDB      │           │   localStorage    │         │
-│   │  (Primary Store)  │           │    (Fallback)     │         │
-│   │  - Documents      │           │  - Preferences    │         │
-│   │  - Metadata       │           │  - Last doc ID    │         │
-│   └───────────────────┘           └───────────────────┘         │
-│                                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│              Service Worker (Workbox - Asset Caching)            │
-│  - App shell cache (HTML, CSS, JS)                               │
-│  - Runtime cache (fonts, icons)                                  │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                    Browser (PWA Container)                        |
++------------------------------------------------------------------+
+|                                                                   |
+|   +-----------------------------------------------------------+   |
+|   |                   Application Layer                        |   |
+|   |               (React + Monaco Editor)                      |   |
+|   +-----------------------------------------------------------+   |
+|                              |                                    |
+|                              v                                    |
+|   +-----------------------------------------------------------+   |
+|   |                   State Layer (Zustand)                    |   |
+|   |   - Current document in memory                             |   |
+|   |   - Document list for sidebar                              |   |
+|   |   - UI preferences and theme                               |   |
+|   +-----------------------------------------------------------+   |
+|                              |                                    |
+|            +-----------------+------------------+                  |
+|            |                                    |                  |
+|            v                                    v                  |
+|   +--------------------+            +--------------------+         |
+|   |     IndexedDB      |            |   localStorage     |         |
+|   |  (Primary Store)   |            |    (Fallback)      |         |
+|   |  - Documents       |            |  - Preferences     |         |
+|   |  - Metadata        |            |  - Last doc ID     |         |
+|   |  - Sync queue      |            |  - Document backup |         |
+|   +--------------------+            +--------------------+         |
+|                                                                   |
++-------------------------------------------------------------------+
+|              Service Worker (Workbox - Asset Caching)             |
+|   - App shell cache (HTML, CSS, JS bundles)                       |
+|   - Runtime cache (fonts, icons)                                  |
+|   - Precached manifest for offline-first loading                  |
++-------------------------------------------------------------------+
 ```
 
-## Deep Dives
+The key insight here is that we have a **dual-storage strategy** with IndexedDB as the primary store and localStorage as a backup mechanism. The service worker layer handles caching of application assets separately from user data.
 
-### 1. IndexedDB Schema Design
+---
 
-**Database Schema:**
+## 🔍 Deep Dive
 
-```typescript
-// lib/db.ts
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+### Deep Dive 1: Primary Storage Selection
 
-interface MDReaderDB extends DBSchema {
-  documents: {
-    key: string;
-    value: Document;
-    indexes: {
-      'by-updated': number;
-      'by-title': string;
-    };
-  };
-  preferences: {
-    key: string;
-    value: Preference;
-  };
-  syncQueue: {
-    key: number;
-    value: SyncOperation;
-    indexes: {
-      'by-status': string;
-    };
-  };
-}
+This is the foundational decision for the entire data layer.
 
-interface Document {
-  id: string;           // UUID v4
-  title: string;        // First 5 words of content
-  content: string;      // Raw markdown
-  createdAt: number;    // Unix timestamp
-  updatedAt: number;    // Unix timestamp
-  wordCount: number;    // Computed field
-  checksum: string;     // SHA-256 of content for integrity
-}
+#### Why IndexedDB Over localStorage?
 
-interface Preference {
-  key: string;
-  value: string | number | boolean;
-  updatedAt: number;
-}
+| Factor | IndexedDB | localStorage | Winner |
+|--------|-----------|--------------|--------|
+| Storage limit | 50MB+ (browser dependent, often gigabytes) | 5MB hard limit | IndexedDB |
+| API type | Asynchronous (non-blocking) | Synchronous (blocks main thread) | IndexedDB |
+| Data structure | Key-value with indexes, transactions | Strings only | IndexedDB |
+| Query capability | Indexes, cursors, ranges | Key lookup only | IndexedDB |
+| Transaction support | Full ACID transactions | None | IndexedDB |
 
-interface SyncOperation {
-  id: number;           // Auto-increment
-  operationId: string;  // UUID for idempotency
-  documentId: string;
-  operation: 'create' | 'update' | 'delete';
-  timestamp: number;
-  status: 'pending' | 'syncing' | 'synced' | 'failed';
-  payload?: string;     // Compressed content
-  retryCount: number;
-}
+**Decision: ✅ IndexedDB**
+
+> "I'm choosing IndexedDB as our primary storage because we need to support 50MB or more of user data, which immediately exceeds localStorage's 5MB limit. More critically, localStorage operations are synchronous and block the main thread - when a user is typing in the editor, I cannot have save operations causing UI jank. IndexedDB's asynchronous API means we can persist data without impacting the user experience. The structured storage with indexes also lets us efficiently query documents by update time for the sidebar, which would require deserializing everything with localStorage."
+
+---
+
+### Deep Dive 2: IndexedDB API Approach
+
+Raw IndexedDB has a notoriously difficult API based on callbacks and event handlers.
+
+#### Why idb Wrapper Over Raw IndexedDB API?
+
+| Factor | idb Library | Raw IndexedDB | Winner |
+|--------|-------------|---------------|--------|
+| API style | Promise-based, async/await | Callback-based, event-driven | idb |
+| Code readability | Clean, linear flow | Nested callbacks | idb |
+| Error handling | Standard try/catch | Event listeners | idb |
+| TypeScript support | Full generic types | Manual typing | idb |
+| Bundle size | ~3KB gzipped | 0KB (native) | Raw (marginal) |
+| Maintenance | Active development | N/A | idb |
+
+**Decision: ✅ idb Library**
+
+> "I'm choosing the idb wrapper library over raw IndexedDB because developer productivity matters significantly here. The raw IndexedDB API uses callbacks and event handlers from a pre-Promise era of JavaScript, making code hard to read and error-prone. With idb, I can use async/await and try/catch, which integrates naturally with the rest of our modern codebase. The library is only about 3KB gzipped - a negligible cost for dramatically improved code maintainability. The TypeScript support with generics also gives us compile-time safety for our document schema."
+
+---
+
+### Deep Dive 3: Save Strategy
+
+How we persist user changes has major implications for both performance and durability.
+
+#### Why Debounced Auto-Save (2 seconds) Over Immediate Saves?
+
+| Factor | Debounced (2s) | Immediate Save | Winner |
+|--------|----------------|----------------|--------|
+| Write operations | Batched, reduced | Every keystroke | Debounced |
+| IndexedDB load | Low | Very high | Debounced |
+| Battery impact | Minimal | Significant | Debounced |
+| Disk wear (SSDs) | Reduced | Heavy | Debounced |
+| Data freshness | 2s behind | Real-time | Immediate |
+| Crash recovery | Lose 2s of work | No data loss | Immediate |
+
+**Decision: ✅ Debounced (2 seconds)**
+
+> "I'm choosing a 2-second debounce for auto-save because the alternative - saving on every keystroke - would be excessive and wasteful. Consider a user typing at 60 words per minute: that's roughly 5 keystrokes per second, meaning 300 IndexedDB write operations per minute. Each write has overhead for transaction creation, serialization, and I/O. By debouncing, we collapse rapid changes into single writes. The 2-second window is a deliberate trade-off: short enough that losing 2 seconds of typing in a crash is acceptable, long enough to meaningfully reduce write frequency. We also implement a force-save on window blur and beforeunload events to catch the edge cases."
+
+The save flow looks like this:
+
+```
+User Types     Timer Resets    Timer Expires    IndexedDB Write
+    |               |               |                 |
+    v               v               v                 v
+[keystroke] --> [clear timer] --> [2s wait] --> [persist to DB]
+    |               ^
+    |               |
+    +---------------+
+    (each keystroke resets)
 ```
 
-**Database Initialization:**
+---
 
-```typescript
-let dbInstance: IDBPDatabase<MDReaderDB> | null = null;
+### Deep Dive 4: Service Worker and Caching
 
-export async function getDB(): Promise<IDBPDatabase<MDReaderDB>> {
-  if (dbInstance) return dbInstance;
+For a PWA, the service worker is critical for offline functionality.
 
-  dbInstance = await openDB<MDReaderDB>('mdreader', 2, {
-    upgrade(db, oldVersion, newVersion, transaction) {
-      // Version 1: Initial schema
-      if (oldVersion < 1) {
-        const docStore = db.createObjectStore('documents', {
-          keyPath: 'id'
-        });
-        docStore.createIndex('by-updated', 'updatedAt');
-        docStore.createIndex('by-title', 'title');
+#### Why Workbox Over Manual Service Worker?
 
-        db.createObjectStore('preferences', { keyPath: 'key' });
-      }
+| Factor | Workbox | Manual Service Worker | Winner |
+|--------|---------|----------------------|--------|
+| Development time | Hours | Days/weeks | Workbox |
+| Caching strategies | Built-in, tested | Must implement | Workbox |
+| Precaching | Automatic manifest | Manual file list | Workbox |
+| Cache versioning | Handled | Must implement | Workbox |
+| Bug risk | Battle-tested | High | Workbox |
+| Customization | Extensible plugins | Full control | Manual (marginal) |
 
-      // Version 2: Add sync queue
-      if (oldVersion < 2) {
-        const syncStore = db.createObjectStore('syncQueue', {
-          keyPath: 'id',
-          autoIncrement: true
-        });
-        syncStore.createIndex('by-status', 'status');
-      }
-    },
-    blocked() {
-      console.warn('Database upgrade blocked by other tabs');
-    },
-    blocking() {
-      dbInstance?.close();
-      dbInstance = null;
-    }
-  });
+**Decision: ✅ Workbox**
 
-  return dbInstance;
-}
+> "I'm choosing Workbox because writing a correct service worker from scratch is surprisingly difficult and error-prone. Cache invalidation, version management, handling edge cases during updates - Workbox has solved these problems across millions of PWAs. It provides pre-built caching strategies like Cache-First, Network-First, and Stale-While-Revalidate that we can apply declaratively. The Vite plugin generates a precache manifest automatically from our build output, so assets are cached correctly without manual maintenance. The time saved here is better spent on our actual product features."
+
+Our caching strategy by content type:
+
+```
++------------------+---------------------------+-------------------------+
+|   Content Type   |    Caching Strategy       |       Rationale         |
++------------------+---------------------------+-------------------------+
+| App Shell        | Precache (build time)     | Instant offline startup |
+| (HTML, JS, CSS)  |                           |                         |
++------------------+---------------------------+-------------------------+
+| Static Assets    | Cache-First               | Immutable, hash in URL  |
+| (images, icons)  | (30 day expiry)           |                         |
++------------------+---------------------------+-------------------------+
+| Google Fonts     | Stale-While-Revalidate    | Works offline, updates  |
+|                  | (1 year expiry)           | in background           |
++------------------+---------------------------+-------------------------+
+| Future API calls | Network-First             | Fresh data preferred,   |
+|                  | (3s timeout, fallback)    | cache for offline       |
++------------------+---------------------------+-------------------------+
 ```
 
-### 2. Document CRUD Operations
+---
 
-**Document Repository:**
+### Deep Dive 5: Data Integrity
 
-```typescript
-// repositories/documentRepository.ts
-import { getDB } from '../lib/db';
-import { generateId, computeChecksum, extractTitle } from '../lib/utils';
+Documents are the user's creative work - we must protect them from corruption.
 
-export class DocumentRepository {
-  async create(content: string): Promise<Document> {
-    const db = await getDB();
-    const now = Date.now();
+#### Why SHA-256 Checksums for Data Integrity?
 
-    const doc: Document = {
-      id: generateId(),
-      title: extractTitle(content),
-      content,
-      createdAt: now,
-      updatedAt: now,
-      wordCount: countWords(content),
-      checksum: await computeChecksum(content)
-    };
+| Factor | SHA-256 Checksum | No Verification | Winner |
+|--------|------------------|-----------------|--------|
+| Corruption detection | Yes | No | SHA-256 |
+| Implementation complexity | Moderate | None | No Verification |
+| Performance overhead | Minimal (WebCrypto) | Zero | No Verification (marginal) |
+| User trust | High | Lower | SHA-256 |
+| Recovery capability | Can detect and attempt | Silent corruption | SHA-256 |
 
-    await db.add('documents', doc);
+**Decision: ✅ SHA-256 Checksums**
 
-    // Queue for future sync
-    await this.queueSync(doc.id, 'create', content);
+> "I'm choosing to compute and store SHA-256 checksums for each document because data integrity is paramount for a note-taking application. While IndexedDB corruption is rare, it can happen - browser bugs, storage errors, interrupted writes during crashes. By storing a checksum alongside the content, we can verify integrity on load and detect problems before the user sees corrupted data. The Web Crypto API provides hardware-accelerated SHA-256, so performance impact is negligible - a few milliseconds for typical documents. When corruption is detected, we can attempt recovery from our localStorage backup layer."
 
-    return doc;
-  }
+The integrity verification flow:
 
-  async update(id: string, content: string): Promise<Document> {
-    const db = await getDB();
-    const existing = await db.get('documents', id);
-
-    if (!existing) {
-      throw new Error(`Document not found: ${id}`);
-    }
-
-    const updated: Document = {
-      ...existing,
-      title: extractTitle(content),
-      content,
-      updatedAt: Date.now(),
-      wordCount: countWords(content),
-      checksum: await computeChecksum(content)
-    };
-
-    await db.put('documents', updated);
-    await this.queueSync(id, 'update', content);
-
-    return updated;
-  }
-
-  async delete(id: string): Promise<void> {
-    const db = await getDB();
-    await db.delete('documents', id);
-    await this.queueSync(id, 'delete');
-  }
-
-  async findById(id: string): Promise<Document | undefined> {
-    const db = await getDB();
-    return db.get('documents', id);
-  }
-
-  async findAll(): Promise<Document[]> {
-    const db = await getDB();
-    return db.getAllFromIndex('documents', 'by-updated');
-  }
-
-  async findRecent(limit: number): Promise<Document[]> {
-    const db = await getDB();
-    const all = await db.getAllFromIndex('documents', 'by-updated');
-    return all.slice(-limit).reverse();
-  }
-
-  private async queueSync(
-    documentId: string,
-    operation: 'create' | 'update' | 'delete',
-    content?: string
-  ): Promise<void> {
-    const db = await getDB();
-    await db.add('syncQueue', {
-      operationId: generateId(),
-      documentId,
-      operation,
-      timestamp: Date.now(),
-      status: 'pending',
-      payload: content ? await compress(content) : undefined,
-      retryCount: 0
-    });
-  }
-}
+```
+Document Save:                    Document Load:
++------------+                    +------------+
+| Content    |                    | Read from  |
++-----+------+                    |  IndexedDB |
+      |                           +-----+------+
+      v                                 |
++------------+                          v
+| Compute    |                    +------------+
+| SHA-256    |                    | Compute    |
++-----+------+                    | SHA-256    |
+      |                           +-----+------+
+      v                                 |
++------------+                          v
+| Store both |                    +-----------+     +----------------+
+| content +  |                    | Compare   |---->| Match? Load OK |
+| checksum   |                    | checksums |     +----------------+
++------------+                    +-----------+
+                                        |
+                                        v (mismatch)
+                                  +----------------+
+                                  | Attempt backup |
+                                  |   recovery     |
+                                  +----------------+
 ```
 
-### 3. Auto-Save with Debouncing
+---
 
-**Debounced Save Implementation:**
+### Deep Dive 6: Backup Strategy
 
-```typescript
-// hooks/useAutoSave.ts
-import { useRef, useEffect, useCallback } from 'react';
-import { useDocumentStore } from '../stores/documentStore';
+The dual-write approach provides defense in depth against data loss.
 
-interface AutoSaveOptions {
-  debounceMs: number;
-  onSave?: () => void;
-  onError?: (error: Error) => void;
-}
+#### Why Dual-Write (IndexedDB + localStorage Backup)?
 
-export function useAutoSave(
-  content: string,
-  documentId: string | null,
-  options: AutoSaveOptions = { debounceMs: 2000 }
-) {
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedRef = useRef<string>('');
-  const { updateDocument } = useDocumentStore();
+| Factor | Dual-Write | IndexedDB Only | Winner |
+|--------|------------|----------------|--------|
+| Durability | Two copies | Single copy | Dual-Write |
+| Storage usage | Higher | Lower | IndexedDB Only |
+| Recovery options | Fallback available | None | Dual-Write |
+| Complexity | Higher | Simpler | IndexedDB Only |
+| User confidence | High | Moderate | Dual-Write |
 
-  const save = useCallback(async () => {
-    if (!documentId || content === lastSavedRef.current) {
-      return;  // No changes to save
-    }
+**Decision: ✅ Dual-Write with Selective Backup**
 
-    try {
-      await updateDocument(documentId, content);
-      lastSavedRef.current = content;
-      options.onSave?.();
-    } catch (error) {
-      options.onError?.(error as Error);
-    }
-  }, [documentId, content, updateDocument, options]);
+> "I'm implementing a dual-write strategy where we back up recent documents to localStorage as a secondary copy. This is not a full backup of everything - localStorage is too small for that. Instead, we backup the current active document after each successful save to IndexedDB. If IndexedDB becomes corrupted or inaccessible, we have a recovery path. The localStorage backup is capped at 100KB per document to respect size limits, and we clean up old backups when space is needed. This layered approach means a user would need simultaneous failures of both storage mechanisms to lose data - an extremely unlikely scenario."
 
-  useEffect(() => {
-    // Clear existing timer
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-    }
+```
+Save Operation Flow:
 
-    // Skip if no document or no changes
-    if (!documentId || content === lastSavedRef.current) {
-      return;
-    }
-
-    // Set new timer
-    timerRef.current = setTimeout(save, options.debounceMs);
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [content, documentId, save, options.debounceMs]);
-
-  // Force save on unmount
-  useEffect(() => {
-    return () => {
-      if (content !== lastSavedRef.current && documentId) {
-        save();
-      }
-    };
-  }, []);
-
-  return { forceSave: save };
-}
++------------+
+| Save       |
+| triggered  |
++-----+------+
+      |
+      v
++------------+        Success         +------------------+
+| Write to   +----------------------->| Backup to        |
+| IndexedDB  |                        | localStorage     |
++-----+------+                        | (if < 100KB)     |
+      |                               +------------------+
+      | Failure
+      v
++------------+
+| Retry with |
+| exponential|
+| backoff    |
++------------+
 ```
 
-**Coalescing Multiple Saves:**
+---
 
-```typescript
-// lib/saveQueue.ts
-class SaveQueue {
-  private pending: Map<string, { content: string; resolve: () => void }> = new Map();
-  private processing = false;
+## 📊 Data Flow
 
-  async enqueue(documentId: string, content: string): Promise<void> {
-    return new Promise((resolve) => {
-      // Coalesce: replace any pending save for this document
-      this.pending.set(documentId, { content, resolve });
+Here's how a typical document edit flows through the system:
 
-      if (!this.processing) {
-        this.process();
-      }
-    });
-  }
-
-  private async process(): Promise<void> {
-    this.processing = true;
-
-    while (this.pending.size > 0) {
-      const batch = new Map(this.pending);
-      this.pending.clear();
-
-      // Process all pending saves in parallel
-      await Promise.all(
-        Array.from(batch.entries()).map(async ([docId, { content, resolve }]) => {
-          try {
-            await documentRepository.update(docId, content);
-          } finally {
-            resolve();
-          }
-        })
-      );
-    }
-
-    this.processing = false;
-  }
-}
-
-export const saveQueue = new SaveQueue();
+```
+User Types in Editor
+        |
+        v
++----------------+
+| Monaco Editor  |
+| onChange event |
++-------+--------+
+        |
+        v
++----------------+
+| Zustand Store  |
+| Update content |
++-------+--------+
+        |
+        +---------------------------+
+        |                           |
+        v                           v
++----------------+          +----------------+
+| Debounce Timer |          | UI Re-render   |
+| (2 seconds)    |          | (immediate)    |
++-------+--------+          +----------------+
+        |
+        | Timer expires
+        v
++----------------+
+| Document       |
+| Repository     |
++-------+--------+
+        |
+        +---------------------------+
+        |                           |
+        v                           v
++----------------+          +----------------+
+| IndexedDB      |          | Compute        |
+| Transaction    |          | SHA-256        |
++-------+--------+          +-------+--------+
+        |                           |
+        v                           v
++----------------+          +----------------+
+| Write document |          | Store checksum |
+| + metadata     |          | with document  |
++-------+--------+          +----------------+
+        |
+        v
++----------------+
+| Backup to      |
+| localStorage   |
++----------------+
+        |
+        v
++----------------+
+| Queue for      |
+| future sync    |
++----------------+
 ```
 
-### 4. Service Worker Caching Strategy
+---
 
-**Workbox Configuration:**
+## ⚖️ Trade-offs Summary
 
-```javascript
-// sw.js (generated by Workbox)
-import { precacheAndRoute } from 'workbox-precaching';
-import { registerRoute } from 'workbox-routing';
-import { CacheFirst, StaleWhileRevalidate, NetworkFirst } from 'workbox-strategies';
-import { ExpirationPlugin } from 'workbox-expiration';
+| Decision | Chosen | Alternative | Key Rationale |
+|----------|--------|-------------|---------------|
+| Primary Storage | IndexedDB | localStorage | 50MB+ capacity, async API prevents UI blocking |
+| DB Wrapper | idb library | Raw IndexedDB | Promise-based API, dramatically better DX |
+| Save Strategy | Debounced (2s) | Immediate | Reduces writes by 100x during active typing |
+| Backup Layer | localStorage | None | Recovery path if IndexedDB corrupted |
+| Caching | Workbox | Manual SW | Battle-tested, handles versioning correctly |
+| Integrity | SHA-256 checksums | None | Detect corruption before user sees it |
 
-// Precache app shell
-precacheAndRoute(self.__WB_MANIFEST);
+The overall philosophy here is **defense in depth for user data**. We accept increased complexity and storage overhead in exchange for maximum durability. For a note-taking application, losing user data is the worst possible outcome.
 
-// Cache-first for static assets
-registerRoute(
-  ({ request }) => request.destination === 'script' ||
-                   request.destination === 'style',
-  new CacheFirst({
-    cacheName: 'static-assets',
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 50,
-        maxAgeSeconds: 30 * 24 * 60 * 60  // 30 days
-      })
-    ]
-  })
-);
+---
 
-// Stale-while-revalidate for fonts
-registerRoute(
-  ({ url }) => url.origin === 'https://fonts.googleapis.com' ||
-               url.origin === 'https://fonts.gstatic.com',
-  new StaleWhileRevalidate({
-    cacheName: 'google-fonts',
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 20,
-        maxAgeSeconds: 365 * 24 * 60 * 60  // 1 year
-      })
-    ]
-  })
-);
+## 🚀 Future Enhancements
 
-// Network-first for API calls (future sync)
-registerRoute(
-  ({ url }) => url.pathname.startsWith('/api/'),
-  new NetworkFirst({
-    cacheName: 'api-cache',
-    networkTimeoutSeconds: 3,
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 100,
-        maxAgeSeconds: 24 * 60 * 60  // 1 day
-      })
-    ]
-  })
-);
-```
+**Cloud Synchronization:** The sync queue we've built in IndexedDB is designed with future server sync in mind. Each operation is logged with a unique ID for idempotency and a status for tracking. When we add a backend, we process this queue and use the operation IDs to ensure exactly-once delivery even with network retries.
 
-**Cache Versioning and Updates:**
+**Incremental Sync:** Rather than sending full documents on every sync, we could implement diff-based updates. Store a version hash and send only changed portions. This reduces bandwidth and speeds up sync for large documents.
 
-```javascript
-// Service worker update handling
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-});
+**CRDT Support:** For real-time collaboration in the future, we could integrate Conflict-free Replicated Data Types. Libraries like Yjs or Automerge would let multiple users edit simultaneously with automatic conflict resolution, though this adds significant complexity.
 
-// Claim clients on activation
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      // Clean old caches
-      caches.keys().then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== 'static-assets' && key !== 'google-fonts')
-            .map((key) => caches.delete(key))
-        )
-      )
-    ])
-  );
-});
-```
+**Cross-Tab Coordination:** Currently each browser tab maintains its own state. Using BroadcastChannel API, we could synchronize state across tabs so edits in one tab appear in others without requiring a page refresh.
 
-### 5. Storage Quota Management
+---
 
-**Quota Monitoring:**
+## 📝 Summary
 
-```typescript
-// lib/storage.ts
-interface StorageInfo {
-  used: number;
-  quota: number;
-  percentUsed: number;
-}
+I've designed the client-side data layer for MD Reader, a Progressive Web App for Markdown editing. The key architectural decisions are:
 
-export async function getStorageInfo(): Promise<StorageInfo> {
-  if (!navigator.storage?.estimate) {
-    return { used: 0, quota: 0, percentUsed: 0 };
-  }
+**IndexedDB as primary storage** provides the capacity and async API we need for a document-heavy application. The idb wrapper makes the API usable with modern JavaScript patterns.
 
-  const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+**Debounced auto-save with 2-second delay** balances write efficiency against data freshness, reducing IndexedDB operations by roughly 100x during active typing while keeping the risk window acceptably small.
 
-  return {
-    used: usage,
-    quota,
-    percentUsed: quota > 0 ? (usage / quota) * 100 : 0
-  };
-}
+**Workbox-based service worker** handles asset caching with proven strategies, giving us reliable offline support without reinventing complex caching logic.
 
-export async function requestPersistence(): Promise<boolean> {
-  if (!navigator.storage?.persist) {
-    return false;
-  }
+**SHA-256 checksums and localStorage backups** provide defense in depth for user data. We can detect corruption and recover from a secondary store if needed.
 
-  // Request persistent storage (won't be evicted)
-  return navigator.storage.persist();
-}
-```
+The system is designed with **future sync capability** built in - a queued operations table in IndexedDB is ready to be processed when we add server-side storage.
 
-**Quota Exceeded Handling:**
-
-```typescript
-// repositories/documentRepository.ts
-async update(id: string, content: string): Promise<Document> {
-  try {
-    // ... normal update logic
-    await db.put('documents', updated);
-    return updated;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-      // Storage full - handle gracefully
-      const storageInfo = await getStorageInfo();
-
-      throw new StorageFullError(
-        'Storage quota exceeded. Please delete old documents or export data.',
-        {
-          used: storageInfo.used,
-          quota: storageInfo.quota,
-          documentId: id
-        }
-      );
-    }
-    throw error;
-  }
-}
-```
-
-### 6. Data Integrity and Recovery
-
-**Content Checksums:**
-
-```typescript
-// lib/integrity.ts
-export async function computeChecksum(content: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(content);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-export async function verifyDocument(doc: Document): Promise<boolean> {
-  const computed = await computeChecksum(doc.content);
-  return computed === doc.checksum;
-}
-
-export async function repairCorruptedDocuments(): Promise<number> {
-  const db = await getDB();
-  const docs = await db.getAll('documents');
-  let repaired = 0;
-
-  for (const doc of docs) {
-    const isValid = await verifyDocument(doc);
-    if (!isValid) {
-      // Try to recover from localStorage backup
-      const backup = localStorage.getItem(`doc-backup:${doc.id}`);
-      if (backup) {
-        doc.content = backup;
-        doc.checksum = await computeChecksum(backup);
-        await db.put('documents', doc);
-        repaired++;
-      }
-    }
-  }
-
-  return repaired;
-}
-```
-
-**localStorage Backup for Critical Saves:**
-
-```typescript
-// lib/backup.ts
-const MAX_BACKUP_SIZE = 100 * 1024;  // 100KB per document
-
-export function backupToLocalStorage(doc: Document): void {
-  if (doc.content.length > MAX_BACKUP_SIZE) {
-    // Too large for localStorage - skip
-    return;
-  }
-
-  try {
-    localStorage.setItem(`doc-backup:${doc.id}`, doc.content);
-    localStorage.setItem(`doc-backup:${doc.id}:timestamp`, String(Date.now()));
-  } catch (e) {
-    // localStorage full - clean old backups
-    cleanOldBackups();
-  }
-}
-
-function cleanOldBackups(): void {
-  const backupKeys = Object.keys(localStorage)
-    .filter((key) => key.startsWith('doc-backup:'))
-    .filter((key) => key.endsWith(':timestamp'));
-
-  // Sort by timestamp, remove oldest
-  const sorted = backupKeys
-    .map((key) => ({
-      key: key.replace(':timestamp', ''),
-      timestamp: parseInt(localStorage.getItem(key) || '0', 10)
-    }))
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  // Remove oldest 50%
-  const toRemove = sorted.slice(0, Math.floor(sorted.length / 2));
-  for (const { key } of toRemove) {
-    localStorage.removeItem(key);
-    localStorage.removeItem(`${key}:timestamp`);
-  }
-}
-```
-
-### 7. Future Sync Architecture
-
-**Sync Queue Processing:**
-
-```typescript
-// services/syncService.ts
-export class SyncService {
-  private isOnline = navigator.onLine;
-
-  constructor() {
-    window.addEventListener('online', () => this.onOnline());
-    window.addEventListener('offline', () => this.isOnline = false);
-  }
-
-  private async onOnline(): Promise<void> {
-    this.isOnline = true;
-    await this.processSyncQueue();
-  }
-
-  async processSyncQueue(): Promise<void> {
-    if (!this.isOnline) return;
-
-    const db = await getDB();
-    const pending = await db.getAllFromIndex('syncQueue', 'by-status', 'pending');
-
-    for (const op of pending) {
-      try {
-        op.status = 'syncing';
-        await db.put('syncQueue', op);
-
-        await this.syncOperation(op);
-
-        op.status = 'synced';
-        await db.put('syncQueue', op);
-      } catch (error) {
-        op.status = 'failed';
-        op.retryCount++;
-        await db.put('syncQueue', op);
-
-        if (op.retryCount >= 3) {
-          console.error(`Sync failed for ${op.operationId} after 3 retries`);
-        }
-      }
-    }
-  }
-
-  private async syncOperation(op: SyncOperation): Promise<void> {
-    // Future: POST to /api/sync
-    // For now, just mark as synced
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-```
-
-## Trade-offs Summary
-
-| Decision | Chosen | Alternative | Rationale |
-|----------|--------|-------------|-----------|
-| Primary Storage | IndexedDB | localStorage | 50MB+ vs 5MB, async, structured |
-| DB Wrapper | idb library | Raw IndexedDB | Cleaner Promise API |
-| Save Strategy | Debounced (2s) | Immediate | Reduce write operations |
-| Backup | localStorage | None | Recovery for critical data |
-| Caching | Workbox | Manual SW | Industry standard, reliable |
-| Integrity | SHA-256 checksum | None | Detect corruption |
-
-## Future Enhancements
-
-1. **Cloud Sync**: Optional server-side backup with conflict resolution
-2. **Incremental Sync**: Send diffs instead of full documents
-3. **CRDT Support**: Conflict-free replicated data types for collaboration
-4. **Import/Export**: Bulk document backup and restore
-5. **Cross-Tab Sync**: BroadcastChannel for multi-tab coordination
+This architecture treats the browser as a first-class data layer, applying traditional backend thinking about durability, consistency, and recovery to client-side storage. The result is an application that works entirely offline while maintaining the data guarantees users expect from their documents.
