@@ -71,479 +71,75 @@
 
 #### Deep-Dive A: Shared Types Package (6 minutes)
 
-**Package Structure:**
+**Search Request/Response Types:**
 
-```typescript
-// packages/shared-types/src/index.ts
+SearchRequest contains query (string), optional filters (dateRange with ISO 8601 start/end, postType as 'text' | 'photo' | 'video' | 'link', authorId), optional cursor for pagination, and optional limit.
 
-// ============================================
-// Search Request/Response Types
-// ============================================
+SearchResponse includes results array, total count, has_more boolean, next_cursor (string or null), took_ms for timing, and query_id for analytics.
 
-export interface SearchRequest {
-  query: string;
-  filters?: SearchFilters;
-  cursor?: string;
-  limit?: number;
-}
+SearchResult contains id, author object (id, display_name, avatar_url, is_verified), content string, highlights array with start/end/field, post_type, created_at, engagement stats (like_count, comment_count, share_count), optional media array, and relevance_score.
 
-export interface SearchFilters {
-  dateRange?: {
-    start: string; // ISO 8601
-    end: string;
-  };
-  postType?: 'text' | 'photo' | 'video' | 'link';
-  authorId?: string;
-}
+Highlight specifies start and end positions with field type ('content' | 'hashtag' | 'author').
 
-export interface SearchResponse {
-  results: SearchResult[];
-  total: number;
-  has_more: boolean;
-  next_cursor: string | null;
-  took_ms: number;
-  query_id: string; // For analytics
-}
+**Suggestions Types:**
 
-export interface SearchResult {
-  id: string;
-  author: {
-    id: string;
-    display_name: string;
-    avatar_url: string;
-    is_verified: boolean;
-  };
-  content: string;
-  highlights: Highlight[];
-  post_type: 'text' | 'photo' | 'video' | 'link';
-  created_at: string;
-  engagement: {
-    like_count: number;
-    comment_count: number;
-    share_count: number;
-  };
-  media?: MediaItem[];
-  relevance_score: number;
-}
+SuggestionRequest has query string and optional limit. SuggestionResponse contains suggestions array. Each Suggestion has type ('query' | 'hashtag' | 'person' | 'history'), text, and optional metadata (personId, avatarUrl, postCount).
 
-export interface Highlight {
-  start: number;
-  end: number;
-  field: 'content' | 'hashtag' | 'author';
-}
+**Error Types:**
 
-// ============================================
-// Suggestions Types
-// ============================================
+ApiError contains code string, message, and optional details record. ErrorCodes defines constants: INVALID_QUERY, RATE_LIMITED, UNAUTHORIZED, INTERNAL_ERROR, TIMEOUT.
 
-export interface SuggestionRequest {
-  query: string;
-  limit?: number;
-}
+**Zod Validation Schemas:**
 
-export interface SuggestionResponse {
-  suggestions: Suggestion[];
-}
+searchRequestSchema validates: query (1-500 chars), filters object with optional dateRange (datetime strings), postType enum, authorId (uuid), optional cursor, and limit (1-100, default 20).
 
-export interface Suggestion {
-  type: 'query' | 'hashtag' | 'person' | 'history';
-  text: string;
-  metadata?: {
-    personId?: string;
-    avatarUrl?: string;
-    postCount?: number;
-  };
-}
+suggestionRequestSchema validates: query (1-100 chars), limit (1-10, default 5).
 
-// ============================================
-// Error Types
-// ============================================
-
-export interface ApiError {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-export const ErrorCodes = {
-  INVALID_QUERY: 'INVALID_QUERY',
-  RATE_LIMITED: 'RATE_LIMITED',
-  UNAUTHORIZED: 'UNAUTHORIZED',
-  INTERNAL_ERROR: 'INTERNAL_ERROR',
-  TIMEOUT: 'TIMEOUT'
-} as const;
-
-// ============================================
-// Validation Schemas (Zod)
-// ============================================
-
-import { z } from 'zod';
-
-export const searchRequestSchema = z.object({
-  query: z.string().min(1).max(500),
-  filters: z.object({
-    dateRange: z.object({
-      start: z.string().datetime(),
-      end: z.string().datetime()
-    }).optional(),
-    postType: z.enum(['text', 'photo', 'video', 'link']).optional(),
-    authorId: z.string().uuid().optional()
-  }).optional(),
-  cursor: z.string().optional(),
-  limit: z.number().min(1).max(100).default(20)
-});
-
-export const suggestionRequestSchema = z.object({
-  query: z.string().min(1).max(100),
-  limit: z.number().min(1).max(10).default(5)
-});
-
-// Type inference from schemas
-export type ValidatedSearchRequest = z.infer<typeof searchRequestSchema>;
-export type ValidatedSuggestionRequest = z.infer<typeof suggestionRequestSchema>;
-```
+Type inference using z.infer creates ValidatedSearchRequest and ValidatedSuggestionRequest types.
 
 **Using Shared Types:**
 
-```typescript
-// Backend: routes/search.ts
-import {
-  SearchRequest,
-  SearchResponse,
-  searchRequestSchema,
-  ApiError,
-  ErrorCodes
-} from '@fb-search/shared-types';
+Backend imports types and schemas from @fb-search/shared-types, uses safeParse for validation, returns ApiError on failure with ErrorCodes.INVALID_QUERY.
 
-router.get('/search', async (req, res) => {
-  const parseResult = searchRequestSchema.safeParse(req.query);
-
-  if (!parseResult.success) {
-    const error: ApiError = {
-      code: ErrorCodes.INVALID_QUERY,
-      message: 'Invalid search parameters',
-      details: parseResult.error.flatten()
-    };
-    return res.status(400).json(error);
-  }
-
-  const request: SearchRequest = parseResult.data;
-  const response: SearchResponse = await searchService.search(request, req.userId);
-  res.json(response);
-});
-
-// Frontend: services/searchApi.ts
-import {
-  SearchRequest,
-  SearchResponse,
-  SuggestionRequest,
-  SuggestionResponse,
-  ApiError
-} from '@fb-search/shared-types';
-
-export async function search(request: SearchRequest): Promise<SearchResponse> {
-  const params = new URLSearchParams();
-  params.set('query', request.query);
-
-  if (request.filters?.postType) {
-    params.set('postType', request.filters.postType);
-  }
-
-  const response = await fetch(`/api/v1/search?${params}`);
-
-  if (!response.ok) {
-    const error: ApiError = await response.json();
-    throw new SearchError(error);
-  }
-
-  return response.json();
-}
-```
+Frontend imports same types, builds URLSearchParams from request, throws SearchError on non-OK response.
 
 ---
 
 #### Deep-Dive B: API Design and Implementation (8 minutes)
 
-**Express Router:**
+**Express Router Endpoints:**
 
-```typescript
-// backend/src/routes/search.ts
-import { Router } from 'express';
-import { searchRequestSchema, suggestionRequestSchema } from '@fb-search/shared-types';
-import { SearchService } from '../services/searchService.js';
-import { SuggestionService } from '../services/suggestionService.js';
-import { authenticate } from '../middleware/auth.js';
-import { rateLimit } from '../middleware/rateLimit.js';
-import { validateRequest } from '../middleware/validate.js';
+`GET /search` - Authenticated, rate limited (100/min), validates with searchRequestSchema against query params. Executes search via searchService, adds X-Response-Time header, sets Cache-Control: private, max-age=60 with Vary: Authorization.
 
-const router = Router();
-const searchService = new SearchService();
-const suggestionService = new SuggestionService();
+`GET /suggestions` - Authenticated, rate limited (300/min), validates with suggestionRequestSchema. Returns suggestions with short cache (10 seconds).
 
-// Search endpoint
-router.get(
-  '/search',
-  authenticate,
-  rateLimit({ windowMs: 60000, max: 100 }),
-  validateRequest(searchRequestSchema, 'query'),
-  async (req, res, next) => {
-    try {
-      const startTime = Date.now();
+`GET /search/history` - Returns 20 most recent searches for authenticated user.
 
-      const response = await searchService.search(
-        req.validated,
-        req.userId
-      );
-
-      // Add timing header
-      res.set('X-Response-Time', `${Date.now() - startTime}ms`);
-
-      // Cache control for CDN
-      res.set('Cache-Control', 'private, max-age=60');
-      res.set('Vary', 'Authorization');
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Suggestions endpoint (low-latency)
-router.get(
-  '/suggestions',
-  authenticate,
-  rateLimit({ windowMs: 60000, max: 300 }),
-  validateRequest(suggestionRequestSchema, 'query'),
-  async (req, res, next) => {
-    try {
-      const response = await suggestionService.getSuggestions(
-        req.validated,
-        req.userId
-      );
-
-      // Short cache for suggestions
-      res.set('Cache-Control', 'private, max-age=10');
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// Search history
-router.get(
-  '/search/history',
-  authenticate,
-  async (req, res, next) => {
-    try {
-      const history = await searchService.getHistory(req.userId, 20);
-      res.json({ history });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.delete(
-  '/search/history',
-  authenticate,
-  async (req, res, next) => {
-    try {
-      await searchService.clearHistory(req.userId);
-      res.status(204).send();
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-export default router;
-```
+`DELETE /search/history` - Clears user's search history, returns 204 No Content.
 
 **Validation Middleware:**
 
-```typescript
-// backend/src/middleware/validate.ts
-import { z, ZodSchema } from 'zod';
-import { ApiError, ErrorCodes } from '@fb-search/shared-types';
+Generic validateRequest function accepts Zod schema and request part ('body' | 'query' | 'params'). Calls safeParse, returns 400 with ApiError on failure including flattened error details. Attaches validated data to req.validated.
 
-type RequestPart = 'body' | 'query' | 'params';
-
-export function validateRequest<T extends ZodSchema>(
-  schema: T,
-  part: RequestPart = 'body'
-) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const result = schema.safeParse(req[part]);
-
-    if (!result.success) {
-      const error: ApiError = {
-        code: ErrorCodes.INVALID_QUERY,
-        message: 'Validation failed',
-        details: result.error.flatten()
-      };
-      return res.status(400).json(error);
-    }
-
-    req.validated = result.data;
-    next();
-  };
-}
-
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      validated?: unknown;
-      userId?: string;
-    }
-  }
-}
-```
+Express Request type is extended globally to include validated and userId properties.
 
 **Frontend API Client:**
 
-```typescript
-// frontend/src/services/searchApi.ts
-import type {
-  SearchRequest,
-  SearchResponse,
-  SuggestionRequest,
-  SuggestionResponse,
-  ApiError
-} from '@fb-search/shared-types';
+SearchApiClient class with private abortController for cancellation.
 
-const API_BASE = '/api/v1';
+search() method cancels in-flight requests, builds URLSearchParams, fetches with credentials: 'include'. Throws SearchApiError on non-OK, handles AbortError specially.
 
-class SearchApiClient {
-  private abortController: AbortController | null = null;
+getSuggestions() builds params, fetches, returns empty array on error (fail silently).
 
-  async search(request: SearchRequest): Promise<SearchResponse> {
-    // Cancel any in-flight request
-    this.abortController?.abort();
-    this.abortController = new AbortController();
+getHistory() and clearHistory() for search history management.
 
-    const params = this.buildSearchParams(request);
-    const url = `${API_BASE}/search?${params}`;
+buildSearchParams() private method converts SearchRequest to URLSearchParams, handling filters.dateRange, postType, authorId.
 
-    try {
-      const response = await fetch(url, {
-        signal: this.abortController.signal,
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        const error: ApiError = await response.json();
-        throw new SearchApiError(error, response.status);
-      }
-
-      return response.json();
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new SearchAbortedError();
-      }
-      throw error;
-    }
-  }
-
-  async getSuggestions(request: SuggestionRequest): Promise<SuggestionResponse> {
-    const params = new URLSearchParams({
-      query: request.query,
-      limit: String(request.limit ?? 5)
-    });
-
-    const response = await fetch(`${API_BASE}/suggestions?${params}`, {
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      // Fail silently for suggestions
-      return { suggestions: [] };
-    }
-
-    return response.json();
-  }
-
-  async getHistory(): Promise<{ history: HistoryItem[] }> {
-    const response = await fetch(`${API_BASE}/search/history`, {
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      return { history: [] };
-    }
-
-    return response.json();
-  }
-
-  async clearHistory(): Promise<void> {
-    await fetch(`${API_BASE}/search/history`, {
-      method: 'DELETE',
-      credentials: 'include'
-    });
-  }
-
-  private buildSearchParams(request: SearchRequest): URLSearchParams {
-    const params = new URLSearchParams();
-    params.set('query', request.query);
-
-    if (request.limit) {
-      params.set('limit', String(request.limit));
-    }
-
-    if (request.cursor) {
-      params.set('cursor', request.cursor);
-    }
-
-    if (request.filters) {
-      const { dateRange, postType, authorId } = request.filters;
-
-      if (dateRange) {
-        params.set('dateFrom', dateRange.start);
-        params.set('dateTo', dateRange.end);
-      }
-
-      if (postType) {
-        params.set('postType', postType);
-      }
-
-      if (authorId) {
-        params.set('authorId', authorId);
-      }
-    }
-
-    return params;
-  }
-}
-
-export const searchApi = new SearchApiClient();
-
-// Custom error classes
-export class SearchApiError extends Error {
-  constructor(
-    public apiError: ApiError,
-    public status: number
-  ) {
-    super(apiError.message);
-    this.name = 'SearchApiError';
-  }
-}
-
-export class SearchAbortedError extends Error {
-  constructor() {
-    super('Search was cancelled');
-    this.name = 'SearchAbortedError';
-  }
-}
-```
+Custom errors: SearchApiError extends Error with apiError and status, SearchAbortedError for cancelled requests.
 
 ---
 
 #### Deep-Dive C: Multi-Layer Caching Strategy (8 minutes)
-
-**Caching Architecture:**
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -578,270 +174,44 @@ export class SearchAbortedError extends Error {
 
 **Frontend Cache Implementation:**
 
-```typescript
-// frontend/src/services/searchCache.ts
-import type { SearchRequest, SearchResponse } from '@fb-search/shared-types';
+SearchCache class with MAX_ENTRIES=50, TTL_MS=60000 (1 min), STORAGE_KEY='search_cache'.
 
-interface CacheEntry {
-  response: SearchResponse;
-  timestamp: number;
-}
+get(request) generates cache key, checks entry existence and expiration, deletes expired entries.
 
-class SearchCache {
-  private readonly MAX_ENTRIES = 50;
-  private readonly TTL_MS = 60000; // 1 minute
-  private readonly STORAGE_KEY = 'search_cache';
+set(request, response) evicts oldest entry if at capacity, stores with timestamp, persists to sessionStorage.
 
-  private cache: Map<string, CacheEntry>;
+invalidate(pattern) clears all or matching keys.
 
-  constructor() {
-    this.cache = this.loadFromStorage();
-  }
+getCacheKey() builds key from query, filters.postType, dateRange.start/end, authorId, cursor joined with pipes.
 
-  get(request: SearchRequest): SearchResponse | null {
-    const key = this.getCacheKey(request);
-    const entry = this.cache.get(key);
-
-    if (!entry) return null;
-
-    // Check if expired
-    if (Date.now() - entry.timestamp > this.TTL_MS) {
-      this.cache.delete(key);
-      this.saveToStorage();
-      return null;
-    }
-
-    return entry.response;
-  }
-
-  set(request: SearchRequest, response: SearchResponse): void {
-    const key = this.getCacheKey(request);
-
-    // Evict oldest entries if at capacity
-    if (this.cache.size >= this.MAX_ENTRIES) {
-      const oldest = this.findOldestEntry();
-      if (oldest) {
-        this.cache.delete(oldest);
-      }
-    }
-
-    this.cache.set(key, {
-      response,
-      timestamp: Date.now()
-    });
-
-    this.saveToStorage();
-  }
-
-  invalidate(pattern?: string): void {
-    if (!pattern) {
-      this.cache.clear();
-    } else {
-      for (const key of this.cache.keys()) {
-        if (key.includes(pattern)) {
-          this.cache.delete(key);
-        }
-      }
-    }
-    this.saveToStorage();
-  }
-
-  private getCacheKey(request: SearchRequest): string {
-    const parts = [
-      request.query,
-      request.filters?.postType ?? 'all',
-      request.filters?.dateRange?.start ?? '',
-      request.filters?.dateRange?.end ?? '',
-      request.filters?.authorId ?? '',
-      request.cursor ?? ''
-    ];
-    return parts.join('|');
-  }
-
-  private findOldestEntry(): string | null {
-    let oldest: { key: string; timestamp: number } | null = null;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (!oldest || entry.timestamp < oldest.timestamp) {
-        oldest = { key, timestamp: entry.timestamp };
-      }
-    }
-
-    return oldest?.key ?? null;
-  }
-
-  private loadFromStorage(): Map<string, CacheEntry> {
-    try {
-      const stored = sessionStorage.getItem(this.STORAGE_KEY);
-      if (stored) {
-        return new Map(JSON.parse(stored));
-      }
-    } catch {
-      // Storage unavailable or corrupted
-    }
-    return new Map();
-  }
-
-  private saveToStorage(): void {
-    try {
-      const entries = Array.from(this.cache.entries());
-      sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(entries));
-    } catch {
-      // Storage full or unavailable
-    }
-  }
-}
-
-export const searchCache = new SearchCache();
-```
+loadFromStorage/saveToStorage handle sessionStorage with try/catch for unavailability.
 
 **Backend Cache Service:**
 
-```typescript
-// backend/src/services/cacheService.ts
-import { Redis } from 'ioredis';
-import { createHash } from 'crypto';
-import type { SearchRequest, SearchResponse } from '@fb-search/shared-types';
+CacheService class with Redis client.
 
-export class CacheService {
-  constructor(private readonly redis: Redis) {}
+**Visibility Cache:**
+- getVisibilitySet(userId) returns smembers or null if empty
+- setVisibilitySet(userId, fingerprints) uses pipeline: del, sadd, expire(300)
+- invalidateVisibility(userId) deletes key
 
-  // ============================================
-  // Visibility Cache
-  // ============================================
+**Search Results Cache:**
+- getSearchResults(request, visibilityHash) returns parsed JSON or null
+- setSearchResults() increments request count, only caches if "popular" (5+ requests/hour), TTL 60s
 
-  async getVisibilitySet(userId: string): Promise<string[] | null> {
-    const key = `visibility:${userId}`;
-    const cached = await this.redis.smembers(key);
-    return cached.length > 0 ? cached : null;
-  }
+**Suggestions Cache:**
+- getSuggestions(prefix) returns lrange 0-9 or null
+- setSuggestions(prefix, suggestions) uses pipeline with TTL 600s
 
-  async setVisibilitySet(userId: string, fingerprints: string[]): Promise<void> {
-    const key = `visibility:${userId}`;
-    const pipeline = this.redis.pipeline();
-
-    pipeline.del(key);
-    if (fingerprints.length > 0) {
-      pipeline.sadd(key, ...fingerprints);
-    }
-    pipeline.expire(key, 300); // 5 minutes
-
-    await pipeline.exec();
-  }
-
-  async invalidateVisibility(userId: string): Promise<void> {
-    await this.redis.del(`visibility:${userId}`);
-  }
-
-  // ============================================
-  // Search Results Cache
-  // ============================================
-
-  async getSearchResults(
-    request: SearchRequest,
-    visibilityHash: string
-  ): Promise<SearchResponse | null> {
-    const key = this.getSearchCacheKey(request, visibilityHash);
-    const cached = await this.redis.get(key);
-
-    if (cached) {
-      return JSON.parse(cached);
-    }
-
-    return null;
-  }
-
-  async setSearchResults(
-    request: SearchRequest,
-    visibilityHash: string,
-    response: SearchResponse
-  ): Promise<void> {
-    const key = this.getSearchCacheKey(request, visibilityHash);
-
-    // Only cache for popular queries (determined by request count)
-    const requestCountKey = `search_count:${this.hashQuery(request.query)}`;
-    const count = await this.redis.incr(requestCountKey);
-    await this.redis.expire(requestCountKey, 3600);
-
-    if (count >= 5) {
-      // Cache if query is "popular" (5+ requests in an hour)
-      await this.redis.setex(
-        key,
-        60, // 1 minute TTL
-        JSON.stringify(response)
-      );
-    }
-  }
-
-  // ============================================
-  // Suggestions Cache
-  // ============================================
-
-  async getSuggestions(prefix: string): Promise<string[] | null> {
-    const key = `suggest:${prefix.toLowerCase()}`;
-    const cached = await this.redis.lrange(key, 0, 9);
-    return cached.length > 0 ? cached : null;
-  }
-
-  async setSuggestions(prefix: string, suggestions: string[]): Promise<void> {
-    const key = `suggest:${prefix.toLowerCase()}`;
-    const pipeline = this.redis.pipeline();
-
-    pipeline.del(key);
-    if (suggestions.length > 0) {
-      pipeline.rpush(key, ...suggestions);
-    }
-    pipeline.expire(key, 600); // 10 minutes
-
-    await pipeline.exec();
-  }
-
-  // ============================================
-  // Helpers
-  // ============================================
-
-  private getSearchCacheKey(request: SearchRequest, visibilityHash: string): string {
-    const requestHash = this.hashRequest(request);
-    return `search:${requestHash}:${visibilityHash}`;
-  }
-
-  private hashRequest(request: SearchRequest): string {
-    const normalized = {
-      q: request.query.toLowerCase().trim(),
-      t: request.filters?.postType,
-      ds: request.filters?.dateRange?.start,
-      de: request.filters?.dateRange?.end,
-      a: request.filters?.authorId,
-      c: request.cursor
-    };
-
-    return createHash('md5')
-      .update(JSON.stringify(normalized))
-      .digest('hex')
-      .slice(0, 12);
-  }
-
-  private hashQuery(query: string): string {
-    return createHash('md5')
-      .update(query.toLowerCase().trim())
-      .digest('hex')
-      .slice(0, 8);
-  }
-
-  hashVisibilitySet(fingerprints: string[]): string {
-    return createHash('md5')
-      .update(fingerprints.sort().join(','))
-      .digest('hex')
-      .slice(0, 12);
-  }
-}
-```
+**Helpers:**
+- getSearchCacheKey() combines request hash and visibility hash
+- hashRequest() normalizes and MD5 hashes to 12 chars
+- hashQuery() MD5 hashes lowercase trimmed query to 8 chars
+- hashVisibilitySet() sorts fingerprints, joins, MD5 hashes to 12 chars
 
 ---
 
 #### Deep-Dive D: End-to-End Search Flow (8 minutes)
-
-**Complete Flow Diagram:**
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -883,459 +253,87 @@ export class CacheService {
 
 **Search Service Implementation:**
 
-```typescript
-// backend/src/services/searchService.ts
-import { Client as ElasticsearchClient } from '@elastic/elasticsearch';
-import type { SearchRequest, SearchResponse, SearchResult } from '@fb-search/shared-types';
-import { VisibilityService } from './visibilityService.js';
-import { RankingService } from './rankingService.js';
-import { HighlightService } from './highlightService.js';
-import { CacheService } from './cacheService.js';
-import { SearchHistoryRepository } from '../repositories/searchHistoryRepository.js';
-import { metrics } from '../shared/metrics.js';
+SearchService constructor takes ElasticsearchClient, VisibilityService, RankingService, HighlightService, CacheService, SearchHistoryRepository.
 
-export class SearchService {
-  constructor(
-    private readonly es: ElasticsearchClient,
-    private readonly visibilityService: VisibilityService,
-    private readonly rankingService: RankingService,
-    private readonly highlightService: HighlightService,
-    private readonly cacheService: CacheService,
-    private readonly historyRepo: SearchHistoryRepository
-  ) {}
+**search(request, userId) workflow:**
+1. Generate queryId with crypto.randomUUID()
+2. Get user's visibility fingerprints (check cache, compute if miss)
+3. Hash visibility set for cache key
+4. Check search results cache (increment metrics on hit/miss)
+5. Build Elasticsearch query with privacy filter
+6. Execute against posts-* index
+7. Re-rank with social signals via rankingService
+8. Build response with highlights
+9. Construct SearchResponse with results, total, has_more, next_cursor, took_ms, query_id
+10. Async cache and record history (don't await)
+11. Observe latency metric, return response
 
-  async search(request: SearchRequest, userId: string): Promise<SearchResponse> {
-    const startTime = Date.now();
-    const queryId = crypto.randomUUID();
+**getVisibilitySet(userId):**
+Checks cache first, computes via visibilityService if miss, caches result.
 
-    try {
-      // Step 1: Get user's visibility fingerprints
-      const visibilitySet = await this.getVisibilitySet(userId);
-      const visibilityHash = this.cacheService.hashVisibilitySet(visibilitySet);
+**buildQuery(request, visibilitySet):**
+Creates bool query with multi_match (content^2, hashtags^1.5, author_name) with fuzziness AUTO.
 
-      // Step 2: Check cache for identical query
-      const cached = await this.cacheService.getSearchResults(request, visibilityHash);
-      if (cached) {
-        metrics.cacheHits.inc({ type: 'search' });
-        return { ...cached, query_id: queryId };
-      }
-      metrics.cacheMisses.inc({ type: 'search' });
+Filter includes terms query on visibility_fingerprints for privacy.
 
-      // Step 3: Build and execute Elasticsearch query
-      const esQuery = this.buildQuery(request, visibilitySet);
-      const esResponse = await this.es.search({
-        index: 'posts-*',
-        ...esQuery
-      });
+Highlight configuration with pre_tags/post_tags for <mark>.
 
-      // Step 4: Re-rank with social signals
-      const reranked = await this.rankingService.rerank(
-        esResponse.hits.hits,
-        userId,
-        request.query
-      );
+Applies optional filters: dateRange (range query), postType (term), authorId (term).
 
-      // Step 5: Build response with highlights
-      const results = await this.buildResults(reranked, request.query);
+Handles cursor-based pagination with search_after.
 
-      const response: SearchResponse = {
-        results: results.slice(0, request.limit ?? 20),
-        total: typeof esResponse.hits.total === 'number'
-          ? esResponse.hits.total
-          : esResponse.hits.total?.value ?? 0,
-        has_more: results.length > (request.limit ?? 20),
-        next_cursor: this.buildCursor(results, request.limit ?? 20),
-        took_ms: Date.now() - startTime,
-        query_id: queryId
-      };
+**buildResults(hits, query):**
+Maps ES hits to SearchResult objects with author info, highlights, engagement stats.
 
-      // Step 6: Cache and record history (async, don't wait)
-      this.cacheService.setSearchResults(request, visibilityHash, response).catch(() => {});
-      this.historyRepo.record(userId, request.query, response.total).catch(() => {});
-
-      metrics.searchLatency.observe(Date.now() - startTime);
-      return response;
-
-    } catch (error) {
-      metrics.searchErrors.inc();
-      throw error;
-    }
-  }
-
-  private async getVisibilitySet(userId: string): Promise<string[]> {
-    // Check cache first
-    const cached = await this.cacheService.getVisibilitySet(userId);
-    if (cached) {
-      return cached;
-    }
-
-    // Compute from scratch
-    const fingerprints = await this.visibilityService.computeUserVisibility(userId);
-
-    // Cache for future requests
-    await this.cacheService.setVisibilitySet(userId, fingerprints);
-
-    return fingerprints;
-  }
-
-  private buildQuery(request: SearchRequest, visibilitySet: string[]): object {
-    const { query, filters, cursor } = request;
-
-    const esQuery: any = {
-      size: 500, // Over-fetch for re-ranking
-      query: {
-        bool: {
-          must: [
-            {
-              multi_match: {
-                query,
-                fields: ['content^2', 'hashtags^1.5', 'author_name'],
-                type: 'best_fields',
-                fuzziness: 'AUTO'
-              }
-            }
-          ],
-          filter: [
-            // Privacy filter
-            { terms: { visibility_fingerprints: visibilitySet } }
-          ]
-        }
-      },
-      highlight: {
-        fields: {
-          content: {
-            number_of_fragments: 3,
-            fragment_size: 150
-          }
-        },
-        pre_tags: ['<mark>'],
-        post_tags: ['</mark>']
-      },
-      sort: [
-        { _score: 'desc' },
-        { created_at: 'desc' }
-      ]
-    };
-
-    // Apply filters
-    if (filters?.dateRange) {
-      esQuery.query.bool.filter.push({
-        range: {
-          created_at: {
-            gte: filters.dateRange.start,
-            lte: filters.dateRange.end
-          }
-        }
-      });
-    }
-
-    if (filters?.postType) {
-      esQuery.query.bool.filter.push({
-        term: { post_type: filters.postType }
-      });
-    }
-
-    if (filters?.authorId) {
-      esQuery.query.bool.filter.push({
-        term: { author_id: filters.authorId }
-      });
-    }
-
-    // Cursor-based pagination
-    if (cursor) {
-      const { score, created_at, id } = this.decodeCursor(cursor);
-      esQuery.search_after = [score, created_at, id];
-    }
-
-    return esQuery;
-  }
-
-  private async buildResults(hits: any[], query: string): Promise<SearchResult[]> {
-    return hits.map(hit => ({
-      id: hit._source.post_id,
-      author: {
-        id: hit._source.author_id,
-        display_name: hit._source.author_name,
-        avatar_url: hit._source.author_avatar,
-        is_verified: hit._source.author_verified
-      },
-      content: hit._source.content,
-      highlights: this.highlightService.parseHighlights(
-        hit.highlight?.content ?? [],
-        hit._source.content,
-        query
-      ),
-      post_type: hit._source.post_type,
-      created_at: hit._source.created_at,
-      engagement: {
-        like_count: hit._source.like_count,
-        comment_count: hit._source.comment_count,
-        share_count: hit._source.share_count
-      },
-      relevance_score: hit._score
-    }));
-  }
-
-  private buildCursor(results: SearchResult[], limit: number): string | null {
-    if (results.length <= limit) return null;
-
-    const lastResult = results[limit - 1];
-    return Buffer.from(JSON.stringify({
-      score: lastResult.relevance_score,
-      created_at: lastResult.created_at,
-      id: lastResult.id
-    })).toString('base64');
-  }
-
-  private decodeCursor(cursor: string): { score: number; created_at: string; id: string } {
-    return JSON.parse(Buffer.from(cursor, 'base64').toString());
-  }
-
-  async getHistory(userId: string, limit: number): Promise<HistoryItem[]> {
-    return this.historyRepo.getRecent(userId, limit);
-  }
-
-  async clearHistory(userId: string): Promise<void> {
-    await this.historyRepo.clear(userId);
-  }
-}
-```
+**Cursor encoding:**
+buildCursor() base64 encodes { score, created_at, id }.
+decodeCursor() parses base64 back to object.
 
 **Frontend Integration:**
 
-```typescript
-// frontend/src/stores/searchStore.ts - executeSearch action
-executeSearch: async (searchQuery) => {
-  const { query, filters } = get();
-  const effectiveQuery = searchQuery ?? query;
-
-  if (!effectiveQuery.trim()) return;
-
-  set({
-    query: effectiveQuery,
-    isLoading: true,
-    error: null
-  });
-
-  try {
-    // Check local cache first
-    const request: SearchRequest = {
-      query: effectiveQuery,
-      filters,
-      limit: 20
-    };
-
-    const cached = searchCache.get(request);
-    if (cached) {
-      set((state) => {
-        state.results = cached.results;
-        state.hasMore = cached.has_more;
-        state.nextCursor = cached.next_cursor;
-        state.isLoading = false;
-      });
-      return;
-    }
-
-    // Fetch from API
-    const response = await searchApi.search(request);
-
-    // Cache the response
-    searchCache.set(request, response);
-
-    set((state) => {
-      state.results = response.results;
-      state.hasMore = response.has_more;
-      state.nextCursor = response.next_cursor;
-      state.isLoading = false;
-
-      // Update history
-      state.searchHistory.unshift({
-        query: effectiveQuery,
-        timestamp: Date.now(),
-        resultCount: response.total
-      });
-
-      if (state.searchHistory.length > 50) {
-        state.searchHistory = state.searchHistory.slice(0, 50);
-      }
-    });
-
-  } catch (error) {
-    if (error instanceof SearchAbortedError) {
-      // Ignore aborted requests
-      return;
-    }
-
-    set({
-      error: error instanceof SearchApiError
-        ? error.apiError.message
-        : 'Search failed. Please try again.',
-      isLoading: false
-    });
-  }
-}
-```
+executeSearch action in Zustand store:
+1. Gets current query and filters from state
+2. Sets isLoading, clears error
+3. Checks local cache first
+4. Fetches from API if cache miss
+5. Caches successful response
+6. Updates results, hasMore, nextCursor, loading state
+7. Adds to searchHistory (max 50 entries)
+8. Handles SearchAbortedError (ignores), other errors set error state
 
 ---
 
 ### 4. Integration Testing Strategy
 
-```typescript
-// backend/src/__tests__/search.integration.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import request from 'supertest';
-import { app } from '../app.js';
-import { setupTestDb, teardownTestDb, seedTestData } from './testUtils.js';
+**Backend Integration Tests (Vitest + Supertest):**
 
-describe('Search API Integration', () => {
-  let sessionCookie: string;
+Setup: setupTestDb(), seedTestData(), login to get sessionCookie.
 
-  beforeAll(async () => {
-    await setupTestDb();
-    await seedTestData();
+**GET /api/v1/search tests:**
+- Returns matching posts with highlights, took_ms < 500
+- Respects privacy - only shows authorized posts (no friends-only from non-friends)
+- Filters by post type correctly
+- Validates query parameters (empty query returns 400 with INVALID_QUERY)
+- Requires authentication (401 without session)
 
-    // Login and get session
-    const loginResponse = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ username: 'testuser', password: 'password' });
+**GET /api/v1/suggestions tests:**
+- Returns typeahead suggestions as array
 
-    sessionCookie = loginResponse.headers['set-cookie'][0];
-  });
+**E2E Tests (Playwright):**
 
-  afterAll(async () => {
-    await teardownTestDb();
-  });
+beforeEach logs in via form submission, waits for redirect.
 
-  describe('GET /api/v1/search', () => {
-    it('returns matching posts with highlights', async () => {
-      const response = await request(app)
-        .get('/api/v1/search')
-        .query({ query: 'vacation' })
-        .set('Cookie', sessionCookie)
-        .expect(200);
+**Full search flow test:**
+- Fill search bar with "vacation"
+- Wait for suggestions listbox and first option
+- Press Enter to search
+- Wait for feed and first article
+- Verify mark.search-highlight contains query
 
-      expect(response.body.results).toBeDefined();
-      expect(response.body.results.length).toBeGreaterThan(0);
-      expect(response.body.results[0].highlights).toBeDefined();
-      expect(response.body.took_ms).toBeLessThan(500);
-    });
-
-    it('respects privacy - only shows authorized posts', async () => {
-      const response = await request(app)
-        .get('/api/v1/search')
-        .query({ query: 'private' })
-        .set('Cookie', sessionCookie)
-        .expect(200);
-
-      // Should not include posts from non-friends with friends-only visibility
-      const results = response.body.results;
-      for (const result of results) {
-        expect(result.visibility).not.toBe('friends');
-        // Or if friends-only, author should be a friend
-      }
-    });
-
-    it('filters by post type', async () => {
-      const response = await request(app)
-        .get('/api/v1/search')
-        .query({ query: 'test', postType: 'photo' })
-        .set('Cookie', sessionCookie)
-        .expect(200);
-
-      for (const result of response.body.results) {
-        expect(result.post_type).toBe('photo');
-      }
-    });
-
-    it('validates query parameters', async () => {
-      const response = await request(app)
-        .get('/api/v1/search')
-        .query({ query: '' }) // Empty query
-        .set('Cookie', sessionCookie)
-        .expect(400);
-
-      expect(response.body.code).toBe('INVALID_QUERY');
-    });
-
-    it('requires authentication', async () => {
-      await request(app)
-        .get('/api/v1/search')
-        .query({ query: 'test' })
-        .expect(401);
-    });
-  });
-
-  describe('GET /api/v1/suggestions', () => {
-    it('returns typeahead suggestions', async () => {
-      const response = await request(app)
-        .get('/api/v1/suggestions')
-        .query({ query: 'vac' })
-        .set('Cookie', sessionCookie)
-        .expect(200);
-
-      expect(response.body.suggestions).toBeDefined();
-      expect(Array.isArray(response.body.suggestions)).toBe(true);
-    });
-  });
-});
-
-// E2E test with Playwright
-// frontend/e2e/search.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Search Flow', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="username"]', 'alice');
-    await page.fill('input[name="password"]', 'password123');
-    await page.click('button[type="submit"]');
-    await page.waitForURL('/');
-  });
-
-  test('full search flow', async ({ page }) => {
-    // Type in search bar
-    const searchBar = page.getByRole('combobox', { name: /search/i });
-    await searchBar.fill('vacation');
-
-    // Wait for suggestions
-    await expect(page.getByRole('listbox')).toBeVisible();
-    await expect(page.getByRole('option').first()).toBeVisible();
-
-    // Press Enter to search
-    await searchBar.press('Enter');
-
-    // Wait for results
-    await expect(page.getByRole('feed')).toBeVisible();
-    await expect(page.getByRole('article').first()).toBeVisible();
-
-    // Verify highlights are present
-    const highlight = page.locator('mark.search-highlight').first();
-    await expect(highlight).toBeVisible();
-    await expect(highlight).toContainText(/vacation/i);
-  });
-
-  test('filters work correctly', async ({ page }) => {
-    await page.getByRole('combobox', { name: /search/i }).fill('test');
-    await page.keyboard.press('Enter');
-
-    // Open filters
-    await page.getByRole('button', { name: /filter/i }).click();
-
-    // Select photo filter
-    await page.getByRole('radio', { name: /photos/i }).click();
-
-    // Apply
-    await page.getByRole('button', { name: /apply/i }).click();
-
-    // Verify URL updated
-    await expect(page).toHaveURL(/postType=photo/);
-
-    // Verify results are photos
-    const results = page.getByRole('article');
-    await expect(results.first()).toBeVisible();
-  });
-});
-```
+**Filter test:**
+- Search, open filters, select photo radio
+- Apply, verify URL contains postType=photo
+- Verify first result is visible
 
 ---
 
@@ -1354,59 +352,21 @@ test.describe('Search Flow', () => {
 
 ### 6. Observability
 
-**Metrics Dashboard:**
+**Backend Metrics (Prometheus):**
 
-```typescript
-// Shared metrics between frontend and backend
+search_latency_ms histogram with cache_hit label, buckets [10, 50, 100, 200, 500, 1000].
 
-// Backend metrics (Prometheus)
-const metrics = {
-  searchLatency: new Histogram({
-    name: 'search_latency_ms',
-    help: 'Search request latency in milliseconds',
-    labelNames: ['cache_hit'],
-    buckets: [10, 50, 100, 200, 500, 1000]
-  }),
+cache_hits_total counter with type and layer labels.
 
-  cacheHits: new Counter({
-    name: 'cache_hits_total',
-    help: 'Cache hits by type',
-    labelNames: ['type', 'layer']
-  }),
+search_errors_total counter with error_code label.
 
-  searchErrors: new Counter({
-    name: 'search_errors_total',
-    help: 'Search errors by type',
-    labelNames: ['error_code']
-  })
-};
+**Frontend Metrics (Analytics):**
 
-// Frontend metrics (sent to analytics)
-function trackSearchMetrics(response: SearchResponse) {
-  analytics.track('search_completed', {
-    query_id: response.query_id,
-    result_count: response.results.length,
-    latency_ms: response.took_ms,
-    has_filters: Boolean(filters.postType || filters.dateRange),
-    is_cached: response.from_cache ?? false
-  });
-}
+trackSearchMetrics sends: query_id, result_count, latency_ms, has_filters, is_cached.
 
-function trackSearchInteraction(event: string, data: Record<string, unknown>) {
-  analytics.track(event, {
-    ...data,
-    timestamp: Date.now(),
-    session_id: getSessionId()
-  });
-}
+trackSearchInteraction sends event with data, timestamp, session_id.
 
-// Usage
-trackSearchInteraction('result_clicked', {
-  query: currentQuery,
-  result_position: index,
-  result_id: post.id
-});
-```
+Usage example: result_clicked event with query, result_position, result_id.
 
 ---
 

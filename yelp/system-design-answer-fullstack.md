@@ -2,37 +2,20 @@
 
 *45-minute system design interview format - Full-Stack Engineer Position*
 
-## Opening Statement
+## 📋 Opening Statement
 
 "I'll be designing a local business review and discovery platform like Yelp. As a full-stack engineer, I'll focus on how the frontend and backend integrate for geo-spatial search, the end-to-end review submission flow with optimistic updates, and the search experience from autocomplete to results rendering. Let me start by clarifying what we need to build."
 
 ---
 
-## 1. Requirements Clarification (3-4 minutes)
+## 🎯 1. Requirements Clarification (3-4 minutes)
 
 ### Functional Requirements
 
-1. **Search Experience (End-to-End)**
-   - Autocomplete suggestions from backend
-   - Geo-spatial search with filters
-   - Paginated results with faceted navigation
-   - URL state synchronization
-
-2. **Business Detail Pages**
-   - Business info fetched from API
-   - Reviews with infinite scroll
-   - Rating display and aggregation
-
-3. **Review System**
-   - Star rating and text submission
-   - Photo upload to object storage
-   - Optimistic UI updates with rollback
-   - Idempotent submission handling
-
-4. **User Flows**
-   - Session-based authentication
-   - Role-based access (user, business_owner, admin)
-   - Business owner management dashboard
+1. **Search Experience (End-to-End)** - Autocomplete suggestions, geo-spatial search with filters, paginated results with faceted navigation, URL state synchronization
+2. **Business Detail Pages** - Business info fetched from API, reviews with infinite scroll, rating display and aggregation
+3. **Review System** - Star rating and text submission, photo upload, optimistic UI updates with rollback, idempotent submission handling
+4. **User Flows** - Session-based authentication, role-based access (user, business_owner, admin), business owner management dashboard
 
 ### Non-Functional Requirements
 
@@ -43,9 +26,7 @@
 
 ---
 
-## 2. Full-Stack Architecture Overview (5-6 minutes)
-
-### System Architecture
+## 🏗️ 2. Full-Stack Architecture Overview (5-6 minutes)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -105,1476 +86,162 @@
 
 ---
 
-## 3. Deep Dive: Shared Type System (4-5 minutes)
+## 🔍 3. Deep Dive: Shared Type System (4-5 minutes)
 
-### Shared Types Package
+"I'm choosing a shared types package that both frontend and backend import. This ensures the API contract is enforced at compile time. We define Business, Review, SearchRequest, and SearchResponse types once, along with Zod schemas for runtime validation."
 
-```typescript
-// shared/types/index.ts
-// Used by both frontend and backend
+### Key Shared Types
 
-export interface Coordinates {
-  lat: number;
-  lng: number;
-}
+**Business**: id, name, description, address, city, state, zipCode, phone, website, location (Coordinates), categories, hours, amenities, averageRating, reviewCount, priceLevel, photoUrls, isActive, createdAt, updatedAt
 
-export interface Business {
-  id: string;
-  name: string;
-  description: string;
-  address: string;
-  city: string;
-  state: string;
-  zipCode: string;
-  phone: string | null;
-  website: string | null;
-  location: Coordinates;
-  categories: string[];
-  hours: BusinessHours;
-  amenities: string[];
-  averageRating: number;
-  reviewCount: number;
-  priceLevel: number | null;
-  photoUrls: string[];
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+**Review**: id, userId, businessId, rating, title, content, photoUrls, helpfulCount, isVerified, createdAt, updatedAt, user (optional nested)
 
-export interface BusinessHours {
-  [day: string]: { open: string; close: string } | null;
-}
+**SearchRequest**: q (optional), lat, lng, radius (default 10km), category, minRating, priceLevel, openNow, sort (relevance/rating/distance/reviews), page, limit
 
-export interface Review {
-  id: string;
-  userId: string;
-  businessId: string;
-  rating: number;
-  title: string;
-  content: string;
-  photoUrls: string[];
-  helpfulCount: number;
-  isVerified: boolean;
-  createdAt: string;
-  updatedAt: string;
-  user?: {
-    id: string;
-    displayName: string;
-    avatarUrl: string | null;
-  };
-}
+**SearchResponse**: businesses (BusinessSummary[]), facets (categories, priceLevels), pagination, meta (tookMs, cacheHit)
 
-// API Request/Response types
-export interface SearchRequest {
-  q?: string;
-  lat: number;
-  lng: number;
-  radius?: number; // km
-  category?: string;
-  minRating?: number;
-  priceLevel?: number;
-  openNow?: boolean;
-  sort?: 'relevance' | 'rating' | 'distance' | 'reviews';
-  page?: number;
-  limit?: number;
-}
+### Zod Validation Schemas
 
-export interface SearchResponse {
-  businesses: BusinessSummary[];
-  facets: {
-    categories: { key: string; count: number }[];
-    priceLevels: { key: number; count: number }[];
-  };
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  meta: {
-    tookMs: number;
-    cacheHit: boolean;
-  };
-}
-
-export interface BusinessSummary {
-  id: string;
-  name: string;
-  address: string;
-  city: string;
-  location: Coordinates;
-  distanceKm: number;
-  categories: string[];
-  averageRating: number;
-  reviewCount: number;
-  priceLevel: number | null;
-  photoUrl: string | null;
-}
-
-export interface CreateReviewRequest {
-  rating: number;
-  title: string;
-  content: string;
-  photoUrls?: string[];
-}
-
-export interface CreateReviewResponse {
-  review: Review;
-  updatedBusiness: {
-    averageRating: number;
-    reviewCount: number;
-  };
-}
-```
-
-### Zod Validation Schemas (Shared)
-
-```typescript
-// shared/validation/index.ts
-import { z } from 'zod';
-
-export const coordinatesSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180)
-});
-
-export const searchRequestSchema = z.object({
-  q: z.string().max(100).optional(),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-  radius: z.number().min(0.1).max(50).default(10),
-  category: z.string().max(50).optional(),
-  minRating: z.number().min(1).max(5).optional(),
-  priceLevel: z.number().min(1).max(4).optional(),
-  openNow: z.boolean().optional(),
-  sort: z.enum(['relevance', 'rating', 'distance', 'reviews']).default('relevance'),
-  page: z.number().int().min(1).default(1),
-  limit: z.number().int().min(1).max(50).default(20)
-});
-
-export const createReviewSchema = z.object({
-  rating: z.number().int().min(1).max(5),
-  title: z.string().min(3).max(200),
-  content: z.string().min(50).max(5000),
-  photoUrls: z.array(z.string().url()).max(5).optional()
-});
-
-export type SearchRequest = z.infer<typeof searchRequestSchema>;
-export type CreateReviewRequest = z.infer<typeof createReviewSchema>;
-```
+Shared Zod schemas validate coordinates (lat -90 to 90, lng -180 to 180), search parameters (radius 0.1-50km, page/limit constraints), and review creation (rating 1-5, title 3-200 chars, content 50-5000 chars, max 5 photos). Both frontend forms and backend routes use these same schemas.
 
 ---
 
-## 4. Deep Dive: Search Flow End-to-End (8-10 minutes)
+## 🔍 4. Deep Dive: Search Flow End-to-End (8-10 minutes)
 
-### Frontend: Search Bar with Autocomplete
+### Frontend: SearchBar with Autocomplete
 
-```tsx
-// frontend/src/components/search/SearchBar.tsx
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { useDebounce } from '../../hooks/useDebounce';
-import api from '../../services/api';
-import type { AutocompleteResponse } from 'shared/types';
-
-export function SearchBar() {
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<AutocompleteResponse['suggestions']>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const debouncedQuery = useDebounce(query, 200);
-  const navigate = useNavigate();
-
-  // Fetch autocomplete suggestions
-  useEffect(() => {
-    if (debouncedQuery.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsLoading(true);
-
-    api.get<AutocompleteResponse>('/search/autocomplete', {
-      params: { q: debouncedQuery },
-      signal: controller.signal
-    })
-      .then((res) => setSuggestions(res.data.suggestions))
-      .catch((err) => {
-        if (err.name !== 'CanceledError') {
-          console.error('Autocomplete error:', err);
-        }
-      })
-      .finally(() => setIsLoading(false));
-
-    return () => controller.abort();
-  }, [debouncedQuery]);
-
-  const handleSearch = useCallback((searchQuery: string) => {
-    navigate({
-      to: '/search',
-      search: { q: searchQuery }
-    });
-  }, [navigate]);
-
-  return (
-    <div className="relative">
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && handleSearch(query)}
-        placeholder="Restaurants, bars, coffee..."
-        className="w-full px-4 py-3 border rounded-lg"
-        aria-autocomplete="list"
-      />
-
-      {suggestions.length > 0 && (
-        <ul className="absolute top-full left-0 right-0 bg-white border rounded-lg shadow-lg z-50">
-          {suggestions.map((suggestion) => (
-            <li
-              key={`${suggestion.type}-${suggestion.id}`}
-              onClick={() => handleSearch(suggestion.name)}
-              className="px-4 py-2 hover:bg-gray-50 cursor-pointer"
-            >
-              <span className="font-medium">{suggestion.name}</span>
-              {suggestion.category && (
-                <span className="text-gray-500 ml-2">{suggestion.category}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-```
+The SearchBar component uses a debounced query (200ms delay) to fetch autocomplete suggestions. It maintains local state for the input value and suggestions list. An AbortController cancels in-flight requests when the user types more. Suggestions display business names with categories, and clicking navigates to /search with query params.
 
 ### Backend: Autocomplete Endpoint
 
-```typescript
-// backend/src/routes/search.ts
-import { Router } from 'express';
-import { z } from 'zod';
-import { esClient } from '../shared/elasticsearch';
-import { redis } from '../shared/cache';
-
-const router = Router();
-
-const autocompleteSchema = z.object({
-  q: z.string().min(2).max(50)
-});
-
-router.get('/autocomplete', async (req, res) => {
-  const parsed = autocompleteSchema.safeParse(req.query);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues });
-  }
-
-  const { q } = parsed.data;
-
-  // Check cache first
-  const cacheKey = `autocomplete:${q.toLowerCase()}`;
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return res.json({ suggestions: JSON.parse(cached), cacheHit: true });
-  }
-
-  // Query Elasticsearch with edge-ngram analyzer
-  const result = await esClient.search({
-    index: 'businesses',
-    body: {
-      size: 10,
-      query: {
-        bool: {
-          must: [
-            {
-              multi_match: {
-                query: q,
-                fields: ['name.autocomplete^3', 'categories^2', 'description'],
-                type: 'bool_prefix'
-              }
-            }
-          ],
-          filter: [{ term: { is_active: true } }]
-        }
-      },
-      _source: ['id', 'name', 'categories', 'average_rating']
-    }
-  });
-
-  const suggestions = result.hits.hits.map((hit: any) => ({
-    type: 'business',
-    id: hit._source.id,
-    name: hit._source.name,
-    category: hit._source.categories?.[0] || null,
-    rating: hit._source.average_rating
-  }));
-
-  // Cache for 5 minutes
-  await redis.setex(cacheKey, 300, JSON.stringify(suggestions));
-
-  res.json({ suggestions, cacheHit: false });
-});
-
-export default router;
-```
+The autocomplete endpoint validates input with Zod (min 2, max 50 chars), checks Redis cache first (key: autocomplete:{query}), then queries Elasticsearch using multi_match with bool_prefix type on name.autocomplete, categories, and description fields. Results are cached for 5 minutes.
 
 ### Backend: Search Endpoint with Geo-Distance
 
-```typescript
-// backend/src/routes/search.ts
-import { searchRequestSchema } from 'shared/validation';
-
-router.get('/', async (req, res) => {
-  const parsed = searchRequestSchema.safeParse(req.query);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues });
-  }
-
-  const { q, lat, lng, radius, category, minRating, priceLevel, openNow, sort, page, limit } = parsed.data;
-  const startTime = Date.now();
-
-  // Build cache key from normalized query
-  const cacheKey = `search:${JSON.stringify({ q, lat: lat.toFixed(3), lng: lng.toFixed(3), radius, category, minRating, priceLevel, sort, page, limit })}`;
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return res.json({ ...JSON.parse(cached), meta: { tookMs: Date.now() - startTime, cacheHit: true } });
-  }
-
-  // Build Elasticsearch query
-  const esQuery: any = {
-    bool: {
-      must: [],
-      filter: [
-        {
-          geo_distance: {
-            distance: `${radius}km`,
-            location: { lat, lon: lng }
-          }
-        },
-        { term: { is_active: true } }
-      ]
-    }
-  };
-
-  // Add text query if provided
-  if (q) {
-    esQuery.bool.must.push({
-      multi_match: {
-        query: q,
-        fields: ['name^3', 'categories^2', 'description'],
-        fuzziness: 'AUTO'
-      }
-    });
-  } else {
-    esQuery.bool.must.push({ match_all: {} });
-  }
-
-  // Add filters
-  if (category) {
-    esQuery.bool.filter.push({ term: { categories: category } });
-  }
-  if (minRating) {
-    esQuery.bool.filter.push({ range: { average_rating: { gte: minRating } } });
-  }
-  if (priceLevel) {
-    esQuery.bool.filter.push({ term: { price_level: priceLevel } });
-  }
-
-  // Build sort
-  const sortClauses: any[] = [];
-  switch (sort) {
-    case 'distance':
-      sortClauses.push({ _geo_distance: { location: { lat, lon: lng }, order: 'asc', unit: 'km' } });
-      break;
-    case 'rating':
-      sortClauses.push({ average_rating: 'desc' });
-      break;
-    case 'reviews':
-      sortClauses.push({ review_count: 'desc' });
-      break;
-    default:
-      sortClauses.push({ _score: 'desc' });
-      sortClauses.push({ _geo_distance: { location: { lat, lon: lng }, order: 'asc', unit: 'km' } });
-  }
-
-  // Execute search
-  const result = await esClient.search({
-    index: 'businesses',
-    body: {
-      query: esQuery,
-      sort: sortClauses,
-      from: (page - 1) * limit,
-      size: limit,
-      aggs: {
-        categories: { terms: { field: 'categories', size: 20 } },
-        price_levels: { terms: { field: 'price_level', size: 4 } }
-      }
-    }
-  });
-
-  // Transform results
-  const businesses = result.hits.hits.map((hit: any) => ({
-    ...hit._source,
-    distanceKm: hit.sort?.[sort === 'distance' ? 0 : 1] || null
-  }));
-
-  const response = {
-    businesses,
-    facets: {
-      categories: result.aggregations?.categories?.buckets || [],
-      priceLevels: result.aggregations?.price_levels?.buckets || []
-    },
-    pagination: {
-      page,
-      limit,
-      total: result.hits.total.value,
-      totalPages: Math.ceil(result.hits.total.value / limit)
-    }
-  };
-
-  // Cache results for 2 minutes
-  await redis.setex(cacheKey, 120, JSON.stringify(response));
-
-  res.json({
-    ...response,
-    meta: { tookMs: Date.now() - startTime, cacheHit: false }
-  });
-});
-```
+The main search endpoint builds an Elasticsearch query with geo_distance filter (using lat/lng/radius), text matching with fuzziness, and optional filters for category, minRating, and priceLevel. Sort options include distance (using _geo_distance), rating (desc), reviews count (desc), or relevance (score + distance). Aggregations provide facets for categories and price levels. Results are cached for 2 minutes with a cache key built from normalized query parameters.
 
 ### Frontend: Search Results Page
 
-```tsx
-// frontend/src/routes/search.tsx
-import { useState, useEffect } from 'react';
-import { useSearch, useNavigate } from '@tanstack/react-router';
-import { SearchBar } from '../components/search/SearchBar';
-import { FilterPanel } from '../components/search/FilterPanel';
-import { BusinessCard } from '../components/BusinessCard';
-import { MapView } from '../components/search/MapView';
-import api from '../services/api';
-import type { SearchResponse } from 'shared/types';
-
-export function SearchPage() {
-  const search = useSearch({ from: '/search' });
-  const navigate = useNavigate();
-  const [results, setResults] = useState<SearchResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-
-  // Fetch search results when URL params change
-  useEffect(() => {
-    const fetchResults = async () => {
-      setIsLoading(true);
-
-      // Get user location if not provided
-      let { lat, lng } = search;
-      if (!lat || !lng) {
-        const pos = await getCurrentPosition();
-        lat = pos.coords.latitude;
-        lng = pos.coords.longitude;
-      }
-
-      try {
-        const response = await api.get<SearchResponse>('/search', {
-          params: { ...search, lat, lng }
-        });
-        setResults(response.data);
-      } catch (error) {
-        console.error('Search failed:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchResults();
-  }, [search]);
-
-  const handleFilterChange = (key: string, value: any) => {
-    navigate({
-      to: '/search',
-      search: (prev) => ({ ...prev, [key]: value, page: 1 }),
-      replace: true
-    });
-  };
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <SearchBar initialQuery={search.q} />
-
-      <div className="flex gap-8 mt-8">
-        {/* Filters sidebar */}
-        <aside className="w-64 flex-shrink-0">
-          <FilterPanel
-            filters={search}
-            facets={results?.facets}
-            onChange={handleFilterChange}
-          />
-        </aside>
-
-        {/* Results */}
-        <main className="flex-1">
-          {/* View toggle and sort */}
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-gray-600">
-              {results?.pagination.total || 0} results
-              {results?.meta.cacheHit && (
-                <span className="text-xs ml-2">(cached)</span>
-              )}
-            </p>
-
-            <div className="flex gap-4">
-              <select
-                value={search.sort || 'relevance'}
-                onChange={(e) => handleFilterChange('sort', e.target.value)}
-                className="border rounded px-3 py-1"
-              >
-                <option value="relevance">Relevance</option>
-                <option value="rating">Highest Rated</option>
-                <option value="distance">Nearest</option>
-                <option value="reviews">Most Reviews</option>
-              </select>
-
-              <div className="flex border rounded">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`px-3 py-1 ${viewMode === 'list' ? 'bg-gray-100' : ''}`}
-                >
-                  List
-                </button>
-                <button
-                  onClick={() => setViewMode('map')}
-                  className={`px-3 py-1 ${viewMode === 'map' ? 'bg-gray-100' : ''}`}
-                >
-                  Map
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Results display */}
-          {isLoading ? (
-            <LoadingSkeleton />
-          ) : viewMode === 'list' ? (
-            <div className="space-y-4">
-              {results?.businesses.map((business) => (
-                <BusinessCard key={business.id} business={business} />
-              ))}
-            </div>
-          ) : (
-            <MapView
-              businesses={results?.businesses || []}
-              center={{ lat: search.lat, lng: search.lng }}
-            />
-          )}
-
-          {/* Pagination */}
-          {results && results.pagination.totalPages > 1 && (
-            <Pagination
-              current={results.pagination.page}
-              total={results.pagination.totalPages}
-              onChange={(page) => handleFilterChange('page', page)}
-            />
-          )}
-        </main>
-      </div>
-    </div>
-  );
-}
-```
+The SearchPage component syncs filters with URL search params, fetches user geolocation if not provided, and displays results in list or map view. FilterPanel updates URL params on change (replacing history to avoid back button pollution). Pagination controls navigate pages. The results count shows cache hit status for transparency.
 
 ---
 
-## 5. Deep Dive: Review Submission Flow (8-10 minutes)
+## 🔍 5. Deep Dive: Review Submission Flow (8-10 minutes)
 
 ### Frontend: Review Form with Optimistic Updates
 
-```tsx
-// frontend/src/components/business/ReviewForm.tsx
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { v4 as uuidv4 } from 'uuid';
-import { createReviewSchema, type CreateReviewRequest } from 'shared/validation';
-import api from '../../services/api';
-import { useAuthStore } from '../../stores/authStore';
+"I'm implementing optimistic updates because reviews should feel instant. The form generates a UUID idempotency key, creates a temporary review with a temp-{key} id, adds it to the UI immediately, then sends the POST request. On success, we swap the temp review for the real one. On failure, we remove the temp review and show an error."
 
-interface ReviewFormProps {
-  businessId: string;
-  onReviewCreated: (review: Review, updatedRating: number) => void;
-  onOptimisticAdd: (tempReview: Review) => void;
-  onOptimisticRemove: (tempId: string) => void;
-}
-
-export function ReviewForm({
-  businessId,
-  onReviewCreated,
-  onOptimisticAdd,
-  onOptimisticRemove
-}: ReviewFormProps) {
-  const { user } = useAuthStore();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<CreateReviewRequest>({
-    resolver: zodResolver(createReviewSchema),
-    defaultValues: { rating: 0, title: '', content: '' }
-  });
-
-  const currentRating = watch('rating');
-
-  const onSubmit = async (data: CreateReviewRequest) => {
-    if (!user) return;
-
-    setIsSubmitting(true);
-    const idempotencyKey = uuidv4();
-    const tempId = `temp-${idempotencyKey}`;
-
-    // Create optimistic review
-    const optimisticReview: Review = {
-      id: tempId,
-      userId: user.id,
-      businessId,
-      rating: data.rating,
-      title: data.title,
-      content: data.content,
-      photoUrls: [],
-      helpfulCount: 0,
-      isVerified: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      user: {
-        id: user.id,
-        displayName: user.displayName,
-        avatarUrl: user.avatarUrl
-      }
-    };
-
-    // Add optimistic review immediately
-    onOptimisticAdd(optimisticReview);
-
-    try {
-      const response = await api.post<CreateReviewResponse>(
-        `/businesses/${businessId}/reviews`,
-        data,
-        { headers: { 'Idempotency-Key': idempotencyKey } }
-      );
-
-      // Remove temp review and add real one
-      onOptimisticRemove(tempId);
-      onReviewCreated(response.data.review, response.data.updatedBusiness.averageRating);
-      reset();
-    } catch (error: any) {
-      // Remove optimistic review on failure
-      onOptimisticRemove(tempId);
-
-      if (error.response?.status === 409) {
-        alert('You have already reviewed this business');
-      } else if (error.response?.status === 429) {
-        alert('Too many reviews. Please try again later.');
-      } else {
-        alert('Failed to submit review. Please try again.');
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 bg-white p-6 rounded-lg shadow">
-      <h3 className="text-xl font-semibold">Write a Review</h3>
-
-      {/* Star rating */}
-      <div>
-        <label className="block font-medium mb-2">Your Rating</label>
-        <StarRating
-          rating={currentRating}
-          interactive
-          size="lg"
-          onChange={(rating) => setValue('rating', rating)}
-        />
-        {errors.rating && (
-          <p className="text-red-500 text-sm mt-1">{errors.rating.message}</p>
-        )}
-      </div>
-
-      {/* Title */}
-      <div>
-        <label htmlFor="title" className="block font-medium mb-2">Title</label>
-        <input
-          id="title"
-          type="text"
-          {...register('title')}
-          placeholder="Summarize your experience"
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yelp-red"
-        />
-        {errors.title && (
-          <p className="text-red-500 text-sm mt-1">{errors.title.message}</p>
-        )}
-      </div>
-
-      {/* Content */}
-      <div>
-        <label htmlFor="content" className="block font-medium mb-2">Your Review</label>
-        <textarea
-          id="content"
-          {...register('content')}
-          rows={5}
-          placeholder="Tell others about your experience..."
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-yelp-red resize-y"
-        />
-        {errors.content && (
-          <p className="text-red-500 text-sm mt-1">{errors.content.message}</p>
-        )}
-      </div>
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full py-3 bg-yelp-red text-white font-semibold rounded-lg
-                   hover:bg-red-700 disabled:bg-gray-400 transition-colors"
-      >
-        {isSubmitting ? 'Submitting...' : 'Post Review'}
-      </button>
-    </form>
-  );
-}
-```
+The ReviewForm component uses react-hook-form with zodResolver for validation. It tracks submission state and handles three scenarios: success (replace temp with real review, update business rating), conflict (user already reviewed this business), and rate limit (show retry message).
 
 ### Backend: Review Creation with Idempotency
 
-```typescript
-// backend/src/routes/reviews.ts
-import { Router } from 'express';
-import { createReviewSchema } from 'shared/validation';
-import { pool } from '../shared/db';
-import { redis } from '../shared/cache';
-import { rabbitMQ } from '../shared/queue';
-import { requireAuth } from '../middleware/auth';
+The backend review route first checks if the idempotency key exists in Redis (cached for 24 hours). If found, it returns the cached response. Otherwise, it starts a PostgreSQL transaction:
 
-const router = Router();
-
-router.post('/:businessId/reviews', requireAuth, async (req, res) => {
-  const { businessId } = req.params;
-  const userId = req.session.userId;
-  const idempotencyKey = req.headers['idempotency-key'] as string;
-
-  // Check idempotency key
-  if (idempotencyKey) {
-    const cached = await redis.get(`idempotency:${idempotencyKey}`);
-    if (cached) {
-      return res.status(JSON.parse(cached).status).json(JSON.parse(cached).body);
-    }
-  }
-
-  // Validate request body
-  const parsed = createReviewSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues });
-  }
-
-  const { rating, title, content, photoUrls } = parsed.data;
-
-  try {
-    // Start transaction
-    const client = await pool.connect();
-
-    try {
-      await client.query('BEGIN');
-
-      // Check for existing review (unique constraint will also catch this)
-      const existing = await client.query(
-        'SELECT id FROM reviews WHERE user_id = $1 AND business_id = $2',
-        [userId, businessId]
-      );
-
-      if (existing.rows.length > 0) {
-        await client.query('ROLLBACK');
-        const response = { error: 'You have already reviewed this business' };
-        if (idempotencyKey) {
-          await redis.setex(`idempotency:${idempotencyKey}`, 86400, JSON.stringify({ status: 409, body: response }));
-        }
-        return res.status(409).json(response);
-      }
-
-      // Insert review (trigger will update business rating)
-      const reviewResult = await client.query(
-        `INSERT INTO reviews (user_id, business_id, rating, title, content, photo_urls)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [userId, businessId, rating, title, content, photoUrls || []]
-      );
-
-      const review = reviewResult.rows[0];
-
-      // Get updated business rating
-      const businessResult = await client.query(
-        `SELECT rating_sum::float / NULLIF(review_count, 0) as average_rating, review_count
-         FROM businesses WHERE id = $1`,
-        [businessId]
-      );
-
-      const updatedBusiness = businessResult.rows[0];
-
-      await client.query('COMMIT');
-
-      // Publish event for async indexing
-      await rabbitMQ.publish('index.update', {
-        type: 'business',
-        action: 'update',
-        businessId,
-        timestamp: new Date().toISOString()
-      });
-
-      // Invalidate caches
-      await redis.del(`business:${businessId}`);
-      const searchKeys = await redis.keys('search:*');
-      if (searchKeys.length > 0) {
-        await redis.del(...searchKeys);
-      }
-
-      // Get user info for response
-      const userResult = await pool.query(
-        'SELECT id, display_name, avatar_url FROM users WHERE id = $1',
-        [userId]
-      );
-
-      const responseBody = {
-        review: {
-          ...review,
-          user: {
-            id: userResult.rows[0].id,
-            displayName: userResult.rows[0].display_name,
-            avatarUrl: userResult.rows[0].avatar_url
-          }
-        },
-        updatedBusiness: {
-          averageRating: updatedBusiness.average_rating,
-          reviewCount: updatedBusiness.review_count
-        }
-      };
-
-      // Cache idempotency response
-      if (idempotencyKey) {
-        await redis.setex(`idempotency:${idempotencyKey}`, 86400, JSON.stringify({ status: 201, body: responseBody }));
-      }
-
-      res.status(201).json(responseBody);
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  } catch (error: any) {
-    // Handle unique constraint violation
-    if (error.code === '23505') {
-      return res.status(409).json({ error: 'You have already reviewed this business' });
-    }
-    throw error;
-  }
-});
-
-export default router;
-```
+1. Check for existing review (unique constraint also catches this)
+2. Insert review (database trigger updates business rating_sum and review_count)
+3. Get updated business rating
+4. Commit transaction
+5. Publish index.update event to RabbitMQ for async Elasticsearch sync
+6. Invalidate Redis caches (business:{id} and search:* keys)
+7. Cache response with idempotency key
+8. Return review with user info and updated business rating
 
 ### Frontend: Business Page with Optimistic Reviews
 
-```tsx
-// frontend/src/routes/business.$slug.tsx
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from '@tanstack/react-router';
-import { BusinessHeader } from '../components/business/BusinessHeader';
-import { ReviewForm } from '../components/business/ReviewForm';
-import { ReviewsList } from '../components/business/ReviewsList';
-import api from '../services/api';
-import { useAuthStore } from '../stores/authStore';
-import type { Business, Review } from 'shared/types';
-
-export function BusinessDetailPage() {
-  const { slug } = useParams({ from: '/business/$slug' });
-  const { isAuthenticated } = useAuthStore();
-  const [business, setBusiness] = useState<Business | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Fetch business and reviews
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const [businessRes, reviewsRes] = await Promise.all([
-          api.get<{ business: Business }>(`/businesses/${slug}`),
-          api.get<{ reviews: Review[] }>(`/businesses/${slug}/reviews`)
-        ]);
-        setBusiness(businessRes.data.business);
-        setReviews(reviewsRes.data.reviews);
-      } catch (error) {
-        console.error('Failed to load business:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [slug]);
-
-  // Optimistic add
-  const handleOptimisticAdd = useCallback((tempReview: Review) => {
-    setReviews((prev) => [tempReview, ...prev]);
-
-    // Optimistically update rating
-    if (business) {
-      const newCount = business.reviewCount + 1;
-      const newRating = (business.averageRating * business.reviewCount + tempReview.rating) / newCount;
-      setBusiness({
-        ...business,
-        averageRating: newRating,
-        reviewCount: newCount
-      });
-    }
-  }, [business]);
-
-  // Optimistic remove (on failure)
-  const handleOptimisticRemove = useCallback((tempId: string) => {
-    setReviews((prev) => prev.filter((r) => r.id !== tempId));
-
-    // Revert rating (refetch business data)
-    api.get<{ business: Business }>(`/businesses/${slug}`)
-      .then((res) => setBusiness(res.data.business));
-  }, [slug]);
-
-  // Real review added
-  const handleReviewCreated = useCallback((review: Review, updatedRating: number) => {
-    setReviews((prev) => {
-      // Remove temp and add real
-      const withoutTemp = prev.filter((r) => !r.id.startsWith('temp-'));
-      return [review, ...withoutTemp];
-    });
-
-    if (business) {
-      setBusiness({
-        ...business,
-        averageRating: updatedRating,
-        reviewCount: business.reviewCount + 1
-      });
-    }
-  }, [business]);
-
-  if (isLoading || !business) {
-    return <LoadingSkeleton />;
-  }
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <BusinessHeader business={business} />
-
-      <div className="grid grid-cols-3 gap-8 mt-8">
-        {/* Main content */}
-        <div className="col-span-2">
-          {/* Review form (if authenticated) */}
-          {isAuthenticated && (
-            <ReviewForm
-              businessId={business.id}
-              onReviewCreated={handleReviewCreated}
-              onOptimisticAdd={handleOptimisticAdd}
-              onOptimisticRemove={handleOptimisticRemove}
-            />
-          )}
-
-          {/* Reviews list */}
-          <ReviewsList
-            reviews={reviews}
-            businessId={business.id}
-          />
-        </div>
-
-        {/* Sidebar */}
-        <aside>
-          <BusinessSidebar business={business} />
-        </aside>
-      </div>
-    </div>
-  );
-}
-```
+The BusinessDetailPage maintains state for business and reviews. The handleOptimisticAdd function adds the temp review and calculates a new average rating. The handleOptimisticRemove function removes the temp review and refetches business data to restore correct rating. The handleReviewCreated function swaps temp for real review and updates the rating from the server response.
 
 ---
 
-## 6. Deep Dive: API Client with Type Safety (4-5 minutes)
+## 🔍 6. Deep Dive: API Client with Type Safety (4-5 minutes)
+
+"I'm using a typed API client wrapper around Axios. Each endpoint has a specific function with typed parameters and return values. This catches API mismatches at compile time rather than runtime."
 
 ### Typed API Client
 
-```typescript
-// frontend/src/services/api.ts
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import type {
-  SearchRequest,
-  SearchResponse,
-  CreateReviewRequest,
-  CreateReviewResponse,
-  Business,
-  Review
-} from 'shared/types';
+The api module exports domain-specific clients:
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
-  withCredentials: true, // Include session cookies
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
+**searchApi**: search(params: SearchRequest) returns SearchResponse, autocomplete(q: string) returns suggestions array
 
-// Request interceptor for error handling
-api.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Redirect to login on auth failure
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+**businessApi**: getById(id) returns Business, getReviews(id, page, limit) returns reviews with hasMore, createReview(businessId, data, idempotencyKey) returns CreateReviewResponse
 
-// Type-safe API methods
-export const searchApi = {
-  search: (params: SearchRequest) =>
-    api.get<SearchResponse>('/search', { params }),
+**authApi**: login, register, logout, me endpoints for session management
 
-  autocomplete: (q: string, signal?: AbortSignal) =>
-    api.get<{ suggestions: AutocompleteSuggestion[] }>('/search/autocomplete', {
-      params: { q },
-      signal
-    })
-};
-
-export const businessApi = {
-  getById: (id: string) =>
-    api.get<{ business: Business }>(`/businesses/${id}`),
-
-  getReviews: (id: string, page = 1, limit = 10) =>
-    api.get<{ reviews: Review[]; hasMore: boolean }>(
-      `/businesses/${id}/reviews`,
-      { params: { page, limit } }
-    ),
-
-  createReview: (
-    businessId: string,
-    data: CreateReviewRequest,
-    idempotencyKey: string
-  ) =>
-    api.post<CreateReviewResponse>(
-      `/businesses/${businessId}/reviews`,
-      data,
-      { headers: { 'Idempotency-Key': idempotencyKey } }
-    )
-};
-
-export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<{ user: User }>('/auth/login', { email, password }),
-
-  register: (data: RegisterRequest) =>
-    api.post<{ user: User }>('/auth/register', data),
-
-  logout: () =>
-    api.post('/auth/logout'),
-
-  me: () =>
-    api.get<{ user: User }>('/auth/me')
-};
-
-export default api;
-```
-
-### Backend: Type-Safe Route Handlers
-
-```typescript
-// backend/src/routes/businesses.ts
-import { Router, Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
-import type { Business, BusinessSummary } from 'shared/types';
-
-const router = Router();
-
-// Param validation schema
-const businessIdSchema = z.object({
-  id: z.string().uuid()
-});
-
-// Type-safe handler wrapper
-function asyncHandler<T extends z.ZodTypeAny>(
-  schema: T,
-  handler: (
-    req: Request,
-    res: Response,
-    params: z.infer<T>
-  ) => Promise<void>
-) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const parsed = schema.safeParse({ ...req.params, ...req.query, ...req.body });
-      if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.issues });
-      }
-      await handler(req, res, parsed.data);
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-router.get('/:id', asyncHandler(businessIdSchema, async (req, res, { id }) => {
-  // Check cache
-  const cached = await redis.get(`business:${id}`);
-  if (cached) {
-    return res.json({ business: JSON.parse(cached), cacheHit: true });
-  }
-
-  // Query database
-  const result = await pool.query(
-    `SELECT
-      b.*,
-      rating_sum::float / NULLIF(review_count, 0) as average_rating,
-      ST_X(location::geometry) as lng,
-      ST_Y(location::geometry) as lat
-     FROM businesses b
-     WHERE id = $1 AND is_active = true`,
-    [id]
-  );
-
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Business not found' });
-  }
-
-  const business: Business = transformBusinessRow(result.rows[0]);
-
-  // Cache for 5 minutes
-  await redis.setex(`business:${id}`, 300, JSON.stringify(business));
-
-  res.json({ business, cacheHit: false });
-}));
-
-export default router;
-```
+The base Axios instance includes credentials (for session cookies) and a response interceptor that redirects to /login on 401 errors.
 
 ---
 
-## 7. Deep Dive: Rate Limiting Integration (3-4 minutes)
+## 🔍 7. Deep Dive: Rate Limiting Integration (3-4 minutes)
 
 ### Backend: Rate Limit Middleware
 
-```typescript
-// backend/src/middleware/rateLimit.ts
-import { Request, Response, NextFunction } from 'express';
-import { redis } from '../shared/cache';
+The rateLimit middleware uses a Redis Lua script for atomic check-and-increment. It tracks request count per key (e.g., user ID or IP) within a sliding window. Response headers include X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset. When exceeded, returns 429 with Retry-After header.
 
-interface RateLimitConfig {
-  limit: number;
-  windowSeconds: number;
-  keyPrefix: string;
-  keyExtractor: (req: Request) => string;
-}
-
-export function rateLimit(config: RateLimitConfig) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const key = `${config.keyPrefix}:${config.keyExtractor(req)}`;
-
-    const script = `
-      local key = KEYS[1]
-      local limit = tonumber(ARGV[1])
-      local window = tonumber(ARGV[2])
-      local current = redis.call('GET', key)
-
-      if current and tonumber(current) >= limit then
-        return {0, tonumber(current), redis.call('TTL', key)}
-      else
-        local count = redis.call('INCR', key)
-        if count == 1 then
-          redis.call('EXPIRE', key, window)
-        end
-        return {1, count, redis.call('TTL', key)}
-      end
-    `;
-
-    const [allowed, count, ttl] = await redis.eval(
-      script, 1, key, config.limit, config.windowSeconds
-    ) as [number, number, number];
-
-    res.set({
-      'X-RateLimit-Limit': config.limit.toString(),
-      'X-RateLimit-Remaining': Math.max(0, config.limit - count).toString(),
-      'X-RateLimit-Reset': (Math.floor(Date.now() / 1000) + ttl).toString()
-    });
-
-    if (allowed === 0) {
-      res.set('Retry-After', ttl.toString());
-      return res.status(429).json({
-        error: 'Too many requests',
-        retryAfter: ttl
-      });
-    }
-
-    next();
-  };
-}
-
-// Usage
-const reviewRateLimit = rateLimit({
-  limit: 10,
-  windowSeconds: 3600,
-  keyPrefix: 'ratelimit:reviews',
-  keyExtractor: (req) => req.session?.userId || req.ip
-});
-
-router.post('/:businessId/reviews', requireAuth, reviewRateLimit, createReviewHandler);
-```
+Configuration example for reviews: limit 10, windowSeconds 3600 (10 reviews per hour per user).
 
 ### Frontend: Handling Rate Limit Errors
 
-```typescript
-// frontend/src/services/api.ts
-api.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError<{ error: string; retryAfter?: number }>) => {
-    if (error.response?.status === 429) {
-      const retryAfter = error.response.data.retryAfter || 60;
-      const minutes = Math.ceil(retryAfter / 60);
-
-      // Show user-friendly message
-      toast.error(`Too many requests. Please try again in ${minutes} minute(s).`);
-    }
-    return Promise.reject(error);
-  }
-);
-```
+The Axios response interceptor catches 429 errors, extracts the retryAfter value from the response, and shows a user-friendly toast message like "Too many requests. Please try again in X minute(s)."
 
 ---
 
-## 8. Deep Dive: Error Handling (3-4 minutes)
+## 🔍 8. Deep Dive: Error Handling (3-4 minutes)
 
 ### Backend: Error Middleware
 
-```typescript
-// backend/src/middleware/errorHandler.ts
-import { Request, Response, NextFunction } from 'express';
-import { ZodError } from 'zod';
-import { logger } from '../shared/logger';
-
-export class AppError extends Error {
-  constructor(
-    public statusCode: number,
-    public message: string,
-    public code?: string
-  ) {
-    super(message);
-    this.name = 'AppError';
-  }
-}
-
-export function errorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  _next: NextFunction
-) {
-  // Log error
-  logger.error({
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    userId: req.session?.userId
-  });
-
-  // Zod validation errors
-  if (err instanceof ZodError) {
-    return res.status(400).json({
-      error: 'Validation failed',
-      details: err.issues.map((issue) => ({
-        path: issue.path.join('.'),
-        message: issue.message
-      }))
-    });
-  }
-
-  // Application errors
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
-      error: err.message,
-      code: err.code
-    });
-  }
-
-  // Database constraint violations
-  if ((err as any).code === '23505') {
-    return res.status(409).json({
-      error: 'Resource already exists'
-    });
-  }
-
-  // Default server error
-  res.status(500).json({
-    error: 'Internal server error'
-  });
-}
-```
+The error handler middleware handles multiple error types:
+- **ZodError**: Returns 400 with validation details (path and message for each issue)
+- **AppError**: Custom errors with statusCode, message, and optional code
+- **Database constraint violations** (code 23505): Returns 409 "Resource already exists"
+- **Unknown errors**: Returns 500 "Internal server error" and logs full stack trace
 
 ### Frontend: Error Boundary
 
-```tsx
-// frontend/src/components/ErrorBoundary.tsx
-import { Component, ReactNode } from 'react';
-
-interface ErrorBoundaryProps {
-  children: ReactNode;
-  fallback?: ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false, error: null };
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
-
-    // Report to error tracking service
-    if (import.meta.env.PROD) {
-      // reportError(error, errorInfo);
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="flex flex-col items-center justify-center min-h-[400px]">
-          <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
-          <p className="text-gray-600 mb-4">We're sorry for the inconvenience.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-yelp-red text-white rounded-lg"
-          >
-            Reload Page
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-```
+A React ErrorBoundary component catches rendering errors, logs them (with error reporting in production), and displays a fallback UI with a reload button. This prevents the entire app from crashing due to component errors.
 
 ---
 
-## 9. Trade-offs and Alternatives (3-4 minutes)
+## ⚖️ 9. Trade-offs and Alternatives (3-4 minutes)
 
 ### API Design
 
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-| REST | Simple, cacheable, familiar | Over/under-fetching | **Chosen** - fits CRUD well |
-| GraphQL | Flexible queries | Complexity, caching harder | Consider for mobile |
-| tRPC | Full type safety | Coupling, learning curve | Good for monorepo |
+| Option | Decision |
+|--------|----------|
+| ✅ REST | Simple, cacheable, familiar - fits CRUD well |
+| ❌ GraphQL | Flexible queries but adds complexity, harder caching |
+| ❌ tRPC | Full type safety but tight coupling, learning curve |
 
 ### State Management
 
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-| Zustand | Lightweight, simple | Less structure | **Chosen** - right-sized |
-| TanStack Query | Great for server state | Overkill for simple cases | Add for complex caching |
-| Redux | Predictable, DevTools | Boilerplate | Too heavy for this app |
+| Option | Decision |
+|--------|----------|
+| ✅ Zustand | Lightweight, simple - right-sized for this app |
+| ❌ TanStack Query | Great for server state but overkill for simple cases |
+| ❌ Redux | Predictable with DevTools but too much boilerplate |
 
 ### Validation
 
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-| Zod (shared) | Type inference, runtime + compile | Bundle size | **Chosen** - single source of truth |
-| Yup | Mature, expressive | No type inference | Legacy choice |
-| io-ts | Functional style | Steep learning curve | For FP shops |
+| Option | Decision |
+|--------|----------|
+| ✅ Zod (shared) | Type inference + runtime validation - single source of truth |
+| ❌ Yup | Mature and expressive but no TypeScript type inference |
+| ❌ io-ts | Functional style but steep learning curve |
 
 ---
 
-## 10. Monitoring and Observability (2-3 minutes)
+## 📊 10. Monitoring and Observability (2-3 minutes)
 
 ### Frontend Performance Metrics
 
-```typescript
-// frontend/src/utils/performance.ts
-export function reportWebVitals() {
-  if (typeof window === 'undefined') return;
-
-  import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-    getCLS((metric) => sendToAnalytics('CLS', metric.value));
-    getFID((metric) => sendToAnalytics('FID', metric.value));
-    getFCP((metric) => sendToAnalytics('FCP', metric.value));
-    getLCP((metric) => sendToAnalytics('LCP', metric.value));
-    getTTFB((metric) => sendToAnalytics('TTFB', metric.value));
-  });
-}
-
-function sendToAnalytics(name: string, value: number) {
-  // Send to backend metrics endpoint
-  navigator.sendBeacon('/api/v1/metrics', JSON.stringify({
-    name,
-    value,
-    page: window.location.pathname,
-    timestamp: Date.now()
-  }));
-}
-```
+Web Vitals collection (CLS, FID, FCP, LCP, TTFB) using the web-vitals library. Metrics are sent to the backend via navigator.sendBeacon to avoid blocking page unload. Each metric includes the page path and timestamp.
 
 ### Backend Request Tracing
 
-```typescript
-// backend/src/middleware/tracing.ts
-import { Request, Response, NextFunction } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-
-export function tracingMiddleware(req: Request, res: Response, next: NextFunction) {
-  const requestId = req.headers['x-request-id'] as string || uuidv4();
-  const startTime = Date.now();
-
-  // Add to request context
-  req.requestId = requestId;
-  res.setHeader('X-Request-ID', requestId);
-
-  // Log on response finish
-  res.on('finish', () => {
-    const duration = Date.now() - startTime;
-
-    logger.info({
-      requestId,
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      duration,
-      userId: req.session?.userId
-    });
-
-    // Record metrics
-    metrics.httpRequestDuration.observe(
-      { method: req.method, path: req.route?.path || req.path, status: res.statusCode },
-      duration / 1000
-    );
-  });
-
-  next();
-}
-```
+A tracing middleware generates/propagates request IDs (X-Request-ID header), logs method, path, status, duration, and userId on response finish. Prometheus metrics track HTTP request duration histograms with labels for method, path, and status code.
 
 ---
 
-## Summary
+## 🚀 Summary
 
 The key full-stack insights for Yelp's design are:
 

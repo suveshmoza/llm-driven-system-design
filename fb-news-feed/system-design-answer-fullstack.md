@@ -71,147 +71,48 @@
 
 ### TypeScript Types Package
 
-"Creating a shared types package ensures API contract consistency:
+"Creating a shared types package ensures API contract consistency."
 
-```typescript
-// packages/shared-types/src/index.ts
+**User Types**
 
-// ================ User Types ================
-export interface User {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarUrl: string;
-  bio?: string;
-  followerCount: number;
-  followingCount: number;
-  isCelebrity: boolean;  // >= 10K followers
-  createdAt: string;     // ISO date
-}
+The User interface includes: id, username, displayName, avatarUrl, optional bio, followerCount, followingCount, isCelebrity flag (true if >= 10K followers), and createdAt timestamp. UserProfile extends User with viewer-specific fields: isFollowing and mutualFriends count.
 
-export interface UserProfile extends User {
-  isFollowing: boolean;  // Viewer-specific
-  mutualFriends: number;
-}
+**Post Types**
 
-// ================ Post Types ================
-export type PostPrivacy = 'public' | 'friends';
-export type PostType = 'text' | 'image' | 'video' | 'link';
+PostPrivacy is either 'public' or 'friends'. PostType covers 'text', 'image', 'video', or 'link'.
 
-export interface Post {
-  id: string;
-  authorId: string;
-  author: UserSummary;  // Denormalized for display
-  content: string;
-  imageUrl?: string;
-  postType: PostType;
-  privacy: PostPrivacy;
-  likeCount: number;
-  commentCount: number;
-  shareCount: number;
-  isLiked: boolean;     // Viewer-specific
-  createdAt: string;
-  updatedAt: string;
-}
+The Post interface includes: id, authorId, denormalized author (UserSummary), content, optional imageUrl, postType, privacy, likeCount, commentCount, shareCount, viewer-specific isLiked flag, createdAt, and updatedAt.
 
-export interface UserSummary {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarUrl: string;
-}
+UserSummary is a lightweight user reference: id, username, displayName, avatarUrl.
 
-// ================ Comment Types ================
-export interface Comment {
-  id: string;
-  postId: string;
-  userId: string;
-  user: UserSummary;
-  content: string;
-  likeCount: number;
-  createdAt: string;
-}
+**Comment Types**
 
-// ================ API Request/Response Types ================
-export interface CreatePostRequest {
-  content: string;
-  imageUrl?: string;
-  privacy: PostPrivacy;
-}
+Comment includes: id, postId, userId, user (UserSummary), content, likeCount, and createdAt.
 
-export interface CreatePostResponse {
-  post: Post;
-  conflicts?: string[];  // If any validation warnings
-}
+**API Request/Response Types**
 
-export interface FeedResponse {
-  posts: Post[];
-  pagination: {
-    nextCursor: string | null;
-    hasMore: boolean;
-  };
-}
+| Type | Fields |
+|------|--------|
+| CreatePostRequest | content, optional imageUrl, privacy |
+| CreatePostResponse | post, optional conflicts array |
+| FeedResponse | posts array, pagination (nextCursor, hasMore) |
+| CreateCommentRequest | content |
+| EngagementUpdate | postId, likeCount, commentCount, shareCount |
 
-export interface CreateCommentRequest {
-  content: string;
-}
+**WebSocket Message Types**
 
-export interface EngagementUpdate {
-  postId: string;
-  likeCount: number;
-  commentCount: number;
-  shareCount: number;
-}
+| Direction | Message Types |
+|-----------|---------------|
+| Client -> Server | subscribe_feed, unsubscribe_feed, ping |
+| Server -> Client | new_post, post_update, engagement_update, connection_ack, pong, error |
 
-// ================ WebSocket Message Types ================
-export type ClientMessageType =
-  | 'subscribe_feed'
-  | 'unsubscribe_feed'
-  | 'ping';
+ClientMessage contains: type, optional payload, optional requestId. ServerMessage contains: type, payload, timestamp, optional correlationId (matches requestId).
 
-export type ServerMessageType =
-  | 'new_post'
-  | 'post_update'
-  | 'engagement_update'
-  | 'connection_ack'
-  | 'pong'
-  | 'error';
+NewPostPayload wraps a Post object. EngagementUpdatePayload contains: postId, field (likeCount/commentCount/shareCount), delta, and newValue.
 
-export interface ClientMessage {
-  type: ClientMessageType;
-  payload?: unknown;
-  requestId?: string;
-}
+**API Error Types**
 
-export interface ServerMessage {
-  type: ServerMessageType;
-  payload: unknown;
-  timestamp: string;
-  correlationId?: string;  // Matches requestId
-}
-
-export interface NewPostPayload {
-  post: Post;
-}
-
-export interface EngagementUpdatePayload {
-  postId: string;
-  field: 'likeCount' | 'commentCount' | 'shareCount';
-  delta: number;
-  newValue: number;
-}
-
-// ================ API Error Types ================
-export interface ApiError {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-export type ApiResponse<T> =
-  | { success: true; data: T }
-  | { success: false; error: ApiError };
-```
+ApiError includes: code, message, optional details object. ApiResponse<T> is a discriminated union: either success true with data, or success false with error.
 
 ---
 
@@ -219,157 +120,31 @@ export type ApiResponse<T> =
 
 ### API Endpoints
 
-```typescript
-// Backend: routes/feed.ts
-import { Router } from 'express';
-import { FeedResponse, Post } from '@fb-clone/shared-types';
+**GET /api/v1/feed** - Fetch personalized feed for authenticated user
 
-const router = Router();
+Query params: cursor (optional string for pagination), limit (optional, default 20, max 50). Returns FeedResponse.
 
-/**
- * GET /api/v1/feed
- * Fetch personalized feed for authenticated user
- *
- * Query params:
- *   - cursor: string (optional) - Pagination cursor
- *   - limit: number (optional, default 20, max 50)
- *
- * Response: FeedResponse
- */
-router.get('/feed', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const { cursor, limit = 20 } = req.query;
+The handler fetches feed from feedService with pagination, attaches viewer-specific isLiked status via engagementService, and returns the response with success true.
 
-  const feedResult = await feedService.getFeed(userId, {
-    cursor: cursor as string,
-    limit: Math.min(Number(limit), 50),
-  });
+**POST /api/v1/posts** - Create a new post
 
-  // Attach viewer-specific data (isLiked)
-  const postsWithLikes = await engagementService.attachLikeStatus(
-    feedResult.posts,
-    userId
-  );
+Headers: X-Idempotency-Key (required for retry safety). Body: CreatePostRequest. Returns CreatePostResponse.
 
-  const response: FeedResponse = {
-    posts: postsWithLikes,
-    pagination: feedResult.pagination,
-  };
+The handler validates that content or imageUrl exists, creates the post via postService, enqueues a fan-out event to Kafka with type, postId, authorId, and createdAt, then returns 201 with the post.
 
-  res.json({ success: true, data: response });
-});
+**POST /api/v1/posts/:postId/like** - Like a post (idempotent)
 
-/**
- * POST /api/v1/posts
- * Create a new post
- *
- * Headers:
- *   - X-Idempotency-Key: string (required for retry safety)
- *
- * Body: CreatePostRequest
- * Response: CreatePostResponse
- */
-router.post('/posts', authMiddleware, idempotencyMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const { content, imageUrl, privacy } = req.body;
-
-  // Validate
-  if (!content && !imageUrl) {
-    return res.status(400).json({
-      success: false,
-      error: { code: 'EMPTY_POST', message: 'Post must have content or image' }
-    });
-  }
-
-  // Create post
-  const post = await postService.createPost(userId, { content, imageUrl, privacy });
-
-  // Trigger async fan-out
-  await fanoutQueue.enqueue({
-    type: 'new_post',
-    postId: post.id,
-    authorId: userId,
-    createdAt: post.createdAt,
-  });
-
-  res.status(201).json({ success: true, data: { post } });
-});
-
-/**
- * POST /api/v1/posts/:postId/like
- * Like a post (idempotent)
- */
-router.post('/posts/:postId/like', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const { postId } = req.params;
-
-  const result = await engagementService.likePost(postId, userId);
-
-  // Broadcast engagement update
-  if (result.changed) {
-    await realtimeService.broadcastEngagementUpdate(postId, 'likeCount', 1);
-  }
-
-  res.json({ success: true, data: { liked: true, likeCount: result.newCount } });
-});
-
-export default router;
-```
+The handler calls engagementService.likePost, broadcasts engagement update via realtimeService if the like status changed, and returns the new like status and count.
 
 ### Frontend API Client
 
-```typescript
-// Frontend: api/feed.ts
-import { FeedResponse, CreatePostRequest, Post, ApiResponse } from '@fb-clone/shared-types';
+The feedApi object provides typed methods:
+- getFeed(cursor?): fetches /feed with optional cursor
+- createPost(data, idempotencyKey): POSTs to /posts with X-Idempotency-Key header
+- likePost(postId): POSTs to /posts/{postId}/like
+- unlikePost(postId): DELETEs /posts/{postId}/like
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
-
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    credentials: 'include', // Send session cookie
-  });
-
-  const json = await response.json() as ApiResponse<T>;
-
-  if (!json.success) {
-    throw new ApiError(json.error.code, json.error.message);
-  }
-
-  return json.data;
-}
-
-export const feedApi = {
-  getFeed: (cursor?: string): Promise<FeedResponse> =>
-    request(`/feed${cursor ? `?cursor=${cursor}` : ''}`),
-
-  createPost: (data: CreatePostRequest, idempotencyKey: string): Promise<{ post: Post }> =>
-    request('/posts', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: {
-        'X-Idempotency-Key': idempotencyKey,
-      },
-    }),
-
-  likePost: (postId: string): Promise<{ liked: boolean; likeCount: number }> =>
-    request(`/posts/${postId}/like`, { method: 'POST' }),
-
-  unlikePost: (postId: string): Promise<{ liked: boolean; likeCount: number }> =>
-    request(`/posts/${postId}/like`, { method: 'DELETE' }),
-};
-
-class ApiError extends Error {
-  constructor(public code: string, message: string) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
-```
+All methods use a shared request function that handles JSON content-type, credentials (include for session cookie), and ApiResponse parsing with ApiError throwing.
 
 ---
 
@@ -377,270 +152,79 @@ class ApiError extends Error {
 
 ### Backend WebSocket Gateway
 
-```typescript
-// Backend: services/websocketGateway.ts
-import WebSocket from 'ws';
-import { Redis } from 'ioredis';
-import {
-  ClientMessage,
-  ServerMessage,
-  NewPostPayload,
-  EngagementUpdatePayload,
-} from '@fb-clone/shared-types';
+The WebSocketGateway class manages real-time connections.
 
-interface ConnectedClient {
-  ws: WebSocket;
-  userId: string;
-  subscribedFeeds: Set<string>;
-}
+**State Management**
 
-export class WebSocketGateway {
-  private clients = new Map<string, ConnectedClient>();
-  private redis: Redis;
-  private subscriber: Redis;
+- clients: Map of clientId to ConnectedClient (ws, userId, subscribedFeeds set)
+- redis: Primary Redis connection for publishing
+- subscriber: Duplicate Redis connection for subscriptions
 
-  constructor(redis: Redis) {
-    this.redis = redis;
-    this.subscriber = redis.duplicate();
-    this.setupRedisSubscriber();
-  }
+**Redis Subscription Setup**
 
-  private setupRedisSubscriber() {
-    // Subscribe to all user feed channels
-    this.subscriber.psubscribe('feed_updates:*');
-    this.subscriber.psubscribe('celebrity_updates:*');
+Subscribes to patterns: feed_updates:* and celebrity_updates:*. On pmessage events, routes to handleRedisMessage.
 
-    this.subscriber.on('pmessage', (pattern, channel, message) => {
-      this.handleRedisMessage(channel, message);
-    });
-  }
+**Connection Handling**
 
-  handleConnection(ws: WebSocket, userId: string) {
-    const clientId = `${userId}:${Date.now()}`;
+On new connection:
+1. Generate clientId from userId and timestamp
+2. Create ConnectedClient record
+3. Send connection_ack with clientId
+4. Auto-subscribe to user's feed_updates:{userId} channel
+5. Subscribe to all followed celebrities' channels
+6. Set up message, close, and error handlers
 
-    const client: ConnectedClient = {
-      ws,
-      userId,
-      subscribedFeeds: new Set(),
-    };
+**Message Handling**
 
-    this.clients.set(clientId, client);
+| Message Type | Action |
+|--------------|--------|
+| ping | Reply with pong, include correlationId matching requestId |
+| subscribe_feed | Add feed_updates:{userId} to client's subscribed feeds |
 
-    // Send connection acknowledgment
-    this.send(ws, {
-      type: 'connection_ack',
-      payload: { clientId },
-      timestamp: new Date().toISOString(),
-    });
+**Redis Message Routing**
 
-    // Auto-subscribe to user's feed updates
-    client.subscribedFeeds.add(`feed_updates:${userId}`);
+When receiving Redis pub/sub messages, find all clients subscribed to the channel and send appropriate WebSocket message (new_post for both feed_updates and celebrity_updates channels).
 
-    // Subscribe to followed celebrities
-    this.subscribeToFollowedCelebrities(client);
+**Broadcasting Engagement Updates**
 
-    ws.on('message', (data) => this.handleMessage(client, data.toString()));
-    ws.on('close', () => this.handleDisconnect(clientId));
-    ws.on('error', (err) => console.error('WebSocket error:', err));
-  }
+The broadcastEngagementUpdate method creates an EngagementUpdatePayload and publishes to engagement:{postId} channel for all server instances to receive.
 
-  private async subscribeToFollowedCelebrities(client: ConnectedClient) {
-    const celebrities = await this.getCelebrityFollows(client.userId);
-    for (const celebId of celebrities) {
-      client.subscribedFeeds.add(`celebrity_updates:${celebId}`);
-    }
-  }
+**Disconnect Handling**
 
-  private handleMessage(client: ConnectedClient, data: string) {
-    try {
-      const message: ClientMessage = JSON.parse(data);
-
-      switch (message.type) {
-        case 'ping':
-          this.send(client.ws, {
-            type: 'pong',
-            payload: {},
-            timestamp: new Date().toISOString(),
-            correlationId: message.requestId,
-          });
-          break;
-
-        case 'subscribe_feed':
-          // Handle additional subscriptions
-          const { userId } = message.payload as { userId: string };
-          client.subscribedFeeds.add(`feed_updates:${userId}`);
-          break;
-
-        default:
-          console.warn('Unknown message type:', message.type);
-      }
-    } catch (error) {
-      console.error('Failed to parse message:', error);
-    }
-  }
-
-  private handleRedisMessage(channel: string, message: string) {
-    const payload = JSON.parse(message);
-
-    // Find all clients subscribed to this channel
-    for (const client of this.clients.values()) {
-      if (client.subscribedFeeds.has(channel)) {
-        if (channel.startsWith('feed_updates:')) {
-          this.send(client.ws, {
-            type: 'new_post',
-            payload: payload as NewPostPayload,
-            timestamp: new Date().toISOString(),
-          });
-        } else if (channel.startsWith('celebrity_updates:')) {
-          this.send(client.ws, {
-            type: 'new_post',
-            payload: payload as NewPostPayload,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
-    }
-  }
-
-  async broadcastEngagementUpdate(postId: string, field: string, delta: number) {
-    const payload: EngagementUpdatePayload = {
-      postId,
-      field: field as 'likeCount' | 'commentCount' | 'shareCount',
-      delta,
-      newValue: await this.getEngagementCount(postId, field),
-    };
-
-    // Publish to Redis for all instances
-    await this.redis.publish(`engagement:${postId}`, JSON.stringify(payload));
-  }
-
-  private send(ws: WebSocket, message: ServerMessage) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
-    }
-  }
-
-  private handleDisconnect(clientId: string) {
-    this.clients.delete(clientId);
-  }
-}
-```
+Simply removes the client from the clients map.
 
 ### Frontend WebSocket Hook
 
-```typescript
-// Frontend: hooks/useWebSocket.ts
-import { useEffect, useRef, useCallback } from 'react';
-import { useFeedStore } from '../stores/feedStore';
-import {
-  ServerMessage,
-  ClientMessage,
-  NewPostPayload,
-  EngagementUpdatePayload,
-} from '@fb-clone/shared-types';
+The useWebSocket hook manages client-side WebSocket connection.
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3000/ws';
+**Refs and State**
 
-export function useWebSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  const reconnectAttempts = useRef(0);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
+- wsRef: Current WebSocket connection
+- reconnectTimeoutRef: Scheduled reconnection
+- reconnectAttempts: Counter for backoff
+- heartbeatIntervalRef: Ping interval timer
 
-  const { handleNewPost, handleEngagementUpdate } = useFeedStore();
+**Connection Lifecycle**
 
-  const sendMessage = useCallback((message: ClientMessage) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    }
-  }, []);
+On open:
+- Reset reconnect attempts to 0
+- Start heartbeat (ping every 30 seconds)
 
-  const connect = useCallback(() => {
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
+On message:
+- Parse ServerMessage
+- Route by type: new_post calls handleNewPost, engagement_update calls handleEngagementUpdate, pong is acknowledged, error is logged
 
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      reconnectAttempts.current = 0;
+On close:
+- Clear heartbeat interval
+- Schedule reconnection
 
-      // Start heartbeat
-      heartbeatIntervalRef.current = setInterval(() => {
-        sendMessage({ type: 'ping', requestId: `ping-${Date.now()}` });
-      }, 30000);
-    };
+**Reconnection Strategy**
 
-    ws.onmessage = (event) => {
-      try {
-        const message: ServerMessage = JSON.parse(event.data);
+Exponential backoff: 1s, 2s, 4s, 8s... up to 30s max. Gives up after 10 attempts.
 
-        switch (message.type) {
-          case 'new_post':
-            const newPostPayload = message.payload as NewPostPayload;
-            handleNewPost(newPostPayload.post);
-            break;
+**Cleanup**
 
-          case 'engagement_update':
-            const engagementPayload = message.payload as EngagementUpdatePayload;
-            handleEngagementUpdate(
-              engagementPayload.postId,
-              engagementPayload.field,
-              engagementPayload.newValue
-            );
-            break;
-
-          case 'pong':
-            // Heartbeat acknowledged
-            break;
-
-          case 'error':
-            console.error('WebSocket error from server:', message.payload);
-            break;
-        }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      clearInterval(heartbeatIntervalRef.current);
-      scheduleReconnect();
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-  }, [handleNewPost, handleEngagementUpdate, sendMessage]);
-
-  const scheduleReconnect = useCallback(() => {
-    if (reconnectAttempts.current >= 10) {
-      console.error('Max reconnection attempts reached');
-      return;
-    }
-
-    // Exponential backoff: 1s, 2s, 4s, 8s, ... max 30s
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-    reconnectAttempts.current += 1;
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      console.log(`Reconnecting (attempt ${reconnectAttempts.current})...`);
-      connect();
-    }, delay);
-  }, [connect]);
-
-  useEffect(() => {
-    connect();
-
-    return () => {
-      wsRef.current?.close();
-      clearTimeout(reconnectTimeoutRef.current);
-      clearInterval(heartbeatIntervalRef.current);
-    };
-  }, [connect]);
-
-  return { sendMessage };
-}
-```
+Effect cleanup closes WebSocket and clears all timers.
 
 ---
 
@@ -648,193 +232,50 @@ export function useWebSocket() {
 
 ### Frontend Store with Optimistic Updates
 
-```typescript
-// Frontend: stores/feedStore.ts
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
-import { Post } from '@fb-clone/shared-types';
-import { feedApi } from '../api/feed';
-import { v4 as uuidv4 } from 'uuid';
+The useFeedStore (Zustand with immer) manages feed state and optimistic updates.
 
-interface PendingAction {
-  id: string;
-  type: 'like' | 'unlike' | 'create_post';
-  postId?: string;
-  originalState?: Partial<Post>;
-  timestamp: number;
-}
+**State Structure**
 
-interface FeedState {
-  posts: Post[];
-  postsById: Record<string, Post>;
-  pendingActions: Map<string, PendingAction>;
+- posts: Ordered array of Post objects
+- postsById: Lookup table for quick access
+- pendingActions: Map tracking in-flight mutations with original state for rollback
 
-  // Actions with optimistic updates
-  likePost: (postId: string) => Promise<void>;
-  unlikePost: (postId: string) => Promise<void>;
-  createPost: (content: string, imageUrl?: string) => Promise<Post>;
+**PendingAction Structure**
 
-  // Server reconciliation
-  handleEngagementUpdate: (postId: string, field: string, newValue: number) => void;
-  handleNewPost: (post: Post) => void;
-}
+Each pending action stores: id, type (like/unlike/create_post), optional postId, optional originalState (for rollback), and timestamp.
 
-export const useFeedStore = create<FeedState>()(
-  immer((set, get) => ({
-    posts: [],
-    postsById: {},
-    pendingActions: new Map(),
+**likePost Action**
 
-    likePost: async (postId) => {
-      const actionId = uuidv4();
-      const post = get().postsById[postId];
+1. Generate actionId (UUID)
+2. Early return if post not found or already liked
+3. Record pending action with original isLiked and likeCount
+4. Apply optimistic update: set isLiked true, increment likeCount
+5. Call API
+6. On success: remove pending action
+7. On failure: rollback to original state, remove pending action, rethrow
 
-      if (!post || post.isLiked) return;
+**createPost Action**
 
-      // Record pending action with original state
-      set((state) => {
-        state.pendingActions.set(actionId, {
-          id: actionId,
-          type: 'like',
-          postId,
-          originalState: { isLiked: post.isLiked, likeCount: post.likeCount },
-          timestamp: Date.now(),
-        });
+1. Generate idempotencyKey (UUID)
+2. Create tempId from key
+3. Build optimistic Post with temp ID, current user as author, zero counts
+4. Add to posts at index 0, add to postsById, record pending action
+5. Call API with idempotency key
+6. On success: replace temp post with real post in both structures, clear pending action
+7. On failure: remove temp post from both structures, clear pending action, rethrow
 
-        // Optimistic update
-        const p = state.postsById[postId];
-        p.isLiked = true;
-        p.likeCount += 1;
-      });
+**handleEngagementUpdate Action**
 
-      try {
-        await feedApi.likePost(postId);
+1. Find post in postsById
+2. Check if any pending action targets this post
+3. If pending action exists: skip update (optimistic value takes precedence)
+4. If no pending action: apply server value
 
-        // Success - remove pending action
-        set((state) => {
-          state.pendingActions.delete(actionId);
-        });
-      } catch (error) {
-        // Rollback on failure
-        set((state) => {
-          const action = state.pendingActions.get(actionId);
-          if (action?.originalState) {
-            const p = state.postsById[postId];
-            p.isLiked = action.originalState.isLiked!;
-            p.likeCount = action.originalState.likeCount!;
-          }
-          state.pendingActions.delete(actionId);
-        });
+**handleNewPost Action**
 
-        throw error;
-      }
-    },
-
-    createPost: async (content, imageUrl) => {
-      const idempotencyKey = uuidv4();
-      const tempId = `temp-${idempotencyKey}`;
-      const currentUser = useUserStore.getState().currentUser!;
-
-      // Create optimistic post
-      const optimisticPost: Post = {
-        id: tempId,
-        authorId: currentUser.id,
-        author: {
-          id: currentUser.id,
-          username: currentUser.username,
-          displayName: currentUser.displayName,
-          avatarUrl: currentUser.avatarUrl,
-        },
-        content,
-        imageUrl,
-        postType: imageUrl ? 'image' : 'text',
-        privacy: 'public',
-        likeCount: 0,
-        commentCount: 0,
-        shareCount: 0,
-        isLiked: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Add optimistic post at top
-      set((state) => {
-        state.posts.unshift(optimisticPost);
-        state.postsById[tempId] = optimisticPost;
-        state.pendingActions.set(tempId, {
-          id: tempId,
-          type: 'create_post',
-          timestamp: Date.now(),
-        });
-      });
-
-      try {
-        const { post: realPost } = await feedApi.createPost(
-          { content, imageUrl, privacy: 'public' },
-          idempotencyKey
-        );
-
-        // Replace temp post with real post
-        set((state) => {
-          const index = state.posts.findIndex(p => p.id === tempId);
-          if (index !== -1) {
-            state.posts[index] = realPost;
-          }
-          delete state.postsById[tempId];
-          state.postsById[realPost.id] = realPost;
-          state.pendingActions.delete(tempId);
-        });
-
-        return realPost;
-      } catch (error) {
-        // Remove optimistic post on failure
-        set((state) => {
-          state.posts = state.posts.filter(p => p.id !== tempId);
-          delete state.postsById[tempId];
-          state.pendingActions.delete(tempId);
-        });
-
-        throw error;
-      }
-    },
-
-    handleEngagementUpdate: (postId, field, newValue) => {
-      set((state) => {
-        const post = state.postsById[postId];
-        if (!post) return;
-
-        // Check if we have a pending action for this post
-        const hasPendingAction = Array.from(state.pendingActions.values())
-          .some(action => action.postId === postId);
-
-        if (hasPendingAction) {
-          // Don't override optimistic update - server will catch up
-          return;
-        }
-
-        // Apply server value
-        (post as any)[field] = newValue;
-      });
-    },
-
-    handleNewPost: (post) => {
-      set((state) => {
-        // Skip if already have this post (from our own optimistic update)
-        if (state.postsById[post.id]) return;
-
-        // Don't interrupt scrolling - queue for "new posts" banner
-        if (window.scrollY > 200) {
-          state.pendingUpdates.push(post);
-          state.newPostsCount += 1;
-        } else {
-          state.posts.unshift(post);
-          state.postsById[post.id] = post;
-        }
-      });
-    },
-  }))
-);
-```
+1. Skip if post already exists (from our own optimistic update)
+2. If user scrolled down (scrollY > 200): queue to pendingUpdates, increment newPostsCount for banner
+3. If at top: prepend to posts array and add to postsById
 
 ---
 
@@ -842,170 +283,41 @@ export const useFeedStore = create<FeedState>()(
 
 ### Backend Idempotency Middleware
 
-```typescript
-// Backend: middleware/idempotency.ts
-import { Request, Response, NextFunction } from 'express';
-import { Redis } from 'ioredis';
+**Constants**
 
-const redis = new Redis(process.env.REDIS_URL);
-const IDEMPOTENCY_TTL = 86400; // 24 hours
+- IDEMPOTENCY_TTL: 86400 seconds (24 hours)
 
-interface CachedResponse {
-  status: number;
-  body: unknown;
-  headers: Record<string, string>;
-}
+**CachedResponse Structure**
 
-export function idempotencyMiddleware(req: Request, res: Response, next: NextFunction) {
-  // Only apply to mutating requests
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return next();
-  }
+Stores: status code, body, and headers (Content-Type).
 
-  const idempotencyKey = req.headers['x-idempotency-key'] as string;
+**Middleware Flow**
 
-  if (!idempotencyKey) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'MISSING_IDEMPOTENCY_KEY',
-        message: 'X-Idempotency-Key header is required',
-      },
-    });
-  }
-
-  // Create composite key including user and path
-  const userId = req.user?.id || 'anonymous';
-  const compositeKey = `idempotency:${userId}:${req.path}:${idempotencyKey}`;
-
-  (async () => {
-    try {
-      // Check for existing response
-      const cached = await redis.get(compositeKey);
-
-      if (cached) {
-        const response: CachedResponse = JSON.parse(cached);
-
-        // Return cached response
-        Object.entries(response.headers).forEach(([key, value]) => {
-          res.setHeader(key, value);
-        });
-        res.setHeader('X-Idempotency-Replayed', 'true');
-
-        return res.status(response.status).json(response.body);
-      }
-
-      // Capture the response
-      const originalJson = res.json.bind(res);
-      res.json = function(body: unknown) {
-        // Cache successful responses
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          const cacheData: CachedResponse = {
-            status: res.statusCode,
-            body,
-            headers: {
-              'Content-Type': res.getHeader('Content-Type') as string || 'application/json',
-            },
-          };
-
-          redis.setex(compositeKey, IDEMPOTENCY_TTL, JSON.stringify(cacheData))
-            .catch(err => console.error('Failed to cache idempotent response:', err));
-        }
-
-        return originalJson(body);
-      };
-
-      next();
-    } catch (error) {
-      console.error('Idempotency check failed:', error);
-      // Fail open - allow request to proceed
-      next();
-    }
-  })();
-}
-```
+1. Only apply to mutating methods (POST, PUT, PATCH, DELETE)
+2. Extract X-Idempotency-Key header; return 400 if missing
+3. Build composite key: idempotency:{userId}:{path}:{idempotencyKey}
+4. Check Redis for existing cached response
+5. If cached: set headers, add X-Idempotency-Replayed: true, return cached response
+6. If not cached: wrap res.json to cache successful responses (2xx) before sending
+7. On Redis error: fail open (allow request to proceed)
 
 ### Frontend Retry with Idempotency
 
-```typescript
-// Frontend: api/client.ts
-import { v4 as uuidv4 } from 'uuid';
+**RetryConfig**
 
-interface RetryConfig {
-  maxRetries: number;
-  baseDelay: number;
-  maxDelay: number;
-}
+- maxRetries: 3 (default)
+- baseDelay: 1000ms
+- maxDelay: 10000ms
 
-const defaultRetryConfig: RetryConfig = {
-  maxRetries: 3,
-  baseDelay: 1000,
-  maxDelay: 10000,
-};
+**mutationRequest Function**
 
-export async function mutationRequest<T>(
-  path: string,
-  options: RequestInit,
-  retryConfig = defaultRetryConfig
-): Promise<T> {
-  // Generate idempotency key once per logical request
-  const idempotencyKey = uuidv4();
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
-    try {
-      const response = await fetch(`${API_BASE}${path}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Idempotency-Key': idempotencyKey,
-          ...options.headers,
-        },
-        credentials: 'include',
-      });
-
-      const json = await response.json();
-
-      // Check if replayed
-      if (response.headers.get('X-Idempotency-Replayed') === 'true') {
-        console.log(`Request replayed from idempotency cache: ${idempotencyKey}`);
-      }
-
-      if (!json.success) {
-        // Don't retry client errors (4xx)
-        if (response.status >= 400 && response.status < 500) {
-          throw new ApiError(json.error.code, json.error.message);
-        }
-        throw new Error(json.error.message);
-      }
-
-      return json.data;
-    } catch (error) {
-      lastError = error as Error;
-
-      // Don't retry if this is a client error
-      if (error instanceof ApiError) {
-        throw error;
-      }
-
-      if (attempt < retryConfig.maxRetries) {
-        const delay = Math.min(
-          retryConfig.baseDelay * Math.pow(2, attempt),
-          retryConfig.maxDelay
-        );
-        await sleep(delay);
-      }
-    }
-  }
-
-  throw lastError;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-```
+1. Generate idempotency key once (UUID)
+2. Loop for maxRetries + 1 attempts
+3. On each attempt: fetch with X-Idempotency-Key header
+4. Log if X-Idempotency-Replayed header is true
+5. On client error (4xx): throw immediately, don't retry
+6. On server error (5xx): wait with exponential backoff, retry
+7. After all retries exhausted: throw last error
 
 ---
 
@@ -1013,139 +325,40 @@ function sleep(ms: number): Promise<void> {
 
 ### Backend Cache-Aside with Write-Through
 
-```typescript
-// Backend: services/feedService.ts
-import { Redis } from 'ioredis';
-import { Pool } from 'pg';
-import { Post, FeedResponse } from '@fb-clone/shared-types';
+The FeedService class manages feed retrieval with caching.
 
-export class FeedService {
-  constructor(
-    private redis: Redis,
-    private db: Pool,
-    private rankingService: RankingService
-  ) {}
+**getFeed Method**
 
-  async getFeed(userId: string, options: { cursor?: string; limit: number }): Promise<FeedResponse> {
-    const { cursor, limit } = options;
+1. Try cache: get postIds from Redis sorted set (limit * 2 for ranking headroom)
+2. Cache miss: build from DB, cache the results
+3. Get celebrity posts (pull model for high-follower accounts)
+4. Merge and dedupe all post IDs
+5. Batch fetch post data
+6. Filter by privacy rules
+7. Apply ranking algorithm
+8. Paginate and return
 
-    // Step 1: Try cache
-    const cacheKey = `feed:${userId}`;
-    let postIds = await this.getCachedFeed(cacheKey, limit * 2);
+**Cache Operations**
 
-    // Step 2: Cache miss - rebuild from DB
-    if (!postIds.length) {
-      postIds = await this.buildFeedFromDb(userId);
-      await this.cacheFeed(cacheKey, postIds);
-    }
-
-    // Step 3: Get celebrity posts (pull model)
-    const celebrityPostIds = await this.getCelebrityPosts(userId);
-    const allPostIds = this.mergeAndDedupe(postIds, celebrityPostIds);
-
-    // Step 4: Fetch post data
-    const posts = await this.batchGetPosts(allPostIds);
-
-    // Step 5: Filter by privacy
-    const visiblePosts = await this.filterByPrivacy(posts, userId);
-
-    // Step 6: Apply ranking
-    const rankedPosts = await this.rankingService.rank(userId, visiblePosts);
-
-    // Step 7: Paginate
-    return this.paginateFeed(rankedPosts, cursor, limit);
-  }
-
-  private async getCachedFeed(key: string, limit: number): Promise<string[]> {
-    return await this.redis.zrevrange(key, 0, limit - 1);
-  }
-
-  private async cacheFeed(key: string, postIds: string[]): Promise<void> {
-    if (postIds.length === 0) return;
-
-    const pipeline = this.redis.pipeline();
-
-    // Add posts with their creation timestamps as scores
-    for (const postId of postIds) {
-      const timestamp = this.extractTimestamp(postId);
-      pipeline.zadd(key, timestamp, postId);
-    }
-
-    // Set TTL
-    pipeline.expire(key, 86400); // 24 hours
-
-    await pipeline.exec();
-  }
-
-  async invalidateFeedCache(userId: string): Promise<void> {
-    await this.redis.del(`feed:${userId}`);
-  }
-
-  async warmFeedOnLogin(userId: string): Promise<void> {
-    const cacheKey = `feed:${userId}`;
-
-    // Check if cache exists and is fresh
-    const ttl = await this.redis.ttl(cacheKey);
-    if (ttl > 3600) return; // Still has > 1 hour, skip warming
-
-    // Rebuild cache in background
-    setImmediate(async () => {
-      const postIds = await this.buildFeedFromDb(userId);
-      await this.cacheFeed(cacheKey, postIds);
-    });
-  }
-}
-```
+- getCachedFeed: ZREVRANGE on feed:{userId} key
+- cacheFeed: Pipeline ZADD with timestamp scores, EXPIRE for 24 hours
+- invalidateFeedCache: DEL feed:{userId}
+- warmFeedOnLogin: Check TTL, rebuild in background if < 1 hour remaining
 
 ### Frontend Cache with Persistence
 
-```typescript
-// Frontend: stores/feedStore.ts - persistence configuration
-import { persist } from 'zustand/middleware';
+The store uses Zustand's persist middleware with localStorage.
 
-export const useFeedStore = create<FeedState>()(
-  persist(
-    immer((set, get) => ({
-      // ... state and actions
-    })),
-    {
-      name: 'feed-cache',
-      storage: {
-        getItem: async (name) => {
-          const value = localStorage.getItem(name);
-          if (!value) return null;
+**Storage Configuration**
 
-          const parsed = JSON.parse(value);
+Custom storage handlers:
+- getItem: Parse JSON, check timestamp, return null if > 1 hour old
+- setItem: Wrap state with current timestamp
+- removeItem: Clear from localStorage
 
-          // Check cache freshness (max 1 hour)
-          if (Date.now() - parsed.timestamp > 3600000) {
-            localStorage.removeItem(name);
-            return null;
-          }
+**Partialize**
 
-          return parsed.state;
-        },
-        setItem: async (name, value) => {
-          localStorage.setItem(name, JSON.stringify({
-            state: value,
-            timestamp: Date.now(),
-          }));
-        },
-        removeItem: async (name) => {
-          localStorage.removeItem(name);
-        },
-      },
-      partialize: (state) => ({
-        // Only persist essential data
-        posts: state.posts.slice(0, 20), // Keep only recent 20 posts
-        postsById: Object.fromEntries(
-          Object.entries(state.postsById).slice(0, 20)
-        ),
-      }),
-    }
-  )
-);
-```
+Only persist essential data: first 20 posts and corresponding postsById entries. This keeps the cache small while enabling instant initial render.
 
 ---
 
@@ -1170,7 +383,7 @@ export const useFeedStore = create<FeedState>()(
 │ 2. POST /api/v1/posts (with X-Idempotency-Key)                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │   Backend:                                                                   │
-│   - Check idempotency cache → miss                                          │
+│   - Check idempotency cache -> miss                                          │
 │   - Validate content                                                         │
 │   - Insert into PostgreSQL (posts table)                                    │
 │   - Enqueue fan-out event to Kafka                                          │
@@ -1222,97 +435,35 @@ export const useFeedStore = create<FeedState>()(
 
 ### E2E Test Example
 
-```typescript
-// tests/e2e/feed.spec.ts
-import { test, expect } from '@playwright/test';
-import { setupTestUser, cleanupTestData } from './helpers';
+**Test Setup**
 
-test.describe('Feed Integration', () => {
-  let testUser: { token: string; userId: string };
+Before all tests: create test user with token and userId. After all tests: clean up test data.
 
-  test.beforeAll(async () => {
-    testUser = await setupTestUser();
-  });
+**Test: creates post and sees it in feed**
 
-  test.afterAll(async () => {
-    await cleanupTestData(testUser.userId);
-  });
+1. Login via form submission
+2. Wait for feed to load
+3. Create post with unique content (include timestamp)
+4. Verify optimistic update: post content visible immediately
+5. Reload page, verify post persists after refresh
 
-  test('creates post and sees it in feed', async ({ page }) => {
-    // Login
-    await page.goto('/login');
-    await page.fill('[name="username"]', 'testuser');
-    await page.fill('[name="password"]', 'password123');
-    await page.click('button[type="submit"]');
+**Test: handles like with optimistic update and rollback**
 
-    // Wait for feed to load
-    await page.waitForSelector('[data-testid="feed"]');
+1. Navigate to feed, wait for post cards
+2. Get initial like count
+3. Click like button
+4. Verify optimistic update: aria-pressed true, count incremented
+5. Mock network failure for next like request
+6. Click unlike (will fail)
+7. Verify rollback: still shows liked state
 
-    // Create post
-    const postContent = `Test post ${Date.now()}`;
-    await page.fill('[data-testid="composer-input"]', postContent);
-    await page.click('[data-testid="post-button"]');
+**Test: receives real-time updates via WebSocket**
 
-    // Verify optimistic update (immediate)
-    await expect(page.locator(`text="${postContent}"`)).toBeVisible();
-
-    // Verify post persists after refresh
-    await page.reload();
-    await page.waitForSelector('[data-testid="feed"]');
-    await expect(page.locator(`text="${postContent}"`)).toBeVisible();
-  });
-
-  test('handles like with optimistic update and rollback', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('[data-testid="post-card"]');
-
-    const likeButton = page.locator('[data-testid="like-button"]').first();
-    const likeCount = page.locator('[data-testid="like-count"]').first();
-
-    const initialCount = await likeCount.textContent();
-
-    // Click like
-    await likeButton.click();
-
-    // Verify optimistic update (immediate)
-    await expect(likeButton).toHaveAttribute('aria-pressed', 'true');
-    await expect(likeCount).toHaveText(String(Number(initialCount) + 1));
-
-    // Simulate network failure for rollback test
-    await page.route('**/api/v1/posts/*/like', route => route.abort());
-
-    // Click unlike (will fail)
-    await likeButton.click();
-
-    // Should rollback to liked state
-    await expect(likeButton).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  test('receives real-time updates via WebSocket', async ({ page, context }) => {
-    // Open two browser contexts
-    const page2 = await context.newPage();
-
-    // Login both pages
-    await Promise.all([
-      loginPage(page, 'user1'),
-      loginPage(page2, 'user2'),
-    ]);
-
-    // User1 follows User2
-    await page.goto('/profile/user2');
-    await page.click('[data-testid="follow-button"]');
-
-    // User2 creates a post
-    await page2.goto('/');
-    const postContent = `Real-time test ${Date.now()}`;
-    await page2.fill('[data-testid="composer-input"]', postContent);
-    await page2.click('[data-testid="post-button"]');
-
-    // User1 should see the new post (via WebSocket or banner)
-    await page.waitForSelector(`text="${postContent}"`, { timeout: 10000 });
-  });
-});
-```
+1. Open two browser contexts (page and page2)
+2. Login both as different users
+3. User1 follows User2
+4. User2 creates a post with unique content
+5. Wait for User1 to see the post via WebSocket (10s timeout)
 
 ---
 

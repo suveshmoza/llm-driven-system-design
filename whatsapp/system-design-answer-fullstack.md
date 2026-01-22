@@ -50,7 +50,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                              Frontend (React)                                  │
+│                              Frontend (React)                                 │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
 │  │ WebSocket   │  │   Zustand   │  │  IndexedDB  │  │   Service   │          │
 │  │  Provider   │◄─┤    Store    │◄─┤   (Dexie)   │  │   Worker    │          │
@@ -61,9 +61,9 @@
           │                │                │                │
           ▼                ▼                │                │
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Load Balancer (nginx)                               │
-│                        Sticky Sessions for WebSocket                          │
-└────────────────────────────────┬──────────────────────────────────────────────┘
+│                           Load Balancer (nginx)                              │
+│                        Sticky Sessions for WebSocket                         │
+└────────────────────────────────┬─────────────────────────────────────────────┘
                                  │
          ┌───────────────────────┼───────────────────────┐
          │                       │                       │
@@ -90,83 +90,36 @@
 
 ### Shared TypeScript Types (API Contract)
 
-```typescript
-// shared/types.ts - Used by both frontend and backend
+The shared types directory contains interfaces used by both frontend and backend:
 
-// Message types
-interface Message {
-  id: string;
-  conversationId: string;
-  senderId: string;
-  content: string;
-  contentType: 'text' | 'image' | 'video' | 'file';
-  mediaUrl?: string;
-  replyToId?: string;
-  createdAt: string;
-  // Client-side only
-  clientMessageId?: string;
-  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
-}
+**Message**: id, conversationId, senderId, content, contentType (text | image | video | file), mediaUrl, replyToId, createdAt. Client-side adds: clientMessageId, status (sending | sent | delivered | read | failed).
 
-interface Conversation {
-  id: string;
-  type: 'direct' | 'group';
-  name: string | null;
-  participants: Participant[];
-  lastMessage?: Message;
-  unreadCount: number;
-  updatedAt: string;
-}
+**Conversation**: id, type (direct | group), name, participants array, lastMessage, unreadCount, updatedAt.
 
-interface Participant {
-  userId: string;
-  username: string;
-  displayName: string;
-  avatarUrl?: string;
-  role: 'admin' | 'member';
-}
+**Participant**: userId, username, displayName, avatarUrl, role (admin | member).
 
-// WebSocket message types
-type WSClientMessage =
-  | { type: 'message'; payload: SendMessagePayload }
-  | { type: 'typing'; payload: { conversationId: string } }
-  | { type: 'ack'; payload: { messageId: string } }
-  | { type: 'read'; payload: { conversationId: string; upToMessageId: string } };
+**WebSocket Message Types**:
 
-type WSServerMessage =
-  | { type: 'message'; payload: Message }
-  | { type: 'message_status'; payload: MessageStatusUpdate }
-  | { type: 'typing'; payload: TypingIndicator }
-  | { type: 'presence'; payload: PresenceUpdate }
-  | { type: 'error'; payload: WSError };
-
-interface SendMessagePayload {
-  conversationId: string;
-  content: string;
-  contentType: 'text' | 'image' | 'video' | 'file';
-  clientMessageId: string;
-  mediaUrl?: string;
-  replyToId?: string;
-}
-
-interface MessageStatusUpdate {
-  messageId: string;
-  status: 'sent' | 'delivered' | 'read';
-  userId: string;
-}
-
-interface TypingIndicator {
-  conversationId: string;
-  userId: string;
-  username: string;
-  isTyping: boolean;
-}
-
-interface PresenceUpdate {
-  userId: string;
-  status: 'online' | 'offline';
-  lastSeen: string;
-}
+```
+┌────────────────────────────────────────────────────────────────┐
+│                   WebSocket Protocol                            │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Client → Server (WSClientMessage)                             │
+│  ├── message: { conversationId, content, contentType,         │
+│  │              clientMessageId, mediaUrl?, replyToId? }       │
+│  ├── typing: { conversationId }                                │
+│  ├── ack: { messageId }                                        │
+│  └── read: { conversationId, upToMessageId }                   │
+│                                                                 │
+│  Server → Client (WSServerMessage)                             │
+│  ├── message: Message payload                                  │
+│  ├── message_status: { messageId, status, userId }             │
+│  ├── typing: { conversationId, userId, username, isTyping }    │
+│  ├── presence: { userId, status, lastSeen }                    │
+│  └── error: { code, message }                                  │
+│                                                                 │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -177,307 +130,111 @@ interface PresenceUpdate {
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                         Complete Message Flow                                  │
+│                         Complete Message Flow                                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  Frontend (Sender)              Backend                 Frontend (Recipient) │
+│        │                          │                            │             │
+│  ┌─────┴─────┐                    │                            │             │
+│  │ 1. User   │                    │                            │             │
+│  │    types  │                    │                            │             │
+│  │    message│                    │                            │             │
+│  └─────┬─────┘                    │                            │             │
+│        │                          │                            │             │
+│  ┌─────┴─────┐                    │                            │             │
+│  │ 2. Create │                    │                            │             │
+│  │ clientId, │                    │                            │             │
+│  │ optimistic│                    │                            │             │
+│  │ add to UI │                    │                            │             │
+│  └─────┬─────┘                    │                            │             │
+│        │───WS: message───────────►│                            │             │
+│        │                          │                            │             │
+│        │                    ┌─────┴─────┐                      │             │
+│        │                    │ 3. Persist│                      │             │
+│        │                    │ to DB     │                      │             │
+│        │                    │ status=   │                      │             │
+│        │                    │ 'sent'    │                      │             │
+│        │                    └─────┬─────┘                      │             │
+│        │                          │                            │             │
+│        │                    ┌─────┴─────┐                      │             │
+│        │                    │ 4. Lookup │                      │             │
+│        │                    │ recipient │                      │             │
+│        │                    │ server in │                      │             │
+│        │                    │ Redis     │                      │             │
+│        │                    └─────┬─────┘                      │             │
+│        │                          │                            │             │
+│        │                          │ (Redis Pub/Sub if          │             │
+│        │                          │  different server)         │             │
+│        │                          │───WS: message─────────────►│             │
+│        │                          │                            │             │
+│        │                          │                      ┌─────┴─────┐       │
+│        │                          │                      │ 5. Display│       │
+│        │                          │                      │ dedupe by │       │
+│        │                          │                      │ messageId │       │
+│        │                          │                      └─────┬─────┘       │
+│        │                          │◄────WS: ack────────────────│             │
+│        │                          │                            │             │
+│        │                    ┌─────┴─────┐                      │             │
+│        │                    │ 6. Update │                      │             │
+│        │                    │ status=   │                      │             │
+│        │                    │ delivered │                      │             │
+│        │                    └─────┬─────┘                      │             │
+│        │◄───WS: message_status────│                            │             │
+│        │     (delivered)          │                            │             │
+│  ┌─────┴─────┐                    │                            │             │
+│  │ 7. Update │                    │                            │             │
+│  │ UI: double│                    │                            │             │
+│  │ checkmark │                    │                            │             │
+│  └───────────┘                    │                            │             │
+│                                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
-
-     Frontend (Sender)              Backend                 Frontend (Recipient)
-           │                          │                            │
-     ┌─────┴─────┐                    │                            │
-     │ 1. User   │                    │                            │
-     │    types  │                    │                            │
-     │    message│                    │                            │
-     └─────┬─────┘                    │                            │
-           │                          │                            │
-     ┌─────┴─────┐                    │                            │
-     │ 2. Create │                    │                            │
-     │ clientId  │                    │                            │
-     │ optimistic│                    │                            │
-     │ add to UI │                    │                            │
-     └─────┬─────┘                    │                            │
-           │                          │                            │
-           │─────WS: message─────────►│                            │
-           │                          │                            │
-           │                    ┌─────┴─────┐                      │
-           │                    │ 3. Persist│                      │
-           │                    │ to DB with│                      │
-           │                    │ status=   │                      │
-           │                    │ 'sent'    │                      │
-           │                    └─────┬─────┘                      │
-           │                          │                            │
-           │                    ┌─────┴─────┐                      │
-           │                    │ 4. Lookup │                      │
-           │                    │ recipient │                      │
-           │                    │ server in │                      │
-           │                    │ Redis     │                      │
-           │                    └─────┬─────┘                      │
-           │                          │                            │
-           │                          │ (Redis Pub/Sub if          │
-           │                          │  different server)         │
-           │                          │                            │
-           │                          │─────WS: message───────────►│
-           │                          │                            │
-           │                          │                      ┌─────┴─────┐
-           │                          │                      │ 5. Display│
-           │                          │                      │ message,  │
-           │                          │                      │ dedupe by │
-           │                          │                      │ messageId │
-           │                          │                      └─────┬─────┘
-           │                          │                            │
-           │                          │◄────WS: ack────────────────│
-           │                          │                            │
-           │                    ┌─────┴─────┐                      │
-           │                    │ 6. Update │                      │
-           │                    │ status=   │                      │
-           │                    │ 'delivered│                      │
-           │                    └─────┬─────┘                      │
-           │                          │                            │
-           │◄───WS: message_status────│                            │
-           │     (delivered)          │                            │
-     ┌─────┴─────┐                    │                            │
-     │ 7. Update │                    │                            │
-     │ UI: ✓✓    │                    │                            │
-     └───────────┘                    │                            │
 ```
 
 ### Frontend: Sending a Message
 
-```typescript
-// frontend/src/hooks/useSendMessage.ts
-export function useSendMessage(conversationId: string) {
-  const socket = useWebSocket();
-  const addMessage = useChatStore(s => s.addMessage);
-  const updateStatus = useChatStore(s => s.updateMessageStatus);
+The `useSendMessage` hook implements the send flow:
 
-  const sendMessage = useCallback(async (content: string) => {
-    const clientMessageId = crypto.randomUUID();
-
-    // 1. Optimistic UI update
-    const optimisticMessage: Message = {
-      id: clientMessageId, // Temporary ID
-      conversationId,
-      senderId: currentUser.id,
-      content,
-      contentType: 'text',
-      createdAt: new Date().toISOString(),
-      clientMessageId,
-      status: 'sending',
-    };
-    addMessage(optimisticMessage);
-
-    // 2. Check connection status
-    if (!socket.isConnected) {
-      // Queue for offline sync
-      await offlineDb.queueMessage({
-        clientMessageId,
-        conversationId,
-        content,
-        status: 'pending',
-        createdAt: Date.now(),
-        retryCount: 0,
-      });
-      return;
-    }
-
-    // 3. Send via WebSocket
-    socket.send({
-      type: 'message',
-      payload: {
-        conversationId,
-        content,
-        contentType: 'text',
-        clientMessageId,
-      }
-    });
-  }, [conversationId, socket, addMessage]);
-
-  return { sendMessage };
-}
-```
+1. Generate clientMessageId with crypto.randomUUID()
+2. Create optimistic message with status='sending', add to store
+3. If socket disconnected: queue to IndexedDB pending messages with retryCount=0
+4. If connected: send via WebSocket with type='message'
 
 ### Backend: Processing the Message
 
-```typescript
-// backend/src/websocket/handlers.ts
-import { pool } from '../shared/db.js';
-import { redis, pubsub } from '../shared/cache.js';
+The message handler performs these steps:
 
-const SERVER_ID = process.env.SERVER_ID || 'server-3001';
+1. **Validate Participation**: Query conversation_participants to verify sender is member
+2. **Idempotency Check**: SETNX on `dedup:{clientMessageId}` key with 24h TTL; if exists, return cached message
+3. **Persist to Database**: INSERT into messages table, RETURNING the new row
+4. **Get Recipients**: Query other participants from conversation_participants
+5. **Create Status Records**: INSERT message_status for each recipient with status='sent'
+6. **Route to Recipients**: For each recipient, call routeToRecipient()
+7. **Confirm to Sender**: Send message event back with status='sent'
 
-export async function handleMessage(
-  ws: WebSocket,
-  userId: string,
-  payload: SendMessagePayload
-): Promise<void> {
-  const { conversationId, content, contentType, clientMessageId, replyToId } = payload;
+### Cross-Server Message Routing
 
-  // 1. Validate user is participant
-  const participant = await pool.query(
-    `SELECT 1 FROM conversation_participants
-     WHERE conversation_id = $1 AND user_id = $2`,
-    [conversationId, userId]
-  );
+The routeToRecipient function handles delivery:
 
-  if (participant.rowCount === 0) {
-    ws.send(JSON.stringify({
-      type: 'error',
-      payload: { code: 'FORBIDDEN', message: 'Not a participant' }
-    }));
-    return;
-  }
-
-  // 2. Check idempotency (prevent duplicate sends)
-  const dedupKey = `dedup:${clientMessageId}`;
-  const isNew = await redis.setnx(dedupKey, '1');
-  if (!isNew) {
-    // Already processed - send existing message
-    const existing = await getMessageByClientId(clientMessageId);
-    if (existing) {
-      ws.send(JSON.stringify({ type: 'message', payload: existing }));
-    }
-    return;
-  }
-  await redis.expire(dedupKey, 86400); // 24 hour TTL
-
-  // 3. Persist to database
-  const result = await pool.query(
-    `INSERT INTO messages (conversation_id, sender_id, content, content_type, reply_to_id)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING *`,
-    [conversationId, userId, content, contentType, replyToId]
-  );
-  const message = result.rows[0];
-
-  // 4. Get recipients
-  const participants = await pool.query(
-    `SELECT user_id FROM conversation_participants
-     WHERE conversation_id = $1 AND user_id != $2`,
-    [conversationId, userId]
-  );
-
-  // 5. Create delivery status records
-  for (const p of participants.rows) {
-    await pool.query(
-      `INSERT INTO message_status (message_id, recipient_id, status)
-       VALUES ($1, $2, 'sent')`,
-      [message.id, p.user_id]
-    );
-  }
-
-  // 6. Route to recipients
-  for (const p of participants.rows) {
-    await routeToRecipient(p.user_id, {
-      type: 'message',
-      payload: { ...message, clientMessageId }
-    });
-  }
-
-  // 7. Send confirmation to sender
-  ws.send(JSON.stringify({
-    type: 'message',
-    payload: { ...message, clientMessageId, status: 'sent' }
-  }));
-}
-
-async function routeToRecipient(
-  recipientId: string,
-  message: WSServerMessage
-): Promise<void> {
-  // Lookup which server the recipient is connected to
-  const recipientServerId = await redis.get(`session:${recipientId}`);
-
-  if (!recipientServerId) {
-    // User offline - message stays in DB with 'sent' status
-    return;
-  }
-
-  if (recipientServerId === SERVER_ID) {
-    // Local delivery
-    const recipientWs = connections.get(recipientId);
-    if (recipientWs) {
-      recipientWs.send(JSON.stringify(message));
-    }
-  } else {
-    // Cross-server routing via Redis Pub/Sub
-    await pubsub.publish(`server:${recipientServerId}`, JSON.stringify({
-      targetUserId: recipientId,
-      message
-    }));
-  }
-}
-```
+1. Lookup `session:{userId}` in Redis to get recipient's server ID
+2. If no session: user offline, message stays in DB with 'sent' status
+3. If same server: deliver directly via local WebSocket map
+4. If different server: publish to `server:{serverId}` Redis channel with targetUserId and message
 
 ### Frontend: Receiving and Acknowledging
 
-```typescript
-// frontend/src/providers/WebSocketProvider.tsx
-function handleIncomingMessage(msg: WSServerMessage) {
-  switch (msg.type) {
-    case 'message':
-      // Add to store (handles deduplication)
-      chatStore.addMessage(msg.payload);
+The WebSocket provider's message handler:
 
-      // Send delivery acknowledgment
-      socketRef.current?.send(JSON.stringify({
-        type: 'ack',
-        payload: { messageId: msg.payload.id }
-      }));
-
-      // Cache for offline
-      offlineSync.cacheMessage(msg.payload);
-      break;
-
-    case 'message_status':
-      // Update delivery status (single tick -> double tick -> blue tick)
-      chatStore.updateMessageStatus(
-        msg.payload.messageId,
-        msg.payload.status
-      );
-      break;
-
-    // ... other handlers
-  }
-}
-```
+1. On 'message' event: Add to store (handles deduplication by messageId), send 'ack' event back, cache to IndexedDB
+2. On 'message_status' event: Update message status in store (sent → delivered → read with checkmark icons)
 
 ### Backend: Processing Delivery ACK
 
-```typescript
-// backend/src/websocket/handlers.ts
-export async function handleAck(
-  ws: WebSocket,
-  userId: string,
-  payload: { messageId: string }
-): Promise<void> {
-  const { messageId } = payload;
+The ack handler performs idempotent status update:
 
-  // Idempotent status update - only progress forward
-  const result = await pool.query(
-    `UPDATE message_status
-     SET status = 'delivered', updated_at = NOW()
-     WHERE message_id = $1 AND recipient_id = $2
-       AND status = 'sent'
-     RETURNING *`,
-    [messageId, userId]
-  );
-
-  if (result.rowCount === 0) return; // Already delivered or read
-
-  // Notify sender
-  const message = await pool.query(
-    `SELECT sender_id FROM messages WHERE id = $1`,
-    [messageId]
-  );
-
-  await routeToRecipient(message.rows[0].sender_id, {
-    type: 'message_status',
-    payload: {
-      messageId,
-      status: 'delivered',
-      userId
-    }
-  });
-}
-```
+1. UPDATE message_status SET status='delivered' WHERE message_id=$1 AND recipient_id=$2 AND status='sent'
+2. If no rows updated: already delivered or read, skip
+3. Query sender_id from messages table
+4. Route message_status notification to sender
 
 ---
 
@@ -487,292 +244,86 @@ export async function handleAck(
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Offline Sync Architecture                            │
+│                          Offline Sync Architecture                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  User Goes Offline                              User Comes Online            │
+│        │                                              │                      │
+│        ▼                                              ▼                      │
+│  ┌───────────┐                                  ┌───────────┐                │
+│  │ WebSocket │                                  │ WebSocket │                │
+│  │  Closes   │                                  │ Reconnects│                │
+│  └─────┬─────┘                                  └─────┬─────┘                │
+│        │                                              │                      │
+│        ▼                                              ▼                      │
+│  ┌───────────┐                                  ┌───────────┐                │
+│  │ Queue new │                                  │ Sync from │                │
+│  │ messages  │                                  │ IndexedDB │                │
+│  │ to        │                                  │ pending   │                │
+│  │ IndexedDB │                                  │ queue     │                │
+│  └─────┬─────┘                                  └─────┬─────┘                │
+│        │                                              │                      │
+│        ▼                                              ▼                      │
+│  ┌───────────┐                               ┌───────────────────┐           │
+│  │ Show from │                               │ Backend: Fetch    │           │
+│  │ cached    │                               │ messages since    │           │
+│  │ messages  │                               │ last sync         │           │
+│  └───────────┘                               └─────────┬─────────┘           │
+│                                                        │                     │
+│                                                        ▼                     │
+│                                              ┌───────────────────┐           │
+│                                              │ Merge server      │           │
+│                                              │ messages with     │           │
+│                                              │ local cache       │           │
+│                                              └───────────────────┘           │
+│                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
-
-    User Goes Offline                              User Comes Online
-          │                                              │
-          ▼                                              ▼
-    ┌───────────┐                                  ┌───────────┐
-    │ WebSocket │                                  │ WebSocket │
-    │  Closes   │                                  │ Reconnects│
-    └─────┬─────┘                                  └─────┬─────┘
-          │                                              │
-          ▼                                              ▼
-    ┌───────────┐                                  ┌───────────┐
-    │ Queue new │                                  │ Sync from │
-    │ messages  │                                  │ IndexedDB │
-    │ to        │                                  │ pending   │
-    │ IndexedDB │                                  │ queue     │
-    └─────┬─────┘                                  └─────┬─────┘
-          │                                              │
-          ▼                                              │
-    ┌───────────┐                                        │
-    │ Show from │                                        │
-    │ cached    │                                        │
-    │ messages  │                                        │
-    └───────────┘                                        │
-                                                         ▼
-                                               ┌───────────────────┐
-                                               │ Backend: Fetch    │
-                                               │ messages since    │
-                                               │ last sync         │
-                                               └─────────┬─────────┘
-                                                         │
-                                                         ▼
-                                               ┌───────────────────┐
-                                               │ Merge server      │
-                                               │ messages with     │
-                                               │ local cache       │
-                                               └───────────────────┘
 ```
 
-### Frontend: Offline Queue and Sync
+### Frontend: Offline Queue and Sync (OfflineSyncService)
 
-```typescript
-// frontend/src/services/offlineSync.ts
-import { db } from '../db/database';
+**queueMessage(message)**: Add to IndexedDB pendingMessages table with status='pending'.
 
-class OfflineSyncService {
-  private syncInProgress = false;
+**syncPendingMessages(socket)**:
+1. Query pendingMessages where status='pending'
+2. For each message: update status to 'sending', send via WebSocket, delete on success
+3. On error: increment retryCount; if >= 3, mark as 'failed', else reset to 'pending'
 
-  // Queue message when offline
-  async queueMessage(message: PendingMessage): Promise<void> {
-    await db.pendingMessages.add(message);
-  }
+**fetchMissedMessages(conversationId)**:
+1. Get lastSyncAt from syncMetadata table
+2. Fetch `/api/v1/conversations/{id}/messages?since={lastSyncAt}`
+3. Bulk cache returned messages
+4. Update syncMetadata with current timestamp
 
-  // Sync pending messages when back online
-  async syncPendingMessages(socket: WebSocket): Promise<void> {
-    if (this.syncInProgress) return;
-    this.syncInProgress = true;
-
-    try {
-      const pending = await db.pendingMessages
-        .where('status')
-        .equals('pending')
-        .toArray();
-
-      for (const msg of pending) {
-        await this.sendPendingMessage(socket, msg);
-      }
-    } finally {
-      this.syncInProgress = false;
-    }
-  }
-
-  private async sendPendingMessage(
-    socket: WebSocket,
-    msg: PendingMessage
-  ): Promise<void> {
-    try {
-      // Mark as sending
-      await db.pendingMessages.update(msg.clientMessageId, {
-        status: 'sending'
-      });
-
-      // Send via WebSocket
-      socket.send(JSON.stringify({
-        type: 'message',
-        payload: {
-          conversationId: msg.conversationId,
-          content: msg.content,
-          contentType: 'text',
-          clientMessageId: msg.clientMessageId,
-        }
-      }));
-
-      // Remove from queue on success
-      await db.pendingMessages.delete(msg.clientMessageId);
-
-    } catch (error) {
-      // Retry logic
-      const newRetryCount = msg.retryCount + 1;
-      if (newRetryCount >= 3) {
-        await db.pendingMessages.update(msg.clientMessageId, {
-          status: 'failed',
-          retryCount: newRetryCount,
-        });
-      } else {
-        await db.pendingMessages.update(msg.clientMessageId, {
-          status: 'pending',
-          retryCount: newRetryCount,
-        });
-      }
-    }
-  }
-
-  // Fetch messages missed while offline
-  async fetchMissedMessages(conversationId: string): Promise<Message[]> {
-    const lastSync = await db.syncMetadata.get(conversationId);
-    const lastSyncTime = lastSync?.lastSyncAt || 0;
-
-    const response = await fetch(
-      `/api/v1/conversations/${conversationId}/messages?since=${lastSyncTime}`
-    );
-    const { messages } = await response.json();
-
-    // Cache new messages
-    await this.cacheMessages(messages);
-
-    // Update sync timestamp
-    await db.syncMetadata.put({
-      conversationId,
-      lastSyncAt: Date.now(),
-    });
-
-    return messages;
-  }
-
-  async cacheMessages(messages: Message[]): Promise<void> {
-    const cached = messages.map(msg => ({
-      ...msg,
-      cachedAt: Date.now(),
-    }));
-    await db.messages.bulkPut(cached);
-  }
-
-  async getCachedMessages(conversationId: string): Promise<Message[]> {
-    return db.messages
-      .where('conversationId')
-      .equals(conversationId)
-      .reverse()
-      .sortBy('createdAt');
-  }
-}
-
-export const offlineSync = new OfflineSyncService();
-```
+**getCachedMessages(conversationId)**: Query messages table by conversationId, sorted by createdAt descending.
 
 ### Backend: Pending Message Delivery on Connect
 
-```typescript
-// backend/src/websocket/connection.ts
-export async function handleUserConnect(
-  ws: WebSocket,
-  userId: string
-): Promise<void> {
-  // 1. Register session
-  await redis.set(`session:${userId}`, SERVER_ID);
+The handleUserConnect function:
 
-  // 2. Update presence
-  await redis.hset(`presence:${userId}`, {
-    status: 'online',
-    server: SERVER_ID,
-    lastSeen: Date.now().toString()
-  });
+1. Register session: SET `session:{userId}` to SERVER_ID
+2. Update presence: HSET `presence:{userId}` with status='online', server, lastSeen
+3. Store WebSocket in connections map
+4. Query pending messages: SELECT from messages JOIN message_status WHERE recipient_id=$1 AND status='sent' ORDER BY created_at
+5. Send each pending message via WebSocket
+6. Broadcast presence change to interested users
 
-  // 3. Subscribe to cross-server messages
-  connections.set(userId, ws);
+The handleUserDisconnect function:
 
-  // 4. Deliver pending messages
-  const pendingMessages = await pool.query(
-    `SELECT m.* FROM messages m
-     JOIN message_status ms ON m.id = ms.message_id
-     WHERE ms.recipient_id = $1 AND ms.status = 'sent'
-     ORDER BY m.created_at ASC`,
-    [userId]
-  );
-
-  for (const message of pendingMessages.rows) {
-    ws.send(JSON.stringify({
-      type: 'message',
-      payload: message
-    }));
-  }
-
-  // 5. Broadcast presence to interested users
-  await broadcastPresence(userId, 'online');
-}
-
-export async function handleUserDisconnect(userId: string): Promise<void> {
-  // 1. Remove session
-  await redis.del(`session:${userId}`);
-
-  // 2. Update presence
-  await redis.hset(`presence:${userId}`, {
-    status: 'offline',
-    lastSeen: Date.now().toString()
-  });
-
-  // 3. Cleanup connection
-  connections.delete(userId);
-
-  // 4. Broadcast presence change
-  await broadcastPresence(userId, 'offline');
-}
-```
+1. DEL `session:{userId}`
+2. HSET `presence:{userId}` with status='offline', lastSeen
+3. Delete from connections map
+4. Broadcast presence change
 
 ### Backend: Messages Since Timestamp API
 
-```typescript
-// backend/src/routes/messages.ts
-router.get('/conversations/:id/messages', async (req, res) => {
-  const { id: conversationId } = req.params;
-  const { limit = 50, before, since } = req.query;
-  const userId = req.session.userId;
+The GET /conversations/:id/messages endpoint:
 
-  // Verify participant
-  const participant = await pool.query(
-    `SELECT 1 FROM conversation_participants
-     WHERE conversation_id = $1 AND user_id = $2`,
-    [conversationId, userId]
-  );
-
-  if (participant.rowCount === 0) {
-    return res.status(403).json({ error: 'Not a participant' });
-  }
-
-  let query: string;
-  let params: any[];
-
-  if (since) {
-    // Fetch messages since timestamp (for offline sync)
-    query = `
-      SELECT m.*, ms.status as delivery_status
-      FROM messages m
-      LEFT JOIN message_status ms
-        ON m.id = ms.message_id AND ms.recipient_id = $3
-      WHERE m.conversation_id = $1
-        AND m.created_at > to_timestamp($2::bigint / 1000.0)
-      ORDER BY m.created_at ASC
-      LIMIT $4
-    `;
-    params = [conversationId, since, userId, limit];
-  } else if (before) {
-    // Pagination for infinite scroll
-    query = `
-      SELECT m.*, ms.status as delivery_status
-      FROM messages m
-      LEFT JOIN message_status ms
-        ON m.id = ms.message_id AND ms.recipient_id = $3
-      WHERE m.conversation_id = $1
-        AND m.created_at < (SELECT created_at FROM messages WHERE id = $2)
-      ORDER BY m.created_at DESC
-      LIMIT $4
-    `;
-    params = [conversationId, before, userId, limit];
-  } else {
-    // Latest messages
-    query = `
-      SELECT m.*, ms.status as delivery_status
-      FROM messages m
-      LEFT JOIN message_status ms
-        ON m.id = ms.message_id AND ms.recipient_id = $3
-      WHERE m.conversation_id = $1
-      ORDER BY m.created_at DESC
-      LIMIT $4
-    `;
-    params = [conversationId, null, userId, limit];
-  }
-
-  const result = await pool.query(query, params);
-
-  res.json({
-    messages: result.rows,
-    hasMore: result.rows.length === parseInt(limit as string)
-  });
-});
-```
+- **since** parameter: Fetch messages after timestamp (for offline sync), ORDER BY created_at ASC
+- **before** parameter: Pagination for infinite scroll, ORDER BY created_at DESC
+- Default: Latest messages, ORDER BY created_at DESC
+- All queries join message_status for delivery_status per recipient
+- Returns { messages, hasMore } where hasMore indicates if limit was reached
 
 ---
 
@@ -781,204 +332,82 @@ router.get('/conversations/:id/messages', async (req, res) => {
 ### End-to-End Typing Flow
 
 ```
-Frontend (Typer)              Backend                 Frontend (Viewer)
-      │                          │                          │
-      │──user types──            │                          │
-      │              │           │                          │
-      │──debounce 2s─┤           │                          │
-      │              │           │                          │
-      │◄─────────────┘           │                          │
-      │                          │                          │
-      │───WS: typing────────────►│                          │
-      │                          │                          │
-      │                    ┌─────┴─────┐                    │
-      │                    │ SETEX     │                    │
-      │                    │ typing:   │                    │
-      │                    │ conv:user │                    │
-      │                    │ TTL=3s    │                    │
-      │                    └─────┬─────┘                    │
-      │                          │                          │
-      │                          │───WS: typing────────────►│
-      │                          │                          │
-      │                          │                    ┌─────┴─────┐
-      │                          │                    │ Show      │
-      │                          │                    │ "typing"  │
-      │                          │                    │ indicator │
-      │                          │                    └─────┬─────┘
-      │                          │                          │
-      │──stops typing──          │                          │
-      │                          │                          │
-      │                    ┌─────┴─────┐                    │
-      │                    │ TTL       │                    │
-      │                    │ expires   │                    │
-      │                    │ (3s)      │                    │
-      │                    └─────┬─────┘                    │
-      │                          │                          │
-      │                          │───WS: typing=false──────►│
-      │                          │                          │
-      │                          │                    ┌─────┴─────┐
-      │                          │                    │ Hide      │
-      │                          │                    │ indicator │
-      │                          │                    └───────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Typing Indicator Flow                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Frontend (Typer)              Backend                 Frontend (Viewer)    │
+│        │                          │                          │              │
+│        │──user types──            │                          │              │
+│        │              │           │                          │              │
+│        │──debounce 2s─┤           │                          │              │
+│        │              │           │                          │              │
+│        │◄─────────────┘           │                          │              │
+│        │                          │                          │              │
+│        │───WS: typing────────────►│                          │              │
+│        │                          │                          │              │
+│        │                    ┌─────┴─────┐                    │              │
+│        │                    │ SETEX     │                    │              │
+│        │                    │ typing:   │                    │              │
+│        │                    │ conv:user │                    │              │
+│        │                    │ TTL=3s    │                    │              │
+│        │                    └─────┬─────┘                    │              │
+│        │                          │                          │              │
+│        │                          │───WS: typing────────────►│              │
+│        │                          │                          │              │
+│        │                          │                    ┌─────┴─────┐        │
+│        │                          │                    │ Show      │        │
+│        │                          │                    │ "typing"  │        │
+│        │                          │                    │ indicator │        │
+│        │                          │                    └─────┬─────┘        │
+│        │                          │                          │              │
+│        │──stops typing──          │                          │              │
+│        │                          │                          │              │
+│        │                    ┌─────┴─────┐                    │              │
+│        │                    │ TTL       │                    │              │
+│        │                    │ expires   │                    │              │
+│        │                    │ (3s)      │                    │              │
+│        │                    └─────┬─────┘                    │              │
+│        │                          │                          │              │
+│        │                          │───WS: typing=false──────►│              │
+│        │                          │                          │              │
+│        │                          │                    ┌─────┴─────┐        │
+│        │                          │                    │ Hide      │        │
+│        │                          │                    │ indicator │        │
+│        │                          │                    └───────────┘        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Frontend: Debounced Typing Events
 
-```typescript
-// frontend/src/hooks/useTypingIndicator.ts
-export function useTypingIndicator(conversationId: string) {
-  const socket = useWebSocket();
-  const lastTypingSent = useRef(0);
-  const TYPING_INTERVAL = 2000; // Send at most every 2 seconds
+The `useTypingIndicator` hook:
 
-  const handleInputChange = useCallback(() => {
-    const now = Date.now();
-
-    // Debounce: don't spam typing events
-    if (now - lastTypingSent.current >= TYPING_INTERVAL) {
-      socket.send({
-        type: 'typing',
-        payload: { conversationId }
-      });
-      lastTypingSent.current = now;
-    }
-  }, [conversationId, socket]);
-
-  return { handleInputChange };
-}
-
-// Usage in MessageInput
-function MessageInput({ conversationId }: { conversationId: string }) {
-  const [content, setContent] = useState('');
-  const { handleInputChange } = useTypingIndicator(conversationId);
-
-  return (
-    <textarea
-      value={content}
-      onChange={(e) => {
-        setContent(e.target.value);
-        handleInputChange();
-      }}
-    />
-  );
-}
-```
+- Maintains lastTypingSent ref with TYPING_INTERVAL=2000ms
+- On input change: if elapsed >= 2s, send 'typing' event and update timestamp
+- This prevents spamming typing events on every keystroke
 
 ### Backend: Typing Handler with Redis TTL
 
-```typescript
-// backend/src/websocket/handlers.ts
-export async function handleTyping(
-  ws: WebSocket,
-  userId: string,
-  payload: { conversationId: string }
-): Promise<void> {
-  const { conversationId } = payload;
+The handleTyping function:
 
-  // Store typing flag with 3-second TTL
-  const typingKey = `typing:${conversationId}:${userId}`;
-  const wasTyping = await redis.exists(typingKey);
-  await redis.setex(typingKey, 3, '1');
-
-  // Get user info for display
-  const user = await pool.query(
-    `SELECT username FROM users WHERE id = $1`,
-    [userId]
-  );
-
-  // Broadcast to other participants
-  const participants = await pool.query(
-    `SELECT user_id FROM conversation_participants
-     WHERE conversation_id = $1 AND user_id != $2`,
-    [conversationId, userId]
-  );
-
-  for (const p of participants.rows) {
-    await routeToRecipient(p.user_id, {
-      type: 'typing',
-      payload: {
-        conversationId,
-        userId,
-        username: user.rows[0].username,
-        isTyping: true
-      }
-    });
-  }
-
-  // Schedule stop-typing notification (if not refreshed)
-  if (!wasTyping) {
-    setTimeout(async () => {
-      const stillTyping = await redis.exists(typingKey);
-      if (!stillTyping) {
-        for (const p of participants.rows) {
-          await routeToRecipient(p.user_id, {
-            type: 'typing',
-            payload: {
-              conversationId,
-              userId,
-              username: user.rows[0].username,
-              isTyping: false
-            }
-          });
-        }
-      }
-    }, 3500); // Slightly after TTL
-  }
-}
-```
+1. SETEX `typing:{conversationId}:{userId}` with 3s TTL
+2. Query username from users table
+3. Broadcast 'typing' event to all other participants with isTyping=true
+4. If this was a new typing session (key didn't exist), schedule stop notification in 3.5s
+5. When timeout fires: check if key still exists; if not, broadcast isTyping=false
 
 ### Frontend: Displaying Typing Indicators
 
-```typescript
-// frontend/src/stores/chatStore.ts
-interface ChatState {
-  typingUsers: Record<string, Map<string, { username: string; timestamp: number }>>;
+The Zustand store maintains `typingUsers: Record<conversationId, Map<userId, { username, timestamp }>>`.
 
-  setTypingUser: (
-    conversationId: string,
-    userId: string,
-    username: string,
-    isTyping: boolean
-  ) => void;
-}
+The setTypingUser action:
+- If isTyping=true: add to Map with current timestamp
+- If isTyping=false: delete from Map
 
-// In store implementation
-setTypingUser: (conversationId, userId, username, isTyping) => set((state) => {
-  const convTyping = new Map(state.typingUsers[conversationId] || new Map());
-
-  if (isTyping) {
-    convTyping.set(userId, { username, timestamp: Date.now() });
-  } else {
-    convTyping.delete(userId);
-  }
-
-  return {
-    typingUsers: {
-      ...state.typingUsers,
-      [conversationId]: convTyping
-    }
-  };
-}),
-
-// Component to display
-function TypingIndicator({ conversationId }: { conversationId: string }) {
-  const typingMap = useChatStore(s => s.typingUsers[conversationId]);
-
-  if (!typingMap || typingMap.size === 0) return null;
-
-  const usernames = Array.from(typingMap.values()).map(t => t.username);
-  const text = usernames.length === 1
-    ? `${usernames[0]} is typing...`
-    : `${usernames.join(', ')} are typing...`;
-
-  return (
-    <div className="text-sm text-teal-600 italic px-4 py-2">
-      {text}
-      <BouncingDots />
-    </div>
-  );
-}
-```
+The TypingIndicator component:
+- Renders nothing if Map is empty
+- Shows "Alice is typing..." or "Alice, Bob are typing..." with bouncing dots
 
 ---
 
@@ -987,161 +416,60 @@ function TypingIndicator({ conversationId }: { conversationId: string }) {
 ### Read Receipt Flow
 
 ```
-Recipient opens chat
-        │
-        ▼
-┌───────────────┐
-│ Frontend:     │
-│ Mark messages │
-│ as read up to │
-│ last visible  │
-└───────┬───────┘
-        │
-        │───WS: read (conversationId, upToMessageId)──►
-        │                                              │
-        │                                        ┌─────┴─────┐
-        │                                        │ Backend:  │
-        │                                        │ UPDATE    │
-        │                                        │ all status│
-        │                                        │ <= msgId  │
-        │                                        │ to 'read' │
-        │                                        └─────┬─────┘
-        │                                              │
-        │                                              │───WS: message_status──►
-        │                                              │       (to sender)
-        │                                              │
-        │                                        ┌─────┴─────┐
-        │                                        │ Sender UI:│
-        │                                        │ Blue ticks│
-        │                                        │ ✓✓        │
-        │                                        └───────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Read Receipt Flow                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Recipient opens chat                                                        │
+│        │                                                                     │
+│        ▼                                                                     │
+│  ┌───────────────┐                                                          │
+│  │ Frontend:     │                                                          │
+│  │ Mark messages │                                                          │
+│  │ as read up to │                                                          │
+│  │ last visible  │                                                          │
+│  └───────┬───────┘                                                          │
+│          │                                                                   │
+│          │───WS: read (conversationId, upToMessageId)────►                  │
+│          │                                               │                   │
+│          │                                         ┌─────┴─────┐            │
+│          │                                         │ Backend:  │            │
+│          │                                         │ UPDATE    │            │
+│          │                                         │ all status│            │
+│          │                                         │ <= msgId  │            │
+│          │                                         │ to 'read' │            │
+│          │                                         └─────┬─────┘            │
+│          │                                               │                   │
+│          │                                               │───WS: status───► │
+│          │                                               │   (to sender)    │
+│          │                                               │                   │
+│          │                                         ┌─────┴─────┐            │
+│          │                                         │ Sender UI:│            │
+│          │                                         │ Blue ticks│            │
+│          │                                         └───────────┘            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Frontend: Sending Read Receipts
 
-```typescript
-// frontend/src/hooks/useReadReceipts.ts
-export function useReadReceipts(conversationId: string) {
-  const socket = useWebSocket();
-  const messages = useChatStore(s => s.messagesByConversation[conversationId] || []);
-  const lastSentReadReceipt = useRef<string | null>(null);
+The `useReadReceipts` hook uses IntersectionObserver:
 
-  // Intersection Observer to track visible messages
-  const observerRef = useRef<IntersectionObserver | null>(null);
-
-  useEffect(() => {
-    // Debounced read receipt sender
-    let timeoutId: NodeJS.Timeout;
-
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        const visibleMessages = entries
-          .filter(e => e.isIntersecting)
-          .map(e => e.target.getAttribute('data-message-id'))
-          .filter(Boolean) as string[];
-
-        if (visibleMessages.length === 0) return;
-
-        // Find the latest visible message
-        const latestVisible = visibleMessages[visibleMessages.length - 1];
-
-        // Don't re-send if already sent
-        if (latestVisible === lastSentReadReceipt.current) return;
-
-        // Debounce to avoid spamming
-        clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          socket.send({
-            type: 'read',
-            payload: {
-              conversationId,
-              upToMessageId: latestVisible
-            }
-          });
-          lastSentReadReceipt.current = latestVisible;
-        }, 500);
-      },
-      { threshold: 0.5 }
-    );
-
-    return () => {
-      clearTimeout(timeoutId);
-      observerRef.current?.disconnect();
-    };
-  }, [conversationId, socket]);
-
-  return { observerRef };
-}
-```
+1. Create observer with threshold=0.5
+2. On intersection: collect visible message IDs, find latest
+3. Debounce 500ms to avoid spamming
+4. Send 'read' event with conversationId and upToMessageId
+5. Track lastSentReadReceipt to avoid duplicate sends
 
 ### Backend: Batch Read Status Update
 
-```typescript
-// backend/src/websocket/handlers.ts
-export async function handleRead(
-  ws: WebSocket,
-  userId: string,
-  payload: { conversationId: string; upToMessageId: string }
-): Promise<void> {
-  const { conversationId, upToMessageId } = payload;
+The handleRead function:
 
-  // Get the timestamp of the "up to" message
-  const upToMessage = await pool.query(
-    `SELECT created_at FROM messages WHERE id = $1`,
-    [upToMessageId]
-  );
-
-  if (upToMessage.rowCount === 0) return;
-
-  const upToTimestamp = upToMessage.rows[0].created_at;
-
-  // Batch update all messages up to this point
-  // Using idempotent update (only if status is less than 'read')
-  const updated = await pool.query(
-    `UPDATE message_status ms
-     SET status = 'read', updated_at = NOW()
-     FROM messages m
-     WHERE ms.message_id = m.id
-       AND m.conversation_id = $1
-       AND ms.recipient_id = $2
-       AND m.created_at <= $3
-       AND ms.status != 'read'
-     RETURNING ms.message_id, m.sender_id`,
-    [conversationId, userId, upToTimestamp]
-  );
-
-  // Update participant's last_read_at
-  await pool.query(
-    `UPDATE conversation_participants
-     SET last_read_at = $3
-     WHERE conversation_id = $1 AND user_id = $2`,
-    [conversationId, userId, upToTimestamp]
-  );
-
-  // Notify senders of read status
-  const senderNotifications = new Map<string, string[]>();
-
-  for (const row of updated.rows) {
-    if (!senderNotifications.has(row.sender_id)) {
-      senderNotifications.set(row.sender_id, []);
-    }
-    senderNotifications.get(row.sender_id)!.push(row.message_id);
-  }
-
-  for (const [senderId, messageIds] of senderNotifications) {
-    for (const messageId of messageIds) {
-      await routeToRecipient(senderId, {
-        type: 'message_status',
-        payload: {
-          messageId,
-          status: 'read',
-          userId
-        }
-      });
-    }
-  }
-}
-```
+1. Get created_at timestamp for upToMessageId
+2. Batch UPDATE message_status SET status='read' for all messages in conversation where created_at <= upToTimestamp AND status != 'read' AND recipient_id = userId
+3. UPDATE conversation_participants SET last_read_at = upToTimestamp
+4. Group updated messages by sender_id
+5. Route message_status notifications to each sender
 
 ---
 
@@ -1149,177 +477,30 @@ export async function handleRead(
 
 ### Zod Schemas for Validation
 
-```typescript
-// shared/schemas.ts
-import { z } from 'zod';
+The shared schemas define validation for all WebSocket messages:
 
-// Message schemas
-export const SendMessageSchema = z.object({
-  conversationId: z.string().uuid(),
-  content: z.string().min(1).max(10000),
-  contentType: z.enum(['text', 'image', 'video', 'file']),
-  clientMessageId: z.string().uuid(),
-  mediaUrl: z.string().url().optional(),
-  replyToId: z.string().uuid().optional(),
-});
+**SendMessageSchema**: conversationId (uuid), content (1-10000 chars), contentType (enum), clientMessageId (uuid), mediaUrl (optional url), replyToId (optional uuid).
 
-export const TypingPayloadSchema = z.object({
-  conversationId: z.string().uuid(),
-});
-
-export const ReadPayloadSchema = z.object({
-  conversationId: z.string().uuid(),
-  upToMessageId: z.string().uuid(),
-});
-
-export const AckPayloadSchema = z.object({
-  messageId: z.string().uuid(),
-});
-
-// WebSocket message schema
-export const WSClientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('message'), payload: SendMessageSchema }),
-  z.object({ type: z.literal('typing'), payload: TypingPayloadSchema }),
-  z.object({ type: z.literal('read'), payload: ReadPayloadSchema }),
-  z.object({ type: z.literal('ack'), payload: AckPayloadSchema }),
-]);
-
-// Type inference
-export type SendMessagePayload = z.infer<typeof SendMessageSchema>;
-export type WSClientMessage = z.infer<typeof WSClientMessageSchema>;
-```
+**WSClientMessageSchema**: Discriminated union on 'type' field covering message, typing, read, and ack payloads.
 
 ### Backend WebSocket Message Router
 
-```typescript
-// backend/src/websocket/router.ts
-import { WSClientMessageSchema } from '../../shared/schemas.js';
+The router parses incoming JSON, validates against WSClientMessageSchema:
+- On parse error: send error with code='INVALID_JSON'
+- On validation error: send error with code='VALIDATION_ERROR' and first issue message
+- On success: route to appropriate handler (handleMessage, handleTyping, handleRead, handleAck)
 
-export function createMessageRouter(ws: WebSocket, userId: string) {
-  return async (data: string) => {
-    let parsed: unknown;
+### Frontend API Client
 
-    try {
-      parsed = JSON.parse(data);
-    } catch {
-      ws.send(JSON.stringify({
-        type: 'error',
-        payload: { code: 'INVALID_JSON', message: 'Invalid JSON' }
-      }));
-      return;
-    }
+The ApiClient class provides type-safe HTTP methods:
 
-    // Validate against schema
-    const result = WSClientMessageSchema.safeParse(parsed);
+**Core request() method**: Adds credentials='include' for session cookies, sets Content-Type, throws ApiError on non-ok response.
 
-    if (!result.success) {
-      ws.send(JSON.stringify({
-        type: 'error',
-        payload: {
-          code: 'VALIDATION_ERROR',
-          message: result.error.issues[0].message
-        }
-      }));
-      return;
-    }
-
-    const message = result.data;
-
-    // Route to handler
-    switch (message.type) {
-      case 'message':
-        await handleMessage(ws, userId, message.payload);
-        break;
-      case 'typing':
-        await handleTyping(ws, userId, message.payload);
-        break;
-      case 'read':
-        await handleRead(ws, userId, message.payload);
-        break;
-      case 'ack':
-        await handleAck(ws, userId, message.payload);
-        break;
-    }
-  };
-}
-```
-
-### Frontend API Client with Type Safety
-
-```typescript
-// frontend/src/services/api.ts
-import type { Conversation, Message, SendMessagePayload } from '../../shared/types';
-
-const BASE_URL = '/api/v1';
-
-class ApiClient {
-  private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(`${BASE_URL}${path}`, {
-      ...options,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new ApiError(response.status, error.message);
-    }
-
-    return response.json();
-  }
-
-  // Conversations
-  async getConversations(): Promise<Conversation[]> {
-    return this.fetch('/conversations');
-  }
-
-  async createConversation(
-    participantIds: string[],
-    type: 'direct' | 'group',
-    name?: string
-  ): Promise<Conversation> {
-    return this.fetch('/conversations', {
-      method: 'POST',
-      body: JSON.stringify({ participantIds, type, name }),
-    });
-  }
-
-  // Messages
-  async getMessages(
-    conversationId: string,
-    options?: { before?: string; since?: number; limit?: number }
-  ): Promise<{ messages: Message[]; hasMore: boolean }> {
-    const params = new URLSearchParams();
-    if (options?.before) params.set('before', options.before);
-    if (options?.since) params.set('since', options.since.toString());
-    if (options?.limit) params.set('limit', options.limit.toString());
-
-    return this.fetch(
-      `/conversations/${conversationId}/messages?${params.toString()}`
-    );
-  }
-
-  // Reactions
-  async addReaction(
-    conversationId: string,
-    messageId: string,
-    emoji: string
-  ): Promise<void> {
-    await this.fetch(
-      `/conversations/${conversationId}/messages/${messageId}/reactions`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ emoji }),
-      }
-    );
-  }
-}
-
-export const api = new ApiClient();
-```
+**Methods**:
+- getConversations() → Conversation[]
+- createConversation(participantIds, type, name?) → Conversation
+- getMessages(conversationId, { before?, since?, limit? }) → { messages, hasMore }
+- addReaction(conversationId, messageId, emoji) → void
 
 ---
 
@@ -1355,71 +536,19 @@ export const api = new ApiClient();
 
 ## 9. Testing Strategy (2-3 minutes)
 
-### Integration Test Example
+### Integration Test Approach
 
-```typescript
-// backend/src/__tests__/messaging.integration.test.ts
-import { WebSocket } from 'ws';
-import { setupTestDb, teardownTestDb, createTestUser } from './helpers';
+Tests use WebSocket connections with test users and conversations:
 
-describe('Message Flow Integration', () => {
-  let sender: WebSocket;
-  let recipient: WebSocket;
-  let senderUserId: string;
-  let recipientUserId: string;
-  let conversationId: string;
+**Setup**: setupTestDb(), createTestUser() for sender and recipient, createConversation(), connectAsUser() for WebSocket connections.
 
-  beforeAll(async () => {
-    await setupTestDb();
+**Key Test Cases**:
 
-    // Create test users and conversation
-    senderUserId = await createTestUser('sender');
-    recipientUserId = await createTestUser('recipient');
-    conversationId = await createConversation([senderUserId, recipientUserId]);
+1. **Message delivery flow**: Sender sends message via WebSocket, verify recipient receives it, recipient sends ACK, verify sender receives 'delivered' status.
 
-    // Connect WebSockets
-    sender = await connectAsUser(senderUserId);
-    recipient = await connectAsUser(recipientUserId);
-  });
+2. **Offline message delivery**: Disconnect recipient, send message, reconnect recipient, verify pending message is delivered on connect.
 
-  afterAll(async () => {
-    sender.close();
-    recipient.close();
-    await teardownTestDb();
-  });
-
-  it('delivers message from sender to recipient', async () => {
-    const clientMessageId = crypto.randomUUID();
-    const messageContent = 'Hello, World!';
-
-    // Send message
-    sender.send(JSON.stringify({
-      type: 'message',
-      payload: {
-        conversationId,
-        content: messageContent,
-        contentType: 'text',
-        clientMessageId,
-      }
-    }));
-
-    // Wait for recipient to receive
-    const received = await waitForMessage(recipient, 'message');
-    expect(received.payload.content).toBe(messageContent);
-    expect(received.payload.conversationId).toBe(conversationId);
-
-    // Recipient sends ACK
-    recipient.send(JSON.stringify({
-      type: 'ack',
-      payload: { messageId: received.payload.id }
-    }));
-
-    // Wait for sender to receive delivery status
-    const status = await waitForMessage(sender, 'message_status');
-    expect(status.payload.status).toBe('delivered');
-  });
-});
-```
+3. **Read receipt batch update**: Open conversation, send read event, verify all older messages marked as read, verify sender receives status updates.
 
 ---
 
@@ -1435,6 +564,6 @@ The full-stack WhatsApp design integrates:
 
 4. **Offline Architecture**: Frontend IndexedDB queue + cache, backend pending message delivery on reconnect
 
-5. **Status Synchronization**: Idempotent status transitions (sent -> delivered -> read) with batched updates
+5. **Status Synchronization**: Idempotent status transitions (sent → delivered → read) with batched updates
 
 The architecture supports reliable message delivery with seamless offline capability while maintaining type safety across the stack.

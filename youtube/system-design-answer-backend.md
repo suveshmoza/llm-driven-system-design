@@ -170,358 +170,182 @@ Watch history: 500B entries x 100 bytes = 50 TB
 
 ### Chunked Upload with S3 Multipart
 
-```typescript
-// Upload Service - Initialization
-async function initializeUpload(req: Request): Promise<UploadSession> {
-  const { filename, fileSize, mimeType } = req.body;
-  const userId = req.session.userId;
-
-  // Validate file type and size
-  if (!ALLOWED_TYPES.includes(mimeType)) {
-    throw new ValidationError('Unsupported video format');
-  }
-  if (fileSize > MAX_FILE_SIZE) {
-    throw new ValidationError('File exceeds 5GB limit');
-  }
-
-  // Calculate chunk count
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
-  const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
-
-  // Initialize S3 multipart upload
-  const s3UploadId = await s3.createMultipartUpload({
-    Bucket: 'raw-videos',
-    Key: `${generateUploadId()}/${filename}`,
-    ContentType: mimeType
-  });
-
-  // Create session record
-  const session = await db.uploadSessions.create({
-    id: generateUploadId(),
-    userId,
-    filename,
-    fileSize,
-    totalChunks,
-    uploadedChunks: 0,
-    status: 'active',
-    s3UploadId: s3UploadId.UploadId,
-    expiresAt: addHours(new Date(), 24)
-  });
-
-  return {
-    uploadId: session.id,
-    chunkSize: CHUNK_SIZE,
-    totalChunks
-  };
-}
-
-// Chunk upload handler
-async function uploadChunk(
-  uploadId: string,
-  chunkNumber: number,
-  data: Buffer
-): Promise<{ etag: string }> {
-  const session = await db.uploadSessions.findById(uploadId);
-
-  if (!session || session.status !== 'active') {
-    throw new NotFoundError('Upload session not found or expired');
-  }
-
-  // Upload part to S3
-  const result = await s3.uploadPart({
-    Bucket: 'raw-videos',
-    Key: session.s3Key,
-    UploadId: session.s3UploadId,
-    PartNumber: chunkNumber + 1, // S3 parts are 1-indexed
-    Body: data
-  });
-
-  // Track chunk completion in Redis for parallel uploads
-  await redis.hset(`upload:${uploadId}:parts`,
-    chunkNumber.toString(),
-    result.ETag
-  );
-  await redis.hincrby(`upload:${uploadId}`, 'completedChunks', 1);
-
-  return { etag: result.ETag };
-}
-
-// Complete upload and trigger transcoding
-async function completeUpload(
-  uploadId: string,
-  metadata: VideoMetadata
-): Promise<Video> {
-  const session = await db.uploadSessions.findById(uploadId);
-
-  // Verify all chunks received
-  const completedChunks = await redis.hget(`upload:${uploadId}`, 'completedChunks');
-  if (parseInt(completedChunks) !== session.totalChunks) {
-    throw new ValidationError('Missing chunks');
-  }
-
-  // Get ETags for multipart completion
-  const parts = await redis.hgetall(`upload:${uploadId}:parts`);
-  const sortedParts = Object.entries(parts)
-    .sort(([a], [b]) => parseInt(a) - parseInt(b))
-    .map(([partNumber, etag]) => ({
-      PartNumber: parseInt(partNumber) + 1,
-      ETag: etag
-    }));
-
-  // Complete S3 multipart upload
-  await s3.completeMultipartUpload({
-    Bucket: 'raw-videos',
-    Key: session.s3Key,
-    UploadId: session.s3UploadId,
-    MultipartUpload: { Parts: sortedParts }
-  });
-
-  // Create video record
-  const videoId = generateYouTubeStyleId(); // 11-char alphanumeric
-  const video = await db.videos.create({
-    id: videoId,
-    channelId: session.userId,
-    title: metadata.title,
-    description: metadata.description,
-    tags: metadata.tags,
-    categories: metadata.categories,
-    status: 'processing',
-    rawVideoKey: session.s3Key,
-    createdAt: new Date()
-  });
-
-  // Queue transcoding job
-  await messageQueue.publish('transcode.jobs', {
-    jobId: generateJobId(),
-    videoId: video.id,
-    sourceKey: session.s3Key,
-    resolutions: ['1080p', '720p', '480p', '360p'],
-    priority: 'normal',
-    createdAt: new Date()
-  });
-
-  // Cleanup
-  await redis.del(`upload:${uploadId}:parts`, `upload:${uploadId}`);
-  await db.uploadSessions.update(uploadId, { status: 'completed' });
-
-  return video;
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Upload Flow                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────┐     ┌─────────────────┐     ┌───────────────────────────┐ │
+│  │   Client    │────▶│ Upload Service  │────▶│ S3 Multipart Upload Init  │ │
+│  └─────────────┘     └─────────────────┘     └───────────────────────────┘ │
+│        │                     │                           │                  │
+│        │                     ▼                           │                  │
+│        │           ┌─────────────────────┐               │                  │
+│        │           │ Create Upload       │               │                  │
+│        │           │ Session in DB       │◀──────────────┘                  │
+│        │           └─────────────────────┘                                  │
+│        │                                                                    │
+│        └─────────────── For each 5MB chunk ──────────────────────────┐     │
+│                              │                                        │     │
+│                              ▼                                        │     │
+│                    ┌─────────────────────┐                            │     │
+│                    │   S3.uploadPart()   │                            │     │
+│                    │   + Store ETag      │                            │     │
+│                    │   in Redis          │                            │     │
+│                    └─────────────────────┘                            │     │
+│                                                                       │     │
+│        ┌──────────────────────────────────────────────────────────────┘     │
+│        │                                                                    │
+│        ▼  On completion:                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  1. Verify all chunks received (compare Redis count to expected)    │   │
+│  │  2. Call S3.completeMultipartUpload() with sorted ETags             │   │
+│  │  3. Create video record with status='processing'                    │   │
+│  │  4. Publish transcode job to message queue                          │   │
+│  │  5. Cleanup Redis keys and update session status                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Transcoding Worker with FFmpeg
+**Key Upload Implementation Details:**
 
-```python
-# Transcoding Worker (Python for FFmpeg integration)
-import subprocess
-import boto3
-from dataclasses import dataclass
+- **Chunk size**: 5MB per chunk for optimal parallelism
+- **File validation**: Check MIME type against allowed types, enforce 5GB limit
+- **Session management**: Store upload session in DB with 24-hour expiry
+- **Parallel tracking**: Use Redis HSET for chunk ETags, HINCRBY for completion counter
+- **Atomic completion**: S3 multipart requires sorted parts with ETags for final assembly
+- **Video ID generation**: YouTube-style 11-character alphanumeric ID
 
-@dataclass
-class TranscodeJob:
-    job_id: str
-    video_id: str
-    source_key: str
-    resolutions: list[str]
-    priority: str
+### Transcoding Worker Pipeline
 
-RESOLUTION_CONFIGS = {
-    '1080p': {'width': 1920, 'height': 1080, 'bitrate': '5000k', 'audio': '192k'},
-    '720p':  {'width': 1280, 'height': 720,  'bitrate': '2500k', 'audio': '128k'},
-    '480p':  {'width': 854,  'height': 480,  'bitrate': '1000k', 'audio': '96k'},
-    '360p':  {'width': 640,  'height': 360,  'bitrate': '500k',  'audio': '64k'}
-}
-
-HLS_SEGMENT_DURATION = 4  # seconds
-
-async def process_transcode_job(job: TranscodeJob):
-    try:
-        # Update status
-        await update_video_status(job.video_id, 'transcoding')
-
-        # Download raw video
-        local_path = f'/tmp/{job.video_id}/raw.mp4'
-        await download_from_s3('raw-videos', job.source_key, local_path)
-
-        # Extract source metadata
-        probe = await ffprobe(local_path)
-        source_resolution = (probe['width'], probe['height'])
-        duration = probe['duration']
-
-        # Generate thumbnails
-        thumbnails = await generate_thumbnails(local_path, job.video_id)
-
-        completed_resolutions = []
-
-        # Transcode to each resolution
-        for resolution in job.resolutions:
-            config = RESOLUTION_CONFIGS[resolution]
-
-            # Skip if source is lower resolution
-            if not resolution_fits(source_resolution, config):
-                continue
-
-            # Transcode to intermediate MP4
-            intermediate = f'/tmp/{job.video_id}/{resolution}.mp4'
-            await transcode_to_resolution(local_path, intermediate, config)
-
-            # Generate HLS segments
-            segments_dir = f'/tmp/{job.video_id}/{resolution}/segments'
-            manifest_path = await generate_hls_segments(
-                intermediate,
-                segments_dir,
-                segment_duration=HLS_SEGMENT_DURATION
-            )
-
-            # Upload segments to S3
-            await upload_hls_to_s3(
-                segments_dir,
-                f'videos/{job.video_id}/{resolution}'
-            )
-
-            # Record resolution metadata
-            completed_resolutions.append({
-                'resolution': resolution,
-                'width': config['width'],
-                'height': config['height'],
-                'bitrate': int(config['bitrate'].replace('k', '')) * 1000
-            })
-
-        # Generate master manifest
-        master_manifest = generate_master_manifest(
-            job.video_id,
-            completed_resolutions
-        )
-        await upload_to_s3(
-            'videos',
-            f'{job.video_id}/master.m3u8',
-            master_manifest
-        )
-
-        # Update video record
-        await update_video_complete(
-            job.video_id,
-            status='ready',
-            duration_seconds=int(duration),
-            resolutions=completed_resolutions,
-            thumbnail_url=thumbnails['default'],
-            published_at=datetime.now()
-        )
-
-        # Clean up local files
-        shutil.rmtree(f'/tmp/{job.video_id}')
-
-        # Publish event for notifications
-        await publish_event('video.published', {
-            'videoId': job.video_id,
-            'channelId': video.channel_id
-        })
-
-    except Exception as e:
-        logger.error(f'Transcode failed: {job.video_id}', error=str(e))
-        await update_video_status(job.video_id, 'failed')
-        raise  # For retry handling
-
-async def transcode_to_resolution(input_path: str, output_path: str, config: dict):
-    """Run FFmpeg transcoding to specific resolution"""
-    cmd = [
-        'ffmpeg', '-i', input_path,
-        '-vf', f"scale={config['width']}:{config['height']}",
-        '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-b:v', config['bitrate'],
-        '-maxrate', config['bitrate'],
-        '-bufsize', str(int(config['bitrate'].replace('k', '')) * 2) + 'k',
-        '-c:a', 'aac',
-        '-b:a', config['audio'],
-        '-movflags', '+faststart',
-        output_path
-    ]
-
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    stdout, stderr = await process.communicate()
-
-    if process.returncode != 0:
-        raise TranscodeError(f'FFmpeg failed: {stderr.decode()}')
-
-async def generate_hls_segments(input_path: str, output_dir: str, segment_duration: int):
-    """Generate HLS playlist and segments"""
-    os.makedirs(output_dir, exist_ok=True)
-    playlist_path = f'{output_dir}/playlist.m3u8'
-
-    cmd = [
-        'ffmpeg', '-i', input_path,
-        '-c', 'copy',  # No re-encoding, just segment
-        '-hls_time', str(segment_duration),
-        '-hls_list_size', '0',  # Include all segments
-        '-hls_segment_filename', f'{output_dir}/segment_%04d.ts',
-        '-hls_playlist_type', 'vod',
-        playlist_path
-    ]
-
-    process = await asyncio.create_subprocess_exec(*cmd)
-    await process.wait()
-
-    return playlist_path
-
-def generate_master_manifest(video_id: str, resolutions: list) -> str:
-    """Generate HLS master playlist pointing to quality variants"""
-    lines = [
-        '#EXTM3U',
-        '#EXT-X-VERSION:3'
-    ]
-
-    for res in sorted(resolutions, key=lambda r: r['bitrate'], reverse=True):
-        lines.append(
-            f"#EXT-X-STREAM-INF:BANDWIDTH={res['bitrate']},"
-            f"RESOLUTION={res['width']}x{res['height']}"
-        )
-        lines.append(f"{res['resolution']}/playlist.m3u8")
-
-    return '\n'.join(lines)
 ```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Transcoding Pipeline                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────┐                                                       │
+│  │  Message Queue   │ consume job                                           │
+│  │  (Kafka/RMQ)     │────────────────────┐                                  │
+│  └──────────────────┘                    │                                  │
+│                                          ▼                                  │
+│                           ┌──────────────────────────────┐                  │
+│                           │  1. Download raw video from  │                  │
+│                           │     S3 to local temp         │                  │
+│                           └──────────────┬───────────────┘                  │
+│                                          │                                  │
+│                                          ▼                                  │
+│                           ┌──────────────────────────────┐                  │
+│                           │  2. FFprobe: Extract source  │                  │
+│                           │     resolution + duration    │                  │
+│                           └──────────────┬───────────────┘                  │
+│                                          │                                  │
+│                                          ▼                                  │
+│                           ┌──────────────────────────────┐                  │
+│                           │  3. Generate thumbnails at   │                  │
+│                           │     multiple timestamps      │                  │
+│                           └──────────────┬───────────────┘                  │
+│                                          │                                  │
+│                        ┌─────────────────┼─────────────────┐                │
+│                        ▼                 ▼                 ▼                │
+│              ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│              │ Transcode    │  │ Transcode    │  │ Transcode    │           │
+│              │ 1080p        │  │ 720p         │  │ 480p, 360p   │           │
+│              │ (if source   │  │              │  │              │           │
+│              │  supports)   │  │              │  │              │           │
+│              └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
+│                     │                 │                 │                   │
+│                     └─────────────────┼─────────────────┘                   │
+│                                       │                                     │
+│                                       ▼                                     │
+│                           ┌──────────────────────────────┐                  │
+│                           │  4. For each resolution:     │                  │
+│                           │     - Segment into HLS .ts   │                  │
+│                           │     - Generate playlist.m3u8 │                  │
+│                           │     - Upload to S3           │                  │
+│                           └──────────────┬───────────────┘                  │
+│                                          │                                  │
+│                                          ▼                                  │
+│                           ┌──────────────────────────────┐                  │
+│                           │  5. Generate master.m3u8     │                  │
+│                           │     (links all qualities)    │                  │
+│                           └──────────────┬───────────────┘                  │
+│                                          │                                  │
+│                                          ▼                                  │
+│                           ┌──────────────────────────────┐                  │
+│                           │  6. Update DB: status=ready  │                  │
+│                           │     Publish video.published  │                  │
+│                           │     event for notifications  │                  │
+│                           └──────────────────────────────┘                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Resolution Configurations:**
+
+| Resolution | Width | Height | Video Bitrate | Audio Bitrate |
+|------------|-------|--------|---------------|---------------|
+| 1080p | 1920 | 1080 | 5000k | 192k |
+| 720p | 1280 | 720 | 2500k | 128k |
+| 480p | 854 | 480 | 1000k | 96k |
+| 360p | 640 | 360 | 500k | 64k |
+
+**FFmpeg Transcoding Parameters:**
+- Codec: libx264 with medium preset
+- Rate control: VBR with maxrate = bitrate, bufsize = 2x bitrate
+- Audio: AAC codec
+- Flags: +faststart for progressive download
+
+**HLS Segment Generation:**
+- Segment duration: 4 seconds
+- Playlist type: VOD (includes all segments)
+- File pattern: segment_0000.ts, segment_0001.ts, etc.
 
 ### HLS Manifest Structure
 
 ```
-# Master Playlist (master.m3u8)
-#EXTM3U
-#EXT-X-VERSION:3
-
-#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
-1080p/playlist.m3u8
-
-#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720
-720p/playlist.m3u8
-
-#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=854x480
-480p/playlist.m3u8
-
-#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360
-360p/playlist.m3u8
-```
-
-```
-# Quality Playlist (720p/playlist.m3u8)
-#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:4
-#EXT-X-PLAYLIST-TYPE:VOD
-#EXT-X-MEDIA-SEQUENCE:0
-
-#EXTINF:4.000,
-segment_0000.ts
-#EXTINF:4.000,
-segment_0001.ts
-#EXTINF:4.000,
-segment_0002.ts
-#EXTINF:3.500,
-segment_0003.ts
-#EXT-X-ENDLIST
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        HLS Manifest Hierarchy                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  master.m3u8 (Master Playlist)                                      │   │
+│  │  ──────────────────────────────                                     │   │
+│  │  #EXTM3U                                                            │   │
+│  │  #EXT-X-VERSION:3                                                   │   │
+│  │                                                                     │   │
+│  │  #EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080           │   │
+│  │  1080p/playlist.m3u8                                                │   │
+│  │                                                                     │   │
+│  │  #EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720            │   │
+│  │  720p/playlist.m3u8                                                 │   │
+│  │                                                                     │   │
+│  │  #EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=854x480             │   │
+│  │  480p/playlist.m3u8                                                 │   │
+│  │                                                                     │   │
+│  │  #EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360              │   │
+│  │  360p/playlist.m3u8                                                 │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                              │
+│              ┌───────────────┼───────────────┐                             │
+│              ▼               ▼               ▼                             │
+│  ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐        │
+│  │ 720p/playlist.m3u8│ │ 480p/playlist.m3u8│ │ ...               │        │
+│  │ ──────────────────│ │                   │ │                   │        │
+│  │ #EXTM3U           │ │                   │ │                   │        │
+│  │ #EXT-X-VERSION:3  │ │                   │ │                   │        │
+│  │ #TARGETDURATION:4 │ │                   │ │                   │        │
+│  │ #PLAYLIST-TYPE:VOD│ │                   │ │                   │        │
+│  │                   │ │                   │ │                   │        │
+│  │ #EXTINF:4.000,    │ │                   │ │                   │        │
+│  │ segment_0000.ts   │ │                   │ │                   │        │
+│  │ #EXTINF:4.000,    │ │                   │ │                   │        │
+│  │ segment_0001.ts   │ │                   │ │                   │        │
+│  │ ...               │ │                   │ │                   │        │
+│  │ #EXT-X-ENDLIST    │ │                   │ │                   │        │
+│  └───────────────────┘ └───────────────────┘ └───────────────────┘        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -530,384 +354,197 @@ segment_0003.ts
 
 ### Batched View Count Updates
 
-```typescript
-// View Recording Service
-class ViewCountService {
-  private readonly BATCH_INTERVAL = 60_000; // 1 minute
-  private readonly BATCH_SIZE = 1000;
-
-  async recordView(videoId: string, userId?: string): Promise<void> {
-    const viewKey = `views:pending:${videoId}`;
-    const viewDetailsKey = `views:details:${videoId}`;
-
-    // Increment counter atomically
-    await redis.incr(viewKey);
-
-    // Store additional view metadata for analytics
-    if (userId) {
-      await redis.lpush(viewDetailsKey, JSON.stringify({
-        userId,
-        timestamp: Date.now(),
-        quality: req.headers['x-video-quality']
-      }));
-      await redis.ltrim(viewDetailsKey, 0, 999); // Keep last 1000
-    }
-  }
-
-  // Background job running every minute
-  async flushViewCounts(): Promise<void> {
-    const pattern = 'views:pending:*';
-    let cursor = '0';
-
-    do {
-      const [newCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-      cursor = newCursor;
-
-      for (const key of keys) {
-        const videoId = key.split(':')[2];
-
-        // Get and reset atomically
-        const count = await redis.getset(key, '0');
-
-        if (parseInt(count) > 0) {
-          // Batch update to PostgreSQL
-          await pool.query(`
-            UPDATE videos
-            SET view_count = view_count + $1,
-                updated_at = NOW()
-            WHERE id = $2
-          `, [count, videoId]);
-
-          // Invalidate cache
-          await redis.del(`video:${videoId}`);
-
-          // Update trending score
-          await this.updateTrendingScore(videoId, parseInt(count));
-        }
-
-        // Delete if zero
-        const remaining = await redis.get(key);
-        if (remaining === '0') {
-          await redis.del(key);
-        }
-      }
-    } while (cursor !== '0');
-  }
-
-  private async updateTrendingScore(videoId: string, viewDelta: number): Promise<void> {
-    // Get video metadata for category
-    const video = await this.getVideo(videoId);
-
-    // Score = views * time_decay
-    // Time decay: score halves every 24 hours
-    const ageHours = (Date.now() - video.publishedAt.getTime()) / (1000 * 60 * 60);
-    const decayFactor = Math.pow(0.5, ageHours / 24);
-    const score = viewDelta * decayFactor;
-
-    // Update global and category-specific trending sets
-    await redis.zincrby('trending:global', score, videoId);
-
-    for (const category of video.categories) {
-      await redis.zincrby(`trending:${category}`, score, videoId);
-    }
-
-    // Trim to top 1000
-    await redis.zremrangebyrank('trending:global', 0, -1001);
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     View Count Batching Flow                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  User watches video                                                         │
+│        │                                                                    │
+│        ▼                                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Redis INCR views:pending:{videoId}                                 │   │
+│  │  (Atomic increment, no DB hit)                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│        │                                                                    │
+│        ├───▶ Optionally store view metadata for analytics                   │
+│        │     (userId, timestamp, quality) in Redis list                     │
+│        │                                                                    │
+│        ▼                                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Background Job (every 60 seconds)                                  │   │
+│  │  ─────────────────────────────────                                  │   │
+│  │                                                                     │   │
+│  │  1. SCAN for all views:pending:* keys                               │   │
+│  │  2. For each key:                                                   │   │
+│  │     - GETSET key to 0 (atomically get current and reset)           │   │
+│  │     - If count > 0:                                                 │   │
+│  │       - UPDATE videos SET view_count = view_count + count           │   │
+│  │       - Invalidate video cache                                      │   │
+│  │       - Update trending score                                       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Trending Score Calculation                                         │   │
+│  │  ─────────────────────────────                                      │   │
+│  │                                                                     │   │
+│  │  Score = viewDelta * decayFactor                                    │   │
+│  │                                                                     │   │
+│  │  decayFactor = 0.5^(ageHours/24)                                    │   │
+│  │  (Score halves every 24 hours)                                      │   │
+│  │                                                                     │   │
+│  │  Store in Redis sorted sets:                                        │   │
+│  │  - ZINCRBY trending:global score videoId                            │   │
+│  │  - ZINCRBY trending:{category} score videoId                        │   │
+│  │  - ZREMRANGEBYRANK trending:global 0 -1001 (keep top 1000)          │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Multi-Tier CDN Caching Strategy
 
-```typescript
-// CDN Cache Configuration
-interface CDNCacheConfig {
-  edge: {
-    ttl: 3600,           // 1 hour at edge
-    staleWhileRevalidate: 300,
-    cacheableResponses: ['200', '206']
-  },
-  regional: {
-    ttl: 86400,          // 24 hours at regional POPs
-    minFreshness: 3600
-  },
-  origin: {
-    shieldEnabled: true,  // Single origin-facing cache layer
-    bypassTokens: ['X-Cache-Bypass']
-  }
-}
-
-// Nginx configuration for HLS caching
-const nginxCacheConfig = `
-# Cache zone definitions
-proxy_cache_path /var/cache/nginx/hls
-    levels=1:2
-    keys_zone=hls_cache:100m
-    max_size=50g
-    inactive=24h
-    use_temp_path=off;
-
-# HLS segment caching
-location ~ ^/videos/([^/]+)/([^/]+)/segment_.*\.ts$ {
-    proxy_pass http://minio;
-    proxy_cache hls_cache;
-
-    # Long cache for immutable segments
-    proxy_cache_valid 200 7d;
-    proxy_cache_use_stale error timeout updating;
-
-    # Add cache status header for debugging
-    add_header X-Cache-Status $upstream_cache_status;
-
-    # Enable range requests for seeking
-    proxy_set_header Range $http_range;
-    proxy_cache_key "$uri$is_args$args";
-}
-
-# Manifest files - shorter cache
-location ~ ^/videos/([^/]+)/.*\.m3u8$ {
-    proxy_pass http://minio;
-    proxy_cache hls_cache;
-
-    # Short cache since manifests can be regenerated
-    proxy_cache_valid 200 5m;
-    proxy_cache_use_stale error timeout;
-
-    add_header X-Cache-Status $upstream_cache_status;
-}
-`;
-
-// Pre-warming popular content
-async function prewarmVideo(videoId: string): Promise<void> {
-  const video = await getVideo(videoId);
-
-  // Get list of edge POPs
-  const edgeLocations = await cdn.getEdgeLocations();
-
-  // Prefetch master manifest and first segments of each quality
-  const prefetchUrls = [
-    `${CDN_URL}/videos/${videoId}/master.m3u8`,
-    ...video.resolutions.map(r =>
-      `${CDN_URL}/videos/${videoId}/${r.resolution}/playlist.m3u8`
-    ),
-    // First 10 segments of each quality (covers ~40 seconds)
-    ...video.resolutions.flatMap(r =>
-      Array.from({length: 10}, (_, i) =>
-        `${CDN_URL}/videos/${videoId}/${r.resolution}/segment_${i.toString().padStart(4, '0')}.ts`
-      )
-    )
-  ];
-
-  // Issue prefetch requests to edge POPs
-  await Promise.all(
-    edgeLocations.map(edge =>
-      edge.prefetch(prefetchUrls)
-    )
-  );
-}
 ```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     CDN Caching Architecture                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Edge Tier (Closest to users)                                       │   │
+│  │  ────────────────────────────                                       │   │
+│  │  TTL: 1 hour                                                        │   │
+│  │  Stale-while-revalidate: 5 minutes                                  │   │
+│  │  Cacheable responses: 200, 206 (partial content)                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                              │
+│                              ▼ Cache miss                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Regional Tier (POPs)                                               │   │
+│  │  ────────────────────                                               │   │
+│  │  TTL: 24 hours                                                      │   │
+│  │  Min freshness: 1 hour                                              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                              │
+│                              ▼ Cache miss                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Origin Shield (Single cache layer facing origin)                   │   │
+│  │  ─────────────────────────────────────────────────                  │   │
+│  │  Aggregates requests from all regional POPs                         │   │
+│  │  Reduces origin load by 95%                                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                              │                                              │
+│                              ▼                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Origin (MinIO/S3)                                                  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Nginx HLS Caching Configuration:**
+
+| Content Type | Cache Path | Cache Duration | Notes |
+|--------------|------------|----------------|-------|
+| HLS Segments (.ts) | /var/cache/nginx/hls | 7 days | Immutable, long cache |
+| Manifests (.m3u8) | /var/cache/nginx/hls | 5 minutes | Short cache, can regenerate |
+
+**Key Caching Features:**
+- Range request support for video seeking
+- Stale-while-revalidate for graceful degradation
+- Cache status header (X-Cache-Status) for debugging
+- Cache key includes URI and query args
+
+**Pre-warming Popular Content:**
+1. Get list of edge POP locations
+2. Prefetch master.m3u8 and quality playlists
+3. Prefetch first 10 segments of each quality (~40 seconds of video)
+4. Issue prefetch requests to all edge locations
 
 ---
 
 ## 6. Deep Dive: Recommendation System (5-6 minutes)
 
-### Collaborative Filtering Implementation
+### Hybrid Recommendation Architecture
 
-```typescript
-// Recommendation Service
-class RecommendationService {
-  // Get personalized recommendations for user
-  async getRecommendations(userId: string, limit: number = 50): Promise<Video[]> {
-    // Gather candidates from multiple sources
-    const [
-      collaborative,
-      contentBased,
-      subscribed,
-      trending
-    ] = await Promise.all([
-      this.collaborativeFilter(userId, limit),
-      this.contentBasedFilter(userId, limit),
-      this.subscriptionFeed(userId, limit),
-      this.getTrending(limit)
-    ]);
-
-    // Merge and deduplicate
-    const candidateMap = new Map<string, RecommendationCandidate>();
-
-    for (const video of [...collaborative, ...contentBased, ...subscribed, ...trending]) {
-      if (!candidateMap.has(video.id)) {
-        candidateMap.set(video.id, {
-          video,
-          sources: [],
-          score: 0
-        });
-      }
-      candidateMap.get(video.id)!.sources.push(video.source);
-    }
-
-    // Score and rank candidates
-    const scored = await this.scoreAndRank(userId, [...candidateMap.values()]);
-
-    return scored.slice(0, limit).map(c => c.video);
-  }
-
-  private async collaborativeFilter(userId: string, limit: number): Promise<Video[]> {
-    // Find users with similar watch patterns
-    const userWatchHistory = await this.getWatchHistory(userId, 100);
-    const watchedVideoIds = new Set(userWatchHistory.map(w => w.videoId));
-
-    // Find similar users (users who watched same videos with high completion)
-    const similarUsers = await pool.query(`
-      WITH user_videos AS (
-        SELECT video_id, watch_percentage
-        FROM watch_history
-        WHERE user_id = $1
-        AND watch_percentage > 50
-        ORDER BY watched_at DESC
-        LIMIT 100
-      ),
-      similar_watchers AS (
-        SELECT
-          wh.user_id,
-          COUNT(*) as overlap,
-          AVG(wh.watch_percentage) as avg_completion
-        FROM watch_history wh
-        JOIN user_videos uv ON wh.video_id = uv.video_id
-        WHERE wh.user_id != $1
-        AND wh.watch_percentage > 50
-        GROUP BY wh.user_id
-        HAVING COUNT(*) >= 5
-        ORDER BY overlap DESC, avg_completion DESC
-        LIMIT 50
-      )
-      SELECT user_id, overlap, avg_completion
-      FROM similar_watchers
-    `, [userId]);
-
-    // Get videos those users watched that current user hasn't
-    const recommendations = await pool.query(`
-      WITH similar_user_videos AS (
-        SELECT
-          wh.video_id,
-          SUM(su.overlap * wh.watch_percentage / 100) as score
-        FROM watch_history wh
-        JOIN (VALUES ${similarUsers.rows.map((u, i) =>
-          `($${i*2+2}::uuid, $${i*2+3}::int)`
-        ).join(',')}) AS su(user_id, overlap)
-        ON wh.user_id = su.user_id
-        WHERE wh.video_id != ALL($1)
-        AND wh.watch_percentage > 50
-        GROUP BY wh.video_id
-      )
-      SELECT v.*, suv.score
-      FROM videos v
-      JOIN similar_user_videos suv ON v.id = suv.video_id
-      WHERE v.status = 'ready'
-      AND v.visibility = 'public'
-      ORDER BY suv.score DESC
-      LIMIT $${similarUsers.rows.length * 2 + 2}
-    `, [
-      Array.from(watchedVideoIds),
-      ...similarUsers.rows.flatMap(u => [u.user_id, u.overlap]),
-      limit
-    ]);
-
-    return recommendations.rows.map(r => ({
-      ...r,
-      source: 'collaborative'
-    }));
-  }
-
-  private async contentBasedFilter(userId: string, limit: number): Promise<Video[]> {
-    // Extract user's content preferences
-    const preferences = await pool.query(`
-      SELECT
-        unnest(v.categories) as category,
-        SUM(wh.watch_percentage) as weight
-      FROM watch_history wh
-      JOIN videos v ON v.id = wh.video_id
-      WHERE wh.user_id = $1
-      AND wh.watched_at > NOW() - INTERVAL '30 days'
-      GROUP BY unnest(v.categories)
-      ORDER BY weight DESC
-      LIMIT 10
-    `, [userId]);
-
-    const categoryWeights = new Map(
-      preferences.rows.map(p => [p.category, parseFloat(p.weight)])
-    );
-
-    // Find videos in preferred categories
-    const watchedIds = await this.getWatchedVideoIds(userId);
-
-    const candidates = await pool.query(`
-      SELECT
-        v.*,
-        v.categories & $1 as matched_categories
-      FROM videos v
-      WHERE v.status = 'ready'
-      AND v.visibility = 'public'
-      AND v.categories && $1
-      AND v.id != ALL($2)
-      ORDER BY
-        ARRAY_LENGTH(v.categories & $1, 1) DESC,
-        v.view_count DESC
-      LIMIT $3
-    `, [
-      Array.from(categoryWeights.keys()),
-      watchedIds,
-      limit * 2
-    ]);
-
-    // Score by category weights and engagement
-    return candidates.rows
-      .map(v => {
-        const categoryScore = v.matched_categories.reduce(
-          (sum: number, cat: string) => sum + (categoryWeights.get(cat) || 0),
-          0
-        );
-        return {
-          ...v,
-          source: 'content-based',
-          contentScore: categoryScore * (v.like_count / (v.view_count || 1))
-        };
-      })
-      .sort((a, b) => b.contentScore - a.contentScore)
-      .slice(0, limit);
-  }
-
-  private async scoreAndRank(
-    userId: string,
-    candidates: RecommendationCandidate[]
-  ): Promise<RecommendationCandidate[]> {
-    // Final scoring with source weights and time decay
-    const now = Date.now();
-
-    for (const candidate of candidates) {
-      let score = 0;
-
-      // Source weights
-      if (candidate.sources.includes('subscribed')) score += 100;
-      if (candidate.sources.includes('collaborative')) score += 50;
-      if (candidate.sources.includes('content-based')) score += 30;
-      if (candidate.sources.includes('trending')) score += 20;
-
-      // Engagement quality
-      const engagementRatio = candidate.video.like_count /
-        (candidate.video.like_count + candidate.video.dislike_count + 1);
-      score += engagementRatio * 40;
-
-      // Freshness decay (half-life of 48 hours)
-      const ageHours = (now - candidate.video.publishedAt.getTime()) / (1000 * 60 * 60);
-      score *= Math.exp(-ageHours / 48);
-
-      candidate.score = score;
-    }
-
-    return candidates.sort((a, b) => b.score - a.score);
-  }
-}
 ```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Recommendation Flow                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  User requests home feed                                                    │
+│        │                                                                    │
+│        ▼                                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Parallel Candidate Generation                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│        │                                                                    │
+│        ├──────────────┬──────────────┬──────────────┐                      │
+│        ▼              ▼              ▼              ▼                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐                   │
+│  │Collabor- │  │Content-  │  │Subscrib- │  │Trending  │                   │
+│  │ative     │  │Based     │  │tion Feed │  │          │                   │
+│  │Filter    │  │Filter    │  │          │  │          │                   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘                   │
+│       │             │             │             │                          │
+│       └─────────────┴─────────────┴─────────────┘                          │
+│                          │                                                  │
+│                          ▼                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Merge & Deduplicate                                                │   │
+│  │  - Build candidate map by videoId                                   │   │
+│  │  - Track which sources contributed each video                       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                          │                                                  │
+│                          ▼                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Score & Rank                                                       │   │
+│  │  - Apply source weights                                             │   │
+│  │  - Calculate engagement quality                                     │   │
+│  │  - Apply freshness decay                                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                          │                                                  │
+│                          ▼                                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Return top N videos                                                │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Collaborative Filtering
+
+**Goal:** Find videos watched by users with similar taste
+
+**Algorithm:**
+1. Get current user's last 100 watched videos (with >50% completion)
+2. Find similar users who watched the same videos with high completion
+3. Require at least 5 overlapping videos
+4. Rank by overlap count and average completion
+5. Get videos those similar users watched that current user hasn't
+6. Score by: sum(overlap * watch_percentage) across similar users
+
+### Content-Based Filtering
+
+**Goal:** Find videos in categories the user prefers
+
+**Algorithm:**
+1. Extract category preferences from last 30 days of watch history
+2. Weight categories by total watch percentage
+3. Find videos in preferred categories user hasn't seen
+4. Score by: category weight match * engagement ratio (likes/views)
+
+### Final Scoring Formula
+
+| Source | Weight |
+|--------|--------|
+| Subscribed channel | +100 |
+| Collaborative filter | +50 |
+| Content-based filter | +30 |
+| Trending | +20 |
+
+**Additional Factors:**
+- Engagement quality: likeCount / (likeCount + dislikeCount + 1) * 40
+- Freshness decay: score *= e^(-ageHours/48) (half-life of 48 hours)
 
 ---
 
@@ -915,109 +552,93 @@ class RecommendationService {
 
 ### Core Tables
 
-```sql
--- YouTube-style 11-character video IDs
-CREATE TABLE videos (
-    id VARCHAR(11) PRIMARY KEY,
-    channel_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    title VARCHAR(100) NOT NULL,
-    description TEXT,
-    duration_seconds INTEGER,
-    status VARCHAR(20) DEFAULT 'processing',
-    visibility VARCHAR(20) DEFAULT 'public',
-    view_count BIGINT DEFAULT 0,
-    like_count BIGINT DEFAULT 0,
-    dislike_count BIGINT DEFAULT 0,
-    comment_count BIGINT DEFAULT 0,
-    categories TEXT[] DEFAULT '{}',
-    tags TEXT[] DEFAULT '{}',
-    thumbnail_url TEXT,
-    raw_video_key TEXT,
-    published_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Composite indexes for common queries
-CREATE INDEX idx_videos_channel_published
-  ON videos(channel_id, published_at DESC);
-
-CREATE INDEX idx_videos_status_published
-  ON videos(published_at DESC)
-  WHERE status = 'ready' AND visibility = 'public';
-
--- GIN indexes for array searches
-CREATE INDEX idx_videos_categories ON videos USING GIN(categories);
-CREATE INDEX idx_videos_tags ON videos USING GIN(tags);
-
--- Video resolutions for ABR streaming
-CREATE TABLE video_resolutions (
-    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
-    resolution VARCHAR(10) NOT NULL,
-    manifest_url TEXT,
-    bitrate INTEGER,
-    width INTEGER,
-    height INTEGER,
-    PRIMARY KEY (video_id, resolution)
-);
-
--- Threaded comments
-CREATE TABLE comments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    parent_id UUID REFERENCES comments(id) ON DELETE CASCADE,
-    text TEXT NOT NULL,
-    like_count INTEGER DEFAULT 0,
-    is_edited BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX idx_comments_video_created
-  ON comments(video_id, created_at DESC);
-CREATE INDEX idx_comments_parent
-  ON comments(parent_id) WHERE parent_id IS NOT NULL;
-
--- Watch history for recommendations
-CREATE TABLE watch_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    video_id VARCHAR(11) REFERENCES videos(id) ON DELETE CASCADE,
-    watch_duration_seconds INTEGER DEFAULT 0,
-    watch_percentage DECIMAL(5,2) DEFAULT 0,
-    last_position_seconds INTEGER DEFAULT 0,
-    watched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Composite index for user history and recommendation queries
-CREATE INDEX idx_watch_history_user_recent
-  ON watch_history(user_id, watched_at DESC);
-CREATE INDEX idx_watch_history_video_completion
-  ON watch_history(video_id, watch_percentage);
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PostgreSQL Schema                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  videos                                                              │   │
+│  │  ──────                                                              │   │
+│  │  id VARCHAR(11) PRIMARY KEY       -- YouTube-style 11-char ID       │   │
+│  │  channel_id UUID FK → users                                          │   │
+│  │  title VARCHAR(100)                                                  │   │
+│  │  description TEXT                                                    │   │
+│  │  duration_seconds INTEGER                                            │   │
+│  │  status VARCHAR(20) DEFAULT 'processing'                             │   │
+│  │  visibility VARCHAR(20) DEFAULT 'public'                             │   │
+│  │  view_count BIGINT DEFAULT 0                                         │   │
+│  │  like_count, dislike_count, comment_count BIGINT                     │   │
+│  │  categories TEXT[]                                                   │   │
+│  │  tags TEXT[]                                                         │   │
+│  │  thumbnail_url TEXT                                                  │   │
+│  │  published_at TIMESTAMP                                              │   │
+│  │                                                                     │   │
+│  │  Indexes:                                                           │   │
+│  │  - (channel_id, published_at DESC)          -- Channel videos       │   │
+│  │  - (published_at DESC) WHERE status='ready' -- Public feed          │   │
+│  │  - GIN(categories)                          -- Category search      │   │
+│  │  - GIN(tags)                                -- Tag search           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  video_resolutions                                                  │   │
+│  │  ─────────────────                                                  │   │
+│  │  video_id VARCHAR(11) FK                                            │   │
+│  │  resolution VARCHAR(10)                                             │   │
+│  │  manifest_url TEXT                                                  │   │
+│  │  bitrate INTEGER                                                    │   │
+│  │  width, height INTEGER                                              │   │
+│  │  PRIMARY KEY (video_id, resolution)                                 │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  comments                                                            │   │
+│  │  ────────                                                            │   │
+│  │  id UUID PRIMARY KEY                                                 │   │
+│  │  video_id VARCHAR(11) FK                                             │   │
+│  │  user_id UUID FK                                                     │   │
+│  │  parent_id UUID FK → comments (nullable, for threading)              │   │
+│  │  text TEXT                                                           │   │
+│  │  like_count INTEGER DEFAULT 0                                        │   │
+│  │  is_edited BOOLEAN DEFAULT FALSE                                     │   │
+│  │                                                                     │   │
+│  │  Indexes:                                                           │   │
+│  │  - (video_id, created_at DESC)              -- Video comments       │   │
+│  │  - (parent_id) WHERE parent_id IS NOT NULL  -- Replies              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  watch_history                                                      │   │
+│  │  ─────────────                                                      │   │
+│  │  id UUID PRIMARY KEY                                                 │   │
+│  │  user_id UUID FK                                                     │   │
+│  │  video_id VARCHAR(11) FK                                             │   │
+│  │  watch_duration_seconds INTEGER DEFAULT 0                            │   │
+│  │  watch_percentage DECIMAL(5,2)                                       │   │
+│  │  last_position_seconds INTEGER DEFAULT 0                             │   │
+│  │  watched_at TIMESTAMP                                                │   │
+│  │                                                                     │   │
+│  │  Indexes:                                                           │   │
+│  │  - (user_id, watched_at DESC)               -- User history         │   │
+│  │  - (video_id, watch_percentage)             -- Recommendation query │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Redis Data Structures
 
-```
-# View count buffering
-views:pending:{videoId} -> STRING (incremented, flushed every minute)
-
-# Trending sorted sets (score = views * time_decay)
-trending:global -> ZSET { videoId: score }
-trending:{category} -> ZSET { videoId: score }
-
-# Session storage
-session:{sessionId} -> HASH { userId, username, role, expiresAt }
-
-# Video metadata cache
-video:{videoId} -> JSON { title, views, likes, duration, ... }
-
-# Upload progress tracking
-upload:{uploadId} -> HASH { completedChunks, status }
-upload:{uploadId}:parts -> HASH { partNumber: etag }
-
-# Rate limiting
-ratelimit:{ip}:{endpoint} -> STRING (counter with TTL)
-```
+| Key Pattern | Type | Purpose |
+|-------------|------|---------|
+| views:pending:{videoId} | STRING | Buffered view count (flushed every minute) |
+| trending:global | ZSET | Global trending videos (score = views * decay) |
+| trending:{category} | ZSET | Category-specific trending |
+| session:{sessionId} | HASH | User session (userId, username, role, expiresAt) |
+| video:{videoId} | JSON | Cached video metadata |
+| upload:{uploadId} | HASH | Upload progress (completedChunks, status) |
+| upload:{uploadId}:parts | HASH | Chunk ETags (partNumber: etag) |
+| ratelimit:{ip}:{endpoint} | STRING | Rate limit counter with TTL |
 
 ---
 
@@ -1062,54 +683,31 @@ ratelimit:{ip}:{endpoint} -> STRING (counter with TTL)
 
 ### Key Backend Metrics
 
-```typescript
-// Prometheus metrics
-const metrics = {
-  // Upload metrics
-  video_uploads_total: new Counter({
-    name: 'video_uploads_total',
-    help: 'Total video uploads',
-    labelNames: ['status'] // initiated, completed, failed
-  }),
-
-  upload_size_bytes: new Histogram({
-    name: 'video_upload_size_bytes',
-    help: 'Size of uploaded videos',
-    buckets: [1e6, 1e7, 1e8, 5e8, 1e9, 5e9] // 1MB to 5GB
-  }),
-
-  // Transcoding metrics
-  transcode_queue_depth: new Gauge({
-    name: 'transcode_queue_depth',
-    help: 'Number of pending transcode jobs'
-  }),
-
-  transcode_duration_seconds: new Histogram({
-    name: 'transcode_duration_seconds',
-    help: 'Transcoding job duration',
-    labelNames: ['resolution', 'status'],
-    buckets: [60, 300, 600, 1800, 3600] // 1min to 1hour
-  }),
-
-  // Streaming metrics
-  video_views_total: new Counter({
-    name: 'video_views_total',
-    help: 'Total video views',
-    labelNames: ['quality']
-  }),
-
-  video_watch_duration_seconds: new Histogram({
-    name: 'video_watch_duration_seconds',
-    help: 'Watch duration per session'
-  }),
-
-  // Cache metrics
-  cache_hit_ratio: new Gauge({
-    name: 'cache_hit_ratio',
-    help: 'Redis cache hit ratio',
-    labelNames: ['cache_type']
-  })
-};
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Prometheus Metrics                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Upload Metrics                                                             │
+│  ──────────────                                                             │
+│  video_uploads_total{status}          Counter    initiated/completed/failed │
+│  video_upload_size_bytes              Histogram  1MB to 5GB buckets         │
+│                                                                             │
+│  Transcoding Metrics                                                        │
+│  ───────────────────                                                        │
+│  transcode_queue_depth                Gauge      Pending jobs               │
+│  transcode_duration_seconds{res,stat} Histogram  1min to 1hour buckets      │
+│                                                                             │
+│  Streaming Metrics                                                          │
+│  ─────────────────                                                          │
+│  video_views_total{quality}           Counter    Views by quality           │
+│  video_watch_duration_seconds         Histogram  Watch time per session     │
+│                                                                             │
+│  Cache Metrics                                                              │
+│  ─────────────                                                              │
+│  cache_hit_ratio{cache_type}          Gauge      Redis cache effectiveness  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Alerting Rules

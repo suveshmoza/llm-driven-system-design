@@ -33,54 +33,64 @@
 ### Core Layout Structure
 
 ```
-App
-├── Header
-│   ├── Logo
-│   ├── SearchBar
-│   ├── CategoryNav
-│   └── UserMenu (auth state)
-├── Main Content (Route-based)
-│   ├── AuctionGrid (browse)
-│   ├── AuctionDetail (view/bid)
-│   ├── CreateAuction (seller)
-│   ├── UserDashboard
-│   └── AdminPanel
-└── Footer
+┌─────────────────────────────────────────────────────────────────────┐
+│                              App                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                         Header                                   ││
+│  │  Logo │ SearchBar │ CategoryNav │ UserMenu (auth state)         ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                    Main Content (Route-based)                    ││
+│  │                                                                  ││
+│  │   ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐  ││
+│  │   │ Auction    │ │  Auction   │ │  Create    │ │   User     │  ││
+│  │   │   Grid     │ │   Detail   │ │  Auction   │ │ Dashboard  │  ││
+│  │   │  (browse)  │ │ (view/bid) │ │  (seller)  │ │            │  ││
+│  │   └────────────┘ └────────────┘ └────────────┘ └────────────┘  ││
+│  │                                                                  ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                          Footer                                  ││
+│  └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Auction Detail Page Hierarchy
 
 ```
-AuctionDetailPage
-├── ImageGallery
-│   ├── MainImage
-│   ├── ThumbnailStrip
-│   └── ZoomModal
-├── AuctionInfo
-│   ├── Title
-│   ├── SellerInfo
-│   ├── Description (expandable)
-│   └── CategoryBreadcrumb
-├── BidSection
-│   ├── CurrentBidDisplay
-│   │   ├── BidAmount
-│   │   ├── BidderInfo (anonymized)
-│   │   └── BidCount
-│   ├── CountdownTimer
-│   │   └── SnipeExtensionAlert
-│   ├── BidForm
-│   │   ├── AmountInput
-│   │   ├── IncrementButtons (+$1, +$5, +$10)
-│   │   ├── SubmitButton
-│   │   └── ValidationFeedback
-│   └── AutoBidSetup
-│       ├── MaxBidInput
-│       ├── ExplainerTooltip
-│       └── ActivateToggle
-├── BidHistory
-│   ├── BidList (virtualized)
-│   └── LoadMoreButton
-└── WatchlistButton
+┌─────────────────────────────────────────────────────────────────────┐
+│                       AuctionDetailPage                              │
+├──────────────────────────────┬──────────────────────────────────────┤
+│                              │                                       │
+│  ┌────────────────────────┐  │  ┌─────────────────────────────────┐ │
+│  │     ImageGallery       │  │  │          BidSection             │ │
+│  │  ┌──────────────────┐  │  │  │                                 │ │
+│  │  │    MainImage     │  │  │  │  ┌───────────────────────────┐  │ │
+│  │  └──────────────────┘  │  │  │  │   CurrentBidDisplay       │  │ │
+│  │  ┌──────────────────┐  │  │  │  │   $1,250.00 (5 bids)      │  │ │
+│  │  │  ThumbnailStrip  │  │  │  │  │   [You're winning!]       │  │ │
+│  │  └──────────────────┘  │  │  │  └───────────────────────────┘  │ │
+│  │  ┌──────────────────┐  │  │  │  ┌───────────────────────────┐  │ │
+│  │  │    ZoomModal     │  │  │  │  │    CountdownTimer         │  │ │
+│  │  └──────────────────┘  │  │  │  │    02:15:33 remaining     │  │ │
+│  └────────────────────────┘  │  │  │    [Extended! +2min]      │  │ │
+│                              │  │  └───────────────────────────┘  │ │
+│  ┌────────────────────────┐  │  │  ┌───────────────────────────┐  │ │
+│  │      AuctionInfo       │  │  │  │        BidForm            │  │ │
+│  │  Title                 │  │  │  │  $[____] [+1][+5][+10]    │  │ │
+│  │  SellerInfo            │  │  │  │  [  Place Bid: $1,260  ]  │  │ │
+│  │  Description           │  │  │  └───────────────────────────┘  │ │
+│  │  CategoryBreadcrumb    │  │  │  ┌───────────────────────────┐  │ │
+│  └────────────────────────┘  │  │  │      AutoBidSetup         │  │ │
+│                              │  │  │  Max: $[____] [Enable]    │  │ │
+│  ┌────────────────────────┐  │  │  └───────────────────────────┘  │ │
+│  │      BidHistory        │  │  └─────────────────────────────────┘ │
+│  │  (virtualized list)    │  │                                       │
+│  │  LoadMoreButton        │  │  ┌─────────────────────────────────┐ │
+│  └────────────────────────┘  │  │       WatchlistButton           │ │
+│                              │  └─────────────────────────────────┘ │
+└──────────────────────────────┴──────────────────────────────────────┘
 ```
 
 ---
@@ -89,234 +99,64 @@ AuctionDetailPage
 
 "Real-time updates are critical for auction UX. Users must see competing bids immediately to make informed decisions."
 
+### WebSocket Connection Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     WebSocket Connection Flow                        │
+│                                                                      │
+│  ┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐   │
+│  │   Browser   │────▶│  WebSocket URL  │────▶│  Auction Room   │   │
+│  │  Component  │     │/auctions/{id}   │     │   (Backend)     │   │
+│  └─────────────┘     └─────────────────┘     └─────────────────┘   │
+│        │                                              │              │
+│        │ onmessage                                    │ broadcast    │
+│        ▼                                              ▼              │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                    Message Types                                 ││
+│  │  ┌─────────────┐  ┌─────────────────┐  ┌──────────────────┐    ││
+│  │  │  bid_update │  │ auction_extended│  │   auction_ended  │    ││
+│  │  │  - amount   │  │ - newEndTime    │  │   - reserveMet   │    ││
+│  │  │  - bidderId │  │ - reason        │  │   - winnerId     │    ││
+│  │  │  - bidCount │  │                 │  │                  │    ││
+│  │  └─────────────┘  └─────────────────┘  └──────────────────┘    ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  Reconnection: Exponential backoff on disconnect (2s, 4s, 8s...)    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 ### WebSocket Connection Management
 
-```typescript
-// hooks/useAuctionSocket.ts
-import { useEffect, useRef, useCallback } from 'react';
-import { useAuctionStore } from '../stores/auctionStore';
-
-interface AuctionMessage {
-  type: 'bid_update' | 'auction_extended' | 'auction_ended';
-  auctionId: string;
-  data: BidUpdate | AuctionExtension | AuctionEnd;
-}
-
-export function useAuctionSocket(auctionId: string) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  const { updateCurrentBid, extendAuction, markEnded } = useAuctionStore();
-
-  const connect = useCallback(() => {
-    const ws = new WebSocket(
-      `${import.meta.env.VITE_WS_URL}/auctions/${auctionId}`
-    );
-
-    ws.onopen = () => {
-      console.log(`Connected to auction ${auctionId}`);
-    };
-
-    ws.onmessage = (event) => {
-      const message: AuctionMessage = JSON.parse(event.data);
-
-      switch (message.type) {
-        case 'bid_update':
-          updateCurrentBid(auctionId, message.data as BidUpdate);
-          break;
-        case 'auction_extended':
-          extendAuction(auctionId, message.data as AuctionExtension);
-          break;
-        case 'auction_ended':
-          markEnded(auctionId, message.data as AuctionEnd);
-          break;
-      }
-    };
-
-    ws.onclose = (event) => {
-      if (!event.wasClean) {
-        // Reconnect with exponential backoff
-        reconnectTimeoutRef.current = setTimeout(connect, 2000);
-      }
-    };
-
-    wsRef.current = ws;
-  }, [auctionId, updateCurrentBid, extendAuction, markEnded]);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      clearTimeout(reconnectTimeoutRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
-
-  return wsRef.current;
-}
-```
+The `useAuctionSocket` hook handles:
+- Connect to `/auctions/{auctionId}` WebSocket endpoint
+- Parse incoming messages by type
+- Route to appropriate store actions:
+  - bid_update -> updateCurrentBid()
+  - auction_extended -> extendAuction()
+  - auction_ended -> markEnded()
+- Auto-reconnect on unclean close with timeout
+- Cleanup on unmount
 
 ### Current Bid Display with Animation
 
-```typescript
-// components/CurrentBidDisplay.tsx
-import { useEffect, useRef, useState } from 'react';
-import { formatCurrency } from '../utils/format';
-
-interface CurrentBidDisplayProps {
-  amount: number;
-  bidderName: string;
-  bidCount: number;
-  isLeading: boolean;
-}
-
-export function CurrentBidDisplay({
-  amount,
-  bidderName,
-  bidCount,
-  isLeading,
-}: CurrentBidDisplayProps) {
-  const [isAnimating, setIsAnimating] = useState(false);
-  const prevAmountRef = useRef(amount);
-
-  useEffect(() => {
-    if (amount !== prevAmountRef.current) {
-      setIsAnimating(true);
-      prevAmountRef.current = amount;
-
-      const timer = setTimeout(() => setIsAnimating(false), 600);
-      return () => clearTimeout(timer);
-    }
-  }, [amount]);
-
-  return (
-    <div className="bg-white rounded-lg shadow-lg p-6 border-2 border-gray-200">
-      <div className="text-sm text-gray-500 uppercase tracking-wide mb-1">
-        Current Bid
-      </div>
-
-      <div
-        className={`text-4xl font-bold transition-all duration-300 ${
-          isAnimating
-            ? 'text-green-600 scale-110'
-            : 'text-gray-900 scale-100'
-        }`}
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {formatCurrency(amount)}
-      </div>
-
-      <div className="mt-2 text-sm text-gray-600">
-        by {bidderName} ({bidCount} bid{bidCount !== 1 ? 's' : ''})
-      </div>
-
-      {isLeading && (
-        <div className="mt-3 inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-          <CheckCircleIcon className="w-4 h-4 mr-1" />
-          You are the highest bidder
-        </div>
-      )}
-    </div>
-  );
-}
-```
+The CurrentBidDisplay component features:
+- Amount displayed in large font (text-4xl)
+- Animation on bid change: green color + scale-110 for 600ms
+- aria-live="polite" for screen reader announcements
+- Bidder info with bid count
+- "You are the highest bidder" badge when leading
 
 ### Countdown Timer with Anti-Sniping
 
-```typescript
-// components/CountdownTimer.tsx
-import { useEffect, useState, useMemo } from 'react';
-
-interface CountdownTimerProps {
-  endTime: Date;
-  onTimeUpdate?: (remaining: number) => void;
-  onExtension?: (newEndTime: Date) => void;
-}
-
-export function CountdownTimer({
-  endTime,
-  onTimeUpdate,
-  onExtension,
-}: CountdownTimerProps) {
-  const [now, setNow] = useState(Date.now());
-  const [wasExtended, setWasExtended] = useState(false);
-
-  // Update every second, switch to 100ms when under 1 minute
-  useEffect(() => {
-    const remaining = endTime.getTime() - now;
-    const interval = remaining < 60000 ? 100 : 1000;
-
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, interval);
-
-    return () => clearInterval(timer);
-  }, [endTime, now]);
-
-  // Track extensions
-  useEffect(() => {
-    onTimeUpdate?.(endTime.getTime() - now);
-  }, [now, endTime, onTimeUpdate]);
-
-  const remaining = useMemo(() => {
-    const ms = Math.max(0, endTime.getTime() - now);
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    return {
-      days,
-      hours: hours % 24,
-      minutes: minutes % 60,
-      seconds: seconds % 60,
-      ms: ms % 1000,
-      total: ms,
-    };
-  }, [now, endTime]);
-
-  const isUrgent = remaining.total < 120000; // Under 2 minutes
-  const isEnded = remaining.total === 0;
-
-  if (isEnded) {
-    return (
-      <div className="text-2xl font-bold text-red-600">
-        Auction Ended
-      </div>
-    );
-  }
-
-  return (
-    <div className={`rounded-lg p-4 ${isUrgent ? 'bg-red-50' : 'bg-gray-50'}`}>
-      {wasExtended && (
-        <div className="mb-2 text-sm text-orange-600 animate-pulse">
-          Auction extended due to last-minute bid
-        </div>
-      )}
-
-      <div className="text-sm text-gray-500 mb-1">Time Remaining</div>
-
-      <div
-        className={`font-mono text-3xl ${
-          isUrgent ? 'text-red-600 animate-pulse' : 'text-gray-900'
-        }`}
-        aria-label={`${remaining.days} days, ${remaining.hours} hours, ${remaining.minutes} minutes, ${remaining.seconds} seconds remaining`}
-      >
-        {remaining.days > 0 && (
-          <span>{remaining.days}d </span>
-        )}
-        <span>
-          {String(remaining.hours).padStart(2, '0')}:
-          {String(remaining.minutes).padStart(2, '0')}:
-          {String(remaining.seconds).padStart(2, '0')}
-        </span>
-        {isUrgent && (
-          <span className="text-xl">.{String(Math.floor(remaining.ms / 100))}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-```
+CountdownTimer component behavior:
+- Updates every 1 second normally
+- Switches to 100ms updates when under 1 minute remaining
+- Displays days/hours/minutes/seconds
+- Shows milliseconds in final minute (urgent mode)
+- "Auction extended due to last-minute bid" alert
+- Urgent styling: red text, pulse animation
+- aria-label with full time description
 
 ---
 
@@ -324,758 +164,262 @@ export function CountdownTimer({
 
 "The bid form must be fast, forgiving, and clear about outcomes."
 
-### Bid Form Component
+### Bid Form Flow
 
-```typescript
-// components/BidForm.tsx
-import { useState, useCallback, useMemo } from 'react';
-import { usePlaceBid } from '../hooks/usePlaceBid';
-import { formatCurrency } from '../utils/format';
-
-interface BidFormProps {
-  auctionId: string;
-  currentBid: number;
-  bidIncrement: number;
-  isEnded: boolean;
-}
-
-export function BidForm({
-  auctionId,
-  currentBid,
-  bidIncrement,
-  isEnded,
-}: BidFormProps) {
-  const minimumBid = currentBid + bidIncrement;
-  const [amount, setAmount] = useState(minimumBid);
-  const [error, setError] = useState<string | null>(null);
-
-  const { mutate: placeBid, isPending, isSuccess } = usePlaceBid();
-
-  // Update minimum when outbid
-  useMemo(() => {
-    if (amount < minimumBid) {
-      setAmount(minimumBid);
-    }
-  }, [minimumBid, amount]);
-
-  const handleQuickIncrement = useCallback((increment: number) => {
-    setAmount((prev) => {
-      const newAmount = Math.max(minimumBid, prev + increment);
-      setError(null);
-      return newAmount;
-    });
-  }, [minimumBid]);
-
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      setError(null);
-
-      if (amount < minimumBid) {
-        setError(`Bid must be at least ${formatCurrency(minimumBid)}`);
-        return;
-      }
-
-      placeBid(
-        { auctionId, amount },
-        {
-          onError: (err) => {
-            setError(err.message || 'Failed to place bid');
-          },
-        }
-      );
-    },
-    [auctionId, amount, minimumBid, placeBid]
-  );
-
-  if (isEnded) {
-    return (
-      <div className="bg-gray-100 rounded-lg p-6 text-center">
-        <div className="text-lg font-semibold text-gray-600">
-          Bidding has ended
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="text-sm text-gray-600">
-        Minimum bid: {formatCurrency(minimumBid)}
-      </div>
-
-      {/* Amount input with quick increments */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-            $
-          </span>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => {
-              setAmount(parseFloat(e.target.value) || minimumBid);
-              setError(null);
-            }}
-            min={minimumBid}
-            step={0.01}
-            className={`w-full pl-8 pr-4 py-3 text-xl font-semibold border-2 rounded-lg
-              ${error ? 'border-red-500' : 'border-gray-300'}
-              focus:outline-none focus:ring-2 focus:ring-blue-500`}
-            aria-label="Bid amount"
-            aria-invalid={!!error}
-            aria-describedby={error ? 'bid-error' : undefined}
-          />
-        </div>
-      </div>
-
-      {/* Quick increment buttons */}
-      <div className="flex gap-2">
-        {[1, 5, 10, 25].map((inc) => (
-          <button
-            key={inc}
-            type="button"
-            onClick={() => handleQuickIncrement(inc)}
-            className="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200
-                       rounded-lg text-sm font-medium transition-colors"
-          >
-            +${inc}
-          </button>
-        ))}
-      </div>
-
-      {/* Error message */}
-      {error && (
-        <div
-          id="bid-error"
-          className="text-red-600 text-sm"
-          role="alert"
-        >
-          {error}
-        </div>
-      )}
-
-      {/* Submit button */}
-      <button
-        type="submit"
-        disabled={isPending || isEnded}
-        className={`w-full py-4 text-xl font-bold rounded-lg transition-all
-          ${isPending
-            ? 'bg-gray-400 cursor-wait'
-            : 'bg-blue-600 hover:bg-blue-700 text-white'
-          }`}
-      >
-        {isPending ? (
-          <span className="flex items-center justify-center gap-2">
-            <SpinnerIcon className="w-5 h-5 animate-spin" />
-            Placing Bid...
-          </span>
-        ) : (
-          `Place Bid: ${formatCurrency(amount)}`
-        )}
-      </button>
-
-      {/* Success feedback */}
-      {isSuccess && (
-        <div className="text-green-600 text-center font-medium animate-fadeIn">
-          Bid placed successfully
-        </div>
-      )}
-    </form>
-  );
-}
 ```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Bid Form Component                           │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  Minimum bid: $1,260.00                                          ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  ┌─────────────────────────────────────────────┐                ││
+│  │  │ $  [  1,300.00  ]                           │                ││
+│  │  └─────────────────────────────────────────────┘                ││
+│  │                                                                  ││
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                    ││
+│  │  │  +$1   │ │  +$5   │ │  +$10  │ │  +$25  │   Quick increment  ││
+│  │  └────────┘ └────────┘ └────────┘ └────────┘                    ││
+│  │                                                                  ││
+│  │  ┌─────────────────────────────────────────────────────────────┐││
+│  │  │                  Place Bid: $1,300.00                        │││
+│  │  └─────────────────────────────────────────────────────────────┘││
+│  │                                                                  ││
+│  │  [Error: Bid must be at least $1,260.00]         (if invalid)   ││
+│  │  [Bid placed successfully!]                      (on success)   ││
+│  └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### BidForm Component Features
+
+- Minimum bid calculated as currentBid + bidIncrement
+- Amount input with $ prefix, number type, step=0.01
+- Quick increment buttons (+$1, +$5, +$10, +$25)
+- Auto-update minimum when outbid (via useMemo)
+- Validation error display with aria-describedby
+- Loading state with spinner during submission
+- Success/error feedback animation
+- Disabled state when auction ended
 
 ### Optimistic Bid Updates
 
-```typescript
-// hooks/usePlaceBid.ts
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { placeBid as placeBidApi } from '../api/auctions';
-import { useAuctionStore } from '../stores/auctionStore';
-import { v4 as uuidv4 } from 'uuid';
+The `usePlaceBid` hook implements optimistic updates:
 
-export function usePlaceBid() {
-  const queryClient = useQueryClient();
-  const { optimisticBid, rollbackBid, confirmBid } = useAuctionStore();
+1. **onMutate:**
+   - Cancel outgoing queries for this auction
+   - Snapshot previous auction state
+   - Call optimisticBid() on store (increment immediately)
 
-  return useMutation({
-    mutationFn: async ({ auctionId, amount }: PlaceBidInput) => {
-      const idempotencyKey = uuidv4();
-      return placeBidApi(auctionId, amount, idempotencyKey);
-    },
+2. **onError:**
+   - Rollback to snapshot state
+   - Show error message
 
-    onMutate: async ({ auctionId, amount }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['auction', auctionId] });
+3. **onSuccess:**
+   - Confirm optimistic update with server response
+   - Update with actual final amount
 
-      // Snapshot previous value
-      const previousAuction = queryClient.getQueryData(['auction', auctionId]);
+4. **onSettled:**
+   - Invalidate queries to ensure consistency
 
-      // Optimistically update
-      optimisticBid(auctionId, amount);
-
-      return { previousAuction };
-    },
-
-    onError: (err, { auctionId }, context) => {
-      // Rollback on error
-      if (context?.previousAuction) {
-        rollbackBid(auctionId, context.previousAuction);
-      }
-    },
-
-    onSuccess: (data, { auctionId }) => {
-      // Confirm optimistic update
-      confirmBid(auctionId, data);
-    },
-
-    onSettled: (_, __, { auctionId }) => {
-      // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ['auction', auctionId] });
-    },
-  });
-}
-```
+Idempotency key (UUID) generated per request to prevent duplicate bids.
 
 ---
 
 ## 5. State Management (5 minutes)
 
-### Auction Store with Zustand
+### Auction Store Structure
 
-```typescript
-// stores/auctionStore.ts
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
-
-interface Auction {
-  id: string;
-  title: string;
-  currentBid: number;
-  currentBidderId: string | null;
-  bidCount: number;
-  endTime: Date;
-  status: 'active' | 'ended' | 'sold' | 'unsold';
-  isWatching: boolean;
-}
-
-interface AuctionState {
-  auctions: Record<string, Auction>;
-  activeAuctionId: string | null;
-  optimisticBids: Record<string, number>;
-
-  // Actions
-  setAuction: (auction: Auction) => void;
-  updateCurrentBid: (auctionId: string, update: BidUpdate) => void;
-  extendAuction: (auctionId: string, extension: AuctionExtension) => void;
-  markEnded: (auctionId: string, end: AuctionEnd) => void;
-  optimisticBid: (auctionId: string, amount: number) => void;
-  rollbackBid: (auctionId: string, previous: Auction) => void;
-  confirmBid: (auctionId: string, confirmed: BidResponse) => void;
-  toggleWatchlist: (auctionId: string) => void;
-}
-
-export const useAuctionStore = create<AuctionState>()(
-  immer((set, get) => ({
-    auctions: {},
-    activeAuctionId: null,
-    optimisticBids: {},
-
-    setAuction: (auction) => {
-      set((state) => {
-        state.auctions[auction.id] = auction;
-      });
-    },
-
-    updateCurrentBid: (auctionId, update) => {
-      set((state) => {
-        const auction = state.auctions[auctionId];
-        if (auction) {
-          auction.currentBid = update.amount;
-          auction.currentBidderId = update.bidderId;
-          auction.bidCount = update.bidCount;
-        }
-      });
-    },
-
-    extendAuction: (auctionId, extension) => {
-      set((state) => {
-        const auction = state.auctions[auctionId];
-        if (auction) {
-          auction.endTime = new Date(extension.newEndTime);
-        }
-      });
-    },
-
-    markEnded: (auctionId, end) => {
-      set((state) => {
-        const auction = state.auctions[auctionId];
-        if (auction) {
-          auction.status = end.reserveMet ? 'sold' : 'unsold';
-        }
-      });
-    },
-
-    optimisticBid: (auctionId, amount) => {
-      set((state) => {
-        state.optimisticBids[auctionId] = amount;
-        const auction = state.auctions[auctionId];
-        if (auction) {
-          auction.currentBid = amount;
-          auction.bidCount += 1;
-        }
-      });
-    },
-
-    rollbackBid: (auctionId, previous) => {
-      set((state) => {
-        delete state.optimisticBids[auctionId];
-        state.auctions[auctionId] = previous;
-      });
-    },
-
-    confirmBid: (auctionId, confirmed) => {
-      set((state) => {
-        delete state.optimisticBids[auctionId];
-        const auction = state.auctions[auctionId];
-        if (auction) {
-          auction.currentBid = confirmed.finalAmount;
-          auction.currentBidderId = confirmed.winnerId;
-          auction.bidCount = confirmed.bidCount;
-        }
-      });
-    },
-
-    toggleWatchlist: (auctionId) => {
-      set((state) => {
-        const auction = state.auctions[auctionId];
-        if (auction) {
-          auction.isWatching = !auction.isWatching;
-        }
-      });
-    },
-  }))
-);
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Zustand Auction Store                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  State:                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │ auctions: Record<string, Auction>                                ││
+│  │   └─ { id, title, currentBid, currentBidderId, bidCount,        ││
+│  │        endTime, status, isWatching }                             ││
+│  │                                                                  ││
+│  │ activeAuctionId: string | null                                   ││
+│  │ optimisticBids: Record<string, number>                           ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  Actions:                                                            │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │ setAuction(auction)         - Store auction data                 ││
+│  │ updateCurrentBid(id, update) - Apply WebSocket bid update        ││
+│  │ extendAuction(id, extension) - Update endTime on snipe-extend   ││
+│  │ markEnded(id, end)          - Set status to 'sold' or 'unsold'  ││
+│  │ optimisticBid(id, amount)   - Immediate UI update               ││
+│  │ rollbackBid(id, previous)   - Revert on error                   ││
+│  │ confirmBid(id, confirmed)   - Apply server response             ││
+│  │ toggleWatchlist(id)         - Add/remove from watchlist         ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  (Uses immer middleware for immutable updates)                       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### User Store for Auth and Preferences
+### User Store Structure
 
-```typescript
-// stores/userStore.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  role: 'user' | 'admin';
-}
-
-interface UserState {
-  user: User | null;
-  isAuthenticated: boolean;
-  watchlistIds: string[];
-  myBidAuctionIds: string[];
-
-  setUser: (user: User) => void;
-  clearUser: () => void;
-  addToWatchlist: (auctionId: string) => void;
-  removeFromWatchlist: (auctionId: string) => void;
-  addMyBid: (auctionId: string) => void;
-}
-
-export const useUserStore = create<UserState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      isAuthenticated: false,
-      watchlistIds: [],
-      myBidAuctionIds: [],
-
-      setUser: (user) => set({ user, isAuthenticated: true }),
-      clearUser: () => set({ user: null, isAuthenticated: false }),
-
-      addToWatchlist: (auctionId) =>
-        set((state) => ({
-          watchlistIds: [...new Set([...state.watchlistIds, auctionId])],
-        })),
-
-      removeFromWatchlist: (auctionId) =>
-        set((state) => ({
-          watchlistIds: state.watchlistIds.filter((id) => id !== auctionId),
-        })),
-
-      addMyBid: (auctionId) =>
-        set((state) => ({
-          myBidAuctionIds: [...new Set([...state.myBidAuctionIds, auctionId])],
-        })),
-    }),
-    {
-      name: 'auction-user',
-      partialize: (state) => ({
-        watchlistIds: state.watchlistIds,
-      }),
-    }
-  )
-);
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Zustand User Store                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  State:                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │ user: { id, email, displayName, role } | null                    ││
+│  │ isAuthenticated: boolean                                         ││
+│  │ watchlistIds: string[]                                           ││
+│  │ myBidAuctionIds: string[]                                        ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  Actions:                                                            │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │ setUser(user)               - Login                              ││
+│  │ clearUser()                 - Logout                             ││
+│  │ addToWatchlist(auctionId)   - Track auction                     ││
+│  │ removeFromWatchlist(id)     - Untrack auction                   ││
+│  │ addMyBid(auctionId)         - Track participated auctions       ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  (Persisted: watchlistIds to localStorage)                           │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 6. Auction Grid with Virtualization (5 minutes)
 
-```typescript
-// components/AuctionGrid.tsx
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef, useMemo } from 'react';
-import { AuctionCard } from './AuctionCard';
+### Virtualized Grid Architecture
 
-interface AuctionGridProps {
-  auctions: Auction[];
-  columns?: number;
-}
-
-export function AuctionGrid({ auctions, columns = 4 }: AuctionGridProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  // Group into rows
-  const rows = useMemo(() => {
-    const result: Auction[][] = [];
-    for (let i = 0; i < auctions.length; i += columns) {
-      result.push(auctions.slice(i, i + columns));
-    }
-    return result;
-  }, [auctions, columns]);
-
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 360, // Card height + gap
-    overscan: 2,
-  });
-
-  return (
-    <div
-      ref={parentRef}
-      className="h-[calc(100vh-200px)] overflow-auto"
-    >
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => (
-          <div
-            key={virtualRow.key}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: `${virtualRow.size}px`,
-              transform: `translateY(${virtualRow.start}px)`,
-            }}
-          >
-            <div className="grid grid-cols-4 gap-4 px-4">
-              {rows[virtualRow.index].map((auction) => (
-                <AuctionCard key={auction.id} auction={auction} />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Virtualized Auction Grid                          │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                      Scroll Container                            ││
+│  │  height: calc(100vh - 200px)                                     ││
+│  ├─────────────────────────────────────────────────────────────────┤│
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               ││
+│  │  │         │ │         │ │         │ │         │  ◄─ Row 0     ││
+│  │  │  Card   │ │  Card   │ │  Card   │ │  Card   │    (visible)  ││
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘               ││
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               ││
+│  │  │         │ │         │ │         │ │         │  ◄─ Row 1     ││
+│  │  │  Card   │ │  Card   │ │  Card   │ │  Card   │    (visible)  ││
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘               ││
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               ││
+│  │  │         │ │         │ │         │ │         │  ◄─ Row 2     ││
+│  │  │  Card   │ │  Card   │ │  Card   │ │  Card   │    (overscan) ││
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘               ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  Total: 1000+ auctions, grouped into rows of 4                       │
+│  estimateSize: 360px per row (card height + gap)                     │
+│  overscan: 2 rows                                                    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Auction Card Component
+### AuctionGrid Implementation
 
-```typescript
-// components/AuctionCard.tsx
-import { Link } from '@tanstack/react-router';
-import { formatCurrency } from '../utils/format';
-import { useCountdown } from '../hooks/useCountdown';
+Uses @tanstack/react-virtual with row-based grouping:
+- Group auctions into rows (configurable columns, default 4)
+- Virtualize rows, not individual cards
+- Each virtual row contains grid of AuctionCards
+- Absolute positioning with translateY
 
-interface AuctionCardProps {
-  auction: Auction;
-}
+### AuctionCard Component
 
-export function AuctionCard({ auction }: AuctionCardProps) {
-  const { formatted, isUrgent, isEnded } = useCountdown(auction.endTime);
-
-  return (
-    <Link
-      to="/auctions/$auctionId"
-      params={{ auctionId: auction.id }}
-      className="group block bg-white rounded-lg shadow-md overflow-hidden
-                 hover:shadow-xl transition-shadow duration-200"
-    >
-      {/* Image */}
-      <div className="relative aspect-square overflow-hidden">
-        <img
-          src={auction.thumbnailUrl}
-          alt={auction.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-          loading="lazy"
-        />
-        {auction.isWatching && (
-          <div className="absolute top-2 right-2 p-1.5 bg-white rounded-full shadow">
-            <HeartIcon className="w-5 h-5 text-red-500" />
-          </div>
-        )}
-        {isUrgent && !isEnded && (
-          <div className="absolute bottom-2 left-2 px-2 py-1 bg-red-600 text-white text-xs font-bold rounded">
-            Ending Soon
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className="p-4">
-        <h3 className="font-semibold text-gray-900 truncate">
-          {auction.title}
-        </h3>
-
-        <div className="mt-2 flex justify-between items-baseline">
-          <div>
-            <div className="text-xs text-gray-500 uppercase">Current Bid</div>
-            <div className="text-lg font-bold text-gray-900">
-              {formatCurrency(auction.currentBid)}
-            </div>
-          </div>
-
-          <div className="text-right">
-            <div className="text-xs text-gray-500">
-              {isEnded ? 'Ended' : 'Ends in'}
-            </div>
-            <div
-              className={`text-sm font-medium ${
-                isUrgent ? 'text-red-600' : 'text-gray-600'
-              }`}
-            >
-              {formatted}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-2 text-sm text-gray-500">
-          {auction.bidCount} bid{auction.bidCount !== 1 ? 's' : ''}
-        </div>
-      </div>
-    </Link>
-  );
-}
-```
+Card features:
+- Aspect-square thumbnail with lazy loading
+- Watchlist heart icon (top-right if watching)
+- "Ending Soon" badge when urgent
+- Title (truncated)
+- Current bid with label
+- Time remaining (formatted)
+- Bid count
+- Hover: shadow-xl transition
+- Image: scale-105 on group hover
 
 ---
 
 ## 7. Auto-Bid Setup UI (3 minutes)
 
-```typescript
-// components/AutoBidSetup.tsx
-import { useState } from 'react';
-import { useSetAutoBid } from '../hooks/useSetAutoBid';
-import { formatCurrency } from '../utils/format';
+### Auto-Bid (Proxy Bidding) Flow
 
-interface AutoBidSetupProps {
-  auctionId: string;
-  currentBid: number;
-  bidIncrement: number;
-  existingAutoBid?: { maxAmount: number; isActive: boolean };
-}
-
-export function AutoBidSetup({
-  auctionId,
-  currentBid,
-  bidIncrement,
-  existingAutoBid,
-}: AutoBidSetupProps) {
-  const [maxAmount, setMaxAmount] = useState(
-    existingAutoBid?.maxAmount || currentBid + bidIncrement * 10
-  );
-  const [isExpanded, setIsExpanded] = useState(!!existingAutoBid);
-
-  const { mutate: setAutoBid, isPending } = useSetAutoBid();
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAutoBid({ auctionId, maxAmount });
-  };
-
-  return (
-    <div className="border-t pt-4 mt-4">
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between w-full text-left"
-      >
-        <span className="font-medium text-gray-900">
-          Auto-Bid (Proxy Bidding)
-        </span>
-        <ChevronIcon
-          className={`w-5 h-5 transition-transform ${
-            isExpanded ? 'rotate-180' : ''
-          }`}
-        />
-      </button>
-
-      {isExpanded && (
-        <div className="mt-4 space-y-4">
-          {/* Explainer */}
-          <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800">
-            <InfoIcon className="w-4 h-4 inline mr-2" />
-            Set your maximum bid. We will automatically bid on your behalf
-            (in minimum increments) to keep you as the highest bidder, up to
-            your maximum amount.
-          </div>
-
-          {existingAutoBid?.isActive && (
-            <div className="text-sm text-green-600">
-              Active auto-bid: up to {formatCurrency(existingAutoBid.maxAmount)}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="flex gap-3">
-            <div className="relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                $
-              </span>
-              <input
-                type="number"
-                value={maxAmount}
-                onChange={(e) => setMaxAmount(parseFloat(e.target.value))}
-                min={currentBid + bidIncrement}
-                step={0.01}
-                className="w-full pl-8 pr-4 py-2 border rounded-lg"
-                placeholder="Maximum amount"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              {isPending ? 'Setting...' : existingAutoBid ? 'Update' : 'Enable'}
-            </button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
 ```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Auto-Bid Setup Component                        │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  Auto-Bid (Proxy Bidding)                              [▼]      ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+│  (Expanded state:)                                                   │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  ┌───────────────────────────────────────────────────────────┐  ││
+│  │  │ ℹ️ Set your maximum bid. We will automatically bid on     │  ││
+│  │  │    your behalf (in minimum increments) to keep you as     │  ││
+│  │  │    the highest bidder, up to your maximum amount.         │  ││
+│  │  └───────────────────────────────────────────────────────────┘  ││
+│  │                                                                  ││
+│  │  Active auto-bid: up to $2,500.00           (if existing)       ││
+│  │                                                                  ││
+│  │  ┌────────────────────────────┐  ┌─────────────┐                ││
+│  │  │ $  [  2,500.00  ]          │  │   Enable    │                ││
+│  │  └────────────────────────────┘  └─────────────┘                ││
+│  └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Component features:
+- Collapsible section (auto-expanded if existing auto-bid)
+- Info box explaining proxy bidding behavior
+- Shows current active auto-bid if set
+- Max amount input with minimum validation
+- Enable/Update button based on existing state
 
 ---
 
 ## 8. Image Gallery with Zoom (3 minutes)
 
-```typescript
-// components/ImageGallery.tsx
-import { useState, useCallback } from 'react';
-import { Dialog } from '@headlessui/react';
+### Gallery Component Structure
 
-interface ImageGalleryProps {
-  images: AuctionImage[];
-}
-
-export function ImageGallery({ images }: ImageGalleryProps) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [isZoomed, setIsZoomed] = useState(false);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowLeft') {
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
-    } else if (e.key === 'ArrowRight') {
-      setSelectedIndex((prev) => Math.min(images.length - 1, prev + 1));
-    }
-  }, [images.length]);
-
-  return (
-    <div className="space-y-4" onKeyDown={handleKeyDown} tabIndex={0}>
-      {/* Main image */}
-      <button
-        onClick={() => setIsZoomed(true)}
-        className="w-full aspect-square bg-gray-100 rounded-lg overflow-hidden
-                   cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        <img
-          src={images[selectedIndex].url}
-          alt={`Image ${selectedIndex + 1} of ${images.length}`}
-          className="w-full h-full object-contain"
-        />
-      </button>
-
-      {/* Thumbnails */}
-      {images.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto py-2">
-          {images.map((image, index) => (
-            <button
-              key={image.id}
-              onClick={() => setSelectedIndex(index)}
-              className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden
-                ${index === selectedIndex
-                  ? 'ring-2 ring-blue-500'
-                  : 'opacity-60 hover:opacity-100'
-                }`}
-            >
-              <img
-                src={image.thumbnailUrl}
-                alt={`Thumbnail ${index + 1}`}
-                className="w-full h-full object-cover"
-              />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Zoom modal */}
-      <Dialog open={isZoomed} onClose={() => setIsZoomed(false)}>
-        <div className="fixed inset-0 bg-black/90 z-50">
-          <Dialog.Panel className="w-full h-full flex items-center justify-center p-4">
-            <button
-              onClick={() => setIsZoomed(false)}
-              className="absolute top-4 right-4 text-white p-2"
-              aria-label="Close zoom"
-            >
-              <XIcon className="w-8 h-8" />
-            </button>
-
-            <img
-              src={images[selectedIndex].fullUrl}
-              alt={`Zoomed image ${selectedIndex + 1}`}
-              className="max-w-full max-h-full object-contain"
-            />
-
-            {/* Navigation arrows */}
-            {selectedIndex > 0 && (
-              <button
-                onClick={() => setSelectedIndex((prev) => prev - 1)}
-                className="absolute left-4 text-white p-2"
-                aria-label="Previous image"
-              >
-                <ChevronLeftIcon className="w-10 h-10" />
-              </button>
-            )}
-            {selectedIndex < images.length - 1 && (
-              <button
-                onClick={() => setSelectedIndex((prev) => prev + 1)}
-                className="absolute right-4 text-white p-2"
-                aria-label="Next image"
-              >
-                <ChevronRightIcon className="w-10 h-10" />
-              </button>
-            )}
-          </Dialog.Panel>
-        </div>
-      </Dialog>
-    </div>
-  );
-}
 ```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Image Gallery Component                          │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                                                                  ││
+│  │                       Main Image                                 ││
+│  │                    (click to zoom)                               ││
+│  │                   aspect-square                                  ││
+│  │                                                                  ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌────┐                                │
+│  │ 1  │ │ 2  │ │ 3  │ │ 4  │ │ 5  │   ◄─ Thumbnail Strip           │
+│  │    │ │[x] │ │    │ │    │ │    │      (selected: ring-2)        │
+│  └────┘ └────┘ └────┘ └────┘ └────┘                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Features:
+- Main image (aspect-square, cursor-zoom-in)
+- Thumbnail strip (overflow-x-auto, 80x80px each)
+- Selected thumbnail has ring-2 ring-blue-500
+- Keyboard navigation: ArrowLeft/Right to change selection
+- Click main image opens ZoomModal
+
+**ZoomModal:**
+- Full-screen black overlay (bg-black/90)
+- Centered max-w/max-h image
+- Close button (top-right X icon)
+- Navigation arrows (left/right chevrons)
+- Focus trap for accessibility
 
 ---
 

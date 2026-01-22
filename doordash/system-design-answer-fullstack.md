@@ -35,605 +35,175 @@
 
 ### TypeScript Interfaces (Shared Between Frontend and Backend)
 
-```typescript
-// shared/types/order.ts
-export interface Order {
-  id: number;
-  customerId: number;
-  restaurantId: number;
-  driverId: number | null;
-  status: OrderStatus;
-  total: number;
-  deliveryFee: number;
-  deliveryAddress: DeliveryAddress;
-  estimatedDeliveryAt: string | null;
-  placedAt: string;
-  confirmedAt: string | null;
-  preparingAt: string | null;
-  readyAt: string | null;
-  pickedUpAt: string | null;
-  deliveredAt: string | null;
-}
+**Order Interface:**
+- `id`, `customerId`, `restaurantId`, `driverId` (nullable)
+- `status`: OrderStatus enum
+- `total`, `deliveryFee`
+- `deliveryAddress`: DeliveryAddress object
+- `estimatedDeliveryAt` (nullable), `placedAt`
+- Timestamp fields: `confirmedAt`, `preparingAt`, `readyAt`, `pickedUpAt`, `deliveredAt` (all nullable)
 
-export type OrderStatus =
-  | 'PLACED'
-  | 'CONFIRMED'
-  | 'PREPARING'
-  | 'READY_FOR_PICKUP'
-  | 'PICKED_UP'
-  | 'DELIVERED'
-  | 'CANCELLED';
+**OrderStatus Enum:**
+- PLACED, CONFIRMED, PREPARING, READY_FOR_PICKUP, PICKED_UP, DELIVERED, CANCELLED
 
-export interface OrderItem {
-  id: number;
-  orderId: number;
-  menuItemId: number;
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  specialInstructions?: string;
-}
+**OrderItem Interface:**
+- `id`, `orderId`, `menuItemId`, `name`, `quantity`, `unitPrice`
+- `specialInstructions` (optional)
 
-export interface DeliveryAddress {
-  street: string;
-  city: string;
-  state: string;
-  zip: string;
-  lat: number;
-  lon: number;
-  instructions?: string;
-}
+**DeliveryAddress Interface:**
+- `street`, `city`, `state`, `zip`
+- `lat`, `lon` (coordinates)
+- `instructions` (optional)
 
-// shared/types/restaurant.ts
-export interface Restaurant {
-  id: number;
-  name: string;
-  address: string;
-  location: { lat: number; lon: number };
-  cuisineType: string;
-  rating: number;
-  prepTimeMinutes: number;
-  deliveryFee: number;
-  isOpen: boolean;
-  imageUrl: string;
-}
+**Restaurant Interface:**
+- `id`, `name`, `address`
+- `location`: { lat, lon }
+- `cuisineType`, `rating`, `prepTimeMinutes`, `deliveryFee`
+- `isOpen`, `imageUrl`
 
-export interface MenuItem {
-  id: number;
-  restaurantId: number;
-  name: string;
-  description: string;
-  price: number;
-  category: string;
-  isAvailable: boolean;
-  imageUrl?: string;
-}
+**MenuItem Interface:**
+- `id`, `restaurantId`, `name`, `description`, `price`
+- `category`, `isAvailable`, `imageUrl` (optional)
 
-// shared/types/driver.ts
-export interface Driver {
-  id: number;
-  name: string;
-  vehicleType: string;
-  rating: number;
-  photoUrl?: string;
-}
+**Driver Interface:**
+- `id`, `name`, `vehicleType`, `rating`, `photoUrl` (optional)
 
-export interface DriverLocation {
-  driverId: number;
-  lat: number;
-  lon: number;
-  timestamp: number;
-}
+**DriverLocation Interface:**
+- `driverId`, `lat`, `lon`, `timestamp`
 
-// shared/types/api.ts
-export interface CreateOrderRequest {
-  restaurantId: number;
-  items: Array<{
-    menuItemId: number;
-    quantity: number;
-    specialInstructions?: string;
-  }>;
-  deliveryAddress: DeliveryAddress;
-}
+**API Types:**
 
-export interface CreateOrderResponse {
-  order: Order;
-  items: OrderItem[];
-  estimatedDeliveryAt: string;
-}
+CreateOrderRequest:
+- `restaurantId`
+- `items`: array of { menuItemId, quantity, specialInstructions? }
+- `deliveryAddress`: DeliveryAddress
 
-// WebSocket message types
-export interface OrderUpdateMessage {
-  type: 'order_update';
-  orderId: number;
-  status: OrderStatus;
-  eta?: string;
-  driverLocation?: DriverLocation;
-}
-```
+CreateOrderResponse:
+- `order`: Order, `items`: OrderItem[], `estimatedDeliveryAt`
+
+**WebSocket Message Types:**
+
+OrderUpdateMessage:
+- `type`: 'order_update'
+- `orderId`, `status`
+- `eta` (optional), `driverLocation` (optional)
 
 ### Zod Validation Schemas (Backend)
 
-```typescript
-// backend/src/shared/validation.ts
-import { z } from 'zod';
+**deliveryAddressSchema:**
+- street: string 1-200 chars
+- city: string 1-100 chars
+- state: exactly 2 chars
+- zip: regex for 5 digits (optional +4)
+- lat: -90 to 90, lon: -180 to 180
+- instructions: optional max 500 chars
 
-export const deliveryAddressSchema = z.object({
-  street: z.string().min(1).max(200),
-  city: z.string().min(1).max(100),
-  state: z.string().length(2),
-  zip: z.string().regex(/^\d{5}(-\d{4})?$/),
-  lat: z.number().min(-90).max(90),
-  lon: z.number().min(-180).max(180),
-  instructions: z.string().max(500).optional(),
-});
+**createOrderSchema:**
+- restaurantId: positive integer
+- items: array 1-50 of { menuItemId, quantity 1-20, specialInstructions? max 200 }
+- deliveryAddress: uses deliveryAddressSchema
 
-export const createOrderSchema = z.object({
-  restaurantId: z.number().int().positive(),
-  items: z.array(z.object({
-    menuItemId: z.number().int().positive(),
-    quantity: z.number().int().min(1).max(20),
-    specialInstructions: z.string().max(200).optional(),
-  })).min(1).max(50),
-  deliveryAddress: deliveryAddressSchema,
-});
-
-export const updateLocationSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lon: z.number().min(-180).max(180),
-});
-
-export type CreateOrderInput = z.infer<typeof createOrderSchema>;
-```
+**updateLocationSchema:**
+- lat: -90 to 90, lon: -180 to 180
 
 ---
 
 ## Step 3: Backend API Implementation (10 minutes)
 
-### Express Routes with Validation
+### Express Routes: Orders
 
-```typescript
-// backend/src/routes/orders.ts
-import { Router } from 'express';
-import { z } from 'zod';
-import { pool } from '../shared/db.js';
-import { redis } from '../shared/cache.js';
-import { kafka } from '../shared/kafka.js';
-import { requireAuth } from '../shared/auth.js';
-import { idempotencyMiddleware } from '../shared/idempotency.js';
-import { createOrderSchema } from '../shared/validation.js';
-import { logger } from '../shared/logger.js';
+**POST / (Create Order with Idempotency):**
 
-const router = Router();
+1. Apply requireAuth and idempotencyMiddleware('order_create')
+2. Validate request body with createOrderSchema.parse()
+3. Begin PostgreSQL transaction
+4. Verify restaurant is open, return 400 if closed
+5. Fetch menu items, verify availability, calculate total
+6. Set deliveryFee = $2.99
+7. INSERT order with status 'PLACED'
+8. INSERT order_items for each item
+9. COMMIT transaction
+10. Publish ORDER_CREATED event to Kafka
+11. Log order creation
+12. Calculate initial ETA = prep_time + 20 minutes
+13. Return 201 with order and estimatedDeliveryAt
+14. On error: ROLLBACK, handle ZodError with 400
 
-// Create order with idempotency
-router.post('/',
-  requireAuth,
-  idempotencyMiddleware('order_create'),
-  async (req, res, next) => {
-    try {
-      // Validate request body
-      const input = createOrderSchema.parse(req.body);
+**GET /:orderId (Get Order with Real-Time ETA):**
 
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
+1. Query order with restaurant info (name, prep_time, location via PostGIS)
+2. Return 404 if not found or not owned by user
+3. Query order_items with menu item names
+4. If driver assigned:
+   - Query driver info (name, vehicle_type, rating)
+   - Get real-time location from Redis HGETALL driver:{id}
+   - Parse lat, lon, timestamp
+5. Calculate current ETA
+6. Return order, items, driver, driverLocation, eta
 
-        // Verify restaurant is open
-        const restaurant = await client.query(
-          'SELECT id, is_open, prep_time_minutes FROM restaurants WHERE id = $1',
-          [input.restaurantId]
-        );
+**PATCH /:orderId/status (Update Order Status):**
 
-        if (!restaurant.rows[0]?.is_open) {
-          return res.status(400).json({ error: 'Restaurant is currently closed' });
-        }
+1. Get current order, return 404 if not found
+2. Validate state transition with getNextStatus(currentStatus, action)
+3. Return 400 if invalid transition
+4. Optimistic locking: UPDATE with version check
+5. Return 409 if version mismatch (concurrent modification)
+6. Publish STATUS_CHANGED event to Kafka with actor info
+7. Return updated order
 
-        // Fetch menu items and calculate total
-        const menuItemIds = input.items.map(i => i.menuItemId);
-        const menuItems = await client.query(
-          `SELECT id, price, is_available FROM menu_items
-           WHERE id = ANY($1) AND restaurant_id = $2`,
-          [menuItemIds, input.restaurantId]
-        );
+### Express Routes: Drivers
 
-        const menuItemMap = new Map(menuItems.rows.map(m => [m.id, m]));
+**POST /location (Update Driver Location):**
 
-        let total = 0;
-        for (const item of input.items) {
-          const menuItem = menuItemMap.get(item.menuItemId);
-          if (!menuItem) {
-            throw new Error(`Menu item ${item.menuItemId} not found`);
-          }
-          if (!menuItem.is_available) {
-            throw new Error(`Menu item ${item.menuItemId} is not available`);
-          }
-          total += menuItem.price * item.quantity;
-        }
+Called every 10 seconds from driver app
 
-        const deliveryFee = 2.99;
+1. Validate with updateLocationSchema
+2. Execute Redis pipeline:
+   - GEOADD driver_locations with lon, lat, driverId
+   - HSET driver:{id} with lat, lon, updated_at, status='active'
+   - EXPIRE driver:{id} 30 seconds (auto-expire if stopped)
+3. PUBLISH to 'driver_locations' channel for real-time tracking
+4. Return success
 
-        // Create order
-        const orderResult = await client.query(
-          `INSERT INTO orders
-           (customer_id, restaurant_id, delivery_address, total, delivery_fee, status, placed_at)
-           VALUES ($1, $2, $3, $4, $5, 'PLACED', NOW())
-           RETURNING *`,
-          [req.user.id, input.restaurantId, input.deliveryAddress, total, deliveryFee]
-        );
+**GET /nearby (Get Nearby Available Drivers):**
 
-        const order = orderResult.rows[0];
+For matching service
 
-        // Create order items
-        for (const item of input.items) {
-          const menuItem = menuItemMap.get(item.menuItemId);
-          await client.query(
-            `INSERT INTO order_items
-             (order_id, menu_item_id, quantity, unit_price, special_instructions)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [order.id, item.menuItemId, item.quantity, menuItem.price, item.specialInstructions]
-          );
-        }
-
-        await client.query('COMMIT');
-
-        // Publish order created event
-        await kafka.send('order_events', {
-          type: 'ORDER_CREATED',
-          orderId: order.id,
-          restaurantId: input.restaurantId,
-          customerId: req.user.id,
-          timestamp: Date.now(),
-        });
-
-        logger.info({ orderId: order.id, customerId: req.user.id }, 'Order created');
-
-        // Calculate initial ETA
-        const prepTime = restaurant.rows[0].prep_time_minutes;
-        const estimatedDeliveryAt = new Date(
-          Date.now() + (prepTime + 20) * 60 * 1000
-        );
-
-        res.status(201).json({
-          order: { ...order, estimated_delivery_at: estimatedDeliveryAt },
-          estimatedDeliveryAt: estimatedDeliveryAt.toISOString(),
-        });
-
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ error: 'Validation failed', details: err.errors });
-      }
-      next(err);
-    }
-  }
-);
-
-// Get order with real-time ETA
-router.get('/:orderId', requireAuth, async (req, res, next) => {
-  try {
-    const { orderId } = req.params;
-
-    // Get order with restaurant info
-    const result = await pool.query(
-      `SELECT o.*, r.name as restaurant_name, r.prep_time_minutes,
-              ST_X(r.location::geometry) as restaurant_lon,
-              ST_Y(r.location::geometry) as restaurant_lat
-       FROM orders o
-       JOIN restaurants r ON o.restaurant_id = r.id
-       WHERE o.id = $1 AND o.customer_id = $2`,
-      [orderId, req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const order = result.rows[0];
-
-    // Get order items
-    const items = await pool.query(
-      `SELECT oi.*, mi.name FROM order_items oi
-       JOIN menu_items mi ON oi.menu_item_id = mi.id
-       WHERE oi.order_id = $1`,
-      [orderId]
-    );
-
-    // Get driver info and location if assigned
-    let driver = null;
-    let driverLocation = null;
-
-    if (order.driver_id) {
-      const driverResult = await pool.query(
-        `SELECT d.id, u.name, d.vehicle_type, d.rating
-         FROM drivers d JOIN users u ON d.user_id = u.id
-         WHERE d.id = $1`,
-        [order.driver_id]
-      );
-      driver = driverResult.rows[0];
-
-      // Get real-time location from Redis
-      const location = await redis.hgetall(`driver:${order.driver_id}`);
-      if (location.lat && location.lon) {
-        driverLocation = {
-          lat: parseFloat(location.lat),
-          lon: parseFloat(location.lon),
-          timestamp: parseInt(location.updated_at),
-        };
-      }
-    }
-
-    // Calculate current ETA
-    const eta = await calculateETA(order, driverLocation);
-
-    res.json({
-      order,
-      items: items.rows,
-      driver,
-      driverLocation,
-      eta,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Update order status (for restaurant and driver apps)
-router.patch('/:orderId/status', requireAuth, async (req, res, next) => {
-  try {
-    const { orderId } = req.params;
-    const { action } = req.body;
-
-    const order = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
-
-    if (order.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Validate state transition
-    const currentStatus = order.rows[0].status;
-    const nextStatus = getNextStatus(currentStatus, action);
-
-    if (!nextStatus) {
-      return res.status(400).json({
-        error: `Invalid action '${action}' for status '${currentStatus}'`,
-      });
-    }
-
-    // Optimistic locking
-    const result = await pool.query(
-      `UPDATE orders
-       SET status = $1, ${action}_at = NOW(), version = version + 1
-       WHERE id = $2 AND version = $3
-       RETURNING *`,
-      [nextStatus, orderId, order.rows[0].version]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(409).json({ error: 'Order was modified by another process' });
-    }
-
-    // Publish status change event
-    await kafka.send('order_events', {
-      type: 'STATUS_CHANGED',
-      orderId: parseInt(orderId),
-      previousStatus: currentStatus,
-      newStatus: nextStatus,
-      actorId: req.user.id,
-      actorType: req.user.role,
-      timestamp: Date.now(),
-    });
-
-    res.json({ order: result.rows[0] });
-  } catch (err) {
-    next(err);
-  }
-});
-
-export default router;
-```
-
-### Driver Location Endpoint
-
-```typescript
-// backend/src/routes/drivers.ts
-import { Router } from 'express';
-import { redis } from '../shared/cache.js';
-import { updateLocationSchema } from '../shared/validation.js';
-import { requireAuth, requireRole } from '../shared/auth.js';
-
-const router = Router();
-
-// Update driver location (called every 10 seconds from driver app)
-router.post('/location', requireAuth, requireRole('driver'), async (req, res, next) => {
-  try {
-    const { lat, lon } = updateLocationSchema.parse(req.body);
-    const driverId = req.user.driverId;
-
-    const pipeline = redis.pipeline();
-
-    // Update geo index for spatial queries
-    pipeline.geoadd('driver_locations', lon, lat, driverId.toString());
-
-    // Update driver metadata
-    pipeline.hset(`driver:${driverId}`, {
-      lat: lat.toString(),
-      lon: lon.toString(),
-      updated_at: Date.now().toString(),
-      status: 'active',
-    });
-
-    // Set TTL - auto-expire if driver stops sending
-    pipeline.expire(`driver:${driverId}`, 30);
-
-    await pipeline.exec();
-
-    // Publish for real-time tracking
-    await redis.publish('driver_locations', JSON.stringify({
-      driverId,
-      lat,
-      lon,
-      timestamp: Date.now(),
-    }));
-
-    res.json({ success: true });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Get nearby available drivers (for matching service)
-router.get('/nearby', requireAuth, async (req, res, next) => {
-  try {
-    const { lat, lon, radiusKm = 5 } = req.query;
-
-    const drivers = await redis.geosearch(
-      'driver_locations',
-      'FROMMEMBER', `${lon},${lat}`,
-      'BYRADIUS', radiusKm, 'km',
-      'WITHDIST',
-      'ASC',
-      'COUNT', 20
-    );
-
-    const available = [];
-    for (const [driverId, distance] of drivers) {
-      const driverData = await redis.hgetall(`driver:${driverId}`);
-      if (driverData.status === 'active') {
-        const orderCount = await redis.get(`driver:${driverId}:order_count`) || 0;
-        if (parseInt(orderCount) < 2) {
-          available.push({
-            id: parseInt(driverId),
-            distance: parseFloat(distance),
-            lat: parseFloat(driverData.lat),
-            lon: parseFloat(driverData.lon),
-          });
-        }
-      }
-    }
-
-    res.json({ drivers: available });
-  } catch (err) {
-    next(err);
-  }
-});
-
-export default router;
-```
+1. Extract lat, lon, radiusKm (default 5) from query
+2. GEOSEARCH driver_locations within radius, sorted by distance
+3. For each driver:
+   - Check status='active' from HGETALL
+   - Check order_count < 2 from Redis
+   - Include if available
+4. Return array with id, distance, lat, lon
 
 ### WebSocket Server for Real-Time Updates
 
-```typescript
-// backend/src/websocket/server.ts
-import { WebSocketServer, WebSocket } from 'ws';
-import { redis } from '../shared/cache.js';
-import { verifyToken } from '../shared/auth.js';
+**ClientConnection State:**
+- ws: WebSocket, userId, userRole
+- subscribedOrders: Set of order IDs
 
-interface ClientConnection {
-  ws: WebSocket;
-  userId: number;
-  userRole: string;
-  subscribedOrders: Set<number>;
-}
+**Connection Setup:**
 
-const clients = new Map<string, ClientConnection>();
+1. Authenticate via token in query params
+2. Store connection in clients Map
+3. Handle messages: subscribe/unsubscribe to orders
+4. On close: remove from clients Map
 
-export function setupWebSocket(server: any) {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+**Redis Pub/Sub Integration:**
 
-  wss.on('connection', async (ws, req) => {
-    // Authenticate connection
-    const url = new URL(req.url!, `http://${req.headers.host}`);
-    const token = url.searchParams.get('token');
+Subscribe to channels: 'order_updates', 'driver_locations'
 
-    try {
-      const user = await verifyToken(token!);
-      const clientId = `${user.id}-${Date.now()}`;
+On message:
+- order_updates: broadcastOrderUpdate to subscribed clients
+- driver_locations: broadcastDriverLocation to customers tracking orders
 
-      clients.set(clientId, {
-        ws,
-        userId: user.id,
-        userRole: user.role,
-        subscribedOrders: new Set(),
-      });
+**broadcastOrderUpdate(update):**
+- Iterate clients, send to those subscribed to update.orderId
 
-      ws.on('message', (data) => {
-        const message = JSON.parse(data.toString());
-        handleClientMessage(clientId, message);
-      });
-
-      ws.on('close', () => {
-        clients.delete(clientId);
-      });
-
-    } catch (err) {
-      ws.close(4001, 'Unauthorized');
-    }
-  });
-
-  // Subscribe to Redis pub/sub for order updates
-  const subscriber = redis.duplicate();
-  subscriber.subscribe('order_updates', 'driver_locations');
-
-  subscriber.on('message', (channel, message) => {
-    const data = JSON.parse(message);
-
-    if (channel === 'order_updates') {
-      broadcastOrderUpdate(data);
-    } else if (channel === 'driver_locations') {
-      broadcastDriverLocation(data);
-    }
-  });
-}
-
-function handleClientMessage(clientId: string, message: any) {
-  const client = clients.get(clientId);
-  if (!client) return;
-
-  switch (message.type) {
-    case 'subscribe':
-      client.subscribedOrders.add(message.orderId);
-      break;
-    case 'unsubscribe':
-      client.subscribedOrders.delete(message.orderId);
-      break;
-  }
-}
-
-function broadcastOrderUpdate(update: any) {
-  for (const [, client] of clients) {
-    if (client.subscribedOrders.has(update.orderId)) {
-      client.ws.send(JSON.stringify({
-        type: 'order_update',
-        ...update,
-      }));
-    }
-  }
-}
-
-function broadcastDriverLocation(location: any) {
-  // Find orders that this driver is assigned to
-  // Broadcast to customers tracking those orders
-  for (const [, client] of clients) {
-    if (client.userRole === 'customer') {
-      // Check if any subscribed order is assigned to this driver
-      for (const orderId of client.subscribedOrders) {
-        // This would check Redis/DB for driver assignment
-        client.ws.send(JSON.stringify({
-          type: 'driver_location',
-          orderId,
-          location,
-        }));
-      }
-    }
-  }
-}
-```
+**broadcastDriverLocation(location):**
+- For customer clients, check if subscribed orders assigned to this driver
+- Send driver_location message with orderId and location
 
 ---
 
@@ -641,329 +211,87 @@ function broadcastDriverLocation(location: any) {
 
 ### API Client with Error Handling
 
-```typescript
-// frontend/src/services/api.ts
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+**ApiError Class:**
+- status: number, code: string, message: string
 
-class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+**request<T> Helper:**
+- Get auth token from localStorage
+- Fetch with Content-Type JSON and Authorization header
+- On error: throw ApiError with status, code, message
+- Return parsed JSON
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const token = localStorage.getItem('auth_token');
+**API Methods:**
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    },
-  });
+Restaurants:
+- getRestaurants(lat, lon, cuisine?) -> { restaurants }
+- getRestaurant(id) -> { restaurant, menu }
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Request failed' }));
-    throw new ApiError(response.status, error.code || 'UNKNOWN', error.message);
-  }
+Orders:
+- createOrder(data, idempotencyKey) -> CreateOrderResponse (with X-Idempotency-Key header)
+- getOrder(id) -> { order, items, driver, driverLocation, eta }
+- getOrders() -> { orders }
+- updateOrderStatus(orderId, action) -> { order }
 
-  return response.json();
-}
+Driver:
+- updateLocation(lat, lon) -> { success }
 
-export const api = {
-  // Restaurants
-  getRestaurants: (params: { lat: number; lon: number; cuisine?: string }) =>
-    request<{ restaurants: Restaurant[] }>(
-      `/restaurants?lat=${params.lat}&lon=${params.lon}${params.cuisine ? `&cuisine=${params.cuisine}` : ''}`
-    ),
+### Order Store (Zustand) with WebSocket Integration
 
-  getRestaurant: (id: number) =>
-    request<{ restaurant: Restaurant; menu: MenuItem[] }>(`/restaurants/${id}`),
+**State:**
+- currentOrder, orderItems, driver, driverLocation, eta
+- isLoading, error
 
-  // Orders
-  createOrder: (data: CreateOrderRequest, idempotencyKey: string) =>
-    request<CreateOrderResponse>('/orders', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: { 'X-Idempotency-Key': idempotencyKey },
-    }),
+**Actions:**
 
-  getOrder: (id: number) =>
-    request<{
-      order: Order;
-      items: OrderItem[];
-      driver: Driver | null;
-      driverLocation: DriverLocation | null;
-      eta: string;
-    }>(`/orders/${id}`),
+fetchOrder(orderId):
+1. Set isLoading, clear error
+2. Call api.getOrder()
+3. Update state with order, items, driver, driverLocation, eta
+4. Handle errors
 
-  getOrders: () =>
-    request<{ orders: Order[] }>('/orders'),
+subscribeToUpdates(orderId):
+1. Call wsService.subscribeToOrder with callback
+2. On status update: merge into currentOrder
+3. On driverLocation update: update state
+4. On eta update: update state
+5. Return unsubscribe function
 
-  updateOrderStatus: (orderId: number, action: string) =>
-    request<{ order: Order }>(`/orders/${orderId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ action }),
-    }),
+createOrder(data):
+1. Set isLoading, clear error
+2. Generate idempotencyKey with crypto.randomUUID()
+3. Call api.createOrder()
+4. Update currentOrder and eta
+5. Return order (for navigation)
 
-  // Driver
-  updateLocation: (lat: number, lon: number) =>
-    request<{ success: boolean }>('/drivers/location', {
-      method: 'POST',
-      body: JSON.stringify({ lat, lon }),
-    }),
-};
-```
+clearOrder():
+- Reset all state to null/empty
 
-### Order Store with WebSocket Integration
+### CheckoutPage Component
 
-```typescript
-// frontend/src/stores/orderStore.ts
-import { create } from 'zustand';
-import { api } from '@/services/api';
-import { wsService } from '@/services/websocket';
+**Uses:**
+- useCartStore for items, restaurantId, restaurantName, deliveryAddress, getSubtotal, clearCart
+- useOrderStore for createOrder, isLoading, error
+- useNavigate for routing
 
-interface OrderState {
-  currentOrder: Order | null;
-  orderItems: OrderItem[];
-  driver: Driver | null;
-  driverLocation: DriverLocation | null;
-  eta: string | null;
-  isLoading: boolean;
-  error: string | null;
+**Calculations:**
+- subtotal from cart
+- deliveryFee = $2.99
+- serviceFee = subtotal * 15%
+- total = subtotal + deliveryFee + serviceFee
 
-  // Actions
-  fetchOrder: (orderId: number) => Promise<void>;
-  subscribeToUpdates: (orderId: number) => () => void;
-  createOrder: (data: CreateOrderRequest) => Promise<Order>;
-  clearOrder: () => void;
-}
+**handlePlaceOrder Flow:**
+1. Validate restaurantId and deliveryAddress exist
+2. Call createOrder with cart items mapped to API format
+3. On success: clearCart, navigate to /orders/$orderId
+4. On error: logged, error displayed from store
 
-export const useOrderStore = create<OrderState>((set, get) => ({
-  currentOrder: null,
-  orderItems: [],
-  driver: null,
-  driverLocation: null,
-  eta: null,
-  isLoading: false,
-  error: null,
-
-  fetchOrder: async (orderId: number) => {
-    set({ isLoading: true, error: null });
-    try {
-      const data = await api.getOrder(orderId);
-      set({
-        currentOrder: data.order,
-        orderItems: data.items,
-        driver: data.driver,
-        driverLocation: data.driverLocation,
-        eta: data.eta,
-        isLoading: false,
-      });
-    } catch (err) {
-      set({ error: (err as Error).message, isLoading: false });
-    }
-  },
-
-  subscribeToUpdates: (orderId: number) => {
-    const unsubscribe = wsService.subscribeToOrder(orderId, (update) => {
-      // Handle different update types
-      if (update.status) {
-        set((state) => ({
-          currentOrder: state.currentOrder
-            ? { ...state.currentOrder, status: update.status }
-            : null,
-        }));
-      }
-
-      if (update.driverLocation) {
-        set({ driverLocation: update.driverLocation });
-      }
-
-      if (update.eta) {
-        set({ eta: update.eta });
-      }
-    });
-
-    return unsubscribe;
-  },
-
-  createOrder: async (data: CreateOrderRequest) => {
-    set({ isLoading: true, error: null });
-    try {
-      // Generate idempotency key
-      const idempotencyKey = crypto.randomUUID();
-
-      const response = await api.createOrder(data, idempotencyKey);
-
-      set({
-        currentOrder: response.order,
-        eta: response.estimatedDeliveryAt,
-        isLoading: false,
-      });
-
-      return response.order;
-    } catch (err) {
-      set({ error: (err as Error).message, isLoading: false });
-      throw err;
-    }
-  },
-
-  clearOrder: () => {
-    set({
-      currentOrder: null,
-      orderItems: [],
-      driver: null,
-      driverLocation: null,
-      eta: null,
-    });
-  },
-}));
-```
-
-### Checkout Page with Order Creation
-
-```tsx
-// frontend/src/routes/checkout.tsx
-import { useCartStore } from '@/stores/cartStore';
-import { useOrderStore } from '@/stores/orderStore';
-import { useNavigate } from '@tanstack/react-router';
-
-export function CheckoutPage() {
-  const {
-    items,
-    restaurantId,
-    restaurantName,
-    deliveryAddress,
-    getSubtotal,
-    clearCart,
-  } = useCartStore();
-
-  const { createOrder, isLoading, error } = useOrderStore();
-  const navigate = useNavigate();
-
-  const subtotal = getSubtotal();
-  const deliveryFee = 2.99;
-  const serviceFee = subtotal * 0.15;
-  const total = subtotal + deliveryFee + serviceFee;
-
-  const handlePlaceOrder = async () => {
-    if (!restaurantId || !deliveryAddress) return;
-
-    try {
-      const order = await createOrder({
-        restaurantId,
-        items: items.map((item) => ({
-          menuItemId: item.menuItemId,
-          quantity: item.quantity,
-          specialInstructions: item.specialInstructions,
-        })),
-        deliveryAddress,
-      });
-
-      // Clear cart after successful order
-      clearCart();
-
-      // Navigate to order tracking
-      navigate({ to: '/orders/$orderId', params: { orderId: order.id.toString() } });
-    } catch (err) {
-      // Error is already set in store
-      console.error('Failed to create order:', err);
-    }
-  };
-
-  if (!restaurantId || items.length === 0) {
-    return (
-      <div className="max-w-2xl mx-auto p-4 text-center">
-        <h1 className="text-2xl font-bold mb-4">Your cart is empty</h1>
-        <Link to="/" className="text-red-500 hover:underline">
-          Browse restaurants
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-2xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-6">Checkout</h1>
-
-      {/* Delivery address */}
-      <section className="bg-white rounded-xl shadow-sm p-4 mb-4">
-        <h2 className="font-semibold mb-2">Delivery Address</h2>
-        {deliveryAddress ? (
-          <div>
-            <p>{deliveryAddress.street}</p>
-            <p>{deliveryAddress.city}, {deliveryAddress.state} {deliveryAddress.zip}</p>
-            {deliveryAddress.instructions && (
-              <p className="text-sm text-gray-500 mt-1">{deliveryAddress.instructions}</p>
-            )}
-          </div>
-        ) : (
-          <button className="text-red-500">Add delivery address</button>
-        )}
-      </section>
-
-      {/* Order summary */}
-      <section className="bg-white rounded-xl shadow-sm p-4 mb-4">
-        <h2 className="font-semibold mb-2">{restaurantName}</h2>
-        {items.map((item) => (
-          <div key={item.menuItemId} className="flex justify-between py-2 border-b last:border-0">
-            <span>{item.quantity}x {item.name}</span>
-            <span>${(item.price * item.quantity).toFixed(2)}</span>
-          </div>
-        ))}
-      </section>
-
-      {/* Price breakdown */}
-      <section className="bg-white rounded-xl shadow-sm p-4 mb-6">
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Delivery Fee</span>
-            <span>${deliveryFee.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Service Fee</span>
-            <span>${serviceFee.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between font-semibold text-base pt-2 border-t">
-            <span>Total</span>
-            <span>${total.toFixed(2)}</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Error message */}
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">
-          {error}
-        </div>
-      )}
-
-      {/* Place order button */}
-      <button
-        onClick={handlePlaceOrder}
-        disabled={isLoading || !deliveryAddress}
-        className="w-full bg-red-500 text-white py-4 rounded-xl font-semibold text-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isLoading ? 'Placing Order...' : `Place Order - $${total.toFixed(2)}`}
-      </button>
-    </div>
-  );
-}
-```
+**UI Sections:**
+- Empty cart: Show message with link to browse restaurants
+- Delivery address section (editable)
+- Order summary with item list
+- Price breakdown (subtotal, delivery, service, total)
+- Error message display
+- Place order button (disabled when loading or no address)
 
 ---
 
@@ -1077,154 +405,36 @@ export function CheckoutPage() {
 
 ### Backend Integration Tests
 
-```typescript
-// backend/src/routes/orders.test.ts
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import { app } from '../app.js';
+**Test Setup:**
+- Mock shared modules: db.pool, cache.redis, kafka
+- Use vitest with supertest for HTTP testing
 
-vi.mock('../shared/db.js', () => ({
-  pool: {
-    query: vi.fn(),
-    connect: vi.fn().mockResolvedValue({
-      query: vi.fn(),
-      release: vi.fn(),
-    }),
-  },
-}));
+**POST /api/orders Tests:**
 
-vi.mock('../shared/cache.js', () => ({
-  redis: {
-    get: vi.fn(),
-    setex: vi.fn(),
-    pipeline: vi.fn().mockReturnValue({
-      exec: vi.fn().mockResolvedValue([]),
-    }),
-  },
-}));
+Test: creates order with valid data
+1. Mock client.query for restaurant (is_open: true)
+2. Mock menu items query (price, is_available)
+3. Mock order insert returning id, status: 'PLACED'
+4. POST with auth token and idempotency key
+5. Assert 201, status PLACED
 
-vi.mock('../shared/kafka.js', () => ({
-  kafka: { send: vi.fn().mockResolvedValue(undefined) },
-}));
-
-describe('POST /api/orders', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('creates order with valid data', async () => {
-    const { pool } = await import('../shared/db.js');
-    const client = await pool.connect();
-
-    // Mock restaurant query
-    client.query.mockResolvedValueOnce({
-      rows: [{ id: 1, is_open: true, prep_time_minutes: 20 }],
-    });
-
-    // Mock menu items query
-    client.query.mockResolvedValueOnce({
-      rows: [{ id: 1, price: 15.99, is_available: true }],
-    });
-
-    // Mock order insert
-    client.query.mockResolvedValueOnce({
-      rows: [{ id: 1, status: 'PLACED', total: 15.99 }],
-    });
-
-    const response = await request(app)
-      .post('/api/orders')
-      .set('Authorization', 'Bearer test-token')
-      .set('X-Idempotency-Key', 'test-key-123')
-      .send({
-        restaurantId: 1,
-        items: [{ menuItemId: 1, quantity: 1 }],
-        deliveryAddress: {
-          street: '123 Main St',
-          city: 'San Francisco',
-          state: 'CA',
-          zip: '94102',
-          lat: 37.7749,
-          lon: -122.4194,
-        },
-      });
-
-    expect(response.status).toBe(201);
-    expect(response.body.order.status).toBe('PLACED');
-  });
-
-  it('returns cached response for duplicate idempotency key', async () => {
-    const { redis } = await import('../shared/cache.js');
-
-    redis.get.mockResolvedValueOnce(JSON.stringify({
-      statusCode: 201,
-      body: { order: { id: 1, status: 'PLACED' } },
-    }));
-
-    const response = await request(app)
-      .post('/api/orders')
-      .set('Authorization', 'Bearer test-token')
-      .set('X-Idempotency-Key', 'existing-key')
-      .send({
-        restaurantId: 1,
-        items: [{ menuItemId: 1, quantity: 1 }],
-        deliveryAddress: { /* ... */ },
-      });
-
-    expect(response.status).toBe(201);
-    expect(response.body.order.id).toBe(1);
-  });
-});
-```
+Test: returns cached response for duplicate idempotency key
+1. Mock redis.get returning cached response
+2. POST with existing key
+3. Assert 201 with cached order data
 
 ### Frontend Component Tests
 
-```tsx
-// frontend/src/components/order/OrderTimeline.test.tsx
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
-import { OrderTimeline } from './OrderTimeline';
+**OrderTimeline Component Tests:**
 
-describe('OrderTimeline', () => {
-  it('renders current step as active', () => {
-    render(
-      <OrderTimeline
-        status="PREPARING"
-        timestamps={{
-          placedAt: '2024-01-15T10:00:00Z',
-          confirmedAt: '2024-01-15T10:02:00Z',
-          preparingAt: '2024-01-15T10:05:00Z',
-        }}
-      />
-    );
+Test: renders current step as active
+1. Render with status="PREPARING" and timestamps
+2. Assert completed steps visible
+3. Assert current step highlighted with correct class
 
-    // Check completed steps
-    expect(screen.getByText('Order Placed')).toBeInTheDocument();
-    expect(screen.getByText('Confirmed')).toBeInTheDocument();
-
-    // Check current step is highlighted
-    const preparingStep = screen.getByText('Preparing');
-    expect(preparingStep.closest('div')).toHaveClass('text-gray-900');
-  });
-
-  it('shows timestamps for completed steps', () => {
-    render(
-      <OrderTimeline
-        status="PICKED_UP"
-        timestamps={{
-          placedAt: '2024-01-15T10:00:00Z',
-          confirmedAt: '2024-01-15T10:02:00Z',
-          preparingAt: '2024-01-15T10:05:00Z',
-          readyAt: '2024-01-15T10:20:00Z',
-          pickedUpAt: '2024-01-15T10:25:00Z',
-        }}
-      />
-    );
-
-    expect(screen.getByText('10:00 AM')).toBeInTheDocument();
-    expect(screen.getByText('10:25 AM')).toBeInTheDocument();
-  });
-});
-```
+Test: shows timestamps for completed steps
+1. Render with status="PICKED_UP" and all timestamps
+2. Assert formatted times displayed (10:00 AM, 10:25 AM)
 
 ---
 
@@ -1232,100 +442,26 @@ describe('OrderTimeline', () => {
 
 ### Frontend Error Boundary
 
-```tsx
-// frontend/src/components/common/ErrorBoundary.tsx
-import { Component, ReactNode } from 'react';
+**ErrorBoundary Component:**
 
-interface Props {
-  children: ReactNode;
-  fallback?: ReactNode;
-}
+State: hasError, error
 
-interface State {
-  hasError: boolean;
-  error: Error | null;
-}
+getDerivedStateFromError: Set hasError true, capture error
 
-export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, error: null };
+componentDidCatch: Log error and info, optionally send to tracking service
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error('Error boundary caught:', error, errorInfo);
-    // Could send to error tracking service
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="p-8 text-center">
-          <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
-          <p className="text-gray-600 mb-4">{this.state.error?.message}</p>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
-            className="px-4 py-2 bg-red-500 text-white rounded-lg"
-          >
-            Try Again
-          </button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-```
+render:
+- If hasError: Show fallback UI with error message and Try Again button
+- Otherwise: Render children
 
 ### Backend Error Middleware
 
-```typescript
-// backend/src/middleware/errorHandler.ts
-import { Request, Response, NextFunction } from 'express';
-import { ZodError } from 'zod';
-import { logger } from '../shared/logger.js';
+**errorHandler Middleware:**
 
-export function errorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  // Log error with request context
-  logger.error({
-    err,
-    requestId: req.headers['x-request-id'],
-    path: req.path,
-    method: req.method,
-    userId: (req as any).user?.id,
-  }, 'Request error');
-
-  // Validation errors
-  if (err instanceof ZodError) {
-    return res.status(400).json({
-      error: 'Validation failed',
-      code: 'VALIDATION_ERROR',
-      details: err.errors,
-    });
-  }
-
-  // Conflict errors (optimistic locking)
-  if (err.message.includes('was modified')) {
-    return res.status(409).json({
-      error: err.message,
-      code: 'CONFLICT',
-    });
-  }
-
-  // Default server error
-  res.status(500).json({
-    error: 'Internal server error',
-    code: 'INTERNAL_ERROR',
-  });
-}
-```
+1. Log error with context (requestId, path, method, userId)
+2. If ZodError: Return 400 with code VALIDATION_ERROR and details
+3. If conflict message: Return 409 with code CONFLICT
+4. Default: Return 500 with code INTERNAL_ERROR
 
 ---
 
