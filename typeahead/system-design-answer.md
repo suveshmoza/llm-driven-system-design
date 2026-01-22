@@ -401,68 +401,345 @@ class AggregationPipeline {
 - **Full rebuild**: Nightly rebuild from aggregated data
 - **A/B deployment**: Build new trie, swap atomically
 
-## Trade-offs and Alternatives (5 minutes)
+## Trade-offs and Alternatives (8 minutes)
 
-### 1. Trie vs. Inverted Index
+This section covers alternative approaches the interviewer might ask about. For each decision, I'll explain what we chose, why, and what alternatives exist.
+
+### 1. Data Structure Alternatives
+
+#### Comparison Matrix
+
+| Data Structure | Prefix Lookup | Memory | Update Cost | Fuzzy Support | Best For |
+|----------------|---------------|--------|-------------|---------------|----------|
+| **Trie** | O(prefix_len) | High | O(k log k) | No | Exact prefix matching |
+| **Radix Trie** | O(prefix_len) | Medium | O(k log k) | No | Memory-constrained prefix |
+| **Ternary Search Tree** | O(prefix_len + log n) | Medium | O(log n) | No | Balanced memory/speed |
+| **DAWG** | O(prefix_len) | Low | Expensive rebuild | No | Static datasets |
+| **Inverted Index** | O(1) hash + scan | Medium | O(1) | Yes | Full-text search |
+| **BK-Tree** | O(n^α), α<1 | Medium | O(log n) | Yes | Fuzzy/typo correction |
+| **Elasticsearch** | O(1) | High | Near real-time | Yes | Complex queries |
 
 **Chose: Trie with pre-computed top-k**
-- Pro: O(prefix_length) lookup
-- Pro: Natural prefix matching
-- Con: Higher memory usage
-- Alternative: Inverted index (good for full-text, worse for prefix)
+
+*Why not Radix Trie?*
+- Radix trie compresses single-child paths (e.g., "application" stored as one node instead of 11)
+- Saves 40-60% memory but complicates top-k storage at each prefix
+- Would choose for memory-constrained environments
+
+*Why not Elasticsearch?*
+- Adds operational complexity (cluster management, replication)
+- Higher latency (10-50ms vs 1-5ms for in-memory trie)
+- Would choose if we need fuzzy matching + faceted search + complex ranking
+
+*Why not DAWG (Directed Acyclic Word Graph)?*
+- Optimal space efficiency by sharing suffixes
+- But requires full rebuild on updates (can't incrementally add)
+- Would choose for static dictionaries (spell check, word games)
+
+```
+Trie vs Radix Trie Example:
+
+Trie:                          Radix Trie:
+    [root]                         [root]
+      |                              |
+      a                            "app"
+      |                           /     \
+      p                        "le"    "lication"
+      |                          |
+      p                       [end]
+     / \
+    l   l
+    |   |
+    e   i
+    |   |
+  [end] c
+        |
+        a...
+```
 
 ### 2. Pre-computed vs. On-demand Top-K
 
+| Approach | Query Time | Memory | Update Cost | Consistency |
+|----------|------------|--------|-------------|-------------|
+| **Pre-computed at each node** | O(1) | O(nodes × k) | O(depth × k log k) | Eventually consistent |
+| **On-demand traversal** | O(subtree size) | O(1) extra | O(1) | Always consistent |
+| **Hybrid: top nodes only** | O(1) to O(subtree) | O(top_nodes × k) | O(affected × k log k) | Mixed |
+
 **Chose: Pre-computed at each node**
-- Pro: Constant-time retrieval
-- Con: More memory, update cost
-- Trade-off: Worth it for 100K QPS
 
-### 3. Caching Strategy
+*Why not on-demand?*
+- For prefix "a", subtree could have millions of nodes
+- At 100K QPS, even 10ms traversal = 1000 concurrent traversals
+- CPU becomes bottleneck before memory does
 
-**Chose: Short TTL (60 seconds) + trending overlay**
-- Pro: Base suggestions stable
-- Pro: Trending computed separately
-- Con: 60-second staleness
-- Alternative: No cache (simpler, higher load)
+*When would on-demand work?*
+- Low QPS (< 1000)
+- Small dataset (< 100K phrases)
+- Real-time consistency critical
 
-### 4. Sharding Strategy
+### 3. Sharding Strategy Alternatives
 
-**Chose: By first character**
-- Pro: Prefix locality preserved
-- Pro: Simple routing
-- Con: Uneven distribution (more 's' than 'x' queries)
-- Alternative: Consistent hashing (even distribution, loses locality)
+| Strategy | Locality | Distribution | Routing | Hot Spots |
+|----------|----------|--------------|---------|-----------|
+| **First character** | Excellent | Uneven (s > x) | Simple | Yes ('s', 't', 'a') |
+| **First 2 chars** | Good | Better | Simple | Fewer |
+| **Consistent hashing** | None | Even | Hash lookup | No |
+| **Range-based** | Good | Configurable | Range lookup | Tunable |
+| **Geo-sharding** | N/A | By region | Geo routing | Regional |
 
-### 5. Personalization Approach
+**Chose: First character sharding**
 
-**Chose: User history boost**
-- Pro: Relevant suggestions
-- Pro: Privacy-preserving (no profile sharing)
-- Con: Cold start problem
-- Alternative: Collaborative filtering (more complex)
+*Why not consistent hashing?*
+```
+Problem: User types "app" → "appl" → "apple"
+- With consistent hashing: 3 different shards (hash changes)
+- With first-char: same shard (prefix locality preserved)
+- Locality = better cache utilization, simpler debugging
+```
 
-### Fuzzy Matching (Optional)
-
+*Handling hot spots:*
 ```javascript
-class FuzzyMatcher {
-  findMatches(prefix, candidates, maxDistance = 2) {
-    return candidates.filter(candidate => {
-      const distance = this.levenshteinDistance(
-        prefix.toLowerCase(),
-        candidate.phrase.slice(0, prefix.length + maxDistance).toLowerCase()
-      );
-      return distance <= maxDistance;
-    });
-  }
+// Split hot shards into sub-shards
+const shardMap = {
+  'a': ['a-shard-1', 'a-shard-2', 'a-shard-3'],  // 'a' is hot, use 3 sub-shards
+  'b': ['b-shard-1'],
+  's': ['s-shard-1', 's-shard-2'],  // 's' is hot
+  // ...
+};
 
-  // Could use keyboard proximity for smarter typo correction
-  isKeyboardAdjacent(char1, char2) {
-    const keyboard = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'];
-    // Check if characters are adjacent on keyboard
-  }
+function getShard(prefix) {
+  const firstChar = prefix.charAt(0).toLowerCase();
+  const shards = shardMap[firstChar] || ['default-shard'];
+
+  if (shards.length === 1) return shards[0];
+
+  // Use second character for sub-shard routing
+  const secondChar = prefix.charAt(1) || 'a';
+  return shards[secondChar.charCodeAt(0) % shards.length];
 }
 ```
+
+### 4. Ranking Algorithm Alternatives
+
+| Approach | Personalization | Latency | Complexity | Explainability |
+|----------|-----------------|---------|------------|----------------|
+| **Weighted formula** | Basic | <1ms | Low | High |
+| **ML model (LTR)** | Advanced | 5-20ms | High | Low |
+| **Two-stage ranking** | Advanced | 2-10ms | Medium | Medium |
+| **Contextual bandits** | Adaptive | 1-5ms | Medium | Medium |
+
+**Chose: Weighted formula**
+
+```javascript
+// Current approach: interpretable weights
+finalScore =
+  popularity * 0.30 +    // log10(count)
+  recency * 0.15 +       // exponential decay
+  personal * 0.25 +      // user history match
+  trending * 0.20 +      // sliding window
+  matchQuality * 0.10;   // prefix position
+```
+
+*When to use ML-based Learning-to-Rank?*
+- Hundreds of ranking signals (not just 5)
+- A/B testing shows weighted formula plateaus
+- Team has ML infrastructure
+
+*Two-stage ranking (Google's approach):*
+```
+Stage 1: Trie retrieval → top-100 candidates (fast)
+Stage 2: ML re-ranking → top-10 results (accurate)
+```
+
+*Contextual bandits (exploration/exploitation):*
+```javascript
+// Occasionally show non-top suggestions to gather feedback
+if (Math.random() < 0.05) {  // 5% exploration
+  // Shuffle in some lower-ranked but potentially good suggestions
+  suggestions = exploreAlternatives(suggestions);
+}
+```
+
+### 5. Real-Time Updates Alternatives
+
+| Approach | Latency to Surface | Complexity | Consistency | Resource Cost |
+|----------|-------------------|------------|-------------|---------------|
+| **Batch rebuild** | Minutes to hours | Low | Strong | Low (periodic) |
+| **Incremental updates** | Seconds | Medium | Eventual | Medium |
+| **Streaming (Kafka/Flink)** | Sub-second | High | Eventual | High |
+| **Hybrid hot/cold** | Seconds | Medium | Mixed | Medium |
+
+**Chose: Hybrid approach**
+- Cold path: Nightly full rebuild from aggregated data
+- Hot path: Real-time trending via Redis sliding windows
+
+*Why not pure streaming?*
+- Flink/Spark Streaming adds operational complexity
+- For most queries, 1-minute staleness is acceptable
+- Only trending needs sub-second updates
+
+*Streaming architecture (if needed):*
+```
+Query Logs → Kafka → Flink → Aggregation
+                         ↓
+                    Trie Updates (debounced)
+                         ↓
+                    Redis Pub/Sub → Trie Servers
+```
+
+### 6. Caching Strategy Alternatives
+
+| Strategy | Hit Rate | Staleness | Memory | Complexity |
+|----------|----------|-----------|--------|------------|
+| **No cache** | 0% | None | None | Lowest |
+| **Fixed TTL** | 60-80% | TTL seconds | Medium | Low |
+| **LRU with TTL** | 70-85% | TTL seconds | Bounded | Low |
+| **Write-through** | 90%+ | None | High | Medium |
+| **Stale-while-revalidate** | 95%+ | Seconds | Medium | Medium |
+
+**Chose: LRU with TTL (60s) + stale-while-revalidate at CDN**
+
+*Cache invalidation approaches:*
+```javascript
+// Option 1: Time-based (chose this)
+redis.setex(`suggestions:${prefix}`, 60, JSON.stringify(data));
+
+// Option 2: Event-based invalidation
+// When trie updates, publish invalidation
+redis.publish('cache-invalidate', JSON.stringify({
+  pattern: 'suggestions:*'
+}));
+
+// Option 3: Version-based
+const version = await redis.get('trie-version');
+const cacheKey = `suggestions:v${version}:${prefix}`;
+```
+
+### 7. API Design Alternatives
+
+| Approach | Latency | Bandwidth | Complexity | Real-time |
+|----------|---------|-----------|------------|-----------|
+| **REST** | Medium | Higher | Low | Polling |
+| **GraphQL** | Medium | Lower | Medium | Subscriptions |
+| **gRPC** | Low | Lowest | High | Streaming |
+| **WebSocket** | Lowest | Medium | Medium | Native |
+
+**Chose: REST with HTTP caching**
+
+*Why not WebSocket?*
+```
+WebSocket advantages:
+- No request overhead per keystroke
+- Server can push trending updates
+- Lower latency (no TCP handshake per request)
+
+WebSocket disadvantages:
+- Harder to cache at CDN edge
+- Connection management complexity
+- Overkill for most use cases
+```
+
+*When to use WebSocket:*
+- Collaborative editing (Google Docs)
+- Real-time trending feed
+- Mobile apps with persistent connections
+
+*gRPC consideration:*
+```protobuf
+service Typeahead {
+  // Unary (simple request/response)
+  rpc GetSuggestions(PrefixRequest) returns (SuggestionResponse);
+
+  // Server streaming (real-time updates)
+  rpc StreamSuggestions(PrefixRequest) returns (stream SuggestionResponse);
+}
+```
+
+### 8. Personalization Alternatives
+
+| Approach | Cold Start | Privacy | Accuracy | Latency Impact |
+|----------|------------|---------|----------|----------------|
+| **User history boost** | Problem | Good | Medium | +1-2ms |
+| **Collaborative filtering** | Solved | Poor | High | +5-10ms |
+| **Session-based** | Solved | Excellent | Low | +0ms |
+| **Embedding similarity** | Solved | Good | High | +10-20ms |
+
+**Chose: User history boost**
+
+*Collaborative filtering (if privacy allows):*
+```javascript
+// "Users who searched X also searched Y"
+async function getCollaborativeSuggestions(userId, prefix) {
+  const similarUsers = await findSimilarUsers(userId);
+  const theirSearches = await getSearches(similarUsers);
+  return theirSearches.filter(s => s.startsWith(prefix));
+}
+```
+
+*Embedding-based similarity:*
+```python
+# Pre-compute query embeddings
+query_embedding = model.encode(prefix)
+# Find nearest neighbors in embedding space
+similar_queries = index.search(query_embedding, k=10)
+```
+
+### 9. Fuzzy Matching Alternatives
+
+| Algorithm | Time Complexity | Best For |
+|-----------|-----------------|----------|
+| **Levenshtein** | O(m×n) | General typos |
+| **Damerau-Levenshtein** | O(m×n) | Transpositions (teh→the) |
+| **Keyboard distance** | O(m) | Fat-finger errors |
+| **Phonetic (Soundex)** | O(m) | Sound-alike (smith/smyth) |
+| **N-gram similarity** | O(m+n) | Partial matches |
+
+```javascript
+// Keyboard-aware distance (better for mobile)
+const keyboardProximity = {
+  'a': ['q', 'w', 's', 'z'],
+  'b': ['v', 'g', 'h', 'n'],
+  // ...
+};
+
+function keyboardDistance(typed, intended) {
+  let distance = 0;
+  for (let i = 0; i < typed.length; i++) {
+    if (typed[i] !== intended[i]) {
+      const adjacent = keyboardProximity[intended[i]] || [];
+      distance += adjacent.includes(typed[i]) ? 0.5 : 1;
+    }
+  }
+  return distance;
+}
+```
+
+### 10. Frontend State Management Alternatives
+
+| Approach | Bundle Size | Learning Curve | DevTools | Best For |
+|----------|-------------|----------------|----------|----------|
+| **React useState/useReducer** | 0 KB | Low | React DevTools | Simple widgets |
+| **Zustand** | 1 KB | Low | Yes | Medium apps |
+| **Redux Toolkit** | 10 KB | Medium | Excellent | Large apps |
+| **React Query/TanStack Query** | 12 KB | Medium | Yes | Server state |
+| **Jotai/Recoil** | 2-5 KB | Medium | Yes | Atomic state |
+
+**Chose: Zustand for global state + React hooks for local**
+
+### Decision Matrix Summary
+
+For quick reference in interviews, here's when to deviate from our choices:
+
+| If... | Then consider... |
+|-------|------------------|
+| Dataset is static | DAWG for 10x memory savings |
+| Need fuzzy + facets | Elasticsearch |
+| QPS < 1000 | On-demand top-k (simpler) |
+| Extreme personalization | ML-based ranking |
+| Real-time < 1s freshness | Kafka/Flink streaming |
+| Mobile-first | WebSocket + local trie |
+| Privacy-critical | Session-based personalization only |
+| Memory-constrained | Radix trie + on-demand |
 
 ## Deep Dive: Frontend Architecture (10 minutes)
 
