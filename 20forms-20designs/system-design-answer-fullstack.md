@@ -2,34 +2,48 @@
 
 *45-minute system design interview format - Full-Stack Engineer Position*
 
-## Problem Statement
+---
+
+## 📋 Problem Statement
 
 Design a platform that renders identical forms across 41 React design systems for comparison. This answer covers the end-to-end architecture, emphasizing the integration between:
 - Shell application (host) and library applications (iframes)
 - Build orchestration and deployment pipeline
 - State management and URL synchronization
 
-## Requirements Clarification
+---
+
+## 🎯 Requirements Clarification
 
 ### Functional Requirements
+
 1. **Form Comparison**: Display 20 common forms across 41 design system libraries
 2. **Library Selection**: Toggle visibility of any library combination
 3. **Theme Support**: Light/dark mode for supported libraries
 4. **Deep Linking**: Shareable URLs to specific form/library comparisons
 
 ### Non-Functional Requirements
-1. **CSS Isolation**: Zero style bleed between design systems
-2. **Build Time**: Under 5 minutes for full 42-app build
-3. **Load Time**: Fast navigation between comparisons
-4. **Static Hosting**: No server required (GitHub Pages)
+
+| Requirement | Target | Rationale |
+|-------------|--------|-----------|
+| CSS Isolation | Complete | Zero style bleed between design systems |
+| Build Time | < 5 minutes | Full 42-app build on CI |
+| Load Time | < 2 seconds | Fast navigation between comparisons |
+| Hosting | Static | GitHub Pages, no server required |
 
 ### Scale Estimates
-- 42 applications (1 shell + 41 libraries)
-- ~150KB gzipped average per library app
-- Read-only workload (static assets)
-- 1K-10K daily visitors
 
-## High-Level Architecture
+| Metric | Value |
+|--------|-------|
+| Total applications | 42 (1 shell + 41 libraries) |
+| Average app size (gzipped) | ~150KB |
+| Total dist size | ~18MB |
+| Daily visitors | 1K-10K |
+| Workload type | Read-only (static assets) |
+
+---
+
+## 🏗️ High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -72,96 +86,109 @@ Design a platform that renders identical forms across 41 React design systems fo
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Model
+---
+
+## 📊 Data Model
 
 ### Static Data Structures
 
-```typescript
-// shared/types.ts - Used across shell and for reference
-
-interface Form {
-  id: string;      // 'login', 'signup', 'checkout', etc.
-  name: string;    // 'User Login', 'Sign Up', etc.
-  fields: Field[];
-}
-
-interface Field {
-  name: string;
-  type: 'text' | 'email' | 'password' | 'select' | 'checkbox';
-  label: string;
-  required: boolean;
-}
-
-interface Library {
-  id: string;           // 'mui', 'chakra', 'antd'
-  name: string;         // 'Material UI', 'Chakra UI'
-  supportsTheme: boolean;
-  url: string;          // Documentation URL
-}
-
-// Data files
-const FORMS: Form[] = [
-  { id: 'login', name: 'User Login', fields: [...] },
-  { id: 'signup', name: 'Sign Up', fields: [...] },
-  // ... 18 more forms
-];
-
-const LIBRARIES: Library[] = [
-  { id: 'mui', name: 'Material UI', supportsTheme: true, url: '...' },
-  { id: 'chakra', name: 'Chakra UI', supportsTheme: true, url: '...' },
-  // ... 39 more libraries
-];
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Data Types                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Form:                                                                   │
+│  ├── id: string         ("login", "signup", "checkout", etc.)           │
+│  ├── name: string       ("User Login", "Sign Up", etc.)                 │
+│  └── fields: Field[]    (Field definitions for form)                    │
+│                                                                          │
+│  Field:                                                                  │
+│  ├── name: string       (Field identifier)                              │
+│  ├── type: enum         ("text" | "email" | "password" | "select")      │
+│  ├── label: string      (Display label)                                 │
+│  └── required: boolean                                                   │
+│                                                                          │
+│  Library:                                                                │
+│  ├── id: string         ("mui", "chakra", "antd")                       │
+│  ├── name: string       ("Material UI", "Chakra UI")                    │
+│  ├── supportsTheme: boolean                                             │
+│  └── url: string        (Documentation URL)                             │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### URL State Format
 
 ```
-Shell URL:      /?form=login&theme=dark&libs=mui,chakra,antd
-Library iframe: /mui/?form=login&theme=dark
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         URL Patterns                                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Shell URL (browser address bar):                                        │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  /?form=login&theme=dark&libs=mui,chakra,antd                     │  │
+│  │   │          │           │                                         │  │
+│  │   │          │           └── Comma-separated library IDs           │  │
+│  │   │          └── "light" or "dark"                                 │  │
+│  │   └── Form identifier (one of 20 forms)                            │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Library iframe src:                                                     │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  /mui/?form=login&theme=dark                                       │  │
+│  │   │         │           │                                          │  │
+│  │   │         │           └── Theme for this library                 │  │
+│  │   │         └── Which form to render                               │  │
+│  │   └── Library path                                                 │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Shell-Iframe Communication
+---
 
-### URL-Based Configuration
+## 🔗 Deep Dive: Shell-Iframe Communication
 
-The shell communicates with library apps via URL query parameters:
+### URL-Based Configuration Flow
 
-```typescript
-// Shell: Constructing iframe URLs
-function PreviewCard({ library }: { library: Library }) {
-  const { selectedForm, theme } = useComparisonStore();
-
-  const iframeUrl = useMemo(() => {
-    const params = new URLSearchParams({
-      form: selectedForm,
-      theme: library.supportsTheme ? theme : 'light',
-    });
-    return `/${library.id}/?${params}`;
-  }, [library.id, selectedForm, theme, library.supportsTheme]);
-
-  return (
-    <iframe
-      src={iframeUrl}
-      title={`${library.name} - ${selectedForm}`}
-    />
-  );
-}
 ```
-
-```typescript
-// Library app: Reading configuration
-function App() {
-  const params = new URLSearchParams(window.location.search);
-  const formId = params.get('form') || 'login';
-  const theme = params.get('theme') || 'light';
-
-  return (
-    <ThemeProvider theme={theme === 'dark' ? darkTheme : lightTheme}>
-      <CssBaseline />
-      <FormRouter formId={formId} />
-    </ThemeProvider>
-  );
-}
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   Shell ↔ Library Communication                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Shell Application                                                       │
+│       │                                                                  │
+│       │  1. User changes form selection or theme                        │
+│       │                                                                  │
+│       ▼                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  Zustand Store Update                                            │    │
+│  │  selectedForm: "login" → "checkout"                              │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│       │                                                                  │
+│       │  2. Computed iframe URLs change                                 │
+│       │                                                                  │
+│       ▼                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  PreviewCard Component                                           │    │
+│  │  Builds URL: /{libraryId}/?form={form}&theme={theme}            │    │
+│  │                                                                  │    │
+│  │  Example: /mui/?form=checkout&theme=dark                        │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│       │                                                                  │
+│       │  3. Iframe src attribute updates                                │
+│       │                                                                  │
+│       ▼                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  Library App (inside iframe)                                     │    │
+│  │                                                                  │    │
+│  │  1. Parse URLSearchParams from window.location.search           │    │
+│  │  2. Extract formId and themeMode                                 │    │
+│  │  3. Initialize theme provider with themeMode                     │    │
+│  │  4. Render FormRouter with formId                                │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why URL Parameters Over postMessage?
@@ -174,215 +201,231 @@ function App() {
 | Complexity | Simple | Coordination logic needed |
 | Bookmarkable | Yes | No |
 
-## Deep Dive: State Management Flow
+> "URL parameters make the shell-iframe relationship stateless. Each library app can be loaded independently with the correct configuration, which simplifies debugging and enables direct linking to any comparison."
 
-### Zustand Store
+---
 
-```typescript
-// stores/comparisonStore.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+## 🗂️ Deep Dive: State Management Flow
 
-interface ComparisonState {
-  selectedForm: string;
-  selectedLibraries: Set<string>;
-  theme: 'light' | 'dark';
+### Zustand Store Architecture
 
-  // Actions
-  setForm: (formId: string) => void;
-  toggleLibrary: (libraryId: string) => void;
-  toggleTheme: () => void;
-}
-
-export const useComparisonStore = create<ComparisonState>()(
-  persist(
-    (set) => ({
-      selectedForm: 'login',
-      selectedLibraries: new Set(['mui', 'chakra']),
-      theme: 'light',
-
-      setForm: (formId) => set({ selectedForm: formId }),
-
-      toggleLibrary: (libraryId) => set((state) => {
-        const newSet = new Set(state.selectedLibraries);
-        if (newSet.has(libraryId)) {
-          newSet.delete(libraryId);
-        } else {
-          newSet.add(libraryId);
-        }
-        return { selectedLibraries: newSet };
-      }),
-
-      toggleTheme: () => set((state) => ({
-        theme: state.theme === 'light' ? 'dark' : 'light'
-      })),
-    }),
-    {
-      name: 'comparison-store',
-    }
-  )
-);
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Zustand Comparison Store                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                          State                                     │  │
+│  │  ├── selectedForm: string           "login" (default)             │  │
+│  │  ├── selectedLibraries: Set<string> {"mui", "chakra"} (default)   │  │
+│  │  └── theme: "light" | "dark"        "light" (default)             │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                          Actions                                   │  │
+│  │  ├── setForm(formId)         Update selected form                 │  │
+│  │  ├── toggleLibrary(libId)    Add/remove from Set                  │  │
+│  │  └── toggleTheme()           Switch light ↔ dark                  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                       Persistence                                  │  │
+│  │  persist() middleware ──▶ localStorage["comparison-store"]        │  │
+│  │  Serializes state for page refresh survival                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### URL Synchronization
 
-```typescript
-// hooks/useUrlSync.ts
-function useUrlSync() {
-  const { selectedForm, selectedLibraries, theme, setForm, toggleTheme } = useComparisonStore();
-
-  // Read from URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlForm = params.get('form');
-    const urlTheme = params.get('theme');
-    const urlLibs = params.get('libs')?.split(',');
-
-    if (urlForm) setForm(urlForm);
-    if (urlTheme === 'dark' && theme === 'light') toggleTheme();
-    if (urlLibs) {
-      // Sync library selection from URL
-    }
-  }, []);
-
-  // Write to URL on state change (debounced)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams({
-        form: selectedForm,
-        theme,
-        libs: Array.from(selectedLibraries).join(','),
-      });
-      window.history.replaceState(null, '', `?${params}`);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [selectedForm, selectedLibraries, theme]);
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Bidirectional URL Sync                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Page Load:                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  1. Parse URL query parameters                                   │    │
+│  │     ├── form = params.get('form')                               │    │
+│  │     ├── theme = params.get('theme')                             │    │
+│  │     └── libs = params.get('libs')?.split(',')                   │    │
+│  │                                                                  │    │
+│  │  2. Hydrate Zustand store from URL values                        │    │
+│  │     (Override localStorage defaults if URL has values)           │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  State Change:                                                           │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  1. User toggles library or changes form                         │    │
+│  │                                                                  │    │
+│  │  2. Debounce 300ms (prevents history spam from rapid clicks)     │    │
+│  │                                                                  │    │
+│  │  3. Update URL via history.replaceState()                        │    │
+│  │     ?form=checkout&theme=dark&libs=mui,chakra,antd              │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Result: URL always reflects current state, shareable links work        │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Build Pipeline
+---
+
+## 🔨 Deep Dive: Build Pipeline
 
 ### Parallel Build with Memory Management
 
-```javascript
-// scripts/build-all.mjs
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
-const BATCH_SIZE = 4;  // Concurrent builds
-const BUILD_TIMEOUT = 120000;  // 2 min per app
-
-const libraries = [
-  'shell', 'mui', 'chakra', 'antd', 'blueprint',
-  // ... 37 more
-];
-
-async function buildWithRetry(lib, attempt = 1) {
-  try {
-    console.log(`[Build] ${lib} (attempt ${attempt})`);
-    await execAsync(`cd apps/${lib} && bun run build`, {
-      timeout: BUILD_TIMEOUT,
-    });
-    return { lib, success: true };
-  } catch (error) {
-    if (attempt < 2) {
-      await new Promise(r => setTimeout(r, 2000));
-      return buildWithRetry(lib, attempt + 1);
-    }
-    return { lib, success: false, error: error.message };
-  }
-}
-
-async function buildAll() {
-  const results = [];
-
-  for (let i = 0; i < libraries.length; i += BATCH_SIZE) {
-    const batch = libraries.slice(i, i + BATCH_SIZE);
-    console.log(`\nBuilding batch: ${batch.join(', ')}`);
-
-    const batchResults = await Promise.all(batch.map(buildWithRetry));
-    results.push(...batchResults);
-
-    // Force GC between batches
-    if (global.gc) global.gc();
-  }
-
-  const failed = results.filter(r => !r.success);
-  if (failed.length > 0) {
-    console.error(`\n${failed.length} builds failed`);
-    process.exit(1);
-  }
-
-  console.log(`\nAll ${results.length} builds succeeded`);
-}
-
-buildAll();
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Build Orchestration                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Configuration:                                                          │
+│  ├── BATCH_SIZE = 4         (concurrent builds per batch)               │
+│  ├── BUILD_TIMEOUT = 120s   (2 minutes per app max)                     │
+│  └── MAX_RETRIES = 2        (retry failed builds once)                  │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  Build Flow (42 apps)                                            │    │
+│  │                                                                  │    │
+│  │  Batch 1: [shell, mui, chakra, antd]                            │    │
+│  │     ├── Build 4 apps in parallel                                │    │
+│  │     ├── Wait for all to complete                                 │    │
+│  │     └── Force garbage collection                                 │    │
+│  │                                                                  │    │
+│  │  Batch 2: [blueprint, evergreen, carbon, gestalt]               │    │
+│  │     └── (repeat process)                                         │    │
+│  │                                                                  │    │
+│  │  ... (8 more batches)                                            │    │
+│  │                                                                  │    │
+│  │  Total: 11 batches × ~30s = ~3 minutes                          │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Memory Management:                                                      │
+│  ├── 4 concurrent × 500MB = ~2GB peak usage                            │
+│  ├── GC between batches prevents accumulation                           │
+│  └── Fits within GitHub Actions 7GB runner                              │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Deployment Assembly
+### Retry Logic
 
-```javascript
-// scripts/copy-builds-to-dist.mjs
-import { cp, mkdir, rm } from 'fs/promises';
-import { existsSync } from 'fs';
-
-async function assembleDistribution() {
-  // Clean dist
-  if (existsSync('dist')) {
-    await rm('dist', { recursive: true });
-  }
-  await mkdir('dist');
-
-  // Copy shell as root
-  await cp('apps/shell/dist', 'dist', { recursive: true });
-
-  // Copy each library to subdirectory
-  for (const lib of libraries.filter(l => l !== 'shell')) {
-    const src = `apps/${lib}/dist`;
-    const dest = `dist/${lib}`;
-    if (existsSync(src)) {
-      await cp(src, dest, { recursive: true });
-    }
-  }
-}
-
-assembleDistribution();
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Build Retry Strategy                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  buildWithRetry(library, attempt = 1):                                  │
+│       │                                                                  │
+│       ├── Try: Execute build command with timeout                       │
+│       │                                                                  │
+│       ├── Success: Return { lib, success: true }                        │
+│       │                                                                  │
+│       └── Failure:                                                       │
+│             ├── If attempt < 2:                                          │
+│             │     ├── Wait 2 seconds                                    │
+│             │     └── Retry with attempt + 1                            │
+│             │                                                            │
+│             └── If attempt >= 2:                                         │
+│                   └── Return { lib, success: false, error }             │
+│                                                                          │
+│  After all batches:                                                      │
+│  ├── Count failures                                                      │
+│  ├── If any failed: Exit with code 1 (fail CI)                          │
+│  └── If all passed: Continue to assembly                                │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: CSS Isolation Strategy
+### Distribution Assembly
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Dist Assembly Script                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Step 1: Clean dist/ directory                                          │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Step 2: Copy apps/shell/dist ──▶ dist/                                 │
+│          (Shell becomes the root)                                        │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Step 3: For each library (except shell):                               │
+│          Copy apps/{lib}/dist ──▶ dist/{lib}/                           │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Result:                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  dist/                                                           │    │
+│  │  ├── index.html          (Shell app entry)                       │    │
+│  │  ├── assets/             (Shell bundles)                         │    │
+│  │  ├── mui/                                                        │    │
+│  │  │   ├── index.html      (MUI app entry)                        │    │
+│  │  │   └── assets/         (MUI bundles)                          │    │
+│  │  ├── chakra/             (Same pattern)                          │    │
+│  │  └── ... (39 more libraries)                                     │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔒 Deep Dive: CSS Isolation Strategy
 
 ### The Problem
 
-When multiple design systems coexist:
-
-```jsx
-// This breaks!
-<MuiThemeProvider>
-  <MuiButton>Save</MuiButton>
-</MuiThemeProvider>
-<ChakraProvider>
-  <ChakraButton>Cancel</ChakraButton>
-</ChakraProvider>
 ```
-
-**Issues:**
-- MUI's `CssBaseline` resets Chakra's defaults
-- CSS custom properties (`--chakra-colors-blue-500`) conflict
-- Both fight over `body` and `html` styles
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CSS Collision Scenario                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Single React App with Multiple Providers:                              │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  <MuiThemeProvider>                                              │    │
+│  │    <MuiButton>Save</MuiButton>                                  │    │
+│  │  </MuiThemeProvider>                                             │    │
+│  │  <ChakraProvider>                                                │    │
+│  │    <ChakraButton>Cancel</ChakraButton>  ← Broken by MUI styles  │    │
+│  │  </ChakraProvider>                                               │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Conflicts:                                                              │
+│  ├── MUI's CssBaseline resets Chakra's defaults                        │
+│  ├── CSS custom properties (--chakra-colors-*) clash with MUI          │
+│  ├── Both inject styles into <head>                                     │
+│  └── Both modify body and html element styles                          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ### The Solution: Iframe Isolation
 
-```html
-<!-- Each library in separate browsing context -->
-<iframe src="/mui/?form=login">
-  <!-- Own document, own stylesheets, own CSS cascade -->
-</iframe>
-
-<iframe src="/chakra/?form=login">
-  <!-- Cannot affect or be affected by MUI -->
-</iframe>
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Iframe Isolation Model                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────────────────┐    ┌─────────────────────────┐             │
+│  │  Iframe: /mui/          │    │  Iframe: /chakra/       │             │
+│  │                         │    │                         │             │
+│  │  ┌───────────────────┐  │    │  ┌───────────────────┐  │             │
+│  │  │ Separate document │  │    │  │ Separate document │  │             │
+│  │  │ Own <head>        │  │    │  │ Own <head>        │  │             │
+│  │  │ Own stylesheets   │  │    │  │ Own stylesheets   │  │             │
+│  │  │ Own CSS cascade   │  │    │  │ Own CSS cascade   │  │             │
+│  │  │ Own React tree    │  │    │  │ Own React tree    │  │             │
+│  │  └───────────────────┘  │    │  └───────────────────┘  │             │
+│  │                         │    │                         │             │
+│  │  MUI CssBaseline ──────┼────┼──▶ Cannot reach Chakra  │             │
+│  └─────────────────────────┘    └─────────────────────────┘             │
+│                                                                          │
+│  Each iframe = separate browsing context = complete isolation           │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Other Approaches Failed
@@ -394,220 +437,216 @@ When multiple design systems coexist:
 | Shadow DOM | CSS custom properties leak, React context breaks |
 | **Iframe** | Complete isolation (chosen) |
 
-## Deep Dive: Library App Structure
+> "Shadow DOM seemed promising but CSS custom properties inherit through the shadow boundary, and React context doesn't cross shadow roots. Iframes are the only true isolation mechanism."
+
+---
+
+## 📦 Deep Dive: Library App Structure
 
 ### Vite Configuration
 
-```typescript
-// apps/mui/vite.config.ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
-export default defineConfig({
-  plugins: [react()],
-  base: '/20forms-20designs/mui/',
-  build: {
-    outDir: 'dist',
-    rollupOptions: {
-      output: {
-        entryFileNames: 'assets/[name]-[hash].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
-      },
-    },
-  },
-});
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Library App Vite Config                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Key Settings:                                                           │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  base: '/20forms-20designs/mui/'                                 │    │
+│  │  │                                                               │    │
+│  │  └── Required for GitHub Pages subdirectory hosting             │    │
+│  │      Assets resolve to /20forms-20designs/mui/assets/...        │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Output Configuration:                                                   │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  build.rollupOptions.output:                                     │    │
+│  │  ├── entryFileNames: 'assets/[name]-[hash].js'                  │    │
+│  │  ├── chunkFileNames: 'assets/[name]-[hash].js'                  │    │
+│  │  └── assetFileNames: 'assets/[name]-[hash][extname]'            │    │
+│  │                                                                  │    │
+│  │  Content hashing enables immutable caching                       │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Form Router
+### Form Router Pattern
 
-```typescript
-// apps/mui/src/FormRouter.tsx
-import { lazy, Suspense } from 'react';
-
-const forms: Record<string, React.LazyExoticComponent<any>> = {
-  login: lazy(() => import('./forms/LoginForm')),
-  signup: lazy(() => import('./forms/SignupForm')),
-  checkout: lazy(() => import('./forms/CheckoutForm')),
-  // ... 17 more forms
-};
-
-export function FormRouter({ formId }: { formId: string }) {
-  const FormComponent = forms[formId] || forms.login;
-
-  return (
-    <Suspense fallback={<div className="animate-pulse h-64 bg-gray-100" />}>
-      <FormComponent onSubmit={(data: unknown) => console.log('Submit:', data)} />
-    </Suspense>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Form Router Architecture                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Form Registry (lazy-loaded components):                                │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  "login"     ──▶ lazy(() => import('./forms/LoginForm'))        │    │
+│  │  "signup"    ──▶ lazy(() => import('./forms/SignupForm'))       │    │
+│  │  "checkout"  ──▶ lazy(() => import('./forms/CheckoutForm'))     │    │
+│  │  "contact"   ──▶ lazy(() => import('./forms/ContactForm'))      │    │
+│  │  ... (16 more forms)                                            │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  FormRouter Component:                                                   │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  1. Look up formId in registry                                   │    │
+│  │  2. Default to "login" if not found                              │    │
+│  │  3. Wrap in Suspense with skeleton fallback                      │    │
+│  │  4. Render lazy component                                        │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Benefits:                                                               │
+│  ├── Code splitting: Only requested form loads                         │
+│  ├── Fast initial load: Other forms load on demand                     │
+│  └── Graceful fallback: Skeleton during chunk fetch                    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Standardized Form Interface
 
-```typescript
-// All 41 libraries implement the same interface
-interface LoginFormProps {
-  onSubmit: (data: { email: string; password: string }) => void;
-}
-
-// MUI implementation
-function LoginForm({ onSubmit }: LoginFormProps) {
-  return (
-    <Box component="form" onSubmit={handleSubmit(onSubmit)}>
-      <TextField label="Email address" type="email" required fullWidth />
-      <TextField label="Password" type="password" required fullWidth />
-      <Button type="submit" variant="contained" fullWidth>Sign in</Button>
-    </Box>
-  );
-}
-
-// Chakra implementation
-function LoginForm({ onSubmit }: LoginFormProps) {
-  return (
-    <form onSubmit={handleSubmit(onSubmit)}>
-      <FormControl isRequired>
-        <FormLabel>Email address</FormLabel>
-        <Input type="email" />
-      </FormControl>
-      <FormControl isRequired>
-        <FormLabel>Password</FormLabel>
-        <Input type="password" />
-      </FormControl>
-      <Button type="submit" colorScheme="blue" width="100%">Sign in</Button>
-    </form>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Form Interface Contract                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  All 41 libraries implement identical interfaces:                       │
+│                                                                          │
+│  LoginFormProps:                                                         │
+│  └── onSubmit: (data: { email: string; password: string }) => void     │
+│                                                                          │
+│  SignupFormProps:                                                        │
+│  └── onSubmit: (data: { name, email, password, confirm }) => void      │
+│                                                                          │
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─    │
+│                                                                          │
+│  Same Structure, Different Components:                                  │
+│                                                                          │
+│  MUI LoginForm:           Chakra LoginForm:       Ant LoginForm:        │
+│  ├── TextField            ├── FormControl         ├── Form.Item         │
+│  │   (email)              │   └── Input           │   └── Input         │
+│  ├── TextField            ├── FormControl         ├── Form.Item         │
+│  │   (password)           │   └── Input           │   └── Input.Password│
+│  └── Button               └── Button              └── Button            │
+│      (contained)              (colorScheme)           (type=primary)    │
+│                                                                          │
+│  Result: Identical functionality, library-native appearance             │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Lazy Loading Strategy
+---
+
+## ⚡ Lazy Loading Strategy
 
 ### Intersection Observer for Iframes
 
-```tsx
-// components/PreviewCard.tsx
-function PreviewCard({ library }: { library: Library }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '100px' }
-    );
-
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div ref={containerRef} className="min-h-[400px]">
-      {!isVisible && <Skeleton />}
-      {isVisible && (
-        <iframe
-          src={iframeUrl}
-          className={isLoaded ? 'opacity-100' : 'opacity-0'}
-          onLoad={() => setIsLoaded(true)}
-        />
-      )}
-    </div>
-  );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Lazy Loading Implementation                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  PreviewCard State:                                                      │
+│  ├── isVisible: boolean    (Has card entered viewport?)                 │
+│  └── isLoaded: boolean     (Has iframe finished loading?)               │
+│                                                                          │
+│  Lifecycle:                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  1. Component mounts with isVisible = false                      │    │
+│  │                                                                  │    │
+│  │  2. IntersectionObserver watches container                       │    │
+│  │     rootMargin: "100px" (start loading before visible)          │    │
+│  │                                                                  │    │
+│  │  3. When entry.isIntersecting:                                   │    │
+│  │     ├── setIsVisible(true)                                       │    │
+│  │     └── observer.disconnect()                                    │    │
+│  │                                                                  │    │
+│  │  4. Render iframe (src attribute set)                            │    │
+│  │                                                                  │    │
+│  │  5. iframe onLoad:                                                │    │
+│  │     └── setIsLoaded(true) ──▶ Fade in content                   │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Render Logic:                                                           │
+│  ├── !isVisible: Show skeleton placeholder                             │
+│  ├── isVisible && !isLoaded: Show loading spinner over iframe          │
+│  └── isVisible && isLoaded: Show fully loaded iframe                   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Performance Impact
 
-| Scenario | Initial Load | Memory |
-|----------|-------------|--------|
+| Scenario | Initial Load | Memory Usage |
+|----------|-------------|--------------|
 | Eager (41 iframes) | 6MB + 41 React apps | ~500MB |
 | Lazy (3-6 visible) | 450KB + 3 React apps | ~75MB |
 
-## CI/CD Pipeline
+> "Lazy loading reduces initial payload by 13x and memory usage by 7x. Users scrolling through all libraries will eventually load everything, but the perceived performance is dramatically better."
+
+---
+
+## 🚀 CI/CD Pipeline
 
 ### GitHub Actions Workflow
 
-```yaml
-# .github/workflows/deploy.yml
-name: Build and Deploy
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ hashFiles('**/bun.lockb') }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build all apps
-        run: node --expose-gc scripts/build-all.mjs
-
-      - name: Assemble dist
-        run: node scripts/copy-builds-to-dist.mjs
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-${{ github.sha }}
-          path: dist/
-          retention-days: 14
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-${{ github.sha }}
-          path: dist/
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CI/CD Pipeline Stages                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Trigger: Push to main branch                                           │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  BUILD JOB (timeout: 15 minutes)                                  │  │
+│  │  ├── actions/checkout@v4                                          │  │
+│  │  ├── oven-sh/setup-bun@v1                                        │  │
+│  │  ├── actions/cache@v4 (key: bun.lockb hash)                      │  │
+│  │  ├── bun install --frozen-lockfile                               │  │
+│  │  ├── node --expose-gc scripts/build-all.mjs                      │  │
+│  │  ├── node scripts/copy-builds-to-dist.mjs                        │  │
+│  │  └── actions/upload-artifact@v4 (retention: 14 days)             │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              │                                           │
+│                              ▼ needs: build                              │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  DEPLOY JOB                                                       │  │
+│  │  ├── actions/download-artifact@v4                                 │  │
+│  │  └── peaceiris/actions-gh-pages@v4                               │  │
+│  │      └── publish_dir: ./dist                                      │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Caching Strategy
+---
+
+## 💾 Caching Strategy
 
 ### Content-Hashed Assets
 
 ```
-dist/
-├── index.html                    # no-cache (always fresh)
-├── assets/
-│   ├── shell-a1b2c3d4.js        # immutable (1 year cache)
-│   └── shell-e5f6g7h8.css       # immutable (1 year cache)
-├── mui/
-│   ├── index.html               # no-cache
-│   └── assets/
-│       └── mui-m3n4o5p6.js      # immutable
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Cache Strategy                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Asset Naming:                                                           │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  dist/                                                           │    │
+│  │  ├── index.html                  (no-cache, always fresh)       │    │
+│  │  ├── assets/                                                     │    │
+│  │  │   ├── shell-a1b2c3d4.js      (immutable, 1 year cache)       │    │
+│  │  │   └── shell-e5f6g7h8.css     (immutable, 1 year cache)       │    │
+│  │  ├── mui/                                                        │    │
+│  │  │   ├── index.html             (no-cache)                      │    │
+│  │  │   └── assets/                                                 │    │
+│  │  │       └── mui-m3n4o5p6.js    (immutable)                     │    │
+│  │  └── ... (40 more libraries)                                     │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+│  Hash changes when content changes ──▶ Perfect cache invalidation       │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Cache Headers
@@ -618,38 +657,45 @@ dist/
 | `*-[hash].js` | `public, max-age=31536000, immutable` | 1 year |
 | `*-[hash].css` | `public, max-age=31536000, immutable` | 1 year |
 
-## Trade-offs Summary
+---
+
+## ⚖️ Trade-offs Summary
 
 | Decision | Pros | Cons |
 |----------|------|------|
-| Iframe isolation | Complete CSS isolation | Duplicated React bundles (~40KB x 41) |
-| URL-based communication | Deep linking, history | Limited to string data |
-| Batched parallel builds | Memory efficient (~2GB) | Slower than unlimited parallel |
-| Static hosting | Free, simple, CDN | No server-side logic |
+| Iframe isolation | Complete CSS isolation | Duplicated React bundles (~40KB × 41) |
+| URL-based communication | Deep linking, history works | Limited to string data |
+| Batched parallel builds | Memory efficient (~2GB peak) | Slower than unlimited parallel |
+| Static hosting | Free, simple, CDN-backed | No server-side logic |
 | Zustand with persistence | Survives refresh | Storage sync complexity |
-| Lazy loading iframes | Fast initial load | Brief loading states on scroll |
+| Lazy loading iframes | Fast initial load (13x smaller) | Brief loading states on scroll |
+| Content hashing | Perfect cache invalidation | New hash on every change |
 
-## Scalability Path
+---
 
-### Current: Static Site
+## 🔮 Scalability Path
+
+### Current Architecture
 
 ```
-GitHub Repo → GitHub Actions → GitHub Pages (Fastly CDN)
+GitHub Repo ──▶ GitHub Actions ──▶ GitHub Pages (Fastly CDN)
 ```
 
-### Future: Enhanced Features
+### Future Enhancements
 
-1. **More Libraries**: Add new design systems as they emerge
-2. **Visual Regression**: Screenshot comparison per library
-3. **Bundle Analysis**: Display library sizes for comparison
-4. **Mobile Viewport**: Compare form responsiveness
-5. **Accessibility Audit**: WCAG compliance scoring per form
+| Enhancement | Complexity | Value |
+|-------------|------------|-------|
+| Incremental builds | Medium | Only rebuild changed apps |
+| Visual regression | Medium | Screenshot comparison per library |
+| Bundle analysis | Low | Display library sizes |
+| Mobile viewport | Medium | Compare form responsiveness |
+| Accessibility audit | High | WCAG compliance scoring |
+| Drag & drop ordering | Medium | Rearrange comparison layout |
+| Side-by-side diff | High | Highlight visual differences |
+| Export comparison | Medium | Generate shareable image/PDF |
 
-## Future Enhancements
+---
 
-1. **Incremental Builds**: Only rebuild changed apps using file hashing
-2. **Drag & Drop Ordering**: Rearrange libraries in comparison view
-3. **Side-by-Side Diff**: Highlight visual differences
-4. **Export Comparison**: Generate shareable image/PDF
-5. **Form Validation Demo**: Show validation behavior differences
-6. **Animation Comparison**: Display transition/animation differences
+## 🎤 Interview Wrap-up
+
+> "We've designed a full-stack architecture for comparing 41 design system libraries with complete CSS isolation via iframes. The shell application communicates with library apps through URL parameters, enabling deep linking and browser history support. A batched parallel build pipeline handles 42 Vite applications in under 3 minutes while staying within CI memory limits. Lazy loading with Intersection Observer reduces initial load from 6MB to 450KB. The entire system deploys as static assets to GitHub Pages at zero cost, with content-hashed filenames providing perfect cache invalidation. The main trade-off is duplicated React bundles across iframes, but this is acceptable for achieving true style isolation between competing design systems."

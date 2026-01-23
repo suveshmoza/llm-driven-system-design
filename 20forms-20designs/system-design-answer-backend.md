@@ -2,237 +2,190 @@
 
 *45-minute system design interview format - Backend Engineer Position*
 
-## Problem Statement
+---
 
-Design the backend infrastructure for a platform that renders identical forms across 41 React design systems for comparison. Key challenges include:
-- Build orchestration for 42 separate applications
-- Static file deployment architecture
-- CDN and caching strategies
-- CI/CD pipeline for parallel builds
+## 📋 Problem Statement
 
-## Requirements Clarification
+Design the backend infrastructure for a platform that renders identical forms across 41 React design systems for comparison. Key challenges include build orchestration for 42 separate applications, static file deployment, and CI/CD pipeline design.
+
+---
+
+## 🎯 Requirements Clarification
 
 ### Functional Requirements
+
 1. **Build Orchestration**: Compile 42 Vite applications efficiently
 2. **Static Deployment**: Serve 42 apps as static files
 3. **URL Routing**: Each library accessible at its own path (`/mui/`, `/chakra/`)
 4. **Query Parameter Handling**: Pass form/theme configuration via URL
 
 ### Non-Functional Requirements
-1. **Build Time**: Under 5 minutes for full 42-app build
-2. **Availability**: 99.9% uptime via CDN
-3. **Latency**: Sub-100ms asset delivery globally
-4. **Cost Efficiency**: Zero server costs for hosting
+
+| Requirement | Target | Rationale |
+|-------------|--------|-----------|
+| Build Time | < 5 minutes | Developer productivity |
+| Availability | 99.9% | CDN-backed static hosting |
+| Latency | < 100ms globally | Edge caching |
+| Cost | $0/month | Public repo, free hosting |
 
 ### Scale Estimates
-- 42 applications, avg 150KB gzipped each = ~6MB total
-- Expected traffic: 1K-10K daily visitors
-- Read-only workload (static assets)
-- Peak: 100 concurrent users
 
-## High-Level Architecture
+| Metric | Value |
+|--------|-------|
+| Total applications | 42 |
+| Average app size (gzipped) | 150KB |
+| Total dist size | ~18MB |
+| Daily visitors | 1K-10K |
+| Peak concurrent users | 100 |
+
+> "This is a read-only static workload - the entire system can be served from CDN edge nodes with no origin servers."
+
+---
+
+## 🏗️ High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         GitHub Actions CI/CD                             │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  Trigger: Push to main                                             │  │
-│  │  1. Checkout → 2. Install → 3. Parallel Build → 4. Deploy         │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────┬───────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         GitHub Pages (Fastly CDN)                        │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  dist/                                                             │  │
-│  │  ├── index.html          (Shell app)                              │  │
-│  │  ├── assets/             (Shell assets with content hash)         │  │
-│  │  ├── mui/index.html      (MUI app)                                │  │
-│  │  ├── mui/assets/                                                   │  │
-│  │  ├── chakra/index.html   (Chakra app)                             │  │
-│  │  └── ... (39 more libraries)                                      │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                  │
-                    ┌─────────────┼─────────────┐
-                    ▼             ▼             ▼
-              ┌──────────┐ ┌──────────┐ ┌──────────┐
-              │ Edge POP │ │ Edge POP │ │ Edge POP │
-              │ (US-East)│ │ (EU-West)│ │ (AP-East)│
-              └──────────┘ └──────────┘ └──────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      GitHub Actions CI/CD                            │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │  Push to main ──▶ Install ──▶ Parallel Build ──▶ Deploy        │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    GitHub Pages (Fastly CDN)                         │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │  dist/                                                          │ │
+│  │  ├── index.html        (Shell app - no-cache)                  │ │
+│  │  ├── assets/           (Content-hashed, immutable)             │ │
+│  │  ├── mui/index.html    (MUI app)                               │ │
+│  │  ├── chakra/           (Chakra app)                            │ │
+│  │  └── ... (39 more libraries)                                   │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+        ┌──────────┐      ┌──────────┐      ┌──────────┐
+        │ Edge POP │      │ Edge POP │      │ Edge POP │
+        │ (US-East)│      │ (EU-West)│      │ (AP-East)│
+        └──────────┘      └──────────┘      └──────────┘
 ```
 
-## Deep Dive: Build Orchestration System
+---
+
+## 🔧 Deep Dive: Build Orchestration
 
 ### The Memory Challenge
 
-Building 42 Vite applications simultaneously causes out-of-memory errors:
+Building 42 Vite applications simultaneously causes out-of-memory errors on CI runners:
 
 ```
-42 apps × 500MB RAM = 21GB RAM (crashes)
+42 apps × 500MB RAM = 21GB RAM ──▶ OOM crash
 ```
 
-### Batched Parallel Build Solution
-
-```javascript
-// scripts/build-all.mjs
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
-const BATCH_SIZE = 4;  // Concurrent builds
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 2000;
-const BUILD_TIMEOUT_MS = 120000;  // 2 minutes per app
-
-const libraries = [
-  'shell', 'mui', 'chakra', 'antd', 'blueprint',
-  // ... 37 more libraries
-];
-
-async function buildWithRetry(lib, attempt = 1) {
-  try {
-    console.log(`[Build] ${lib} (attempt ${attempt})`);
-    await execAsync(`cd apps/${lib} && bun run build`, {
-      timeout: BUILD_TIMEOUT_MS,
-    });
-    return { lib, success: true };
-  } catch (error) {
-    if (attempt < MAX_RETRIES) {
-      console.warn(`[Retry] ${lib} failed, retrying...`);
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-      return buildWithRetry(lib, attempt + 1);
-    }
-    return { lib, success: false, error: error.message };
-  }
-}
-
-async function buildAll() {
-  const results = [];
-
-  for (let i = 0; i < libraries.length; i += BATCH_SIZE) {
-    const batch = libraries.slice(i, i + BATCH_SIZE);
-    console.log(`\nBatch ${Math.floor(i/BATCH_SIZE) + 1}: ${batch.join(', ')}`);
-
-    const batchResults = await Promise.all(batch.map(buildWithRetry));
-    results.push(...batchResults);
-
-    // Force garbage collection between batches
-    if (global.gc) global.gc();
-  }
-
-  // Summary
-  const failed = results.filter(r => !r.success);
-  if (failed.length > 0) {
-    console.error(`\n${failed.length} builds failed`);
-    process.exit(1);
-  }
-
-  console.log(`\nAll ${results.length} builds succeeded`);
-}
-
-buildAll();
-```
-
-### Build Time Analysis
+### Build Strategy Trade-offs
 
 | Strategy | Time | Memory | Result |
 |----------|------|--------|--------|
-| Sequential | 21 min | 500MB | Too slow |
-| All parallel | N/A | 21GB | OOM crash |
-| Batch of 4 | 3 min | 2GB | Optimal |
-| Batch of 8 | 2 min | 4GB | CI limit |
+| ❌ Sequential | 21 min | 500MB | Too slow |
+| ❌ All parallel | N/A | 21GB | OOM crash |
+| ✅ Batch of 4 | 3 min | 2GB | Optimal |
+| ⚠️ Batch of 8 | 2 min | 4GB | CI memory limit |
 
-**Decision**: Batch size of 4 balances speed with memory constraints.
+> "Batching 4 concurrent builds balances speed with GitHub Actions memory constraints. We can build all 42 apps in under 3 minutes."
 
-## Deep Dive: Static Deployment Architecture
+### Batched Build Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Build Orchestration Script                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Batch 1: [shell, mui, chakra, antd]                                │
+│     │                                                                │
+│     ├── Build in parallel (4 concurrent)                            │
+│     ├── Wait for all to complete                                    │
+│     └── Force garbage collection                                    │
+│                                                                      │
+│  Batch 2: [blueprint, evergreen, carbon, gestalt]                   │
+│     │                                                                │
+│     └── (repeat process)                                            │
+│                                                                      │
+│  ... (8 more batches)                                               │
+│                                                                      │
+│  Final: Copy all builds to dist/                                    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Retry Logic
+
+| Failure Type | Detection | Recovery |
+|--------------|-----------|----------|
+| Single app timeout | 2-minute timeout | Retry up to 2× |
+| OOM during batch | Process exit code | Reduce batch size to 2 |
+| Dependency fail | Install exit code | Retry with cache clear |
+| All apps fail | Zero successes | Block deploy, alert |
+
+> "Adding retry logic with 2 attempts handles flaky builds without significantly extending worst-case build time."
+
+---
+
+## 📁 Deep Dive: Static Deployment Architecture
 
 ### Directory Structure After Build
 
 ```
-dist/
-├── index.html                    # Shell (no-cache)
-├── assets/
-│   ├── shell-a1b2c3d4.js        # Content-hashed (immutable)
-│   ├── shell-e5f6g7h8.css       # Content-hashed (immutable)
-│   └── vendor-i9j0k1l2.js       # Shared React chunk
-│
-├── mui/
-│   ├── index.html               # MUI entry (no-cache)
-│   └── assets/
-│       ├── mui-m3n4o5p6.js      # Content-hashed
-│       └── mui-q7r8s9t0.css     # Content-hashed
-│
-├── chakra/
-│   ├── index.html               # Chakra entry (no-cache)
-│   └── assets/
-│       └── ...
-│
-└── ... (39 more library directories)
+┌─────────────────────────────────────────────────────────────────────┐
+│  dist/                                                               │
+├─────────────────────────────────────────────────────────────────────┤
+│  index.html                    Shell entry (no-cache)               │
+│  assets/                                                             │
+│  ├── shell-[hash].js          Content-hashed (immutable, 1 year)   │
+│  ├── shell-[hash].css         Content-hashed (immutable)           │
+│  └── vendor-[hash].js         Shared React chunk                   │
+│                                                                      │
+│  mui/                                                                │
+│  ├── index.html               MUI entry (no-cache)                 │
+│  └── assets/                                                         │
+│      ├── mui-[hash].js        Content-hashed                       │
+│      └── mui-[hash].css       Content-hashed                       │
+│                                                                      │
+│  chakra/                       (same pattern)                        │
+│  antd/                         (same pattern)                        │
+│  ... (39 more library directories)                                  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Vite Configuration for Multi-App Deployment
+### Vite Base Path Configuration
 
-```typescript
-// vite.config.ts (template for all library apps)
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+Each library app needs its own base path for correct asset loading:
 
-export default defineConfig({
-  plugins: [react()],
-  base: '/20forms-20designs/mui/',  // Library-specific base path
-  build: {
-    outDir: 'dist',
-    rollupOptions: {
-      output: {
-        // Content hash in filenames for cache busting
-        entryFileNames: 'assets/[name]-[hash].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]',
-      },
-    },
-  },
-});
+| App | Base Path | Resolved Asset URL |
+|-----|-----------|-------------------|
+| Shell | `/20forms-20designs/` | `/20forms-20designs/assets/shell-abc.js` |
+| MUI | `/20forms-20designs/mui/` | `/20forms-20designs/mui/assets/mui-def.js` |
+| Chakra | `/20forms-20designs/chakra/` | `/20forms-20designs/chakra/assets/chakra-ghi.js` |
+
+### Asset Assembly Script
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      copy-builds-to-dist.mjs                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  1. Clean dist/ directory                                           │
+│  2. Copy apps/shell/dist ──▶ dist/ (root)                           │
+│  3. For each library (except shell):                                │
+│     Copy apps/{lib}/dist ──▶ dist/{lib}/                            │
+│  4. Log any missing builds                                          │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Copy Script for Final Assembly
+---
 
-```javascript
-// scripts/copy-builds-to-dist.mjs
-import { cp, mkdir, rm } from 'fs/promises';
-import { existsSync } from 'fs';
-
-const libraries = ['shell', 'mui', 'chakra', /* ... */];
-
-async function copyBuilds() {
-  // Clean dist directory
-  if (existsSync('dist')) {
-    await rm('dist', { recursive: true });
-  }
-  await mkdir('dist');
-
-  // Copy shell as root
-  await cp('apps/shell/dist', 'dist', { recursive: true });
-
-  // Copy each library to its subdirectory
-  for (const lib of libraries.filter(l => l !== 'shell')) {
-    const src = `apps/${lib}/dist`;
-    const dest = `dist/${lib}`;
-
-    if (existsSync(src)) {
-      await cp(src, dest, { recursive: true });
-      console.log(`Copied ${lib}`);
-    } else {
-      console.warn(`Missing build: ${lib}`);
-    }
-  }
-}
-
-copyBuilds();
-```
-
-## Deep Dive: CDN and Caching Strategy
+## 💾 Deep Dive: CDN and Caching Strategy
 
 ### Cache Header Configuration
 
@@ -243,252 +196,185 @@ copyBuilds();
 | `*-[hash].css` | `public, max-age=31536000, immutable` | 1 year | Hash changes on update |
 | Images/fonts | `public, max-age=604800` | 1 week | Rarely change |
 
-### Netlify Headers Configuration (If Migrating from GitHub Pages)
-
-```
-# dist/_headers
-/*.html
-  Cache-Control: no-cache, must-revalidate
-
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-
-/*/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-```
+> "Content-hashed filenames provide perfect cache invalidation. When code changes, the hash changes, and browsers fetch the new file. HTML files are never cached to ensure users always get the latest asset references."
 
 ### CDN Edge Behavior
 
-GitHub Pages uses Fastly CDN:
-
 ```
-User Request → Nearest Edge POP → Cache Check
-                     │
-                     ├── HIT: Return cached asset (< 10ms)
-                     │
-                     └── MISS: Fetch from origin → Cache → Return
-```
-
-- **Global POPs**: Assets served from nearest edge location
-- **Origin Shield**: Reduces origin hits during cache misses
-- **Purge on Deploy**: `gh-pages` push triggers global cache invalidation
-
-## Deep Dive: CI/CD Pipeline
-
-### GitHub Actions Workflow
-
-```yaml
-# .github/workflows/deploy.yml
-name: Build and Deploy
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ hashFiles('**/bun.lockb') }}
-
-      - name: Cache build outputs
-        uses: actions/cache@v4
-        with:
-          path: |
-            apps/*/dist
-            dist
-          key: build-${{ github.sha }}
-          restore-keys: build-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build all apps
-        run: node --expose-gc scripts/build-all.mjs
-
-      - name: Copy to dist
-        run: node scripts/copy-builds-to-dist.mjs
-
-      - name: Check bundle sizes
-        run: node scripts/check-budgets.mjs
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-${{ github.sha }}
-          path: dist/
-          retention-days: 14
-
-  deploy:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-${{ github.sha }}
-          path: dist/
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Request Flow                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  User Request ──▶ Nearest Edge POP ──▶ Cache Check                  │
+│                                              │                       │
+│                        ┌─────────────────────┴─────────────────────┐│
+│                        ▼                                           ▼│
+│                  ┌──────────┐                              ┌──────────┐
+│                  │   HIT    │                              │   MISS   │
+│                  │  <10ms   │                              │          │
+│                  └────┬─────┘                              └────┬─────┘
+│                       │                                         │     │
+│                       ▼                                         ▼     │
+│                Return cached                           Fetch from    │
+│                   asset                                 origin       │
+│                                                            │         │
+│                                                            ▼         │
+│                                                      Cache + Return  │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Rollback Strategy
+### GitHub Pages CDN Features
 
-```bash
-# List recent deployments
-git log --oneline gh-pages -10
+| Feature | Behavior |
+|---------|----------|
+| Global POPs | Assets served from nearest edge location |
+| Origin Shield | Reduces origin hits during cache misses |
+| Purge on Deploy | `gh-pages` push triggers global cache invalidation |
+| HTTPS | Automatic TLS certificates |
 
-# Rollback to previous deployment
-git checkout gh-pages
-git reset --hard HEAD~1
-git push origin gh-pages --force
+---
 
-# Or restore from artifact
-# Download artifact from GitHub Actions UI
-# Redeploy manually
+## 🚀 Deep Dive: CI/CD Pipeline
+
+### Pipeline Stages
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      GitHub Actions Workflow                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Trigger: Push to main or PR                                        │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  BUILD JOB (15 min timeout)                                     ││
+│  │  ├── Checkout code                                              ││
+│  │  ├── Setup Bun runtime                                          ││
+│  │  ├── Restore dependency cache (key: bun.lockb hash)             ││
+│  │  ├── Restore build cache (key: git SHA)                         ││
+│  │  ├── Install dependencies (frozen lockfile)                     ││
+│  │  ├── Build all apps (batched, with retries)                     ││
+│  │  ├── Copy builds to dist/                                       ││
+│  │  ├── Check bundle size budgets                                  ││
+│  │  └── Upload artifacts (14-day retention)                        ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                              │                                       │
+│                              ▼ (only on main branch)                │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  DEPLOY JOB                                                     ││
+│  │  ├── Download build artifacts                                   ││
+│  │  └── Deploy to GitHub Pages                                     ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Performance Monitoring
+### Caching Strategy
+
+| Cache Type | Key | Purpose |
+|------------|-----|---------|
+| Dependencies | `bun.lockb` hash | Skip `bun install` if unchanged |
+| Build outputs | Git SHA | Incremental builds |
+| Artifacts | `dist-{sha}` | Enable rollbacks |
+
+### Rollback Strategies
+
+| Method | Steps | Use When |
+|--------|-------|----------|
+| Git reset | Reset gh-pages branch to previous commit | Quick rollback needed |
+| Artifact restore | Download previous artifact, redeploy | Need specific version |
+| Per-app rebuild | Rebuild single broken app, merge to dist | One library broke |
+
+> "Keeping 14 days of build artifacts enables fast rollbacks without rebuilding. For critical issues, we can reset the gh-pages branch in under a minute."
+
+---
+
+## 📊 Performance Monitoring
 
 ### Bundle Size Budgets
 
-| Metric | Budget | Warning |
-|--------|--------|---------|
-| Shell JS (gzipped) | < 50 KB | > 40 KB |
-| Shell CSS (gzipped) | < 10 KB | > 8 KB |
-| Library JS (gzipped) | < 150 KB | > 120 KB |
-| Total dist size | < 25 MB | > 20 MB |
+| Metric | Budget | Warning | Action if Exceeded |
+|--------|--------|---------|-------------------|
+| Shell JS (gzipped) | 50KB | 40KB | Review dependencies |
+| Shell CSS (gzipped) | 10KB | 8KB | Audit styles |
+| Library JS (gzipped) | 150KB | 120KB | Check library version |
+| Total dist size | 25MB | 20MB | Audit all bundles |
 
-### Budget Enforcement Script
+### Load Time Targets
 
-```javascript
-// scripts/check-budgets.mjs
-import { stat } from 'fs/promises';
-import { execSync } from 'child_process';
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Shell FCP | < 1.5s | Lighthouse |
+| Shell LCP | < 2.5s | Lighthouse |
+| Iframe load | < 500ms | Performance API |
+| Time to Interactive | < 3.0s | Lighthouse |
 
-const budgets = {
-  'dist/assets/shell-*.js': 51200,  // 50KB
-  'dist/*/assets/*.js': 153600,      // 150KB
-};
-
-async function checkBudgets() {
-  let failed = false;
-
-  for (const [pattern, maxBytes] of Object.entries(budgets)) {
-    const files = execSync(`ls ${pattern} 2>/dev/null || true`)
-      .toString().trim().split('\n').filter(Boolean);
-
-    for (const file of files) {
-      const gzipSize = parseInt(
-        execSync(`gzip -c ${file} | wc -c`).toString().trim()
-      );
-
-      if (gzipSize > maxBytes) {
-        console.error(`OVER BUDGET: ${file} is ${gzipSize} bytes (max: ${maxBytes})`);
-        failed = true;
-      }
-    }
-  }
-
-  if (failed) process.exit(1);
-}
-
-checkBudgets();
-```
-
-### Real User Monitoring
-
-```typescript
-// apps/shell/src/vitals.ts
-import { onCLS, onFCP, onLCP, onTTFB } from 'web-vitals';
-
-function sendToAnalytics(metric) {
-  console.log(`[Vitals] ${metric.name}: ${metric.value}`);
-
-  if (import.meta.env.PROD) {
-    // Send to analytics service
-    navigator.sendBeacon('/api/vitals', JSON.stringify({
-      name: metric.name,
-      value: metric.value,
-      id: metric.id,
-    }));
-  }
-}
-
-onCLS(sendToAnalytics);
-onFCP(sendToAnalytics);
-onLCP(sendToAnalytics);
-onTTFB(sendToAnalytics);
-```
-
-## Scalability Considerations
-
-### Current: Static Hosting
+### Budget Enforcement
 
 ```
-GitHub Repo → GitHub Actions → GitHub Pages (Fastly CDN)
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Bundle Budget Check                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  For each pattern in budgets:                                       │
+│    Find matching files                                              │
+│    Measure gzipped size                                             │
+│    Compare against budget                                           │
+│    If over budget ──▶ Fail CI with error message                    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Capacity**: Effectively unlimited for static content
+---
 
-### Future: Enhanced Monitoring
+## 💰 Cost Analysis
 
-```
-                              ┌─────────────────┐
-                              │   Cloudflare    │
-                              │   Web Analytics │
-                              └────────┬────────┘
-                                       │
-GitHub Pages ────────────────────────────────────► Users
-(Origin)                                           (Global)
-```
-
-### Cost Analysis
+### Hosting Platform Comparison
 
 | Platform | Free Tier | Our Usage | Monthly Cost |
 |----------|-----------|-----------|--------------|
-| GitHub Pages | Unlimited (public) | ~18 MB static | $0 |
+| GitHub Pages | Unlimited (public) | ~18MB static | $0 |
 | GitHub Actions | 2000 min/month | ~100 min/month | $0 |
 | Cloudflare Analytics | 500K events/month | ~10K events | $0 |
 
-**Total**: $0/month
+**Total: $0/month**
 
-## Trade-offs Summary
+### When to Consider Paid Hosting
 
-| Decision | Pros | Cons |
-|----------|------|------|
-| Batched builds (4 concurrent) | Prevents OOM, 3 min total | Slower than unlimited parallel |
-| Content-hashed assets | Perfect cache invalidation | Slightly larger filenames |
-| GitHub Pages | Free, simple, CDN included | No custom headers, no server logic |
-| Artifact retention (14 days) | Easy rollback | Storage cost if private repo |
-| Retry logic (2 attempts) | Handles flaky builds | Longer worst-case build time |
+| Trigger | Platform | Monthly Cost |
+|---------|----------|--------------|
+| Traffic > 100GB/month | Cloudflare Pages | $0 (unlimited) |
+| Custom headers needed | Netlify Pro | $19 |
+| Password protection | Vercel Pro | $20 |
+| Server-side logic | Any paid tier | Varies |
 
-## Future Backend Enhancements
+> "For a learning project with moderate traffic, free tiers are sufficient. GitHub Pages with Fastly CDN provides excellent global performance at zero cost."
 
-1. **Incremental Builds**: Only rebuild changed apps using file hashing
-2. **Build Cache Sharing**: Share Vite cache between CI runs
-3. **Preview Deployments**: Deploy PRs to preview URLs
-4. **Performance Dashboard**: Track Core Web Vitals over time
-5. **Automated Lighthouse**: Run Lighthouse CI on every deployment
-6. **Dependency Security**: Automated vulnerability scanning for 42 package.jsons
+---
+
+## ⚖️ Trade-offs Summary
+
+| Decision | Chosen | Alternative | Why Chosen |
+|----------|--------|-------------|------------|
+| Build batching | 4 concurrent | All parallel | Prevents OOM on CI runners |
+| Asset hashing | Content hash in filename | Query string versioning | Better cache behavior |
+| Hosting | GitHub Pages | Netlify/Vercel | Zero cost, sufficient features |
+| Artifact retention | 14 days | 7 days / 30 days | Balance storage and rollback needs |
+| Retry logic | 2 attempts | 1 / 3 attempts | Handle flaky builds without long delays |
+| HTML caching | no-cache | Short TTL | Always serve latest asset references |
+
+---
+
+## 🔮 Future Enhancements
+
+| Enhancement | Complexity | Value |
+|-------------|------------|-------|
+| Incremental builds (only changed apps) | Medium | Faster CI |
+| Preview deployments for PRs | Low | Better review flow |
+| Lighthouse CI integration | Low | Automated perf tracking |
+| Dependency vulnerability scanning | Low | Security |
+| Build cache sharing across branches | Medium | Faster PR builds |
+
+---
+
+## 🎤 Interview Wrap-up
+
+> "We've designed a zero-cost static hosting architecture that builds 42 React applications in under 3 minutes using batched parallel builds. Content-hashed assets ensure perfect cache invalidation, while GitHub Pages with Fastly CDN provides global edge delivery. The system handles failures gracefully with retry logic and maintains 14 days of artifacts for easy rollbacks. The entire infrastructure costs $0/month for a public repository."

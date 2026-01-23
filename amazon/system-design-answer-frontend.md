@@ -407,24 +407,11 @@ OptimizedImage component provides:
 
 ## State Management Summary
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Store Organization                                              │
-├─────────────────────────────────────────────────────────────────┤
-│  Zustand Stores (Client State)                                   │
-│  ├─ cartStore.ts      Shopping cart with localStorage persist   │
-│  ├─ userStore.ts      Auth state and user preferences           │
-│  ├─ searchStore.ts    Recent searches, filter preferences       │
-│  └─ uiStore.ts        UI state (modals, drawers)                │
-├─────────────────────────────────────────────────────────────────┤
-│  TanStack Query Hooks (Server State)                             │
-│  ├─ useProduct.ts          Single product query                 │
-│  ├─ useSearchProducts.ts   Infinite search results              │
-│  ├─ useRecommendations.ts  Product recommendations              │
-│  ├─ useOrders.ts           Order history                        │
-│  └─ useCheckout.ts         Checkout mutations                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+> "I'm splitting state between Zustand for client-side concerns and TanStack Query for server state. This separation keeps the architecture clean and leverages each tool's strengths."
+
+**Client State (Zustand):** Cart with localStorage persistence, auth/user preferences, recent searches, UI state (modals, drawers)
+
+**Server State (TanStack Query):** Product queries, infinite search results, recommendations, order history, checkout mutations
 
 ---
 
@@ -432,12 +419,12 @@ OptimizedImage component provides:
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| State management | Zustand + TanStack Query | Redux | Simpler for cart, Query handles server cache |
-| Routing | TanStack Router | React Router | Type-safe, file-based, better prefetching |
-| Cart persistence | LocalStorage + API | Cookie | Larger capacity, works offline |
-| Image loading | Lazy + blur placeholder | Eager | Better LCP for visible, saves bandwidth |
-| Search virtualization | @tanstack/virtual | windowing | Better for variable heights |
-| Form handling | React Hook Form + Zod | Formik | Better TypeScript, validation co-location |
+| State management | ✅ Zustand + TanStack Query | ❌ Redux | Simpler for cart, Query handles server cache |
+| Routing | ✅ TanStack Router | ❌ React Router | Type-safe, file-based, better prefetching |
+| Cart persistence | ✅ LocalStorage + API | ❌ Cookie | Larger capacity, works offline |
+| Image loading | ✅ Lazy + blur placeholder | ❌ Eager | Better LCP for visible, saves bandwidth |
+| Search virtualization | ✅ @tanstack/virtual | ❌ windowing | Better for variable heights |
+| Form handling | ✅ React Hook Form + Zod | ❌ Formik | Better TypeScript, validation co-location |
 
 ---
 

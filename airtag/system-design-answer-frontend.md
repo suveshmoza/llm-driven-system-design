@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Introduction
+## 📋 Problem Statement
 
 Design the frontend experience for Apple's Find My app for AirTag, enabling users to locate their items through a privacy-preserving crowd-sourced network.
 
@@ -17,7 +17,7 @@ Design the frontend experience for Apple's Find My app for AirTag, enabling user
 
 ---
 
-## 2. Requirements
+## 🎯 Requirements
 
 ### Functional Requirements
 1. **Device Map**: Display all registered devices on an interactive map
@@ -42,7 +42,7 @@ Design the frontend experience for Apple's Find My app for AirTag, enabling user
 
 ---
 
-## 3. High-Level Design
+## 🏗️ High-Level Architecture
 
 ### App Shell Architecture
 
@@ -76,46 +76,15 @@ Design the frontend experience for Apple's Find My app for AirTag, enabling user
 +--------------------------------------------------------------------+
 ```
 
-### Component Tree
+### Component Structure
 
-```
-+-- App Shell
-    |
-    +-- Navigation Bar
-    |   +-- Devices Tab
-    |   +-- Map Tab
-    |   +-- People Tab
-    |   +-- Settings Tab
-    |
-    +-- Main Content Area
-    |   |
-    |   +-- Map View
-    |   |   +-- Map Container (Leaflet)
-    |   |   +-- Device Markers (clustered)
-    |   |   +-- Accuracy Circles
-    |   |   +-- Location History Trail
-    |   |
-    |   +-- Device List Overlay
-    |   |   +-- Device Cards
-    |   |   +-- Search/Filter
-    |   |
-    |   +-- Device Detail Panel
-    |       +-- Location Info
-    |       +-- Actions (Sound, Lost Mode)
-    |       +-- Precision Find Button
-    |
-    +-- Notification Center
-    |   +-- Tracker Alerts
-    |   +-- Found Notifications
-    |
-    +-- Offline Indicator
-```
+The app follows a standard shell pattern with bottom navigation between Devices, Map, People, and Settings tabs. The main content area contains the interactive map with device markers, a device list overlay, and a detail panel showing location info and actions (Play Sound, Lost Mode, Precision Find).
 
 ---
 
-## 4. Deep Dive: Key Components
+## 🔍 Deep Dive: Key Components
 
-### 4.1 Map Component Design
+### Map Component Design
 
 **User Interaction Flow:**
 
@@ -170,21 +139,19 @@ User Taps Marker
   + Pulse animation  + Time label        + "?" icon
 ```
 
-### Why Leaflet Over Native MapKit?
+### Map Library Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Leaflet | Cross-platform, open source, extensive plugins, one codebase | Not native look, bundle size (~40KB) |
-| Native MapKit | Native iOS experience, system integration, best performance | iOS only, need separate Android/web implementations |
-| Google Maps | Rich features, familiar UI, Street View | Licensing costs, privacy concerns, vendor lock-in |
+| ✅ Leaflet | Cross-platform, open source, extensive plugins, one codebase | Not native look, bundle size (~40KB) |
+| ❌ Native MapKit | Native iOS experience, system integration, best performance | iOS only, need separate Android/web implementations |
+| ❌ Google Maps | Rich features, familiar UI, Street View | Licensing costs, privacy concerns, vendor lock-in |
 
-**Decision: Leaflet**
-
-"I'm choosing Leaflet because Find My needs to work across iOS, macOS, and web. While MapKit provides the best native iOS experience, we'd need three different map implementations. Leaflet gives us one codebase with consistent behavior. The react-leaflet wrapper integrates well with our React stack, and the plugin ecosystem (marker clustering, gesture handling) covers our needs."
+> "I'm choosing Leaflet because Find My needs to work across iOS, macOS, and web. While MapKit provides the best native iOS experience, we'd need three different map implementations. Leaflet gives us one codebase with consistent behavior. The react-leaflet wrapper integrates well with our React stack, and the plugin ecosystem covers our needs."
 
 ---
 
-### 4.2 Client-Side Decryption Architecture
+### Client-Side Decryption Architecture
 
 **Privacy Flow:**
 
@@ -235,21 +202,19 @@ User Taps Marker
                +---> Latitude, Longitude, Timestamp
 ```
 
-### Why Client-Side Decryption with WebCrypto?
+### Decryption Approach Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| WebCrypto client-side | Privacy preserved, server never sees locations, user controls keys | Slower decryption, complex key management, limited browser support |
-| Server-side decryption | Faster, simpler client, easier debugging | Privacy violation, single point of failure, regulatory concerns |
-| Hybrid (server assists) | Balance of speed and privacy | Still exposes keys to server, complex trust model |
+| ✅ WebCrypto client-side | Privacy preserved, server never sees locations, user controls keys | Slower decryption, complex key management |
+| ❌ Server-side decryption | Faster, simpler client, easier debugging | Privacy violation, single point of failure |
+| ❌ Hybrid (server assists) | Balance of speed and privacy | Still exposes keys to server |
 
-**Decision: Client-Side WebCrypto**
-
-"I'm choosing client-side decryption because privacy is the core value proposition. Users trust Find My because Apple cannot see their locations. WebCrypto API provides hardware-backed cryptography on modern devices. Yes, decryption is slower, but we can show progress UI and batch operations. The privacy guarantee is non-negotiable for this product."
+> "I'm choosing client-side decryption because privacy is the core value proposition. Users trust Find My because Apple cannot see their locations. WebCrypto API provides hardware-backed cryptography on modern devices. Yes, decryption is slower, but we can show progress UI and batch operations. The privacy guarantee is non-negotiable for this product."
 
 ---
 
-### 4.3 Precision Finding UI (UWB)
+### Precision Finding UI (UWB)
 
 **Directional Interface:**
 
@@ -287,33 +252,29 @@ Distance        Visual              Haptic              Audio
 < 1m            Green, pulsing      Continuous          Found!
 ```
 
-### Why UWB for Precision Finding Over Bluetooth RSSI?
+### Precision Technology Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| UWB (Ultra-Wideband) | Centimeter accuracy, directional (azimuth + elevation), works through walls | Requires UWB hardware, higher power, shorter range |
-| Bluetooth RSSI | All devices support it, lower power, longer range | Meter-level accuracy, no direction, multipath issues |
-| Bluetooth AoA/AoD | Better than RSSI, direction capable | Complex antenna arrays, not widely deployed |
+| ✅ UWB (Ultra-Wideband) | Centimeter accuracy, directional, works through walls | Requires UWB hardware, higher power |
+| ❌ Bluetooth RSSI | All devices support it, lower power, longer range | Meter-level accuracy, no direction |
+| ❌ Bluetooth AoA/AoD | Better than RSSI, direction capable | Complex antenna arrays, not widely deployed |
 
-**Decision: UWB with Bluetooth Fallback**
+> "I'm choosing UWB as the primary precision finding technology because it provides actual direction, not just proximity. Users can see an arrow pointing exactly where to go. For devices without UWB support, we fall back to Bluetooth RSSI with a simpler 'warmer/colder' interface."
 
-"I'm choosing UWB as the primary precision finding technology because it provides actual direction, not just proximity. Users can see an arrow pointing exactly where to go. For devices without UWB support, we fall back to Bluetooth RSSI with a simpler 'warmer/colder' interface. The dual approach covers all devices while giving the best experience on newer hardware."
-
-### Why Haptic Feedback Patterns Based on Distance?
+### Feedback Approach Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Haptic feedback | Multi-sensory, works without looking at screen, intuitive | Battery drain, may be disabled, not all devices support |
-| Audio only | Everyone hears it, simple to implement | Social situations, noisy environments, accessibility |
-| Visual only | Clear, precise information | Requires screen focus, accessibility concerns |
+| ✅ Multi-sensory (Haptic + Visual + Audio) | Works in all contexts, accessibility | Battery drain, complexity |
+| ❌ Audio only | Everyone hears it, simple | Social situations, noisy environments |
+| ❌ Visual only | Clear, precise information | Requires screen focus |
 
-**Decision: Multi-Sensory (Haptic + Visual + Optional Audio)**
-
-"I'm choosing a multi-sensory approach because users search in different contexts - a quiet office vs a loud concert venue. Haptic feedback lets you keep the phone in your pocket while walking toward the item. Visual provides precise information when you can look. Audio is optional for those who want it. This combination is most reliable across scenarios."
+> "I'm choosing a multi-sensory approach because users search in different contexts - a quiet office vs a loud concert venue. Haptic feedback lets you keep the phone in your pocket while walking toward the item. Visual provides precise information when you can look. Audio is optional for those who want it."
 
 ---
 
-### 4.4 Anti-Stalking Detection UI
+### Anti-Stalking Detection UI
 
 **Alert Flow with Progressive Disclosure:**
 
@@ -374,21 +335,19 @@ Initial Alert (non-alarming)
 +------------------------------------------------+
 ```
 
-### Why Progressive Disclosure in Anti-Stalking UI?
+### Anti-Stalking UI Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Progressive disclosure | Reduces panic, user-controlled depth, cleaner initial UI | May delay critical information, extra taps |
-| Full information upfront | Immediate awareness, no hidden content | Can cause unnecessary alarm, overwhelming |
-| Dismissable minimal alert | Least intrusive, user choice | May be ignored, safety risk |
+| ✅ Progressive disclosure | Reduces panic, user-controlled depth | May delay critical information |
+| ❌ Full information upfront | Immediate awareness | Can cause unnecessary alarm |
+| ❌ Dismissable minimal alert | Least intrusive | May be ignored, safety risk |
 
-**Decision: Progressive Disclosure**
-
-"I'm choosing progressive disclosure because anti-stalking alerts have a high false positive rate - borrowed items, family members' AirTags, etc. Showing 'STALKER DETECTED' causes panic when it's often a false alarm. By starting with neutral language and letting users drill down, we give control without causing unnecessary fear. Users who need the full information can access it immediately."
+> "I'm choosing progressive disclosure because anti-stalking alerts have a high false positive rate - borrowed items, family members' AirTags, etc. Showing 'STALKER DETECTED' causes panic when it's often a false alarm. By starting with neutral language and letting users drill down, we give control without causing unnecessary fear."
 
 ---
 
-### 4.5 State Management
+### State Management
 
 **Store Structure:**
 
@@ -419,22 +378,19 @@ FindMyStore
     +-- markNotificationRead(id)
 ```
 
-### Why Zustand Over Redux for State Management?
+### State Management Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Zustand | Simple API, less boilerplate, built-in devtools, small bundle | Less ecosystem, fewer patterns for complex apps |
-| Redux + RTK | Mature ecosystem, middleware, time-travel debugging | Verbose, steeper learning curve, larger bundle |
-| React Context | No dependencies, built-in | Performance issues with frequent updates, no middleware |
-| Jotai/Recoil | Atomic state, fine-grained reactivity | Newer, less ecosystem, learning curve |
+| ✅ Zustand | Simple API, less boilerplate, small bundle | Less ecosystem |
+| ❌ Redux + RTK | Mature ecosystem, middleware, time-travel debugging | Verbose, larger bundle |
+| ❌ React Context | No dependencies, built-in | Performance issues with frequent updates |
 
-**Decision: Zustand**
-
-"I'm choosing Zustand because Find My has moderate state complexity - a dozen devices, their locations, and UI state. Redux would add boilerplate without proportional benefit. Zustand's simple API means less code to maintain. The store is easy to test and the devtools integration helps debugging. If we grow to hundreds of devices or add complex async workflows, we can migrate."
+> "I'm choosing Zustand because Find My has moderate state complexity - a dozen devices, their locations, and UI state. Redux would add boilerplate without proportional benefit. The store is easy to test and if we grow to hundreds of devices, we can migrate."
 
 ---
 
-### 4.6 Offline Support
+### Offline Support
 
 **Caching Strategy:**
 
@@ -487,22 +443,19 @@ Service Worker Cache
 +-- Offline fallback page
 ```
 
-### Why Service Worker Caching for Offline?
+### Offline Strategy Trade-off
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Service Worker cache | Works offline, fine-grained control, background sync | Complex to debug, cache invalidation, browser differences |
-| localStorage only | Simple, synchronous, widely supported | 5MB limit, no asset caching, blocks main thread |
-| IndexedDB only | Large storage, async, structured data | No asset caching, more complex API |
-| No offline support | Simpler implementation | Useless when you need it most (lost device) |
+| ✅ Service Worker + IndexedDB | Works offline, fine-grained control, background sync | Complex to debug, cache invalidation |
+| ❌ localStorage only | Simple, synchronous | 5MB limit, no asset caching |
+| ❌ No offline support | Simpler implementation | Useless when you need it most |
 
-**Decision: Service Worker with IndexedDB**
-
-"I'm choosing Service Worker caching because offline support is critical for Find My. Users often search for lost items in areas with poor connectivity - basement, rural area, airplane mode. The cache-then-network strategy ensures the app works immediately. We cache map tiles for frequently viewed areas and store decrypted locations in IndexedDB. This is exactly the scenario where offline matters most."
+> "I'm choosing Service Worker caching because offline support is critical for Find My. Users often search for lost items in areas with poor connectivity - basements, rural areas. The cache-then-network strategy ensures the app works immediately. This is exactly the scenario where offline matters most."
 
 ---
 
-### 4.7 Auto-Refresh Strategy
+### Auto-Refresh Strategy
 
 **Polling Approach:**
 
@@ -536,22 +489,19 @@ Service Worker Cache
 +------------------+
 ```
 
-### Why 60-Second Auto-Refresh Interval?
+### Refresh Interval Trade-off
 
 | Interval | Pros | Cons |
 |----------|------|------|
-| 10 seconds | Near real-time, responsive | Battery drain, excessive API calls, decryption overhead |
-| 30 seconds | Reasonably fresh, moderate resources | Still battery concern, may miss brief sightings |
-| 60 seconds | Balanced freshness, reasonable battery, matches AirTag broadcast | May feel slow, 1-minute delay acceptable? |
-| 5 minutes | Low battery/network use | Frustrating when actively searching |
+| ✅ 60 seconds | Balanced freshness, reasonable battery, matches broadcast | May feel slow |
+| ❌ 10 seconds | Near real-time | Battery drain, excessive API calls |
+| ❌ 5 minutes | Low battery/network use | Frustrating when actively searching |
 
-**Decision: 60 Seconds**
-
-"I'm choosing 60 seconds because it matches AirTag's broadcast cycle. The tracker rotates keys every 15 minutes and broadcasts continuously, but finder devices batch reports. Refreshing faster than 60 seconds rarely yields new data. When actively precision finding, we switch to continuous UWB ranging which is real-time. For map view, 60 seconds balances freshness with battery life."
+> "I'm choosing 60 seconds because it matches AirTag's broadcast cycle. The tracker rotates keys every 15 minutes and broadcasts continuously, but finder devices batch reports. Refreshing faster than 60 seconds rarely yields new data. When actively precision finding, we switch to continuous UWB ranging which is real-time."
 
 ---
 
-## 5. Data Flow
+## 📡 Data Flow
 
 ### Location Update Flow
 
@@ -607,22 +557,22 @@ Service Worker Cache
 
 ---
 
-## 6. Trade-offs Summary
+## 📊 Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| Map library | Leaflet | Native MapKit | Cross-platform, single codebase |
-| Decryption | WebCrypto client-side | Server-side | Privacy preservation is core |
-| State management | Zustand | Redux | Simpler for moderate complexity |
-| Precision finding | UWB primary | Bluetooth only | Directional guidance matters |
-| Anti-stalking UI | Progressive disclosure | Full info upfront | Reduce false alarm panic |
-| Offline support | Service Worker | None | Critical for lost device scenarios |
-| Refresh interval | 60 seconds | 10 seconds | Matches broadcast cycle, battery |
-| Haptic feedback | Distance-based patterns | None | Multi-sensory guidance |
+| Map library | ✅ Leaflet | ❌ Native MapKit | Cross-platform, single codebase |
+| Decryption | ✅ WebCrypto client-side | ❌ Server-side | Privacy preservation is core |
+| State management | ✅ Zustand | ❌ Redux | Simpler for moderate complexity |
+| Precision finding | ✅ UWB primary | ❌ Bluetooth only | Directional guidance matters |
+| Anti-stalking UI | ✅ Progressive disclosure | ❌ Full info upfront | Reduce false alarm panic |
+| Offline support | ✅ Service Worker | ❌ None | Critical for lost device scenarios |
+| Refresh interval | ✅ 60 seconds | ❌ 10 seconds | Matches broadcast cycle, battery |
+| Haptic feedback | ✅ Distance-based patterns | ❌ None | Multi-sensory guidance |
 
 ---
 
-## 7. Future Enhancements
+## 🚀 Future Enhancements
 
 1. **AR Precision Finding**: Camera overlay with augmented reality arrow
 2. **Home Screen Widgets**: Quick device status without opening app
@@ -635,7 +585,7 @@ Service Worker Cache
 
 ---
 
-## 8. Summary
+## 💡 Summary
 
 The Find My frontend for AirTag balances three core concerns:
 

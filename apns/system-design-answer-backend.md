@@ -8,9 +8,12 @@
 
 For this discussion, I'll emphasize the database schema design, caching strategies, connection management, and observability infrastructure."
 
-## Requirements Clarification (3 minutes)
+---
+
+## 🎯 Requirements Clarification (3 minutes)
 
 ### Functional Requirements
+
 1. **Push Delivery**: Deliver notifications to devices with < 500ms latency for high-priority messages
 2. **Token Registry**: Manage device token lifecycle (registration, invalidation, refresh)
 3. **Store-and-Forward**: Queue notifications for offline devices with expiration policies
@@ -18,19 +21,29 @@ For this discussion, I'll emphasize the database schema design, caching strategi
 5. **Feedback Service**: Report invalid tokens back to providers
 
 ### Non-Functional Requirements
-1. **Throughput**: 580K+ notifications/second (50B per day)
-2. **Latency**: < 500ms for priority-10 notifications to online devices
-3. **Reliability**: 99.99% delivery to online devices
-4. **Consistency**: At-least-once delivery with idempotency support
+
+| Requirement | Target | Rationale |
+|-------------|--------|-----------|
+| Throughput | 580K+ notifications/second | 50B per day |
+| Latency | < 500ms for priority-10 | Real-time user experience |
+| Reliability | 99.99% delivery to online devices | Critical for app engagement |
+| Consistency | At-least-once with idempotency | Network failures require retries |
 
 ### Scale Estimates
-- 1 billion+ active Apple devices
-- 50 billion notifications/day = 580K/second
-- Each device maintains persistent connection when online
-- Store up to 100 notifications per offline device
-- Token registry: 1B+ records with high-read workload
 
-## High-Level Architecture (5 minutes)
+| Metric | Value |
+|--------|-------|
+| Active Apple devices | 1 billion+ |
+| Daily notifications | 50 billion (580K/sec) |
+| Concurrent connections | Millions (persistent WebSocket) |
+| Pending queue per device | Up to 100 notifications |
+| Token registry size | 1B+ records, read-heavy |
+
+> "This is a write-heavy system for notification ingestion but read-heavy for token lookups. The pending queue must be durable for offline devices."
+
+---
+
+## 🏗️ High-Level Architecture (5 minutes)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -62,13 +75,18 @@ For this discussion, I'll emphasize the database schema design, caching strategi
 ```
 
 ### Core Backend Components
-1. **APNs Gateway** - HTTP/2 endpoint with JWT validation and rate limiting
-2. **Token Registry** - Device token CRUD with hash-based storage
-3. **Push Service** - Manages device connections and delivery routing
-4. **Store Service** - Queues notifications for offline devices
-5. **Feedback Service** - Collects and exposes invalid token reports
 
-## Deep Dive: Database Schema Design (8 minutes)
+| Component | Responsibility | Data Store |
+|-----------|---------------|------------|
+| APNs Gateway | HTTP/2 endpoint, JWT validation, rate limiting | Redis (rate limits) |
+| Token Registry | Device token CRUD with hash-based storage | PostgreSQL |
+| Push Service | Manages device connections and delivery routing | Redis (conn state) |
+| Store Service | Queues notifications for offline devices | PostgreSQL |
+| Feedback Service | Collects and exposes invalid token reports | PostgreSQL + Kafka |
+
+---
+
+## 🗄️ Deep Dive: Database Schema Design (8 minutes)
 
 ### Entity Relationship Model
 
@@ -89,22 +107,22 @@ For this discussion, I'll emphasize the database schema design, caching strategi
 └────────────┬─────────────┘         │ payload             JSONB│
              │                       │ priority           INTEGER│
              │                       │ expiration       TIMESTAMP│
-             │                       │ collapse_id       VARCHAR│
-             │ 1:N                   │ created_at       TIMESTAMP│
-             │                       │ UNIQUE(device_id,         │
-             ▼                       │        collapse_id)       │
-┌──────────────────────────┐         └──────────────────────────┘
-│       notifications      │
-├──────────────────────────┤         ┌──────────────────────────┐
-│ id (PK)              UUID│────────▶│       delivery_log       │
-│ device_id (FK)       UUID│   1:1   ├──────────────────────────┤
-│ payload             JSONB│         │ notification_id (PK) UUID│
-│ priority           INTEGER│        │ device_id (FK)       UUID│
-│ expiration       TIMESTAMP│        │ status             VARCHAR│
-│ collapse_id        VARCHAR│        │ delivered_at     TIMESTAMP│
-│ status             VARCHAR│        └──────────────────────────┘
-│ created_at       TIMESTAMP│
-└──────────────────────────┘         ┌──────────────────────────┐
+             │ 1:N                   │ collapse_id       VARCHAR│
+             │                       │ created_at       TIMESTAMP│
+             ▼                       │ UNIQUE(device_id,         │
+┌──────────────────────────┐         │        collapse_id)       │
+│       notifications      │         └──────────────────────────┘
+├──────────────────────────┤
+│ id (PK)              UUID│         ┌──────────────────────────┐
+│ device_id (FK)       UUID│────────▶│       delivery_log       │
+│ payload             JSONB│   1:1   ├──────────────────────────┤
+│ priority           INTEGER│        │ notification_id (PK) UUID│
+│ expiration       TIMESTAMP│        │ device_id (FK)       UUID│
+│ collapse_id        VARCHAR│        │ status             VARCHAR│
+│ status             VARCHAR│        │ delivered_at     TIMESTAMP│
+│ created_at       TIMESTAMP│        └──────────────────────────┘
+└──────────────────────────┘
+                                     ┌──────────────────────────┐
                                      │      feedback_queue      │
                                      ├──────────────────────────┤
                                      │ id (PK)          BIGSERIAL│
@@ -117,56 +135,62 @@ For this discussion, I'll emphasize the database schema design, caching strategi
 
 ### Key Table Design Decisions
 
-**1. Token Hashing for Security**
+#### 1. Token Hashing for Security
 
-```sql
--- Tokens are hashed before storage (SHA-256)
-CREATE TABLE device_tokens (
-  device_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  token_hash VARCHAR(64) UNIQUE NOT NULL,  -- SHA-256 of raw token
-  app_bundle_id VARCHAR(200) NOT NULL,
-  device_info JSONB,
-  is_valid BOOLEAN DEFAULT TRUE,
-  invalidated_at TIMESTAMP,
-  invalidation_reason VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW(),
-  last_seen TIMESTAMP DEFAULT NOW()
-);
-
--- Partial index for valid tokens (most common query)
-CREATE INDEX idx_tokens_valid ON device_tokens(token_hash)
-  WHERE is_valid = true;
-
--- App-level queries
-CREATE INDEX idx_tokens_app ON device_tokens(app_bundle_id);
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          device_tokens Table                                         │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Core Columns:                                                                       │
+│  ├── device_id: UUID PRIMARY KEY (auto-generated)                                   │
+│  ├── token_hash: VARCHAR(64) UNIQUE NOT NULL  ◄── SHA-256 of raw token             │
+│  ├── app_bundle_id: VARCHAR(200) NOT NULL                                           │
+│  ├── device_info: JSONB (OS version, model, etc.)                                   │
+│  └── is_valid: BOOLEAN DEFAULT TRUE                                                 │
+│                                                                                      │
+│  Lifecycle Columns:                                                                  │
+│  ├── invalidated_at: TIMESTAMP (when token became invalid)                          │
+│  ├── invalidation_reason: VARCHAR(50) (uninstalled, token_refresh, etc.)            │
+│  ├── created_at: TIMESTAMP DEFAULT NOW()                                            │
+│  └── last_seen: TIMESTAMP (updated on each connection)                              │
+│                                                                                      │
+│  Indexes:                                                                            │
+│  ├── idx_tokens_valid: PARTIAL on token_hash WHERE is_valid = true                  │
+│  └── idx_tokens_app: B-tree on app_bundle_id                                        │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Why Hash Tokens?** If the database is breached, attackers cannot use exposed hashes to send spam notifications. The 64-char hex output provides efficient fixed-length indexing.
+> "We hash tokens before storage using SHA-256. If the database is breached, attackers cannot use exposed hashes to send spam notifications. The 64-char hex output provides efficient fixed-length indexing."
 
-**2. Collapse ID with UPSERT Pattern**
+#### 2. Collapse ID with UPSERT Pattern
 
-```sql
-CREATE TABLE pending_notifications (
-  id UUID PRIMARY KEY,
-  device_id UUID REFERENCES device_tokens(device_id) ON DELETE CASCADE,
-  payload JSONB NOT NULL,
-  priority INTEGER DEFAULT 10,  -- 10=immediate, 5=background, 1=low
-  expiration TIMESTAMP,
-  collapse_id VARCHAR(100),
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE (device_id, collapse_id)  -- Enables atomic replacement
-);
-
--- Collapse pattern: newer notification replaces older
-INSERT INTO pending_notifications (id, device_id, payload, priority, collapse_id)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (device_id, collapse_id)
-DO UPDATE SET payload = $3, priority = $4, created_at = NOW();
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      Collapse ID Semantics                                           │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  UNIQUE CONSTRAINT on (device_id, collapse_id) enables atomic replacement:          │
+│                                                                                      │
+│  ┌────────────────────────────────────────────────────────────────────────────────┐│
+│  │  INSERT INTO pending_notifications (device_id, payload, priority, collapse_id) ││
+│  │  VALUES (...)                                                                   ││
+│  │  ON CONFLICT (device_id, collapse_id)                                           ││
+│  │  DO UPDATE SET payload = NEW, priority = NEW, created_at = NOW()               ││
+│  └────────────────────────────────────────────────────────────────────────────────┘│
+│                                                                                      │
+│  Example: Sports score updates                                                       │
+│  ├── collapse_id = "game-123-score"                                                 │
+│  ├── First notification: "Score: 2-1" ──▶ Stored                                    │
+│  ├── Second notification: "Score: 3-1" ──▶ Replaces first                           │
+│  ├── Third notification: "Score: 4-1" ──▶ Replaces second                           │
+│  └── Device comes online ──▶ Receives only "Score: 4-1"                             │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Use Case:** Sports score updates use collapse_id to ensure only the latest score is delivered, not 20 intermediate updates.
-
-**3. Foreign Key Deletion Strategies**
+#### 3. Foreign Key Deletion Strategies
 
 | Relationship | ON DELETE | Rationale |
 |--------------|-----------|-----------|
@@ -175,7 +199,9 @@ DO UPDATE SET payload = $3, priority = $4, created_at = NOW();
 | notifications → device_tokens | SET NULL | Preserve analytics history |
 | delivery_log → device_tokens | SET NULL | Preserve audit trail |
 
-## Deep Dive: Caching Strategy (7 minutes)
+---
+
+## 💾 Deep Dive: Caching Strategy (7 minutes)
 
 ### Cache Topology
 
@@ -202,62 +228,54 @@ DO UPDATE SET payload = $3, priority = $4, created_at = NOW();
 
 ### Cache-Aside Pattern for Token Lookups
 
-```typescript
-class TokenRegistry {
-  async lookup(token: string): Promise<Device | null> {
-    const tokenHash = sha256(token);
-    const cacheKey = `cache:token:${tokenHash}`;
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         TokenRegistry.lookup(token)                                  │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Step 1: Hash the raw token                                                          │
+│  ├── tokenHash = SHA256(token)                                                       │
+│  └── cacheKey = "cache:token:" + tokenHash                                           │
+│                                                                                      │
+│  Step 2: Check Redis cache first                                                     │
+│  ├── cached = redis.GET(cacheKey)                                                    │
+│  ├── IF cached exists ──▶ Return cached device (cache HIT)                          │
+│  └── metrics.cacheHit.labels("token").inc()                                          │
+│                                                                                      │
+│  Step 3: Check negative cache (known invalid tokens)                                 │
+│  ├── invalid = redis.EXISTS("cache:token:invalid:" + tokenHash)                      │
+│  └── IF invalid ──▶ Return null (skip DB query)                                     │
+│                                                                                      │
+│  Step 4: Query PostgreSQL on cache miss                                              │
+│  ├── SELECT * FROM device_tokens WHERE token_hash = $1 AND is_valid = true          │
+│  ├── IF no rows ──▶ Set negative cache (5 min TTL), return null                     │
+│  └── IF found ──▶ Cache result (1 hour TTL), return device                          │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-    // 1. Check cache first
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      metrics.cacheHit.labels('token').inc();
-      return JSON.parse(cached);
-    }
-    metrics.cacheMiss.labels('token').inc();
+### Token Invalidation Flow
 
-    // 2. Check negative cache (known invalid)
-    const invalid = await redis.exists(`cache:token:invalid:${tokenHash}`);
-    if (invalid) {
-      return null;
-    }
-
-    // 3. Cache miss - query database
-    const result = await db.query(`
-      SELECT * FROM device_tokens
-      WHERE token_hash = $1 AND is_valid = true
-    `, [tokenHash]);
-
-    if (result.rows.length === 0) {
-      // Negative caching prevents repeated DB hits for bad tokens
-      await redis.setex(`cache:token:invalid:${tokenHash}`, 300, '1');
-      return null;
-    }
-
-    // 4. Populate cache
-    const device = result.rows[0];
-    await redis.setex(cacheKey, 3600, JSON.stringify(device));
-
-    return device;
-  }
-
-  async invalidateToken(token: string, reason: string): Promise<void> {
-    const tokenHash = sha256(token);
-
-    // Database update
-    await db.query(`
-      UPDATE device_tokens
-      SET is_valid = false, invalidated_at = NOW(), invalidation_reason = $2
-      WHERE token_hash = $1
-    `, [tokenHash, reason]);
-
-    // Explicit cache invalidation
-    await redis.del(`cache:token:${tokenHash}`);
-    await redis.setex(`cache:token:invalid:${tokenHash}`, 3600, reason);
-
-    await this.feedbackService.reportInvalidToken(token, reason);
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      TokenRegistry.invalidateToken(token, reason)                    │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Step 1: Update PostgreSQL                                                           │
+│  ├── UPDATE device_tokens SET                                                        │
+│  │     is_valid = false,                                                             │
+│  │     invalidated_at = NOW(),                                                       │
+│  │     invalidation_reason = reason                                                  │
+│  └── WHERE token_hash = SHA256(token)                                                │
+│                                                                                      │
+│  Step 2: Explicit cache invalidation                                                 │
+│  ├── redis.DEL("cache:token:" + tokenHash)  ◄── Remove valid cache                 │
+│  └── redis.SETEX("cache:token:invalid:" + tokenHash, 3600, reason)                  │
+│                                                                                      │
+│  Step 3: Report to feedback service                                                  │
+│  └── feedbackService.reportInvalidToken(token, reason)                               │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### TTL Configuration Matrix
@@ -273,94 +291,95 @@ class TokenRegistry {
 
 ### Write-Through for Connection State
 
-Device connection state must be immediately consistent (no stale data):
-
-```typescript
-class PushService {
-  async onDeviceConnect(deviceId: string, connection: WebSocket): Promise<void> {
-    // Write-through: update Redis immediately
-    await redis.setex(`conn:${deviceId}`, 300, JSON.stringify({
-      serverId: this.serverId,
-      connectedAt: Date.now()
-    }));
-
-    this.connections.set(deviceId, connection);
-    await this.deliverPendingNotifications(deviceId, connection);
-  }
-
-  async onDeviceDisconnect(deviceId: string): Promise<void> {
-    // Immediate invalidation
-    await redis.del(`conn:${deviceId}`);
-    this.connections.delete(deviceId);
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      Connection State Management                                     │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  On Device Connect:                                                                  │
+│  ├── Immediately update Redis (write-through)                                       │
+│  │   └── SETEX "conn:{deviceId}" 300 { serverId, connectedAt }                      │
+│  ├── Store connection in local map                                                   │
+│  └── Trigger delivery of pending notifications                                       │
+│                                                                                      │
+│  On Device Disconnect:                                                               │
+│  ├── Immediately delete from Redis                                                   │
+│  │   └── DEL "conn:{deviceId}"                                                       │
+│  └── Remove from local connection map                                                │
+│                                                                                      │
+│  Why Write-Through (not Cache-Aside)?                                                │
+│  └── Connection state must be immediately consistent ──▶ no stale data allowed      │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Store-and-Forward Queue (5 minutes)
+---
+
+## 📬 Deep Dive: Store-and-Forward Queue (5 minutes)
 
 ### Queue Management for Offline Devices
 
-```typescript
-class StoreService {
-  async storeForDelivery(notification: Notification): Promise<QueueResult> {
-    const { expiration, priority, collapseId, deviceId } = notification;
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      StoreService.storeForDelivery(notification)                     │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Step 1: Check expiration                                                            │
+│  ├── IF notification.expiration < NOW() ──▶ Reject (already expired)               │
+│  └── metrics.notificationExpired.inc()                                               │
+│                                                                                      │
+│  Step 2: Atomic insert/update with collapse semantics                                │
+│  ├── INSERT INTO pending_notifications                                               │
+│  │     (id, device_id, payload, priority, expiration, collapse_id)                  │
+│  │   VALUES (...)                                                                    │
+│  │   ON CONFLICT (device_id, collapse_id)                                            │
+│  │   DO UPDATE SET payload, priority, created_at = NOW()                            │
+│  └── metrics.notificationQueued.inc()                                                │
+│                                                                                      │
+│  Return: { queued: true } or { expired: true }                                       │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-    // Check if already expired
-    if (expiration && expiration < Date.now()) {
-      metrics.notificationExpired.inc();
-      return { expired: true };
-    }
+### Deliver Pending on Reconnect
 
-    // Atomic insert/update with collapse semantics
-    await db.query(`
-      INSERT INTO pending_notifications
-        (id, device_id, payload, priority, expiration, collapse_id, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
-      ON CONFLICT (device_id, collapse_id)
-      DO UPDATE SET payload = $3, priority = $4, created_at = NOW()
-    `, [notification.id, deviceId, notification.payload,
-        priority, expiration, collapseId]);
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      StoreService.deliverPending(deviceId, connection)               │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Step 1: Fetch pending notifications                                                 │
+│  ├── SELECT * FROM pending_notifications                                             │
+│  │   WHERE device_id = $1                                                            │
+│  │   AND (expiration IS NULL OR expiration > NOW())                                  │
+│  │   ORDER BY priority DESC, created_at ASC                                          │
+│  └── LIMIT 100  ◄── Cap to prevent flooding                                         │
+│                                                                                      │
+│  Step 2: Deliver each notification                                                   │
+│  ├── FOR EACH notification:                                                          │
+│  │   ├── connection.send(JSON.stringify(notification))                               │
+│  │   └── Mark as delivered in delivery_log                                           │
+│                                                                                      │
+│  Step 3: Clean up after delivery                                                     │
+│  └── DELETE FROM pending_notifications WHERE device_id = $1                          │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-    metrics.notificationQueued.inc();
-    return { queued: true };
-  }
+### Background Cleanup Job
 
-  async deliverPending(deviceId: string, connection: WebSocket): Promise<void> {
-    // Fetch in priority order
-    const pending = await db.query(`
-      SELECT * FROM pending_notifications
-      WHERE device_id = $1
-      AND (expiration IS NULL OR expiration > NOW())
-      ORDER BY priority DESC, created_at ASC
-      LIMIT 100
-    `, [deviceId]);
-
-    for (const notification of pending.rows) {
-      await connection.send(JSON.stringify(notification));
-      await this.markDelivered(notification.id);
-    }
-
-    // Clean up after delivery
-    await db.query(
-      'DELETE FROM pending_notifications WHERE device_id = $1',
-      [deviceId]
-    );
-  }
-
-  // Background cleanup job
-  async cleanupExpired(): Promise<void> {
-    const result = await db.query(`
-      DELETE FROM pending_notifications
-      WHERE expiration IS NOT NULL AND expiration < NOW()
-      RETURNING id
-    `);
-
-    logger.info({
-      event: 'expired_cleanup',
-      count: result.rowCount
-    });
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      StoreService.cleanupExpired() - Runs every 5 minutes            │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  DELETE FROM pending_notifications                                                   │
+│  WHERE expiration IS NOT NULL AND expiration < NOW()                                 │
+│  RETURNING id                                                                        │
+│                                                                                      │
+│  Log: { event: "expired_cleanup", count: result.rowCount }                           │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Priority Queue Semantics
@@ -371,53 +390,39 @@ class StoreService {
 | Background | 5 | Deliver during power nap |
 | Low | 1 | Batch, deliver opportunistically |
 
-## Deep Dive: Idempotency and Consistency (5 minutes)
+---
+
+## 🔐 Deep Dive: Idempotency and Consistency (5 minutes)
 
 ### Multi-Layer Idempotency
 
-```typescript
-class NotificationService {
-  async processNotification(
-    token: string,
-    payload: any,
-    headers: APNsHeaders
-  ): Promise<NotificationResult> {
-    const notificationId = headers['apns-id'] || uuid();
-
-    // Layer 1: Redis idempotency check
-    const dedupKey = `cache:idem:${notificationId}`;
-    const existing = await redis.get(dedupKey);
-    if (existing) {
-      metrics.duplicateDetected.inc();
-      return JSON.parse(existing);
-    }
-
-    // Layer 2: Database UPSERT for delivery log
-    const insertResult = await db.query(`
-      INSERT INTO delivery_log (notification_id, device_id, status, created_at)
-      VALUES ($1, $2, 'pending', NOW())
-      ON CONFLICT (notification_id) DO NOTHING
-      RETURNING notification_id
-    `, [notificationId, device.device_id]);
-
-    if (insertResult.rowCount === 0) {
-      // Already processed - return existing status
-      const existing = await db.query(
-        'SELECT status FROM delivery_log WHERE notification_id = $1',
-        [notificationId]
-      );
-      return { notificationId, status: existing.rows[0].status };
-    }
-
-    // Process notification
-    const result = await this.deliverOrQueue(device, payload, headers);
-
-    // Cache result for retry window
-    await redis.setex(dedupKey, 86400, JSON.stringify(result));
-
-    return result;
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      NotificationService.processNotification(...)                    │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Input: token, payload, headers (including apns-id)                                  │
+│  notificationId = headers["apns-id"] OR generate UUID                                │
+│                                                                                      │
+│  Layer 1: Redis Idempotency Check (fast path)                                        │
+│  ├── dedupKey = "cache:idem:" + notificationId                                       │
+│  ├── existing = redis.GET(dedupKey)                                                  │
+│  ├── IF existing ──▶ Return cached result (duplicate detected)                      │
+│  └── metrics.duplicateDetected.inc()                                                 │
+│                                                                                      │
+│  Layer 2: Database UPSERT (durable dedup)                                            │
+│  ├── INSERT INTO delivery_log (notification_id, device_id, status)                   │
+│  │   VALUES ($1, $2, "pending")                                                      │
+│  │   ON CONFLICT (notification_id) DO NOTHING                                        │
+│  │   RETURNING notification_id                                                       │
+│  ├── IF rowCount = 0 ──▶ Already processed, return existing status                  │
+│                                                                                      │
+│  Layer 3: Process and cache result                                                   │
+│  ├── result = deliverOrQueue(device, payload, headers)                               │
+│  ├── redis.SETEX(dedupKey, 86400, JSON.stringify(result))  ◄── 24h TTL              │
+│  └── Return result                                                                   │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Consistency Model
@@ -429,138 +434,101 @@ class NotificationService {
 | Pending queue | Last-write-wins (collapse) | Intentional replacement semantics |
 | Delivery log | Eventual | Can lag actual delivery slightly |
 
-## Deep Dive: Observability (5 minutes)
+---
+
+## 📊 Deep Dive: Observability (5 minutes)
 
 ### Prometheus Metrics
 
-```typescript
-import { Counter, Histogram, Gauge } from 'prom-client';
-
-// Notification lifecycle
-const notificationsSent = new Counter({
-  name: 'apns_notifications_sent_total',
-  help: 'Total notifications processed',
-  labelNames: ['priority', 'status'],  // delivered, queued, expired, failed
-});
-
-const deliveryLatency = new Histogram({
-  name: 'apns_notification_delivery_seconds',
-  help: 'Time from receipt to delivery',
-  labelNames: ['priority'],
-  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
-});
-
-// Connection management
-const activeConnections = new Gauge({
-  name: 'apns_active_device_connections',
-  help: 'Number of active WebSocket connections',
-});
-
-const pendingNotifications = new Gauge({
-  name: 'apns_pending_notifications',
-  help: 'Notifications queued for offline devices',
-});
-
-// Cache efficiency
-const cacheOperations = new Counter({
-  name: 'apns_cache_operations_total',
-  help: 'Cache operations',
-  labelNames: ['cache', 'result'],  // token/connection, hit/miss
-});
-
-// Token registry
-const tokenOperations = new Counter({
-  name: 'apns_token_operations_total',
-  help: 'Token registry operations',
-  labelNames: ['operation'],  // register, invalidate, lookup
-});
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           Core Metrics                                               │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Notification Lifecycle:                                                             │
+│  ├── apns_notifications_sent_total                                                   │
+│  │   └── Labels: priority, status (delivered/queued/expired/failed)                  │
+│  ├── apns_notification_delivery_seconds (Histogram)                                  │
+│  │   └── Buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5]                                 │
+│  └── apns_pending_notifications (Gauge)                                              │
+│                                                                                      │
+│  Connection Management:                                                              │
+│  ├── apns_active_device_connections (Gauge)                                          │
+│  └── apns_connection_duration_seconds (Histogram)                                    │
+│                                                                                      │
+│  Cache Efficiency:                                                                   │
+│  └── apns_cache_operations_total                                                     │
+│      └── Labels: cache (token/connection), result (hit/miss)                        │
+│                                                                                      │
+│  Token Registry:                                                                     │
+│  └── apns_token_operations_total                                                     │
+│      └── Labels: operation (register/invalidate/lookup)                             │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Alert Thresholds
 
-```yaml
-groups:
-  - name: apns-backend-alerts
-    rules:
-      # Delivery SLO breach
-      - alert: DeliverySuccessRateLow
-        expr: |
-          sum(rate(apns_notifications_sent_total{status="delivered"}[5m])) /
-          sum(rate(apns_notifications_sent_total[5m])) < 0.9999
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Delivery success rate below 99.99% SLO"
-
-      # High-priority latency breach
-      - alert: HighPriorityLatencyHigh
-        expr: |
-          histogram_quantile(0.99,
-            rate(apns_notification_delivery_seconds_bucket{priority="10"}[5m])
-          ) > 0.5
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "High-priority p99 latency exceeds 500ms"
-
-      # Pending queue backlog
-      - alert: PendingBacklogHigh
-        expr: apns_pending_notifications > 100000
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Pending notification backlog exceeds 100K"
-
-      # Cache hit ratio degradation
-      - alert: CacheHitRatioLow
-        expr: |
-          sum(rate(apns_cache_operations_total{result="hit"}[5m])) /
-          sum(rate(apns_cache_operations_total[5m])) < 0.90
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Token cache hit ratio below 90%"
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           Critical Alerts                                            │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  DeliverySuccessRateLow (severity: critical)                                         │
+│  ├── Condition: delivery_success_rate < 99.99% for 5 minutes                         │
+│  ├── Query: sum(rate(sent{status="delivered"})) / sum(rate(sent)) < 0.9999          │
+│  └── Action: Page on-call engineer                                                   │
+│                                                                                      │
+│  HighPriorityLatencyHigh (severity: critical)                                        │
+│  ├── Condition: p99 latency for priority-10 > 500ms for 5 minutes                    │
+│  ├── Query: histogram_quantile(0.99, rate(delivery_seconds{priority="10"})) > 0.5   │
+│  └── Action: Page on-call engineer                                                   │
+│                                                                                      │
+│  PendingBacklogHigh (severity: warning)                                              │
+│  ├── Condition: pending_notifications > 100,000 for 10 minutes                       │
+│  └── Action: Notify team Slack channel                                               │
+│                                                                                      │
+│  CacheHitRatioLow (severity: warning)                                                │
+│  ├── Condition: cache hit ratio < 90% for 5 minutes                                  │
+│  ├── Query: sum(rate(cache{result="hit"})) / sum(rate(cache)) < 0.90                │
+│  └── Action: Investigate cache sizing or TTL configuration                          │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Structured Logging
 
-```typescript
-import pino from 'pino';
-
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-});
-
-// Notification delivery logging
-function logDelivery(notification: Notification, result: DeliveryResult) {
-  logger.info({
-    event: 'notification_delivery',
-    notification_id: notification.id,
-    device_id: notification.deviceId,
-    priority: notification.priority,
-    status: result.status,
-    latency_ms: Date.now() - notification.createdAt,
-  });
-}
-
-// Audit logging for security events
-function logTokenEvent(event: string, tokenHash: string, context: any) {
-  logger.info({
-    type: 'token_audit',
-    event,  // 'registered', 'invalidated', 'lookup_failed'
-    token_hash_prefix: tokenHash.substring(0, 8),
-    app_bundle_id: context.appBundleId,
-    actor: context.actor,
-    reason: context.reason,
-  });
-}
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           Log Events                                                 │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  Notification Delivery Log:                                                          │
+│  {                                                                                   │
+│    event: "notification_delivery",                                                   │
+│    notification_id: "uuid",                                                          │
+│    device_id: "uuid",                                                                │
+│    priority: 10,                                                                     │
+│    status: "delivered" | "queued" | "failed",                                        │
+│    latency_ms: 45                                                                    │
+│  }                                                                                   │
+│                                                                                      │
+│  Token Audit Log (security events):                                                  │
+│  {                                                                                   │
+│    type: "token_audit",                                                              │
+│    event: "registered" | "invalidated" | "lookup_failed",                            │
+│    token_hash_prefix: "a1b2c3d4",  ◄── First 8 chars only for debugging             │
+│    app_bundle_id: "com.example.app",                                                 │
+│    actor: "system" | "provider",                                                     │
+│    reason: "uninstalled"                                                             │
+│  }                                                                                   │
+│                                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Trade-offs Summary
+---
+
+## ⚖️ Trade-offs Summary
 
 | Decision | Chosen | Alternative | Backend Rationale |
 |----------|--------|-------------|-------------------|
@@ -571,24 +539,25 @@ function logTokenEvent(event: string, tokenHash: string, context: any) {
 | Connection state | Redis write-through | Cache-aside | Must be immediately consistent |
 | Idempotency window | 24 hours | Shorter | Balance memory vs retry protection |
 
-## Future Backend Enhancements
+---
 
-1. **Horizontal Scaling**
-   - Connection sharding by device ID hash
-   - Read replicas for token lookups
-   - Kafka for inter-shard routing
+## 🔮 Future Backend Enhancements
 
-2. **Performance Optimization**
-   - Connection pooling with PgBouncer
-   - Redis Cluster for cache sharding
-   - Batch inserts for high-throughput ingestion
+| Enhancement | Complexity | Value |
+|-------------|------------|-------|
+| Connection sharding by device ID hash | High | Horizontal scaling |
+| Read replicas for token lookups | Medium | Reduce primary DB load |
+| Kafka for inter-shard routing | High | Decouple services |
+| PgBouncer connection pooling | Low | Reduce DB connection overhead |
+| Redis Cluster for cache sharding | Medium | Cache horizontal scaling |
+| Batch inserts for high-throughput | Medium | Reduce round-trips |
+| Multi-region active-active | High | Global fault tolerance |
+| Circuit breakers for Redis failures | Low | Graceful degradation |
+| Distributed tracing (OpenTelemetry) | Medium | Request flow visibility |
+| Log aggregation (ELK stack) | Medium | Centralized debugging |
 
-3. **Reliability**
-   - Multi-region active-active deployment
-   - Circuit breakers for Redis failures
-   - Graceful degradation when cache unavailable
+---
 
-4. **Observability**
-   - Distributed tracing with OpenTelemetry
-   - Log aggregation with ELK stack
-   - Custom Grafana dashboards for SLI tracking
+## 🎤 Interview Wrap-up
+
+> "We've designed a push notification backend that handles 580K notifications per second with sub-500ms latency for high-priority messages. Token security is ensured through SHA-256 hashing. The cache-aside pattern with Redis provides 90%+ hit rates on token lookups while PostgreSQL ensures durability for the pending notification queue. Collapse ID semantics with UPSERT enable atomic notification replacement for offline devices. Multi-layer idempotency prevents duplicate deliveries even with provider retries. The observability stack with Prometheus metrics and structured logging enables proactive alerting on SLO breaches."

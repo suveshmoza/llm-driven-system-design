@@ -268,72 +268,17 @@ INDEXES:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Velocity Check Logic
+### Velocity Check
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    VELOCITY SCORING                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   recentReviews = getUserRecentReviews(userId, 24 hours)        │
-│                                                                 │
-│   IF recentReviews.length > 5  ──▶ RETURN 0.2  (Very suspicious)│
-│   IF recentReviews.length > 2  ──▶ RETURN 0.6  (Somewhat sus)   │
-│   ELSE                         ──▶ RETURN 1.0  (Normal)         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> "Users who submit many reviews in a short period are suspicious. More than 5 reviews in 24 hours returns a low score (0.2), more than 2 returns 0.6, otherwise normal (1.0)."
 
-### Content Quality Analysis
+### Content Quality
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 CONTENT ANALYSIS SCORING                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   GENERIC PHRASES (red flags):                                  │
-│   ┌────────────────────────────────────────────────────────┐   │
-│   │ "great app" │ "love it" │ "best app ever" │ "5 stars" │   │
-│   │ "must download" │ "amazing" │ "awesome"                │   │
-│   └────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│   SCORE COMPUTATION:                                            │
-│   ├── hasGeneric: contains generic phrase?  × 0.3              │
-│   │     IF yes → 0.5, IF no → 1.0                              │
-│   ├── lengthScore: min(text.length / 100, 1) × 0.3             │
-│   └── hasSpecifics: mentions feature/bug/crash? × 0.4          │
-│         IF yes → 1.0, IF no → 0.5                              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> "Generic phrases like 'great app', 'love it', 'best app ever' are red flags. High-quality reviews mention specific features, bugs, or use cases. The score combines: generic phrase detection (30%), text length (30%), and specific content mentions (40%)."
 
 ### Coordination Detection (Review Bombing)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                  COORDINATION DETECTION                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   recentReviews = getAppReviews(appId, 24 hours)                │
-│   avgDaily = getAvgDailyReviews(appId)                          │
-│                                                                 │
-│   SPIKE DETECTION:                                              │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ IF recentReviews.length > avgDaily × 5                  │  │
-│   │     ──▶ RETURN 0.3 (Suspicious spike)                   │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   TIME CLUSTERING:                                              │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ clustering = detectTimeClustering(timestamps)            │  │
-│   │ IF clustering > 0.8                                      │  │
-│   │     ──▶ RETURN 0.4 (Coordinated timing)                 │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   ELSE ──▶ RETURN 1.0 (Normal pattern)                          │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> "We detect coordinated attacks by looking for spikes: if today's reviews exceed 5× the daily average, or if timestamps cluster suspiciously close together (clustering > 0.8), the score drops to 0.3-0.4."
 
 ---
 
@@ -341,39 +286,9 @@ INDEXES:
 
 ### Index Configuration
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 ELASTICSEARCH INDEX: apps                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   SETTINGS:                                                     │
-│   ├── analyzer: app_analyzer (custom)                           │
-│   │   ├── tokenizer: standard                                   │
-│   │   └── filters: lowercase, asciifolding, app_synonyms        │
-│   │                                                             │
-│   └── synonyms:                                                 │
-│       ├── photo, picture, image                                 │
-│       ├── video, movie, film                                    │
-│       └── game, gaming                                          │
-│                                                                 │
-│   FIELD MAPPINGS:                                               │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ Field           │ Type    │ Boost │ Analyzer            │  │
-│   ├─────────────────┼─────────┼───────┼─────────────────────┤  │
-│   │ id              │ keyword │   -   │ -                   │  │
-│   │ name            │ text    │   3   │ app_analyzer        │  │
-│   │ developer       │ text    │   2   │ app_analyzer        │  │
-│   │ description     │ text    │   1   │ app_analyzer        │  │
-│   │ keywords        │ text    │   1   │ app_analyzer        │  │
-│   │ category        │ keyword │   -   │ -                   │  │
-│   │ isFree          │ boolean │   -   │ -                   │  │
-│   │ averageRating   │ float   │   -   │ -                   │  │
-│   │ downloads       │ long    │   -   │ -                   │  │
-│   │ engagementScore │ float   │   -   │ -                   │  │
-│   └─────────────────┴─────────┴───────┴─────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> "The Elasticsearch index uses a custom analyzer with synonym mapping (photo/picture/image) for better recall. Field boosting prioritizes app name (3×), developer (2×), then description and keywords (1×)."
+
+Key mappings: id and category as keyword for exact filtering; name, developer, description, keywords as analyzed text; averageRating, downloads, engagementScore as numeric for sorting and re-ranking.
 
 ### Search with Quality Re-ranking
 

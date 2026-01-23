@@ -479,12 +479,12 @@ AFTER: Three separate blocks with correct statuses
 
 ### Availability Storage Model
 
-| Approach | Storage for 10M listings x 1 year | Pros | Cons |
-|----------|-----------------------------------|------|------|
-| Day-by-day | 3.65B rows | Simple queries | Massive storage, slow inserts |
-| Date ranges | ~200M rows | 18x less storage | Complex split/merge logic |
+| Approach | Storage | Pros | Cons |
+|----------|---------|------|------|
+| ✅ Date ranges | ~200M rows | 18x less storage | Complex split/merge logic |
+| ❌ Day-by-day | 3.65B rows | Simple queries | Massive storage, slow inserts |
 
-**Chosen: Date ranges** - The frontend handles day-by-day display, backend handles efficient storage.
+> "I'm choosing date ranges because at 10M listings with 365 days each, day-by-day storage creates 3.65 billion rows. Date ranges give us ~200M rows - an 18x reduction. The frontend can handle day-by-day display from range data, while the backend manages the split/merge complexity."
 
 ---
 
@@ -580,10 +580,10 @@ Booking completed (checkout date passes)
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Immediate visibility | Simple implementation | Retaliation reviews, gaming |
-| Hidden until both | Honest feedback, no gaming | Delay in visibility |
+| ✅ Hidden until both | Honest feedback, no gaming | Delay in visibility |
+| ❌ Immediate visibility | Simple implementation | Retaliation reviews, gaming |
 
-**Chosen: Hidden until both** - Prevents "you gave me 3 stars so I'll give you 1 star" retaliation.
+> "I'm choosing hidden-until-both because it prevents the 'you gave me 3 stars so I'll give you 1 star' retaliation pattern. This produces more honest feedback for the marketplace, even if it delays visibility slightly."
 
 ---
 
@@ -759,16 +759,16 @@ api.createBooking(data)
 
 ## 📊 Trade-offs Summary
 
-| Decision | Chosen | Alternative | Fullstack Rationale |
-|----------|--------|-------------|---------------------|
-| Calendar storage | Date ranges | Day-by-day | 18x fewer rows; frontend handles display; backend handles split/merge |
-| Geo search | PostGIS | Elasticsearch | Single DB simplifies stack; API returns distance for map markers |
-| Double-booking | Transaction lock | Distributed lock | Single DB is simpler; frontend shows optimistic UI with error handling |
-| Reviews | Hidden until both | Immediate | Trigger-based automation; frontend shows clear status messaging |
-| State management | Zustand | Redux | Simpler API; sufficient for search/auth state |
-| API caching | React Query | Manual useState | Automatic stale/refetch; reduces boilerplate |
-| Session auth | Cookies | JWT | HttpOnly cookies secure; automatic credential sending |
-| Search state | URL params | Store only | Shareable URLs; browser navigation works; deep linking |
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| Calendar storage | ✅ Date ranges | ❌ Day-by-day | 18x fewer rows; frontend handles display; backend handles split/merge |
+| Geo search | ✅ PostGIS | ❌ Elasticsearch | Single DB simplifies stack; API returns distance for map markers |
+| Double-booking | ✅ Transaction lock | ❌ Distributed lock | Single DB is simpler; frontend shows optimistic UI with error handling |
+| Reviews | ✅ Hidden until both | ❌ Immediate | Trigger-based automation; frontend shows clear status messaging |
+| State management | ✅ Zustand | ❌ Redux | Simpler API; sufficient for search/auth state |
+| API caching | ✅ React Query | ❌ Manual useState | Automatic stale/refetch; reduces boilerplate |
+| Session auth | ✅ Cookies | ❌ JWT | HttpOnly cookies secure; automatic credential sending |
+| Search state | ✅ URL params | ❌ Store only | Shareable URLs; browser navigation works; deep linking |
 
 ---
 

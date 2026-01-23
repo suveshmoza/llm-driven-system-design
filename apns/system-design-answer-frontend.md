@@ -212,23 +212,9 @@ For this discussion, I'll emphasize the React component architecture, real-time 
 
 ### Device Store (Zustand)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           useDeviceStore                                     │
-│                                                                             │
-│  State:                                                                     │
-│  ├── selectedDevices: string[]                                              │
-│  ├── searchQuery: string                                                    │
-│  └── filters: { status: 'all'|'active'|'invalid', appBundle: string|null } │
-│                                                                             │
-│  Actions:                                                                   │
-│  ├── toggleDevice(deviceId) ──▶ Add/remove from selection                  │
-│  ├── selectAll(deviceIds) ──▶ Bulk selection                               │
-│  ├── clearSelection() ──▶ Reset selection                                  │
-│  ├── setSearchQuery(query) ──▶ Triggers API refetch                        │
-│  └── setFilter(key, value) ──▶ Update filter state                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+> "The device store manages UI-specific state that doesn't belong in server queries: row selection for bulk actions, search/filter state that drives query parameters, and temporary UI state."
+
+Key state: selected device IDs, search query, and filters (status, app bundle). Actions include toggle/select-all for multi-selection and filter setters that trigger query refetch.
 
 ---
 
@@ -281,148 +267,35 @@ For this discussion, I'll emphasize the React component architecture, real-time 
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Validation Schema
+### Validation
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Zod Schema: testNotificationSchema                        │
-│                                                                             │
-│  deviceToken:  z.string().min(64).max(64)                                   │
-│  priority:     z.enum(['10', '5', '1'])                                     │
-│  collapseId:   z.string().optional()                                        │
-│  payload:      z.object({                                                   │
-│                  aps: z.object({                                            │
-│                    alert: z.union([                                         │
-│                      z.string(),                                            │
-│                      z.object({ title: z.string(), body: z.string() })     │
-│                    ]),                                                      │
-│                    badge: z.number().optional(),                            │
-│                    sound: z.string().optional()                             │
-│                  })                                                         │
-│                })                                                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+> "Form validation uses Zod for type safety. Device tokens must be exactly 64 hex characters. Priority levels (10=immediate, 5=background, 1=low) map directly to APNs semantics."
 
 ---
 
 ## Deep Dive: Delivery Timeline Chart (5 minutes)
 
-### Recharts Implementation
+### Chart Design
 
-"The chart uses Recharts with dual Y-axes: count metrics on the left, latency on the right. A reference line shows the 500ms SLO threshold."
+> "The chart uses Recharts with dual Y-axes: delivery counts on the left, latency on the right. A reference line at 500ms shows the SLO threshold, making it immediately visible when latency exceeds acceptable limits."
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DeliveryChart                                        │
-│                                                                             │
-│  Delivery Timeline                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │                                                                       │ │
-│  │  count │                                               │ latency(ms) │ │
-│  │  (Y1)  │          ████                                 │    (Y2)     │ │
-│  │        │    ████  ████  ████                          │             │ │
-│  │        │    ████  ████  ████  ████              ....  │  ─ ─ ─ 500ms│ │
-│  │        │────████──████──████──████───────────────SLO──│─ ─ ─ ─ ─ ─ ─│ │
-│  │        │    ████  ████  ████  ████                    │             │ │
-│  │        └───────────────────────────────────────────────┘             │ │
-│  │         14:00  14:05  14:10  14:15  ...                              │ │
-│  │                                                                       │ │
-│  │  Lines:                                                               │ │
-│  │  ── Delivered (green)  ── Queued (blue)                              │ │
-│  │  ── Failed (red)       ── P99 Latency (purple)                       │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  ┌──────────────┬──────────────┬──────────────┬──────────────┐            │
-│  │Total Delivered│ Total Queued│ Total Failed │  Avg P99     │            │
-│  │    12,345    │    234      │      12      │    245ms     │            │
-│  └──────────────┴──────────────┴──────────────┴──────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Chart Configuration
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  LineChart Configuration                                                     │
-│                                                                             │
-│  XAxis:                                                                     │
-│  ├── dataKey: "timestamp"                                                   │
-│  └── tickFormatter: format(val, 'HH:mm')                                   │
-│                                                                             │
-│  YAxis (count):                                                             │
-│  ├── orientation: left                                                      │
-│  └── yAxisId: "count"                                                       │
-│                                                                             │
-│  YAxis (latency):                                                           │
-│  ├── orientation: right                                                     │
-│  ├── unit: "ms"                                                             │
-│  └── yAxisId: "latency"                                                     │
-│                                                                             │
-│  ReferenceLine:                                                             │
-│  ├── y: 500                                                                 │
-│  ├── yAxisId: "latency"                                                     │
-│  ├── strokeDasharray: "5 5"                                                 │
-│  └── label: "SLO: 500ms"                                                    │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+The timeline aggregates metrics in 5-minute buckets showing delivered (green), queued (blue), failed (red), and P99 latency (purple). Summary cards below show totals for quick reference.
 
 ---
 
-## Deep Dive: Accessibility and Keyboard Navigation (5 minutes)
+## Deep Dive: Accessibility (5 minutes)
 
-### Accessible Data Table
+### Keyboard Navigation
 
-"Tables use proper ARIA roles (grid, row, columnheader, gridcell). Keyboard navigation supports Arrow keys for row movement, Enter/Space for selection, and Delete for actions."
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                   Keyboard Navigation Map                                    │
-│                                                                             │
-│  Key           │ Action                                                     │
-│  ──────────────┼───────────────────────────────────────────────────────────│
-│  ArrowDown     │ Focus next row                                             │
-│  ArrowUp       │ Focus previous row                                         │
-│  Enter/Space   │ Trigger 'select' action on row                            │
-│  Delete        │ Trigger 'delete' action on row                            │
-│  Tab           │ Move through focusable elements                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+> "Tables use proper ARIA roles (grid, row, columnheader, gridcell). Arrow keys navigate rows, Enter/Space triggers selection, Tab moves through interactive elements."
 
 ### Admin Layout Structure
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         AdminLayout                                          │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ [Skip to main content] (sr-only, visible on focus)                  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  <header role="banner">                                              │   │
-│  │    <nav aria-label="Main navigation">                                │   │
-│  │      Dashboard | Devices | Topics | Feedback                         │   │
-│  │    </nav>                                                            │   │
-│  │  </header>                                                           │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  <main id="main-content" tabIndex={-1} role="main">                 │   │
-│  │    {children}                                                        │   │
-│  │  </main>                                                             │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  <div role="status" aria-live="polite" aria-atomic="true">          │   │
-│  │    (Live announcements for screen readers)                          │   │
-│  │  </div>                                                              │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### announce() Helper
-
-"Screen reader announcements are done by updating a live region's textContent, then clearing it after 1 second to allow subsequent announcements."
+The layout follows standard accessibility patterns:
+- Skip link (visible on focus) jumps to main content
+- Header with `role="banner"` contains main navigation
+- Main content area has `id="main-content"` for skip link target
+- Live region (`aria-live="polite"`) announces real-time updates to screen readers
 
 ---
 
@@ -430,12 +303,12 @@ For this discussion, I'll emphasize the React component architecture, real-time 
 
 | Decision | Chosen | Alternative | Frontend Rationale |
 |----------|--------|-------------|---------------------|
-| Real-time updates | WebSocket | Polling | Lower latency, reduced server load |
-| Large data display | Virtual scrolling | Pagination | Better UX for browsing devices |
-| State management | TanStack Query + Zustand | Redux | Query handles server state, Zustand for UI |
-| Charts | Recharts | D3 | Declarative React API, good defaults |
-| Form validation | Zod + react-hook-form | Formik | Type inference, smaller bundle |
-| Styling | Tailwind CSS | CSS Modules | Rapid iteration, consistent design system |
+| Real-time updates | ✅ WebSocket | ❌ Polling | Lower latency, reduced server load |
+| Large data display | ✅ Virtual scrolling | ❌ Pagination | Better UX for browsing devices |
+| State management | ✅ TanStack Query + Zustand | ❌ Redux | Query handles server state, Zustand for UI |
+| Charts | ✅ Recharts | ❌ D3 | Declarative React API, good defaults |
+| Form validation | ✅ Zod + react-hook-form | ❌ Formik | Type inference, smaller bundle |
+| Styling | ✅ Tailwind CSS | ❌ CSS Modules | Rapid iteration, consistent design system |
 
 ---
 
