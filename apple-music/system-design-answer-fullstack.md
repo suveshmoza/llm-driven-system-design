@@ -112,6 +112,8 @@ For a music streaming platform, I'll demonstrate how frontend state management c
 
 ### Frontend: Audio Player with Quality Selection
 
+> "I'm using dual audio refs for gapless playback—one for the current track, one preloaded with the next track. When the current ends, we swap refs instantly without any buffering pause."
+
 The streaming player hook manages audio playback with quality-aware URL fetching:
 
 ```
@@ -146,6 +148,8 @@ The streaming player hook manages audio playback with quality-aware URL fetching
 - Prefetches next track in queue via queryClient.prefetchQuery
 
 ### Backend: Streaming Service
+
+> "I'm selecting quality server-side because subscription enforcement belongs in the backend. The client sends network hints, but the server makes the final decision based on subscription tier and fraud prevention."
 
 The streaming endpoint selects quality based on subscription and network:
 
@@ -252,6 +256,8 @@ The streaming endpoint selects quality based on subscription and network:
 
 ### Frontend: Library Store with Optimistic Updates
 
+> "I'm using optimistic updates with rollback for library operations. The user sees their track added immediately, and we reconcile with the server in the background. If it fails, we roll back and show an error toast."
+
 The library store uses Zustand with persistence for offline resilience:
 
 ```
@@ -301,6 +307,8 @@ The library store uses Zustand with persistence for offline resilience:
 
 ### Backend: Library Sync Endpoint
 
+> "I'm using monotonically increasing sync tokens rather than timestamps. This avoids clock skew issues and gives us a clear ordering of changes for delta sync."
+
 **POST /library** - Add to library:
 1. Transaction: INSERT library_item (idempotent via ON CONFLICT)
 2. Transaction: INSERT library_change with nextval sync_token
@@ -318,6 +326,8 @@ The library store uses Zustand with persistence for offline resilience:
 ## Deep Dive: Recommendation Flow (5 minutes)
 
 ### Frontend: For You Page
+
+> "I'm caching recommendations with a 5-minute staleTime since personalization doesn't need to be real-time. The user's listening history from the last few minutes won't dramatically change their recommendations."
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -340,6 +350,8 @@ The library store uses Zustand with persistence for offline resilience:
 ```
 
 ### Backend: Recommendation Engine
+
+> "I'm generating recommendations with SQL-based queries rather than ML embeddings. For a fullstack demo, SQL aggregations over listening history give us 80% of the value with 20% of the infrastructure complexity."
 
 **GET /discover/for-you** generates personalized sections:
 
@@ -417,14 +429,14 @@ The library store uses Zustand with persistence for offline resilience:
 
 ## Trade-offs and Alternatives (5 minutes)
 
-| Decision | Chosen Approach | Alternative | Rationale |
-|----------|-----------------|-------------|-----------|
-| Data Fetching | TanStack Query | Redux Toolkit Query | Better cache control, simpler setup |
-| Optimistic Updates | Zustand + rollback | Server-first | Instant feedback, better UX |
-| Sync Strategy | Delta with tokens | Full refresh | Bandwidth efficient |
-| Audio Delivery | Presigned URLs | Proxy streaming | CDN offload, simpler backend |
-| Quality Selection | Server decides | Client decides | Subscription enforcement |
-| Session Storage | Redis | JWT | Instant revocation |
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| Data Fetching | ✅ TanStack Query | ❌ Redux Toolkit Query | Better cache control, simpler setup |
+| Optimistic Updates | ✅ Zustand + rollback | ❌ Server-first | Instant feedback, better UX |
+| Sync Strategy | ✅ Delta with tokens | ❌ Full refresh | Bandwidth efficient |
+| Audio Delivery | ✅ Presigned URLs | ❌ Proxy streaming | CDN offload, simpler backend |
+| Quality Selection | ✅ Server decides | ❌ Client decides | Subscription enforcement |
+| Session Storage | ✅ Redis | ❌ JWT | Instant revocation |
 
 ### Why Optimistic Updates with Rollback
 

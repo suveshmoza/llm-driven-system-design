@@ -540,74 +540,11 @@ Key mappings: id and category as keyword for exact filtering; name, developer, d
 
 ## Deep Dive: Observability
 
-### Prometheus Metrics
+### Observability Strategy
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    METRICS COLLECTION                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   REQUEST METRICS (Histogram):                                  │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ http_request_duration_seconds                            │  │
-│   │   labels: [method, route, status]                        │  │
-│   │   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5]          │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   BUSINESS METRICS (Counter):                                   │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ purchases_total                                          │  │
-│   │   labels: [status, country]                              │  │
-│   │                                                          │  │
-│   │ reviews_analyzed_total                                   │  │
-│   │   labels: [action]  ── approve, reject, manual_review    │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   LATENCY METRICS (Histogram):                                  │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ search_latency_seconds                                   │  │
-│   │   labels: [has_filters]                                  │  │
-│   │   buckets: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5]           │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   INFRASTRUCTURE METRICS (Gauge):                               │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ circuit_breaker_state                                    │  │
-│   │   labels: [name]                                         │  │
-│   │   values: 0=closed, 0.5=half_open, 1=open                │  │
-│   │                                                          │  │
-│   │ rabbitmq_queue_depth                                     │  │
-│   │   labels: [queue]                                        │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+> "I'm instrumenting four metric categories: request latency histograms (by method, route, status), business counters (purchases, review actions), search latency with filter breakdown, and infrastructure gauges (circuit breaker state, queue depth). Pino provides structured JSON logging with request correlation via X-Request-ID headers."
 
-### Structured Logging
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    REQUEST LOGGING                               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Logger: pino (JSON format)                                    │
-│                                                                 │
-│   Each request:                                                 │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ {                                                        │  │
-│   │   "level": "info",                                       │  │
-│   │   "requestId": "uuid-from-x-request-id-or-generated",    │  │
-│   │   "userId": "session-user-id",                           │  │
-│   │   "method": "POST",                                      │  │
-│   │   "path": "/api/v1/reviews",                             │  │
-│   │   "status": 201,                                         │  │
-│   │   "duration": 45,                                        │  │
-│   │   "msg": "request completed"                             │  │
-│   │ }                                                        │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+Key metrics: `http_request_duration_seconds` histogram with P50/P95/P99 buckets, `purchases_total` and `reviews_analyzed_total` counters by outcome, `circuit_breaker_state` gauge (0=closed, 0.5=half-open, 1=open), and `rabbitmq_queue_depth` for backpressure monitoring.
 
 ---
 
@@ -615,12 +552,12 @@ Key mappings: id and category as keyword for exact filtering; name, developer, d
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| Ranking algorithm | Multi-signal ML | Download count only | Manipulation resistance |
-| Review moderation | ML + human escalation | Manual only | Scales to millions |
-| Search engine | Elasticsearch | PostgreSQL FTS | Better relevance, fuzzy matching |
-| Message queue | RabbitMQ | Kafka | Simpler for moderate scale |
-| Idempotency | Redis + DB | DB only | Faster, handles concurrent retries |
-| Consistency | Strong for purchases | Eventual everywhere | Financial correctness |
+| Ranking algorithm | ✅ Multi-signal ML | ❌ Download count only | Manipulation resistance |
+| Review moderation | ✅ ML + human escalation | ❌ Manual only | Scales to millions |
+| Search engine | ✅ Elasticsearch | ❌ PostgreSQL FTS | Better relevance, fuzzy matching |
+| Message queue | ✅ RabbitMQ | ❌ Kafka | Simpler for moderate scale |
+| Idempotency | ✅ Redis + DB | ❌ DB only | Faster, handles concurrent retries |
+| Consistency | ✅ Strong for purchases | ❌ Eventual everywhere | Financial correctness |
 
 ---
 

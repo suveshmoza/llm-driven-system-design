@@ -67,642 +67,165 @@ As a backend engineer, I'll emphasize the graph database design, A* algorithm wi
 
 ### Graph Data Model
 
-The road network is represented as a directed graph stored in PostgreSQL with PostGIS:
+> "I'm storing the road network in PostgreSQL with PostGIS extensions. The graph has two core tables: road_nodes (vertices at intersections) and road_segments (edges representing road sections)."
 
-```sql
--- Graph vertices (intersections and endpoints)
-CREATE TABLE road_nodes (
-  id BIGSERIAL PRIMARY KEY,
-  location GEOGRAPHY(Point, 4326) NOT NULL,
-  lat DOUBLE PRECISION NOT NULL,
-  lng DOUBLE PRECISION NOT NULL,
-  is_intersection BOOLEAN DEFAULT FALSE
-);
+**road_nodes table:** id, location (PostGIS Point), lat/lng coordinates, and an is_intersection flag. Spatial index on location enables efficient nearest-node queries.
 
--- Graph edges (road segments)
-CREATE TABLE road_segments (
-  id BIGSERIAL PRIMARY KEY,
-  start_node_id BIGINT NOT NULL REFERENCES road_nodes(id),
-  end_node_id BIGINT NOT NULL REFERENCES road_nodes(id),
-  geometry GEOGRAPHY(LineString, 4326) NOT NULL,
-  street_name VARCHAR(200),
-  road_class VARCHAR(50),  -- highway, arterial, local
-  length_meters DOUBLE PRECISION,
-  free_flow_speed_kph INTEGER DEFAULT 50,
-  is_toll BOOLEAN DEFAULT FALSE,
-  is_one_way BOOLEAN DEFAULT FALSE,
-  turn_restrictions JSONB DEFAULT '[]'
-);
-
--- Spatial indexes for efficient queries
-CREATE INDEX idx_nodes_location ON road_nodes USING GIST(location);
-CREATE INDEX idx_segments_geo ON road_segments USING GIST(geometry);
-CREATE INDEX idx_segments_start ON road_segments(start_node_id);
-CREATE INDEX idx_segments_end ON road_segments(end_node_id);
-```
+**road_segments table:** id, start_node_id, end_node_id, geometry (PostGIS LineString), street_name, road_class (highway/arterial/local), length_meters, free_flow_speed, toll and one-way flags, and turn_restrictions as JSONB. Indexes on geometry (GIST), start_node_id, and end_node_id enable fast graph traversal.
 
 ### A* Algorithm with Traffic-Aware Weights
 
-```typescript
-class RoutingEngine {
-  private graph: RoadGraph;
-  private trafficService: TrafficService;
+> "The core routing uses A* with real-time traffic weights. We fetch traffic data for the bounding box, apply weights to graph edges, then run A* with a hierarchical shortcut graph for speed."
 
-  async findRoute(
-    origin: Coordinate,
-    destination: Coordinate,
-    options: RouteOptions
-  ): Promise<Route> {
-    // Get current traffic for bounding box
-    const bounds = this.getBoundingBox(origin, destination);
-    const trafficData = await this.trafficService.getTraffic(bounds);
+**Route calculation flow:**
+1. Get traffic data for the origin-destination bounding box
+2. Apply traffic weights to graph edges (travel time = distance / current_speed)
+3. Find nearest graph nodes to origin and destination
+4. Run A* with hierarchical shortcuts enabled
+5. Generate turn-by-turn maneuvers from the path
+6. Calculate total distance and ETA
 
-    // Apply traffic weights to graph edges
-    const weightedGraph = this.applyTrafficWeights(this.graph, trafficData);
-
-    // Find nearest graph nodes to origin/destination
-    const startNode = await this.findNearestNode(origin);
-    const goalNode = await this.findNearestNode(destination);
-
-    // Run A* with hierarchical shortcuts
-    const path = await this.aStarHierarchical(
-      startNode,
-      goalNode,
-      weightedGraph,
-      options
-    );
-
-    // Generate maneuvers for turn-by-turn
-    const maneuvers = this.generateManeuvers(path);
-
-    return {
-      path,
-      maneuvers,
-      distance: this.calculateDistance(path),
-      eta: this.calculateETA(path, trafficData),
-    };
-  }
-
-  private async aStarHierarchical(
-    start: Node,
-    goal: Node,
-    graph: WeightedGraph,
-    options: RouteOptions
-  ): Promise<Path | null> {
-    const openSet = new PriorityQueue<Node>();
-    const cameFrom = new Map<Node, { node: Node; edge: Edge }>();
-    const gScore = new Map<Node, number>();
-
-    gScore.set(start, 0);
-    openSet.enqueue(start, this.heuristic(start, goal));
-
-    while (!openSet.isEmpty()) {
-      const current = openSet.dequeue();
-
-      if (current === goal) {
-        return this.reconstructPath(cameFrom, current);
-      }
-
-      // Get edges including hierarchical shortcuts
-      const edges = graph.getEdges(current);
-
-      for (const edge of edges) {
-        // Apply user constraints
-        if (options.avoidTolls && edge.isToll) continue;
-        if (options.avoidHighways && edge.isHighway) continue;
-
-        const tentativeG = gScore.get(current)! + edge.weight;
-
-        if (tentativeG < (gScore.get(edge.target) ?? Infinity)) {
-          cameFrom.set(edge.target, { node: current, edge });
-          gScore.set(edge.target, tentativeG);
-          openSet.enqueue(
-            edge.target,
-            tentativeG + this.heuristic(edge.target, goal)
-          );
-        }
-      }
-    }
-
-    return null; // No route found
-  }
-
-  private heuristic(node: Node, goal: Node): number {
-    // Haversine distance / max highway speed (admissible heuristic)
-    const distance = haversineDistance(
-      node.lat, node.lng,
-      goal.lat, goal.lng
-    );
-    const maxSpeed = 130; // km/h (highway speed)
-    return (distance / 1000 / maxSpeed) * 60; // minutes
-  }
-
-  private applyTrafficWeights(
-    graph: RoadGraph,
-    trafficData: TrafficData[]
-  ): WeightedGraph {
-    const weighted = graph.clone();
-
-    for (const traffic of trafficData) {
-      const edge = weighted.getEdge(traffic.segmentId);
-      if (!edge) continue;
-
-      // Calculate travel time based on current speed
-      const freeFlowTime = edge.lengthMeters / (edge.freeFlowSpeed / 3.6);
-      const currentTime = edge.lengthMeters / (traffic.speedKph / 3.6);
-
-      edge.weight = currentTime; // seconds
-      edge.congestionLevel = traffic.congestionLevel;
-    }
-
-    return weighted;
-  }
-}
-```
+**A* implementation:** Uses a priority queue with g-score (actual cost from start) and f-score (g + heuristic). The heuristic is Haversine distance / max highway speed, ensuring admissibility. We support constraints like avoiding tolls or highways by skipping edges during expansion.
 
 ### Contraction Hierarchies (Preprocessing)
 
-For production-scale routing, we precompute shortcut edges:
+> "For production scale, plain A* on 50 million segments is too slow. Contraction Hierarchies precompute shortcut edges that let us skip intermediate nodes, achieving 1000x speedup for long routes."
 
-```typescript
-class ContractionHierarchies {
-  // Preprocess graph (offline, takes hours for full map)
-  async buildHierarchy(graph: RoadGraph): Promise<HierarchicalGraph> {
-    // 1. Order nodes by importance
-    const nodeOrder = this.computeNodeOrder(graph);
+**Offline preprocessing (hours for full map):**
+1. Order nodes by importance (local roads → collectors → arterials → highways)
+2. Contract nodes in order, starting with least important
+3. For each contracted node, check if removing it would break shortest paths
+4. If yes, add a shortcut edge that preserves the shortest path distance
+5. Store shortcuts with the original graph
 
-    // 2. Contract nodes in order
-    for (const node of nodeOrder) {
-      const shortcuts = this.contractNode(graph, node);
-
-      // Add shortcut edges that preserve shortest paths
-      for (const shortcut of shortcuts) {
-        graph.addShortcut(shortcut);
-      }
-    }
-
-    return graph;
-  }
-
-  private computeNodeOrder(graph: RoadGraph): Node[] {
-    // Heuristic: contract less important nodes first
-    // Local roads < collectors < arterials < highways
-    return graph.nodes.sort((a, b) => {
-      const importanceA = this.nodeImportance(graph, a);
-      const importanceB = this.nodeImportance(graph, b);
-      return importanceA - importanceB;
-    });
-  }
-
-  private nodeImportance(graph: RoadGraph, node: Node): number {
-    // Factors: edge difference, contracted neighbors, road class
-    const edges = graph.getEdges(node);
-    const highwayEdges = edges.filter(e => e.roadClass === 'highway');
-
-    return (
-      edges.length * 10 +
-      highwayEdges.length * 100 // Highways are more important
-    );
-  }
-
-  private contractNode(graph: RoadGraph, node: Node): Shortcut[] {
-    const shortcuts: Shortcut[] = [];
-    const incoming = graph.getIncomingEdges(node);
-    const outgoing = graph.getOutgoingEdges(node);
-
-    // For each pair of incoming/outgoing edges
-    for (const inEdge of incoming) {
-      for (const outEdge of outgoing) {
-        // Check if shortcut is needed to preserve shortest path
-        const directPath = inEdge.weight + outEdge.weight;
-        const witnessPath = this.findWitnessPath(
-          graph, inEdge.source, outEdge.target, node
-        );
-
-        if (!witnessPath || witnessPath > directPath) {
-          shortcuts.push({
-            source: inEdge.source,
-            target: outEdge.target,
-            weight: directPath,
-            via: node,
-          });
-        }
-      }
-    }
-
-    return shortcuts;
-  }
-}
-```
+**Query time benefit:** Long routes traverse mostly shortcuts on highways, checking far fewer nodes. A cross-country route might evaluate thousands of nodes instead of millions.
 
 ### Alternative Routes with Penalty Method
 
-```typescript
-async findAlternatives(
-  origin: Coordinate,
-  destination: Coordinate,
-  primaryRoute: Route
-): Promise<Route[]> {
-  const alternatives: Route[] = [];
+> "For alternative routes, I use the penalty method rather than k-shortest paths. After finding the primary route, I penalize all edges in that route by 50%, then run A* again. This naturally finds the next-best path that avoids the primary route's segments."
 
-  // Penalize edges in primary route
-  const penalizedGraph = this.penalizeEdges(
-    this.graph,
-    primaryRoute,
-    1.5 // 50% penalty
-  );
+**Algorithm flow:**
+1. Calculate primary route using standard A*
+2. Create a penalized graph copy where edges in the primary route have 1.5x weight
+3. Run A* on penalized graph to find first alternative
+4. Check if alternative is "different enough" (< 70% overlap with primary)
+5. If yes, penalize again and find second alternative
 
-  const alt1 = await this.findRoute(origin, destination, penalizedGraph);
-
-  if (alt1 && this.isDifferentEnough(alt1, primaryRoute)) {
-    alternatives.push(alt1);
-
-    // Further penalize for second alternative
-    const penalizedGraph2 = this.penalizeEdges(penalizedGraph, alt1, 1.5);
-    const alt2 = await this.findRoute(origin, destination, penalizedGraph2);
-
-    if (alt2 && this.isDifferentEnough(alt2, primaryRoute)) {
-      alternatives.push(alt2);
-    }
-  }
-
-  return alternatives;
-}
-
-private isDifferentEnough(route1: Route, route2: Route): boolean {
-  const overlap = this.calculateOverlap(route1, route2);
-  return overlap < 0.7; // At least 30% different
-}
-```
+**Diversity threshold:** Routes must share less than 70% of edges to be considered distinct alternatives. This prevents showing nearly-identical routes that differ only in one short segment.
 
 ## Deep Dive: Traffic Service (8 minutes)
 
 ### GPS Probe Ingestion Pipeline
 
-```typescript
-class TrafficService {
-  private segmentFlow = new Map<string, SegmentFlow>();
-  private redis: Redis;
+> "GPS probes arrive at 10,000+ per second at peak. Each probe contains device ID, coordinates, speed, heading, and timestamp. The pipeline must deduplicate, map-match to road segments, aggregate speeds, and detect incidents—all with minimal latency."
 
-  async processGPSProbe(probe: GPSProbe): Promise<void> {
-    const { deviceId, latitude, longitude, speed, heading, timestamp } = probe;
+**Probe processing flow:**
+1. **Idempotency check**: Use Redis SET with TTL to deduplicate probes (key: `probe:{deviceId}:{timestamp}`, 1-hour TTL)
+2. **Map matching**: Snap GPS coordinates to nearest road segment (see algorithm below)
+3. **Speed aggregation**: Update segment flow using exponential moving average (α = 0.1)
+4. **Incident detection**: If speed drops below 30% of free flow and multiple probes confirm, flag potential incident
+5. **Batch persistence**: Queue traffic updates for batched writes to PostgreSQL
 
-    // Idempotency check - deduplicate probes
-    const idempotencyKey = `probe:${deviceId}:${timestamp}`;
-    const exists = await this.redis.get(idempotencyKey);
-    if (exists) {
-      return; // Duplicate probe
-    }
-    await this.redis.setex(idempotencyKey, 3600, '1'); // 1 hour TTL
+**Exponential moving average (EMA):** New speed = α × probe_speed + (1 - α) × current_avg. This smooths out GPS jitter and individual driver variations while responding to real traffic changes.
 
-    // Map-match to road segment
-    const segment = await this.mapMatch(latitude, longitude, heading);
-    if (!segment) return;
+**Congestion classification:**
+- **Free flow**: current speed > 80% of free flow speed
+- **Light**: 50-80% of free flow
+- **Moderate**: 25-50% of free flow
+- **Heavy**: < 25% of free flow
 
-    // Update segment flow with exponential moving average
-    const current = this.segmentFlow.get(segment.id) || {
-      speed: segment.freeFlowSpeed,
-      samples: 0,
-    };
-
-    const alpha = 0.1; // Smoothing factor
-    const newSpeed = alpha * speed + (1 - alpha) * current.speed;
-
-    this.segmentFlow.set(segment.id, {
-      speed: newSpeed,
-      samples: current.samples + 1,
-      lastUpdate: timestamp,
-    });
-
-    // Detect possible incident
-    if (speed < segment.freeFlowSpeed * 0.3 && current.samples > 10) {
-      await this.detectIncident(segment, probe);
-    }
-
-    // Persist to database (batched)
-    await this.queueTrafficUpdate(segment.id, newSpeed, timestamp);
-  }
-
-  async getTraffic(boundingBox: BoundingBox): Promise<TrafficData[]> {
-    const segments = await this.getSegmentsInBounds(boundingBox);
-
-    return segments.map(segment => {
-      const flow = this.segmentFlow.get(segment.id);
-
-      if (!flow || this.isStale(flow.lastUpdate)) {
-        // Use historical/predicted traffic
-        return {
-          segmentId: segment.id,
-          speed: this.getHistoricalSpeed(segment.id),
-          confidence: 'low',
-        };
-      }
-
-      return {
-        segmentId: segment.id,
-        speed: flow.speed,
-        congestionLevel: this.calculateCongestion(
-          flow.speed,
-          segment.freeFlowSpeed
-        ),
-        confidence: flow.samples > 5 ? 'high' : 'medium',
-      };
-    });
-  }
-
-  private calculateCongestion(
-    currentSpeed: number,
-    freeFlowSpeed: number
-  ): CongestionLevel {
-    const ratio = currentSpeed / freeFlowSpeed;
-    if (ratio > 0.8) return 'free';
-    if (ratio > 0.5) return 'light';
-    if (ratio > 0.25) return 'moderate';
-    return 'heavy';
-  }
-}
-```
+**Confidence levels:** Low confidence when using historical/predicted data (no recent probes), medium with 1-5 samples, high with 5+ samples in the last few minutes.
 
 ### Map Matching Algorithm
 
-```typescript
-async mapMatch(
-  lat: number,
-  lon: number,
-  heading: number
-): Promise<RoadSegment | null> {
-  // Find candidate road segments within 50m
-  const candidates = await db.query<RoadSegment[]>(`
-    SELECT
-      id, start_node_id, end_node_id,
-      street_name, free_flow_speed_kph,
-      ST_Azimuth(
-        ST_StartPoint(geometry::geometry),
-        ST_EndPoint(geometry::geometry)
-      ) * 180 / PI() as bearing
-    FROM road_segments
-    WHERE ST_DWithin(
-      geometry,
-      ST_Point($1, $2)::geography,
-      50  -- meters
-    )
-  `, [lon, lat]);
+> "Map matching snaps noisy GPS coordinates to the most likely road segment. I use a simple scoring approach that considers both distance and heading alignment, rather than a full Hidden Markov Model which would be overkill for individual probes."
 
-  if (candidates.length === 0) return null;
+**Matching algorithm:**
+1. Query PostGIS for all road segments within 50 meters of the GPS point
+2. For each candidate segment, calculate:
+   - **Distance score**: How far the GPS point is from the segment centerline
+   - **Heading score**: Difference between GPS heading and segment bearing (from start to end point)
+3. Combine scores: total = distance + (heading_diff × 0.5)
+4. Return segment with lowest score
 
-  // Score candidates by distance and heading
-  let bestScore = Infinity;
-  let bestSegment: RoadSegment | null = null;
+**PostGIS query optimization:** Use `ST_DWithin(geometry, point, 50)` with a spatial GIST index for efficient candidate retrieval. The bearing calculation uses `ST_Azimuth` between segment start and end points.
 
-  for (const segment of candidates) {
-    const distance = await this.distanceToSegment(lat, lon, segment);
-    const headingDiff = Math.abs(this.normalizeAngle(heading - segment.bearing));
-
-    // Combined score (lower is better)
-    const score = distance + headingDiff * 0.5;
-
-    if (score < bestScore) {
-      bestScore = score;
-      bestSegment = segment;
-    }
-  }
-
-  return bestSegment;
-}
-
-private normalizeAngle(angle: number): number {
-  while (angle > 180) angle -= 360;
-  while (angle < -180) angle += 360;
-  return angle;
-}
-```
+**Heading normalization:** Angles are normalized to [-180, 180] range before computing differences to handle wraparound correctly.
 
 ### Incident Detection
 
-```typescript
-async detectIncident(segment: RoadSegment, probe: GPSProbe): Promise<void> {
-  // Get recent probes on this segment
-  const recentProbes = await this.getRecentProbes(segment.id, 5); // 5 minutes
+> "Incident detection requires multiple slow probes to avoid false positives from individual drivers stopping. When 5+ probes in 5 minutes report speeds below 30% of free flow, we flag a potential incident."
 
-  const slowCount = recentProbes.filter(p =>
-    p.speed < segment.freeFlowSpeed * 0.3
-  ).length;
+**Detection algorithm:**
+1. When a probe reports very slow speed (< 30% free flow), query recent probes on the same segment
+2. Count how many probes in the last 5 minutes also reported slow speeds
+3. If count ≥ 5, check for existing nearby incidents (100m radius)
+4. If existing incident found, merge by incrementing confidence
+5. Otherwise, create new incident with type='congestion' and severity based on probe count
 
-  // Multiple slow reports = likely incident
-  if (slowCount >= 5) {
-    // Check for existing nearby incident to merge
-    const existing = await this.findNearbyIncident(
-      probe.latitude,
-      probe.longitude,
-      100 // 100m radius
-    );
+**Incident merging:** Rather than creating duplicate incidents, nearby reports merge into a single incident with increasing confidence scores. This handles the case where multiple users report the same slowdown.
 
-    if (existing) {
-      // Merge: increase confidence
-      await db.query(`
-        UPDATE incidents
-        SET confidence = LEAST(confidence + 0.1, 1.0),
-            sample_count = sample_count + 1,
-            last_reported_at = NOW()
-        WHERE id = $1
-      `, [existing.id]);
-    } else {
-      // Create new incident
-      const incident = {
-        id: uuid(),
-        segmentId: segment.id,
-        type: 'congestion',
-        severity: slowCount > 10 ? 'high' : 'moderate',
-        location: { lat: probe.latitude, lon: probe.longitude },
-        reportedAt: Date.now(),
-      };
+**Confidence scoring:** Confidence starts low and increases with each confirming probe, capped at 1.0. This helps distinguish between brief slowdowns (one stopped vehicle) and actual incidents requiring rerouting.
 
-      await db.query(`
-        INSERT INTO incidents (id, segment_id, type, severity, location, reported_at)
-        VALUES ($1, $2, $3, $4, ST_Point($5, $6)::geography, NOW())
-      `, [
-        incident.id,
-        incident.segmentId,
-        incident.type,
-        incident.severity,
-        probe.longitude,
-        probe.latitude,
-      ]);
+**Propagation:** When an incident is created or updated, publish to the routing service so it can apply appropriate penalties to affected segments.
 
-      // Notify routing service to update weights
-      await this.publishIncident(incident);
-    }
-  }
-}
-```
+### Traffic Flow Persistence
 
-### Traffic Flow Persistence with UPSERT
+> "Traffic updates are batched and written using PostgreSQL UPSERT (INSERT ON CONFLICT). We aggregate to minute-level buckets to reduce row count while maintaining granularity."
 
-```sql
--- Idempotent traffic update (batched writes)
-INSERT INTO traffic_flow (segment_id, timestamp, speed_kph, congestion_level, sample_count)
-VALUES ($1, date_trunc('minute', $2), $3, $4, 1)
-ON CONFLICT (segment_id, date_trunc('minute', timestamp)) DO UPDATE SET
-  speed_kph = (traffic_flow.speed_kph * traffic_flow.sample_count + EXCLUDED.speed_kph)
-              / (traffic_flow.sample_count + 1),
-  sample_count = traffic_flow.sample_count + 1,
-  congestion_level = CASE
-    WHEN (traffic_flow.speed_kph * traffic_flow.sample_count + EXCLUDED.speed_kph)
-         / (traffic_flow.sample_count + 1) > $5 * 0.8 THEN 'free'
-    WHEN ... THEN 'light'
-    WHEN ... THEN 'moderate'
-    ELSE 'heavy'
-  END;
-```
+**Persistence strategy:**
+- **Bucket by minute**: Traffic flow table uses (segment_id, minute_bucket) as the primary key
+- **Running average on conflict**: When a new probe arrives for the same segment/minute, update the average rather than inserting a new row
+- **Sample count tracking**: Track number of probes per bucket to compute proper weighted average
+- **Congestion level update**: Recalculate congestion level based on new averaged speed
+
+This approach keeps the traffic_flow table manageable (one row per segment per minute) while still capturing all probe data.
 
 ## Deep Dive: Observability (5 minutes)
 
-### Prometheus Metrics
+### Observability Strategy
 
-```typescript
-import { Registry, Histogram, Counter, Gauge } from 'prom-client';
+> "I'm instrumenting three metric categories: routing latency histograms, traffic ingestion counters, and infrastructure gauges. Combined with structured health checks and circuit breakers, this gives us the visibility needed to maintain our SLIs."
 
-const registry = new Registry();
+**Key Prometheus metrics:**
+- `routing_calculation_duration_seconds` (histogram): Route calculation latency by route_type and status, with buckets at 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s
+- `traffic_probes_ingested_total` (counter): GPS probes processed, labeled by status (success, dedupe_skip, map_match_failed)
+- `circuit_breaker_state` (gauge): Current state for each breaker (0=closed, 0.5=half-open, 1=open)
 
-// Route calculation latency
-const routingDuration = new Histogram({
-  name: 'routing_calculation_duration_seconds',
-  help: 'Route calculation time in seconds',
-  labelNames: ['route_type', 'status'],
-  buckets: [0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
-  registers: [registry],
-});
+### Health Check Design
 
-// GPS probe ingestion rate
-const probesIngested = new Counter({
-  name: 'traffic_probes_ingested_total',
-  help: 'Total GPS probes processed',
-  labelNames: ['status'],
-  registers: [registry],
-});
+> "Health checks verify not just connectivity but data freshness. A routing service with stale traffic data is degraded even if the database responds."
 
-// Circuit breaker state
-const circuitBreakerState = new Gauge({
-  name: 'circuit_breaker_state',
-  help: 'Circuit breaker state (0=closed, 1=open, 0.5=half-open)',
-  labelNames: ['name'],
-  registers: [registry],
-});
+**Health check components:**
+- **Database**: PostgreSQL connection pool health
+- **Cache**: Redis connectivity
+- **Routing graph**: Verify graph is loaded with expected node count (> 100 nodes = healthy)
+- **Traffic freshness**: Percentage of segments with updates in last 5 minutes (> 80% = healthy)
 
-// Usage in routing service
-async function handleRouteRequest(req: Request, res: Response) {
-  const timer = routingDuration.startTimer();
-
-  try {
-    const route = await routingEngine.findRoute(
-      req.body.origin,
-      req.body.destination,
-      req.body.options
-    );
-
-    timer({ route_type: 'primary', status: 'success' });
-    res.json(route);
-  } catch (error) {
-    timer({ route_type: 'primary', status: 'error' });
-    throw error;
-  }
-}
-```
-
-### Health Checks
-
-```typescript
-app.get('/health', async (req, res) => {
-  const checks = {
-    database: await checkPostgres(),
-    cache: await checkRedis(),
-    routingGraph: await checkRoutingGraph(),
-    trafficData: await checkTrafficFreshness(),
-  };
-
-  const allHealthy = Object.values(checks).every(c => c.status === 'healthy');
-
-  res.status(allHealthy ? 200 : 503).json({
-    status: allHealthy ? 'healthy' : 'degraded',
-    timestamp: new Date().toISOString(),
-    checks,
-    circuitBreakers: {
-      routing_graph_load: circuitBreakers.graphLoad.status,
-      geocoding: circuitBreakers.geocoding.status,
-    },
-  });
-});
-
-async function checkRoutingGraph(): Promise<HealthCheck> {
-  const start = Date.now();
-  try {
-    const nodeCount = routingEngine.graph.nodeCount();
-    if (nodeCount < 100) {
-      return { status: 'degraded', message: 'Graph appears incomplete' };
-    }
-    return { status: 'healthy', nodes: nodeCount, latencyMs: Date.now() - start };
-  } catch (error) {
-    return { status: 'unhealthy', error: error.message };
-  }
-}
-
-async function checkTrafficFreshness(): Promise<HealthCheck> {
-  const result = await db.query(`
-    SELECT
-      COUNT(*) as total,
-      COUNT(*) FILTER (WHERE timestamp > NOW() - INTERVAL '5 minutes') as fresh
-    FROM traffic_flow
-  `);
-
-  const freshnessRatio = result.rows[0].fresh / result.rows[0].total;
-
-  return {
-    status: freshnessRatio > 0.8 ? 'healthy' : 'degraded',
-    freshnessRatio: `${Math.round(freshnessRatio * 100)}%`,
-  };
-}
-```
+The `/health` endpoint returns 200 if all checks pass, 503 if any are unhealthy. It also reports circuit breaker states for the load balancer to consider.
 
 ### Circuit Breaker Pattern
 
-```typescript
-import CircuitBreaker from 'opossum';
+> "Circuit breakers prevent cascade failures when dependencies slow down. If graph loading times out repeatedly, we fall back to the cached graph rather than blocking all routing requests."
 
-const routingGraphBreaker = new CircuitBreaker(
-  async () => routingEngine.loadGraph(),
-  {
-    timeout: 5000, // 5 second timeout
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000, // 30 seconds before trying again
-  }
-);
+**Configuration:**
+- **Timeout**: 5 seconds before request is considered failed
+- **Error threshold**: Open circuit after 50% of requests fail
+- **Reset timeout**: Try again after 30 seconds in half-open state
+- **Fallback**: Return stale cached data when circuit is open
 
-routingGraphBreaker.on('open', () => {
-  logger.warn('Routing graph circuit breaker opened');
-  circuitBreakerState.set({ name: 'routing_graph_load' }, 1);
-});
-
-routingGraphBreaker.on('close', () => {
-  logger.info('Routing graph circuit breaker closed');
-  circuitBreakerState.set({ name: 'routing_graph_load' }, 0);
-});
-
-routingGraphBreaker.fallback(async () => {
-  // Return stale cached graph if available
-  return cachedGraph;
-});
-```
+Key breakers: routing graph load, geocoding service, traffic data refresh. Each breaker state is exposed as a Prometheus gauge for alerting.
 
 ## Trade-offs and Alternatives (3 minutes)
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| Routing algorithm | Contraction Hierarchies | Plain Dijkstra | 1000x speedup for long routes; preprocessing done offline |
-| Traffic source | GPS probe aggregation | Road sensors | Coverage everywhere users drive; no sensor installation |
-| Graph storage | PostgreSQL + PostGIS | Neo4j | PostGIS spatial indexes; familiar SQL; simpler ops |
-| Traffic consistency | Eventual (EMA) | Strong | High write volume; stale data acceptable for seconds |
-| Probe deduplication | Redis with TTL | Database unique constraint | Performance at 10K+ probes/second |
-| Map format | Vector tiles | Raster tiles | Smaller downloads; client-side styling; smooth rotation |
+| Routing algorithm | ✅ Contraction Hierarchies | ❌ Plain Dijkstra | 1000x speedup for long routes; preprocessing done offline |
+| Traffic source | ✅ GPS probe aggregation | ❌ Road sensors | Coverage everywhere users drive; no sensor installation |
+| Graph storage | ✅ PostgreSQL + PostGIS | ❌ Neo4j | PostGIS spatial indexes; familiar SQL; simpler ops |
+| Traffic consistency | ✅ Eventual (EMA) | ❌ Strong | High write volume; stale data acceptable for seconds |
+| Probe deduplication | ✅ Redis with TTL | ❌ Database unique constraint | Performance at 10K+ probes/second |
+| Map format | ✅ Vector tiles | ❌ Raster tiles | Smaller downloads; client-side styling; smooth rotation |
 
 ## Closing Summary (1 minute)
 

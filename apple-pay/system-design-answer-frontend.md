@@ -2,7 +2,9 @@
 
 *45-minute system design interview format - Frontend Engineer Position*
 
-## Problem Statement
+---
+
+## 📋 Problem Statement
 
 Design the frontend architecture for a mobile wallet application that:
 - Displays and manages provisioned payment cards
@@ -10,7 +12,9 @@ Design the frontend architecture for a mobile wallet application that:
 - Shows transaction history with merchant details
 - Provides biometric authentication flows
 
-## Requirements Clarification
+---
+
+## 🎯 Requirements Clarification
 
 ### Functional Requirements
 1. **Card Management**: Display cards with visual representations, add/remove cards
@@ -31,157 +35,98 @@ Design the frontend architecture for a mobile wallet application that:
 - Haptic feedback simulation for interactions
 - Clear status indicators for card states
 
-## High-Level Architecture
+---
+
+## 🏗️ High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          React Application                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                         TanStack Router                                  │
 │                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │                        TanStack Router                               ││
-│  │    /                  → Wallet View (card list)                      ││
-│  │    /card/:id          → Card Detail                                  ││
-│  │    /transactions      → Transaction History                         ││
-│  │    /add-card          → Card Provisioning Flow                       ││
-│  └─────────────────────────────────────────────────────────────────────┘│
+│  /                  ──▶ Wallet View (card list)                          │
+│  /card/:id          ──▶ Card Detail                                      │
+│  /transactions      ──▶ Transaction History                              │
+│  /add-card          ──▶ Card Provisioning Flow                           │
+├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  ┌───────────────────────┐  ┌────────────────────────────────────────┐  │
-│  │   Card Stack View     │  │         Payment Sheet Modal             │  │
-│  │  ┌─────────────────┐  │  │  ┌──────────────────────────────────┐  │  │
-│  │  │ Interactive     │  │  │  │  Card Selection                  │  │  │
-│  │  │ card carousel   │  │  │  │  Amount Display                  │  │  │
-│  │  │ with gestures   │  │  │  │  Biometric Prompt                │  │  │
-│  │  └─────────────────┘  │  │  └──────────────────────────────────┘  │  │
-│  └───────────────────────┘  └────────────────────────────────────────┘  │
+│  ┌────────────────────────┐    ┌─────────────────────────────────────┐  │
+│  │    Card Stack View     │    │       Payment Sheet Modal           │  │
+│  │                        │    │                                     │  │
+│  │  • Interactive carousel│    │  • Card selection                   │  │
+│  │  • 3D transformations  │    │  • Amount display                   │  │
+│  │  • Swipe gestures      │    │  • Biometric authentication        │  │
+│  └────────────────────────┘    └─────────────────────────────────────┘  │
 │                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────┐│
-│  │                     Zustand Store                                    ││
-│  │  cards[] | transactions[] | selectedCardId | paymentSheet | auth    ││
-│  └─────────────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────────────┤
+│                         Zustand Store                                    │
+│                                                                          │
+│  cards[]  │  transactions[]  │  selectedCardId  │  paymentSheet  │ auth │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: State Management with Zustand
+---
+
+## 🗄️ State Management with Zustand
 
 ### Store Design
 
-```typescript
-// stores/walletStore.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+The wallet store manages cards, transactions, and payment sheet state with offline persistence:
 
-interface Card {
-    id: string;
-    last4: string;
-    network: 'visa' | 'mastercard' | 'amex';
-    cardType: 'credit' | 'debit';
-    status: 'active' | 'suspended';
-    cardArtUrl: string;
-    isDefault: boolean;
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         WalletState                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│  DATA                                                                    │
+│  ├── cards: Card[]           (id, last4, network, status, isDefault)    │
+│  ├── transactions: Transaction[] (merchantName, amount, status, cardId) │
+│  └── selectedCardId: string | null                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│  PAYMENT SHEET                                                           │
+│  ├── isPaymentSheetOpen: boolean                                         │
+│  └── paymentRequest: { amount, currency, merchantId, merchantName }      │
+├─────────────────────────────────────────────────────────────────────────┤
+│  LOADING STATES                                                          │
+│  ├── isLoading: boolean                                                  │
+│  └── isSyncing: boolean                                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ACTIONS                                                                 │
+│  ├── setCards()      addCard()        removeCard()                       │
+│  ├── setDefaultCard()     suspendCard()                                  │
+│  ├── openPaymentSheet()   closePaymentSheet()                            │
+│  └── selectCard()                                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  COMPUTED                                                                │
+│  ├── getDefaultCard()          ──▶ finds active default card             │
+│  ├── getCardById(id)           ──▶ lookup by ID                          │
+│  └── getTransactionsForCard()  ──▶ filter by cardId                      │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-interface Transaction {
-    id: string;
-    merchantName: string;
-    merchantCategory: string;
-    amount: number;
-    currency: string;
-    status: 'approved' | 'declined' | 'pending';
-    timestamp: string;
-    cardId: string;
-}
+### Persistence Strategy
 
-interface WalletState {
-    // Data
-    cards: Card[];
-    transactions: Transaction[];
-    selectedCardId: string | null;
-
-    // Payment sheet
-    isPaymentSheetOpen: boolean;
-    paymentRequest: PaymentRequest | null;
-
-    // Loading states
-    isLoading: boolean;
-    isSyncing: boolean;
-
-    // Actions
-    setCards: (cards: Card[]) => void;
-    addCard: (card: Card) => void;
-    removeCard: (cardId: string) => void;
-    setDefaultCard: (cardId: string) => void;
-    suspendCard: (cardId: string) => void;
-
-    openPaymentSheet: (request: PaymentRequest) => void;
-    closePaymentSheet: () => void;
-    selectCard: (cardId: string) => void;
-
-    // Computed
-    getDefaultCard: () => Card | undefined;
-    getCardById: (id: string) => Card | undefined;
-    getTransactionsForCard: (cardId: string) => Transaction[];
-}
-
-export const useWalletStore = create<WalletState>()(
-    persist(
-        (set, get) => ({
-            cards: [],
-            transactions: [],
-            selectedCardId: null,
-            isPaymentSheetOpen: false,
-            paymentRequest: null,
-            isLoading: false,
-            isSyncing: false,
-
-            setCards: (cards) => set({ cards }),
-
-            addCard: (card) => set((state) => ({
-                cards: [...state.cards, card]
-            })),
-
-            removeCard: (cardId) => set((state) => ({
-                cards: state.cards.filter(c => c.id !== cardId)
-            })),
-
-            setDefaultCard: (cardId) => set((state) => ({
-                cards: state.cards.map(c => ({
-                    ...c,
-                    isDefault: c.id === cardId
-                }))
-            })),
-
-            openPaymentSheet: (request) => set({
-                isPaymentSheetOpen: true,
-                paymentRequest: request,
-                selectedCardId: get().getDefaultCard()?.id || null
-            }),
-
-            closePaymentSheet: () => set({
-                isPaymentSheetOpen: false,
-                paymentRequest: null
-            }),
-
-            getDefaultCard: () => {
-                return get().cards.find(c => c.isDefault && c.status === 'active');
-            },
-
-            getCardById: (id) => {
-                return get().cards.find(c => c.id === id);
-            },
-
-            getTransactionsForCard: (cardId) => {
-                return get().transactions.filter(t => t.cardId === cardId);
-            }
-        }),
-        {
-            name: 'wallet-storage',
-            partialize: (state) => ({
-                cards: state.cards,
-                transactions: state.transactions.slice(0, 50) // Cache last 50
-            })
-        }
-    )
-);
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Zustand Persist Middleware                         │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  partialize: (state) =>                                               │
+│    ├── cards: state.cards          (full card data)                   │
+│    └── transactions: state.transactions.slice(0, 50)  (last 50 only) │
+│                                                                       │
+│  storage: localStorage                                                │
+│  name: 'wallet-storage'                                               │
+│                                                                       │
+└──────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  Benefits:                                                            │
+│  • Offline access to cards and recent transactions                   │
+│  • Instant load on app start (no spinner)                            │
+│  • Graceful degradation when network unavailable                     │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Zustand with Persistence?
@@ -193,582 +138,511 @@ export const useWalletStore = create<WalletState>()(
 | Re-renders | Selective | Automatic | Selective |
 | Cache invalidation | Manual | Automatic | Manual |
 
-**Decision**: Zustand with persist middleware provides offline-first experience essential for a wallet app.
+> "Zustand with persist middleware provides offline-first experience essential for a wallet app. Users need to see their cards even without network connectivity."
 
-## Deep Dive: Card Stack Component
+---
 
-### 3D Card Carousel
+## 🎴 Card Stack Component
 
-```tsx
-// components/wallet/CardStack.tsx
-import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
+### 3D Card Carousel Architecture
 
-function CardStack() {
-    const { cards, selectedCardId, selectCard } = useWalletStore();
-    const activeCards = cards.filter(c => c.status === 'active');
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CardStack Component                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Props: cards (from store), selectedCardId, selectCard()                 │
+│                                                                          │
+│  Local State:                                                            │
+│  ├── currentIndex: number (which card is front)                          │
+│  └── x: MotionValue (drag position)                                      │
+│                                                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                      Visual Layout                                       │
+│                                                                          │
+│         offset=-2       offset=-1       offset=0        offset=1         │
+│            │                │              │               │             │
+│       ┌────▼────┐      ┌────▼────┐    ┌────▼────┐     ┌────▼────┐       │
+│       │░░░░░░░░░│      │░░░░░░░░░│    │█████████│     │░░░░░░░░░│       │
+│       │░ Card 3 │      │░ Card 2 │    │█ Card 1 █│     │░ Card 4 │       │
+│       │░░░░░░░░░│      │░░░░░░░░░│    │█ ACTIVE █│     │░░░░░░░░░│       │
+│       └─────────┘      └─────────┘    │█████████│     └─────────┘       │
+│                                       └─────────┘                        │
+│       scale: 0.8        scale: 0.9    scale: 1.0      scale: 0.9        │
+│       opacity: 0.4      opacity: 0.7  opacity: 1.0    opacity: 0.7      │
+│       rotateY: 30°      rotateY: 15°  rotateY: 0°     rotateY: -15°     │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const x = useMotionValue(0);
+### Drag Gesture Handling
 
-    const handleDragEnd = (_: any, info: PanInfo) => {
-        const threshold = 100;
-        if (info.offset.x > threshold && currentIndex > 0) {
-            setCurrentIndex(currentIndex - 1);
-        } else if (info.offset.x < -threshold && currentIndex < activeCards.length - 1) {
-            setCurrentIndex(currentIndex + 1);
-        }
-    };
-
-    return (
-        <div className="relative h-64 w-full overflow-hidden">
-            {activeCards.map((card, index) => {
-                const offset = index - currentIndex;
-
-                return (
-                    <motion.div
-                        key={card.id}
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{
-                            zIndex: activeCards.length - Math.abs(offset),
-                        }}
-                        initial={false}
-                        animate={{
-                            x: offset * 40,
-                            scale: 1 - Math.abs(offset) * 0.1,
-                            rotateY: offset * -15,
-                            opacity: 1 - Math.abs(offset) * 0.3,
-                        }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        drag={offset === 0 ? 'x' : false}
-                        dragConstraints={{ left: 0, right: 0 }}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => offset === 0 && selectCard(card.id)}
-                    >
-                        <PaymentCard card={card} isSelected={card.id === selectedCardId} />
-                    </motion.div>
-                );
-            })}
-        </div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      handleDragEnd Logic                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Swipe Threshold: 100px                                                  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  if offset.x > 100 && currentIndex > 0:                           │  │
+│  │      setCurrentIndex(currentIndex - 1)  ──▶ Show previous card    │  │
+│  │                                                                    │  │
+│  │  if offset.x < -100 && currentIndex < cards.length - 1:           │  │
+│  │      setCurrentIndex(currentIndex + 1)  ──▶ Show next card        │  │
+│  │                                                                    │  │
+│  │  else:                                                             │  │
+│  │      spring back to center                                         │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Animation Config:                                                       │
+│  • type: 'spring'                                                        │
+│  • stiffness: 300                                                        │
+│  • damping: 30                                                           │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Payment Card Component
 
-```tsx
-// components/wallet/PaymentCard.tsx
-function PaymentCard({ card, isSelected }: PaymentCardProps) {
-    return (
-        <motion.div
-            className={cn(
-                'w-80 h-48 rounded-2xl p-6 shadow-2xl',
-                'bg-gradient-to-br transform-gpu perspective-1000',
-                getCardGradient(card.network),
-                isSelected && 'ring-4 ring-blue-400'
-            )}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-        >
-            {/* Card Art Background */}
-            {card.cardArtUrl && (
-                <img
-                    src={card.cardArtUrl}
-                    alt=""
-                    className="absolute inset-0 w-full h-full object-cover rounded-2xl opacity-30"
-                />
-            )}
-
-            {/* Card Content */}
-            <div className="relative z-10 h-full flex flex-col justify-between text-white">
-                <div className="flex justify-between items-start">
-                    <NetworkLogo network={card.network} className="h-8" />
-                    {card.status === 'suspended' && (
-                        <span className="px-2 py-1 bg-red-500 rounded text-xs">
-                            Suspended
-                        </span>
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <div className="text-lg tracking-widest font-mono">
-                        •••• •••• •••• {card.last4}
-                    </div>
-                    <div className="text-sm opacity-80 uppercase">
-                        {card.cardType}
-                    </div>
-                </div>
-            </div>
-        </motion.div>
-    );
-}
-
-function getCardGradient(network: string): string {
-    switch (network) {
-        case 'visa':
-            return 'from-blue-600 to-blue-800';
-        case 'mastercard':
-            return 'from-orange-500 to-red-600';
-        case 'amex':
-            return 'from-slate-600 to-slate-800';
-        default:
-            return 'from-gray-600 to-gray-800';
-    }
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         PaymentCard Layout                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  w-80 h-48 rounded-2xl (320px × 192px)                            │  │
+│  │                                                                    │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │  Card Art Background (img, opacity-30)                      │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                    │  │
+│  │  ┌────────────────────────────────┬────────────────────────────┐  │  │
+│  │  │  NetworkLogo (Visa/MC/Amex)    │  Status Badge (if suspended)│  │  │
+│  │  └────────────────────────────────┴────────────────────────────┘  │  │
+│  │                                                                    │  │
+│  │                                                                    │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │  •••• •••• •••• 4242    (last 4 digits, monospace)          │  │  │
+│  │  │  CREDIT                 (card type, uppercase)              │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Network Gradients:                                                      │
+│  • visa       ──▶ from-blue-600 to-blue-800                              │
+│  • mastercard ──▶ from-orange-500 to-red-600                             │
+│  • amex       ──▶ from-slate-600 to-slate-800                            │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Payment Sheet Modal
+---
 
-### Payment Flow Component
+## 💳 Payment Sheet Modal
 
-```tsx
-// components/payment/PaymentSheet.tsx
-function PaymentSheet() {
-    const {
-        isPaymentSheetOpen,
-        paymentRequest,
-        selectedCardId,
-        cards,
-        selectCard,
-        closePaymentSheet
-    } = useWalletStore();
+### Payment Flow State Machine
 
-    const [authState, setAuthState] = useState<'idle' | 'authenticating' | 'success' | 'error'>('idle');
-    const selectedCard = cards.find(c => c.id === selectedCardId);
-
-    const handlePayment = async () => {
-        if (!selectedCard || !paymentRequest) return;
-
-        setAuthState('authenticating');
-
-        try {
-            // Simulate biometric authentication
-            const authenticated = await requestBiometricAuth();
-            if (!authenticated) {
-                setAuthState('error');
-                return;
-            }
-
-            // Process payment
-            await api.processPayment({
-                cardId: selectedCard.id,
-                amount: paymentRequest.amount,
-                currency: paymentRequest.currency,
-                merchantId: paymentRequest.merchantId
-            });
-
-            setAuthState('success');
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            closePaymentSheet();
-        } catch (error) {
-            setAuthState('error');
-        }
-    };
-
-    if (!isPaymentSheetOpen || !paymentRequest) return null;
-
-    return (
-        <motion.div
-            className="fixed inset-0 bg-black/50 flex items-end justify-center z-50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-        >
-            <motion.div
-                className="bg-white rounded-t-3xl w-full max-w-md p-6 pb-10"
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 25 }}
-            >
-                {/* Header */}
-                <div className="flex justify-between items-center mb-6">
-                    <button onClick={closePaymentSheet} className="text-blue-500">
-                        Cancel
-                    </button>
-                    <div className="text-center">
-                        <div className="text-sm text-gray-500">Pay with Apple Pay</div>
-                        <div className="font-semibold">{paymentRequest.merchantName}</div>
-                    </div>
-                    <div className="w-16" />
-                </div>
-
-                {/* Amount */}
-                <div className="text-center mb-8">
-                    <div className="text-4xl font-bold">
-                        {formatCurrency(paymentRequest.amount, paymentRequest.currency)}
-                    </div>
-                </div>
-
-                {/* Card Selection */}
-                <div className="mb-6">
-                    <div className="text-sm text-gray-500 mb-2">Pay with</div>
-                    <CardSelector
-                        cards={cards.filter(c => c.status === 'active')}
-                        selectedId={selectedCardId}
-                        onSelect={selectCard}
-                    />
-                </div>
-
-                {/* Payment Button */}
-                <PaymentButton
-                    state={authState}
-                    onPress={handlePayment}
-                    card={selectedCard}
-                />
-            </motion.div>
-        </motion.div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Payment Sheet State Flow                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌──────┐       ┌────────────────┐       ┌─────────┐       ┌───────┐   │
+│  │ idle │──────▶│ authenticating │──────▶│ success │──────▶│ close │   │
+│  └──────┘       └────────────────┘       └─────────┘       └───────┘   │
+│      │                  │                                                │
+│      │                  │ auth fails                                     │
+│      │                  ▼                                                │
+│      │          ┌───────────┐                                            │
+│      └─────────▶│   error   │───▶ (can retry)                            │
+│                 └───────────┘                                            │
+│                                                                          │
+│  State Types: 'idle' | 'authenticating' | 'success' | 'error'            │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Biometric Authentication UI
+### Payment Sheet Layout
 
-```tsx
-// components/payment/PaymentButton.tsx
-function PaymentButton({ state, onPress, card }: PaymentButtonProps) {
-    return (
-        <motion.button
-            className={cn(
-                'w-full py-4 rounded-2xl font-semibold text-white',
-                'flex items-center justify-center gap-3',
-                state === 'success' ? 'bg-green-500' :
-                state === 'error' ? 'bg-red-500' :
-                'bg-black'
-            )}
-            whileTap={{ scale: 0.98 }}
-            onClick={onPress}
-            disabled={state === 'authenticating'}
-        >
-            {state === 'idle' && (
-                <>
-                    <FaceIdIcon className="w-8 h-8" />
-                    <span>Pay with Face ID</span>
-                </>
-            )}
-
-            {state === 'authenticating' && (
-                <>
-                    <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 1 }}
-                    >
-                        <LoadingIcon className="w-6 h-6" />
-                    </motion.div>
-                    <span>Authenticating...</span>
-                </>
-            )}
-
-            {state === 'success' && (
-                <>
-                    <CheckIcon className="w-6 h-6" />
-                    <span>Payment Successful</span>
-                </>
-            )}
-
-            {state === 'error' && (
-                <>
-                    <XIcon className="w-6 h-6" />
-                    <span>Try Again</span>
-                </>
-            )}
-        </motion.button>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Payment Sheet Component                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  bg-black/50 overlay (fixed inset-0)                              │  │
+│  │                                                                    │  │
+│  │                                                                    │  │
+│  │                                                                    │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │  bg-white rounded-t-3xl (slides up from bottom)             │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌────────────────────────────────────────────────────────┐ │  │  │
+│  │  │  │  [Cancel]    Pay with Apple Pay    [spacer]            │ │  │  │
+│  │  │  │              Merchant Name                              │ │  │  │
+│  │  │  └────────────────────────────────────────────────────────┘ │  │  │
+│  │  │                                                              │  │  │
+│  │  │                      $49.99                                  │  │  │
+│  │  │                   (4xl font-bold)                            │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌────────────────────────────────────────────────────────┐ │  │  │
+│  │  │  │  Pay with: [CardSelector dropdown]                     │ │  │  │
+│  │  │  │            •••• 4242 (Visa)                            │ │  │  │
+│  │  │  └────────────────────────────────────────────────────────┘ │  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌────────────────────────────────────────────────────────┐ │  │  │
+│  │  │  │  [FaceID Icon]  Pay with Face ID                       │ │  │  │
+│  │  │  │         (bg-black rounded-2xl)                          │ │  │  │
+│  │  │  └────────────────────────────────────────────────────────┘ │  │  │
+│  │  │                                                              │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Transaction History
+### Payment Button States
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      PaymentButton Visual States                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  IDLE:                                                                   │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  bg-black │ [FaceID Icon] │ "Pay with Face ID"                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  AUTHENTICATING:                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  bg-black │ [Spinning Loader] │ "Authenticating..."               │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  SUCCESS:                                                                │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  bg-green-500 │ [Check Icon] │ "Payment Successful"               │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ERROR:                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  bg-red-500 │ [X Icon] │ "Try Again"                              │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📜 Transaction History
 
 ### Virtualized Transaction List
 
-```tsx
-// components/transactions/TransactionList.tsx
-import { useVirtualizer } from '@tanstack/react-virtual';
-
-function TransactionList() {
-    const { transactions } = useWalletStore();
-    const parentRef = useRef<HTMLDivElement>(null);
-
-    const virtualizer = useVirtualizer({
-        count: transactions.length,
-        getScrollElement: () => parentRef.current,
-        estimateSize: () => 72, // Estimated row height
-        overscan: 5
-    });
-
-    return (
-        <div
-            ref={parentRef}
-            className="h-[calc(100vh-200px)] overflow-auto"
-        >
-            <div
-                style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    position: 'relative'
-                }}
-            >
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                    const transaction = transactions[virtualRow.index];
-                    return (
-                        <div
-                            key={transaction.id}
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                height: `${virtualRow.size}px`,
-                                transform: `translateY(${virtualRow.start}px)`
-                            }}
-                        >
-                            <TransactionRow transaction={transaction} />
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    TransactionList Architecture                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  parentRef (h-[calc(100vh-200px)] overflow-auto)                  │  │
+│  │                                                                    │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
+│  │  │  Virtual Container (height: totalSize px, position: relative)│  │  │
+│  │  │                                                              │  │  │
+│  │  │  ┌───────────────────────────────────────────────────────┐  │  │  │
+│  │  │  │  virtualRow.start = 0px    ──▶ Transaction 1          │  │  │  │
+│  │  │  ├───────────────────────────────────────────────────────┤  │  │  │
+│  │  │  │  virtualRow.start = 72px   ──▶ Transaction 2          │  │  │  │
+│  │  │  ├───────────────────────────────────────────────────────┤  │  │  │
+│  │  │  │  virtualRow.start = 144px  ──▶ Transaction 3          │  │  │  │
+│  │  │  ├───────────────────────────────────────────────────────┤  │  │  │
+│  │  │  │  ... (only visible + overscan rendered)               │  │  │  │
+│  │  │  └───────────────────────────────────────────────────────┘  │  │  │
+│  │  │                                                              │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Virtualizer Config:                                                     │
+│  • estimateSize: () => 72 (row height)                                   │
+│  • overscan: 5 (render 5 extra rows above/below viewport)                │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Transaction Row Component
+### Transaction Row Layout
 
-```tsx
-function TransactionRow({ transaction }: { transaction: Transaction }) {
-    const card = useWalletStore(state => state.getCardById(transaction.cardId));
-
-    return (
-        <div className="flex items-center p-4 border-b hover:bg-gray-50">
-            {/* Merchant Icon */}
-            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mr-4">
-                <MerchantIcon category={transaction.merchantCategory} />
-            </div>
-
-            {/* Details */}
-            <div className="flex-1">
-                <div className="font-medium">{transaction.merchantName}</div>
-                <div className="text-sm text-gray-500">
-                    {format(new Date(transaction.timestamp), 'MMM d, h:mm a')}
-                    {card && ` • ••••${card.last4}`}
-                </div>
-            </div>
-
-            {/* Amount */}
-            <div className={cn(
-                'font-semibold',
-                transaction.status === 'declined' && 'text-red-500 line-through'
-            )}>
-                {transaction.status === 'pending' && (
-                    <span className="text-orange-500 text-sm mr-1">Pending</span>
-                )}
-                {formatCurrency(transaction.amount, transaction.currency)}
-            </div>
-        </div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      TransactionRow Layout                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────┬──────────────────────────────────────────────────┬──────────┐  │
+│  │     │                                                  │          │  │
+│  │ [i] │  Merchant Name                                   │  $49.99  │  │
+│  │     │  Dec 15, 2:30 PM • ••••4242                      │          │  │
+│  │     │                                                  │          │  │
+│  └─────┴──────────────────────────────────────────────────┴──────────┘  │
+│                                                                          │
+│  [i] = MerchantIcon (w-12 h-12 rounded-full bg-gray-100)                │
+│        Icon varies by merchantCategory (food, retail, transport, etc.)  │
+│                                                                          │
+│  Status styling:                                                         │
+│  • approved ──▶ normal black text                                        │
+│  • declined ──▶ text-red-500 line-through                                │
+│  • pending  ──▶ "Pending" badge in orange, then amount                   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Deep Dive: Card Provisioning Flow
+---
 
-### Multi-Step Form
+## ➕ Card Provisioning Flow
 
-```tsx
-// components/add-card/AddCardFlow.tsx
-type Step = 'scan' | 'details' | 'verify' | 'complete';
+### Multi-Step Form Architecture
 
-function AddCardFlow() {
-    const [step, setStep] = useState<Step>('scan');
-    const [cardData, setCardData] = useState<Partial<CardData>>({});
-    const [verificationMethods, setVerificationMethods] = useState<string[]>([]);
-
-    const handleScanComplete = (scannedData: CardScanResult) => {
-        setCardData({
-            pan: scannedData.pan,
-            expiry: scannedData.expiry,
-            network: identifyNetwork(scannedData.pan)
-        });
-        setStep('details');
-    };
-
-    const handleDetailsSubmit = async (details: CardDetails) => {
-        try {
-            const result = await api.provisionCard({
-                ...cardData,
-                ...details
-            });
-
-            if (result.status === 'verification_required') {
-                setVerificationMethods(result.methods);
-                setStep('verify');
-            } else {
-                setStep('complete');
-            }
-        } catch (error) {
-            // Handle error
-        }
-    };
-
-    return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Progress Indicator */}
-            <ProgressSteps
-                steps={['Scan', 'Details', 'Verify', 'Complete']}
-                currentStep={step}
-            />
-
-            <AnimatePresence mode="wait">
-                {step === 'scan' && (
-                    <CardScanner onComplete={handleScanComplete} />
-                )}
-                {step === 'details' && (
-                    <CardDetailsForm
-                        initialData={cardData}
-                        onSubmit={handleDetailsSubmit}
-                    />
-                )}
-                {step === 'verify' && (
-                    <VerificationStep
-                        methods={verificationMethods}
-                        onComplete={() => setStep('complete')}
-                    />
-                )}
-                {step === 'complete' && (
-                    <CompletionScreen cardData={cardData} />
-                )}
-            </AnimatePresence>
-        </div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     AddCardFlow State Machine                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌────────┐      ┌─────────┐      ┌────────┐      ┌──────────┐          │
+│  │  scan  │─────▶│ details │─────▶│ verify │─────▶│ complete │          │
+│  └────────┘      └─────────┘      └────────┘      └──────────┘          │
+│      │                │                │                │                │
+│      ▼                ▼                ▼                ▼                │
+│  CardScanner    CardDetailsForm   VerifyStep     CompletionScreen        │
+│                                                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                      Data Flow                                           │
+│                                                                          │
+│  CardScanner                                                             │
+│      │ onComplete(scannedData)                                           │
+│      ▼                                                                   │
+│  setCardData({ pan, expiry, network: identifyNetwork(pan) })             │
+│      │                                                                   │
+│      ▼                                                                   │
+│  CardDetailsForm                                                         │
+│      │ onSubmit(details) ──▶ api.provisionCard()                         │
+│      ▼                                                                   │
+│  if (result.status === 'verification_required')                          │
+│      │ setVerificationMethods(result.methods)                            │
+│      ▼                                                                   │
+│  VerifyStep                                                              │
+│      │ onComplete() ──▶ step = 'complete'                                │
+│      ▼                                                                   │
+│  CompletionScreen                                                        │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Performance Optimizations
+### Progress Indicator
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      ProgressSteps Component                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│        Scan          Details         Verify         Complete             │
+│         ●──────────────●──────────────○──────────────○                   │
+│                        ▲                                                 │
+│                   current step                                           │
+│                                                                          │
+│  Legend:  ● = completed    ◉ = current    ○ = pending                    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## ⚡ Performance Optimizations
 
 ### 1. Image Optimization for Card Art
 
-```tsx
-// components/wallet/CardArt.tsx
-function CardArt({ url, alt }: { url: string; alt: string }) {
-    const [loaded, setLoaded] = useState(false);
-
-    return (
-        <div className="relative w-full h-full">
-            {!loaded && (
-                <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300 animate-pulse rounded-2xl" />
-            )}
-            <img
-                src={url}
-                alt={alt}
-                loading="lazy"
-                onLoad={() => setLoaded(true)}
-                className={cn(
-                    'w-full h-full object-cover rounded-2xl transition-opacity',
-                    loaded ? 'opacity-100' : 'opacity-0'
-                )}
-            />
-        </div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CardArt Component                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Initial State:                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  bg-gradient-to-br from-gray-200 to-gray-300 animate-pulse        │  │
+│  │  (skeleton placeholder)                                            │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  After Load:                                                             │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  <img loading="lazy" onLoad={() => setLoaded(true)} />            │  │
+│  │  transition-opacity from opacity-0 to opacity-100                  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2. Selective Store Subscriptions
 
-```tsx
-// Only re-render when specific data changes
-function CardCount() {
-    const count = useWalletStore(state => state.cards.length);
-    return <span>{count} cards</span>;
-}
-
-function DefaultCardDisplay() {
-    const defaultCard = useWalletStore(state =>
-        state.cards.find(c => c.isDefault && c.status === 'active')
-    );
-    // Only re-renders when default card changes
-    return defaultCard ? <MiniCard card={defaultCard} /> : null;
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Zustand Selector Pattern                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  BAD: Subscribe to entire store                                          │
+│  ────────────────────────────────────────────────────────────────────   │
+│  const store = useWalletStore();  ──▶ Re-renders on ANY state change     │
+│                                                                          │
+│                                                                          │
+│  GOOD: Subscribe to specific slice                                       │
+│  ────────────────────────────────────────────────────────────────────   │
+│  const count = useWalletStore(state => state.cards.length);              │
+│      ──▶ Only re-renders when cards.length changes                       │
+│                                                                          │
+│  const defaultCard = useWalletStore(state =>                             │
+│      state.cards.find(c => c.isDefault && c.status === 'active')         │
+│  );                                                                       │
+│      ──▶ Only re-renders when default card changes                       │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 3. Animation Performance
 
-```tsx
-// Use transform instead of position for smooth 60fps
-const cardVariants = {
-    selected: {
-        scale: 1.05,
-        y: -10,
-        transition: { type: 'spring', stiffness: 300 }
-    },
-    unselected: {
-        scale: 1,
-        y: 0
-    }
-};
-
-// Enable hardware acceleration
-<motion.div
-    className="transform-gpu will-change-transform"
-    variants={cardVariants}
-    animate={isSelected ? 'selected' : 'unselected'}
-/>
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Hardware-Accelerated Animations                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  CSS Classes:                                                            │
+│  • transform-gpu        ──▶ Enable GPU acceleration                      │
+│  • will-change-transform ──▶ Hint to browser                             │
+│                                                                          │
+│  Animation Properties (use these for 60fps):                             │
+│  • transform: translate, scale, rotate                                   │
+│  • opacity                                                               │
+│                                                                          │
+│  AVOID (triggers layout/paint):                                          │
+│  • width, height                                                         │
+│  • top, left, right, bottom                                              │
+│  • margin, padding                                                       │
+│                                                                          │
+│  Framer Motion Config:                                                   │
+│  • type: 'spring'                                                        │
+│  • stiffness: 300                                                        │
+│  • damping: 25                                                           │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Accessibility (a11y)
+---
+
+## ♿ Accessibility
 
 ### Screen Reader Support
 
-```tsx
-<div
-    role="listbox"
-    aria-label="Payment cards"
-    aria-activedescendant={selectedCardId}
->
-    {cards.map(card => (
-        <div
-            key={card.id}
-            role="option"
-            aria-selected={card.id === selectedCardId}
-            aria-label={`${card.network} ${card.cardType} ending in ${card.last4}${
-                card.status === 'suspended' ? ', suspended' : ''
-            }${card.isDefault ? ', default' : ''}`}
-            tabIndex={0}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    selectCard(card.id);
-                }
-            }}
-        >
-            <PaymentCard card={card} />
-        </div>
-    ))}
-</div>
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Card List Accessibility                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  <div role="listbox" aria-label="Payment cards"                         │
+│       aria-activedescendant={selectedCardId}>                            │
+│                                                                          │
+│      <div role="option"                                                  │
+│           aria-selected={isSelected}                                     │
+│           aria-label="Visa credit ending in 4242, default"               │
+│           tabIndex={0}                                                   │
+│           onKeyDown={handleKeyPress}>                                    │
+│          ...                                                             │
+│      </div>                                                              │
+│                                                                          │
+│  </div>                                                                  │
+│                                                                          │
+│  Keyboard Navigation:                                                    │
+│  • Enter or Space ──▶ Select card                                        │
+│  • Arrow keys     ──▶ Navigate between cards                             │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Focus Management
 
-```tsx
-function PaymentSheet() {
-    const closeButtonRef = useRef<HTMLButtonElement>(null);
-    const { isPaymentSheetOpen } = useWalletStore();
-
-    useEffect(() => {
-        if (isPaymentSheetOpen) {
-            // Focus the close button when sheet opens
-            closeButtonRef.current?.focus();
-        }
-    }, [isPaymentSheetOpen]);
-
-    // Trap focus inside modal
-    useFocusTrap(isPaymentSheetOpen);
-
-    return (
-        <div role="dialog" aria-modal="true" aria-label="Payment">
-            <button ref={closeButtonRef}>Cancel</button>
-            {/* ... */}
-        </div>
-    );
-}
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Payment Sheet Focus                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  On Open:                                                                │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  closeButtonRef.current?.focus()  ──▶ Focus cancel button         │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Focus Trap:                                                             │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  useFocusTrap(isPaymentSheetOpen)                                 │  │
+│  │  ──▶ Tab cycles within modal only                                  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Modal Attributes:                                                       │
+│  • role="dialog"                                                         │
+│  • aria-modal="true"                                                     │
+│  • aria-label="Payment"                                                  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Trade-offs Summary
+---
+
+## ⚖️ Deep Trade-off Analysis
+
+### Trade-off 1: Framer Motion vs CSS Animations
+
+**Why Framer Motion Works for Payment UI:**
+
+The payment card stack requires gesture-driven animations - detecting drag velocity, handling spring physics, and coordinating multiple animated elements simultaneously. Framer Motion provides a declarative API where animation variants can respond to state changes, and the drag gesture system includes built-in handling for momentum and boundaries. When a user swipes through cards, Framer's spring physics create the natural feel users expect from a native wallet app.
+
+The useMotionValue and useTransform hooks enable derived animations - as the user drags, we calculate rotation, scale, and opacity for each card based on its offset from center. This would require substantial manual JavaScript with CSS animations, computing each value on requestAnimationFrame and updating inline styles.
+
+**Why CSS Animations Would Struggle:**
+
+CSS animations excel at predefined transitions between states (hover effects, loading spinners) but falter with gesture-driven, physics-based interactions. The 3D card carousel needs to track finger position in real-time, apply velocity-based momentum when released, and animate neighboring cards with coordinated spring physics. CSS keyframe animations can't respond to dynamic values - you'd need JavaScript to compute positions anyway, losing the performance benefits of CSS-only animations.
+
+The trade-off: Framer Motion adds ~40KB to the bundle. For a wallet app where animation quality directly impacts perceived trustworthiness, this weight is justified. Users spending money expect Apple-quality interactions - jerky animations would undermine confidence in the payment process itself.
+
+---
+
+### Trade-off 2: LocalStorage Persistence vs IndexedDB
+
+**Why LocalStorage Persistence Works:**
+
+Wallet data is compact - a user typically has 3-8 cards at ~500 bytes each, plus cached transaction summaries. Zustand's persist middleware with localStorage handles this elegantly: synchronous reads mean cards display instantly on app load (no loading spinner), and the simple string-based API avoids IndexedDB's async complexity. For offline-first access to payment methods, this immediate availability matters.
+
+The partialize function limits what's persisted - we store full card data but only the last 50 transactions. This keeps storage under 100KB, well within localStorage's ~5MB limit across all browsers. The data is also naturally scoped to the origin, providing basic security isolation.
+
+**Why IndexedDB Would Be Overkill:**
+
+IndexedDB excels at storing large datasets (photos, offline documents) with query capabilities and structured data. For wallet data, this power introduces unnecessary complexity: async-only access means showing a loading state while cards are retrieved from IndexedDB, asynchronous writes complicate store updates, and the API requires more error handling code.
+
+IndexedDB's advantages (gigabytes of storage, indexes, transactions) aren't needed when storing kilobytes of card metadata. The async nature actually works against the core requirement: users opening their wallet to tap-and-pay need cards visible immediately, not after an IndexedDB query resolves. LocalStorage's synchronous nature, often criticized for blocking the main thread, is actually beneficial here - the blocking is measured in microseconds for this data size.
+
+---
+
+### Trade-off 3: Optimistic Updates vs Confirmation-Based Updates
+
+**Why Optimistic Updates Work for Card Selection:**
+
+When a user taps a card to set it as default, the UI should respond instantly - the selected state updates immediately while the API call happens in background. Users expect sub-100ms responsiveness; waiting for a network round-trip (200-500ms) creates perceptible lag that makes the app feel sluggish. The happy path (API succeeds) covers 99%+ of cases, so designing for instant feedback with rare rollbacks makes sense.
+
+Card selection is also safely reversible - if the API call fails, we can revert the selection and show an error toast. The user simply taps again to retry. There's no data loss risk because we're updating a preference, not initiating an irreversible payment.
+
+**Why Confirmation-Based Updates Are Needed for Payments:**
+
+The payment flow deliberately does NOT use optimistic updates. We wait for biometric authentication to complete, then for API confirmation, before showing success. Optimistic payment confirmation would be dangerous - telling users "Payment Successful" before the transaction actually processes could lead to real-world problems (leaving a store without paying, double-purchasing).
+
+The loading and success states in the payment button serve a purpose: users need to know payment is processing (the authentication spinner) and that it definitively succeeded (the green checkmark that persists for 1.5 seconds). This confirmation latency is acceptable because it matches user expectations from physical card terminals. Optimistic updates make sense for preferences and UI state; explicit confirmation is required for financial transactions.
+
+---
+
+## ✅ Trade-offs Summary
 
 | Decision | Pros | Cons |
 |----------|------|------|
@@ -778,7 +652,9 @@ function PaymentSheet() {
 | Virtualized list | Handles 1000s of txns | Setup complexity |
 | Optimistic updates | Instant feedback | Rollback complexity |
 
-## Future Frontend Enhancements
+---
+
+## 🚀 Future Enhancements
 
 1. **Card Scanning**: Camera-based OCR for card details
 2. **Haptic Feedback**: Simulate tactile response on payment

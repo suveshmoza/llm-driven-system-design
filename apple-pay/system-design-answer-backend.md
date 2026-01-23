@@ -61,67 +61,15 @@ Design the backend infrastructure for a mobile payment system that:
 
 ### Database Schema
 
-```sql
--- Provisioned Cards (token references only)
-CREATE TABLE provisioned_cards (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id),
-    device_id UUID NOT NULL,
-    token_ref VARCHAR(100) NOT NULL,  -- Reference to network token
-    network VARCHAR(20) NOT NULL,      -- visa, mastercard, amex
-    last4 VARCHAR(4) NOT NULL,
-    card_type VARCHAR(20),             -- credit, debit
-    status VARCHAR(20) DEFAULT 'active',
-    suspended_at TIMESTAMPTZ,
-    suspend_reason VARCHAR(100),
-    provisioned_at TIMESTAMPTZ DEFAULT NOW(),
+> "I'm storing token references, not actual tokens or PANs. The actual cryptographic tokens live in the Secure Element on device and at the card network's TSP. Our database only maintains a reference for lifecycle management."
 
-    CONSTRAINT unique_card_device UNIQUE (user_id, device_id, last4, network)
-);
+**provisioned_cards table:** user_id, device_id, token_ref (reference to network token), network (visa/mastercard/amex), last4, card_type, status, suspended_at, and suspend_reason. A unique constraint on (user_id, device_id, last4, network) prevents duplicate provisioning. Indexes on user_id, device_id, and token_ref enable fast lookups.
 
--- Transactions
-CREATE TABLE transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    token_ref VARCHAR(100) NOT NULL,
-    terminal_id VARCHAR(100),
-    terminal_reference VARCHAR(100),
-    merchant_name VARCHAR(200),
-    merchant_category VARCHAR(10),
-    amount DECIMAL(12,2) NOT NULL,
-    currency VARCHAR(3) NOT NULL,
-    status VARCHAR(20) NOT NULL,
-    auth_code VARCHAR(20),
-    decline_reason VARCHAR(100),
-    transaction_type VARCHAR(20),  -- nfc, in_app, web
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+**transactions table:** token_ref, terminal_id, merchant details (name, category), amount, currency, status, auth_code, decline_reason, and transaction_type (nfc/in_app/web). Index on (token_ref, created_at DESC) supports efficient transaction history queries.
 
--- Application Transaction Counter tracking
-CREATE TABLE token_atc (
-    token_ref VARCHAR(100) PRIMARY KEY,
-    last_atc INTEGER NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+**token_atc table:** Tracks Application Transaction Counter watermarks per token. The last_atc field prevents replay attacks—we reject any transaction with an ATC ≤ the recorded watermark.
 
--- Audit log for compliance
-CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID,
-    action VARCHAR(100) NOT NULL,
-    resource_type VARCHAR(50),
-    resource_id VARCHAR(100),
-    result VARCHAR(20),
-    ip_address VARCHAR(45),
-    metadata JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_cards_user ON provisioned_cards(user_id);
-CREATE INDEX idx_cards_device ON provisioned_cards(device_id);
-CREATE INDEX idx_cards_token ON provisioned_cards(token_ref);
-CREATE INDEX idx_transactions_token ON transactions(token_ref, created_at DESC);
-CREATE INDEX idx_audit_user ON audit_logs(user_id, created_at DESC);
-```
+**audit_logs table:** user_id, action, resource_type, resource_id, result, ip_address, and metadata JSONB. Required for PCI-DSS compliance and forensic analysis.
 
 ### Why PostgreSQL?
 
@@ -139,385 +87,128 @@ CREATE INDEX idx_audit_user ON audit_logs(user_id, created_at DESC);
 
 ### Token Request Service
 
-```typescript
-class ProvisioningService {
-    async provisionCard(userId: string, deviceId: string, cardData: CardData) {
-        // Step 1: Identify card network from BIN
-        const network = this.identifyNetwork(cardData.pan);
+> "I'm using a multi-step provisioning flow where we never store the raw PAN. The card number is encrypted client-side with the network's public key, passed through Apple's servers, and only the network's TSP can decrypt it."
 
-        // Step 2: Encrypt PAN for network (Apple never stores raw PAN)
-        const encryptedPAN = await this.encryptForNetwork(
-            cardData.pan,
-            network.publicKey
-        );
+**Provisioning algorithm:**
+1. Identify card network from BIN (first 6 digits)
+2. Encrypt PAN using the network's public key (Apple never sees the raw PAN)
+3. Request token from network's Token Service Provider (Visa VTS, Mastercard MDES, Amex)
+4. If network requires additional verification (SMS, bank app, call), return verification options to user
+5. Once verified, store only the token_ref, network, last4, and card_type in our database
+6. Push the actual token and cryptogram key to the device's Secure Element via secure channel
 
-        // Step 3: Request token from network's TSP
-        const tokenRequest = {
-            encryptedPAN,
-            expiry: cardData.expiry,
-            cvv: cardData.cvv,  // Only for initial verification
-            deviceId,
-            deviceType: 'iphone',
-            walletId: userId
-        };
-
-        const tokenResponse = await this.networkClient[network.name]
-            .requestToken(tokenRequest);
-
-        if (tokenResponse.requiresVerification) {
-            return {
-                status: 'verification_required',
-                methods: tokenResponse.verificationMethods,
-                verificationId: tokenResponse.verificationId
-            };
-        }
-
-        // Step 4: Store token reference (not the actual token)
-        await db.query(`
-            INSERT INTO provisioned_cards
-                (user_id, device_id, token_ref, network, last4, card_type, status)
-            VALUES ($1, $2, $3, $4, $5, $6, 'active')
-        `, [
-            userId,
-            deviceId,
-            tokenResponse.tokenRef,
-            network.name,
-            cardData.pan.slice(-4),
-            tokenResponse.cardType
-        ]);
-
-        // Step 5: Push token to device's Secure Element
-        await this.provisionToSecureElement(deviceId, {
-            token: tokenResponse.token,
-            cryptogramKey: tokenResponse.cryptogramKey
-        });
-
-        return {
-            success: true,
-            cardType: tokenResponse.cardType,
-            network: network.name,
-            last4: cardData.pan.slice(-4)
-        };
-    }
-}
-```
+**Green-path vs Yellow-path provisioning:** Green-path cards (high-confidence matching) provision immediately. Yellow-path cards require step-up verification through the issuing bank before activation.
 
 ### Network Integration Pattern
 
-```typescript
-interface NetworkClient {
-    requestToken(request: TokenRequest): Promise<TokenResponse>;
-    validateCryptogram(params: CryptogramParams): Promise<boolean>;
-    suspendToken(tokenRef: string, reason: string): Promise<void>;
-    resumeToken(tokenRef: string): Promise<void>;
-}
+> "I'm wrapping each network client with a circuit breaker. If Visa's API starts timing out, we fail fast rather than blocking all provisioning requests. Each network has independent failure isolation."
 
-class NetworkClientFactory {
-    private clients: Map<string, NetworkClient> = new Map();
-    private circuitBreakers: Map<string, CircuitBreaker> = new Map();
-
-    getClient(network: string): NetworkClient {
-        const client = this.clients.get(network);
-        const breaker = this.circuitBreakers.get(network);
-
-        // Wrap with circuit breaker for resilience
-        return new CircuitBreakerWrapper(client, breaker);
-    }
-}
-```
+The NetworkClientFactory maintains separate clients for each card network (Visa, Mastercard, Amex). Each client exposes: requestToken, validateCryptogram, suspendToken, and resumeToken. Circuit breakers wrap each client to prevent cascade failures when a network experiences issues.
 
 ## Deep Dive: Transaction Processing
 
 ### Cryptogram Validation
 
-The cryptogram is a one-time value that proves the transaction is legitimate:
+> "The cryptogram is the core security mechanism. It's a one-time value generated by the Secure Element using keys only the card network can verify. Even if intercepted, it can't be reused because the Application Transaction Counter increments with each tap."
 
-```typescript
-class TransactionService {
-    async processNFCTransaction(terminalData: TerminalData) {
-        const { token, cryptogram, atc, amount, merchantId } = terminalData;
+**NFC transaction processing flow:**
+1. **ATC validation**: Check that the incoming ATC > last recorded watermark. Reject with ATC_REPLAY if not
+2. **Network routing**: Identify the card network from the token prefix
+3. **Cryptogram verification**: Send token, cryptogram, ATC, amount, and merchantId to the network for validation (wrapped in circuit breaker)
+4. **Authorization**: If cryptogram is valid, network routes to issuing bank for approval
+5. **ATC watermark update**: Atomically update the token's ATC watermark in both cache and database
+6. **Transaction recording**: Persist transaction with status, auth_code, and merchant details
 
-        // Step 1: Validate Application Transaction Counter
-        const lastATC = await this.getLastATC(token);
-        if (atc <= lastATC) {
-            return { approved: false, reason: 'ATC_REPLAY' };
-        }
-
-        // Step 2: Route to appropriate card network
-        const network = this.identifyNetworkFromToken(token);
-
-        // Step 3: Validate cryptogram with network (with circuit breaker)
-        const cryptogramValid = await this.circuitBreaker.execute(
-            network,
-            () => this.networkClient[network].validateCryptogram({
-                token,
-                cryptogram,
-                atc,
-                amount,
-                merchantId
-            })
-        );
-
-        if (!cryptogramValid) {
-            return { approved: false, reason: 'INVALID_CRYPTOGRAM' };
-        }
-
-        // Step 4: Network routes to issuing bank
-        const authResult = await this.circuitBreaker.execute(
-            network,
-            () => this.networkClient[network].authorize({
-                token,
-                amount,
-                merchantId,
-                cryptogramVerified: true
-            })
-        );
-
-        // Step 5: Update ATC watermark
-        await this.updateATC(token, atc);
-
-        // Step 6: Record transaction
-        await this.recordTransaction(terminalData, authResult);
-
-        return {
-            approved: authResult.approved,
-            authCode: authResult.authCode,
-            network
-        };
-    }
-}
-```
+**Why ATC matters:** The Application Transaction Counter is a monotonically increasing value. Each NFC tap increments it on the Secure Element. By tracking the last-seen ATC per token, we detect replay attacks where an attacker tries to reuse a captured cryptogram.
 
 ### Idempotency Implementation
 
-Payment processing must be idempotent to handle retries safely:
+> "I'm using a three-layer idempotency pattern: Redis cache check, distributed lock, then database verification. Payment retries are inevitable with network instability, so every transaction endpoint must be idempotent."
 
-```typescript
-class IdempotencyService {
-    private redis: Redis;
-    private TTL_SECONDS = 86400; // 24 hours
+**Idempotency algorithm:**
+1. Generate cache key from idempotency header: `idempotency:{key}`
+2. Check Redis for existing result—if found with status='completed', return cached result immediately (replay)
+3. If found with status='in_progress', throw ConflictError (concurrent request)
+4. Acquire lock with SET NX EX (60-second TTL prevents deadlock)
+5. Execute the payment operation
+6. On success: store result in Redis with 24-hour TTL
+7. On failure: delete the lock key so retries can proceed
 
-    async executeOnce<T>(
-        idempotencyKey: string,
-        operation: () => Promise<T>
-    ): Promise<{ replayed: boolean; result: T }> {
-        const cacheKey = `idempotency:${idempotencyKey}`;
-
-        // Check for existing result
-        const cached = await this.redis.get(cacheKey);
-        if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed.status === 'completed') {
-                return { replayed: true, result: parsed.result };
-            }
-            if (parsed.status === 'in_progress') {
-                throw new ConflictError('Request already in progress');
-            }
-        }
-
-        // Acquire lock
-        const lockAcquired = await this.redis.set(
-            cacheKey,
-            JSON.stringify({ status: 'in_progress', startedAt: Date.now() }),
-            'NX', 'EX', 60
-        );
-
-        if (!lockAcquired) {
-            throw new ConflictError('Request already in progress');
-        }
-
-        try {
-            const result = await operation();
-
-            // Store completed result
-            await this.redis.set(
-                cacheKey,
-                JSON.stringify({ status: 'completed', result }),
-                'EX', this.TTL_SECONDS
-            );
-
-            return { replayed: false, result };
-        } catch (error) {
-            await this.redis.del(cacheKey);
-            throw error;
-        }
-    }
-}
-```
+**Lock vs cache TTL:** The lock has a short TTL (60s) so that crashed processes don't block retries indefinitely. The result cache has a long TTL (24h) so that delayed retries still get the correct response.
 
 ## Deep Dive: Circuit Breaker Pattern
 
-Card networks are external dependencies that can fail:
+> "Card networks are external dependencies that can fail. I'm implementing per-network circuit breakers so a Mastercard outage doesn't affect Visa transactions. The breaker opens after 5 consecutive failures, waits 30 seconds, then enters half-open state to probe recovery."
 
-```typescript
-class CircuitBreaker {
-    private state: 'closed' | 'open' | 'half-open' = 'closed';
-    private failureCount = 0;
-    private lastFailureTime: number = 0;
+**Circuit breaker states:**
+- **Closed (normal)**: Requests flow through. Track failure count.
+- **Open (tripped)**: Reject immediately without calling network. Return cached fallback or error.
+- **Half-open (probing)**: Allow one request through to test if network recovered.
 
-    private readonly threshold = 5;
-    private readonly timeout = 30000; // 30 seconds
+**Configuration:**
+- Error threshold: 5 consecutive failures to trip
+- Timeout: 30 seconds before transitioning to half-open
+- Fallback: Return stale cached data for reads, fail fast for writes
 
-    async execute<T>(
-        network: string,
-        operation: () => Promise<T>,
-        fallback?: () => T
-    ): Promise<T> {
-        if (this.state === 'open') {
-            if (Date.now() - this.lastFailureTime > this.timeout) {
-                this.state = 'half-open';
-            } else {
-                metrics.circuitBreakerRejection.inc({ network });
-                if (fallback) return fallback();
-                throw new NetworkUnavailableError(network);
-            }
-        }
-
-        try {
-            const result = await operation();
-            this.onSuccess();
-            return result;
-        } catch (error) {
-            this.onFailure();
-            if (fallback) return fallback();
-            throw error;
-        }
-    }
-
-    private onSuccess() {
-        this.failureCount = 0;
-        this.state = 'closed';
-    }
-
-    private onFailure() {
-        this.failureCount++;
-        this.lastFailureTime = Date.now();
-        if (this.failureCount >= this.threshold) {
-            this.state = 'open';
-        }
-    }
-}
-```
+**Per-network isolation:** Each network (Visa, Mastercard, Amex) has its own circuit breaker. Metrics track rejection counts per network for alerting. When a breaker trips, only transactions for that specific network are affected.
 
 ## API Design
 
 ### RESTful Endpoints
 
-```
-Card Provisioning:
-POST   /api/cards                    Provision new card
-GET    /api/cards                    List user's cards
-DELETE /api/cards/:id                Remove card
-POST   /api/cards/:id/suspend        Suspend card
-POST   /api/cards/:id/reactivate     Reactivate card
+**Card Provisioning:**
+- POST /api/cards — Provision new card
+- GET /api/cards — List user's cards
+- DELETE /api/cards/:id — Remove card
+- POST /api/cards/:id/suspend — Suspend card
+- POST /api/cards/:id/reactivate — Reactivate card
 
-Payments:
-POST   /api/payments/nfc             Process NFC payment
-POST   /api/payments/in-app          Process in-app payment
+**Payments:**
+- POST /api/payments/nfc — Process NFC payment
+- POST /api/payments/in-app — Process in-app payment
 
-Transactions:
-GET    /api/transactions             List transaction history
-GET    /api/transactions/:id         Get transaction details
+**Transactions:**
+- GET /api/transactions — List transaction history
+- GET /api/transactions/:id — Get transaction details
 
-Device Management:
-POST   /api/devices/:id/lost         Mark device as lost
-POST   /api/devices/:id/found        Mark device as found
-```
+**Device Management:**
+- POST /api/devices/:id/lost — Mark device as lost (suspends all cards)
+- POST /api/devices/:id/found — Mark device as found
 
-### Request/Response Examples
+### Idempotency Header
 
-**Process NFC Payment**:
+> "Every payment endpoint requires an Idempotency-Key header. The terminal generates this as a combination of terminal ID and transaction sequence number, ensuring retries are safe."
 
-```http
-POST /api/payments/nfc
-Idempotency-Key: terminal-123-txn-456
-Content-Type: application/json
-
-{
-    "token": "DPAN1234567890123456",
-    "cryptogram": "A1B2C3D4E5F6G7H8",
-    "atc": 42,
-    "amount": 25.99,
-    "currency": "USD",
-    "merchantId": "MERCH123",
-    "terminalId": "TERM456"
-}
-```
-
-Response (200 OK):
-```json
-{
-    "approved": true,
-    "authCode": "AUTH789",
-    "network": "visa",
-    "transactionId": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
+The NFC payment request includes: token (DPAN), cryptogram, atc, amount, currency, merchantId, and terminalId. Response includes: approved status, authCode, network, and transactionId.
 
 ## Caching Strategy
 
 ### Cache Layers
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Request Flow                            │
-│                                                              │
-│  Token Lookup ──► Valkey (5 min TTL) ──► PostgreSQL         │
-│  ATC Watermark ──► Valkey (write-through) ──► PostgreSQL    │
-│  Idempotency ──► Valkey (24h TTL)                           │
-│  Session ──► Valkey (7 day TTL)                             │
-└─────────────────────────────────────────────────────────────┘
-```
+> "I'm using Valkey (Redis-compatible) for four distinct purposes: token lookups, ATC watermarks, idempotency results, and sessions. Each has different TTL characteristics based on consistency requirements."
 
-### Cache Key Design
-
-```typescript
-const CACHE_KEYS = {
-    // Active token lookup
-    token: (tokenRef: string) => `token:${tokenRef}`,
-
-    // ATC watermark (write-through)
-    atc: (tokenRef: string) => `atc:${tokenRef}`,
-
-    // User's card list
-    userCards: (userId: string) => `cards:${userId}`,
-
-    // Idempotency results
-    idempotency: (key: string) => `idempotency:${key}`
-};
-```
+**Cache key patterns:**
+- Token lookup: `token:{tokenRef}` — 5 min TTL, speeds up transaction validation
+- ATC watermark: `atc:{tokenRef}` — Write-through, critical for replay prevention
+- User's cards: `cards:{userId}` — 5 min TTL, invalidated on card changes
+- Idempotency: `idempotency:{key}` — 24h TTL, enables safe retries
 
 ### Cache Invalidation
 
-```typescript
-class CacheInvalidationService {
-    async onTokenStatusChange(tokenRef: string, userId: string) {
-        await Promise.all([
-            this.redis.del(`token:${tokenRef}`),
-            this.redis.del(`cards:${userId}`)
-        ]);
-    }
+> "I'm using event-driven invalidation. When a token status changes or a device is marked lost, we immediately delete all affected cache keys. For lost devices, we batch-delete using a Redis pipeline."
 
-    async onDeviceLost(userId: string, deviceId: string) {
-        // Get all affected tokens
-        const tokens = await db.query(
-            'SELECT token_ref FROM provisioned_cards WHERE device_id = $1',
-            [deviceId]
-        );
+**Invalidation triggers:**
+- Token status change (suspend/reactivate): Delete `token:{tokenRef}` and `cards:{userId}`
+- Device lost: Query all tokens for that device, pipeline-delete all token keys and the user's card list
+- Card removal: Delete `token:{tokenRef}` and `cards:{userId}`
 
-        const pipeline = this.redis.pipeline();
-        for (const token of tokens.rows) {
-            pipeline.del(`token:${token.token_ref}`);
-        }
-        pipeline.del(`cards:${userId}`);
-        await pipeline.exec();
-    }
-}
-```
+**Write-through for ATC:** The ATC watermark is always written to both cache and database. This ensures replay protection even if the cache fails—we always check the database as the source of truth.
 
 ## Scalability Considerations
 
 ### Read Scaling
+
+> "Read scaling is straightforward: add PostgreSQL read replicas for transaction history queries and PgBouncer for connection pooling. Valkey handles the hot path for token lookups."
 
 1. **Read Replicas**: Route transaction history queries to replicas
 2. **Connection Pooling**: PgBouncer for connection management
@@ -525,18 +216,13 @@ class CacheInvalidationService {
 
 ### Write Scaling
 
-1. **Partitioning**: Shard transactions by token_ref hash
-   ```sql
-   CREATE TABLE transactions_p0 PARTITION OF transactions
-       FOR VALUES WITH (MODULUS 16, REMAINDER 0);
-   ```
+> "Write scaling is more nuanced. I'm partitioning the transactions table by token_ref hash into 16 partitions. This distributes writes across shards while keeping all transactions for a token co-located for efficient history queries."
 
-2. **Async Processing**: Queue non-critical operations
-   ```
-   Transaction Auth (sync) → Result
-                         → Queue → Audit Log (async)
-                                → Notifications (async)
-   ```
+1. **Hash Partitioning**: Transactions partitioned by MODULUS 16 on token_ref hash
+2. **Async Processing**: Non-critical operations (audit logs, notifications) queued for async processing
+3. **Write batching**: Audit logs aggregated and batch-inserted to reduce write amplification
+
+**Async pipeline:** Transaction authorization is synchronous (must return result to terminal). Audit logging and push notifications are queued and processed asynchronously.
 
 ### Estimated Capacity
 
@@ -549,14 +235,14 @@ class CacheInvalidationService {
 
 ## Trade-offs Summary
 
-| Decision | Pros | Cons |
-|----------|------|------|
-| PostgreSQL + Serializable | Financial accuracy | Lower throughput |
-| Per-device tokens | Easy revocation | More tokens to manage |
-| Circuit breaker per network | Isolated failures | More complex |
-| Idempotency in Redis | Fast duplicate detection | Redis dependency |
-| Write-through ATC | Replay protection | Extra write per txn |
-| Audit logging | Compliance ready | Storage overhead |
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| Database | ✅ PostgreSQL + Serializable | ❌ Cassandra/DynamoDB | Financial accuracy requires ACID; lower throughput acceptable |
+| Token storage | ✅ Per-device tokens | ❌ Shared tokens | Easy revocation on device loss; more tokens to manage |
+| Resilience | ✅ Per-network circuit breaker | ❌ Shared breaker | Isolated failures; slightly more complexity |
+| Idempotency | ✅ Redis-based | ❌ Database constraints | Fast duplicate detection; adds Redis dependency |
+| ATC tracking | ✅ Write-through cache | ❌ Cache-aside | Guaranteed replay protection; extra write per transaction |
+| Compliance | ✅ Comprehensive audit logs | ❌ Minimal logging | PCI-DSS ready; storage overhead acceptable |
 
 ## Future Backend Enhancements
 

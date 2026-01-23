@@ -71,6 +71,50 @@ The `system-design-answer*.md` files simulate realistic interview answers. Keep 
 
 The goal is demonstrating architectural judgment, not proving you can write code.
 
+### Explaining Trade-offs in Depth
+
+Every system design answer must include **2-3 deep trade-off discussions**. Shallow "X is faster, Y is slower" comparisons don't demonstrate understanding. Each trade-off should explain *why* one approach works for this specific problem while another fails.
+
+**Structure for each trade-off:**
+
+1. **State the decision clearly** - What choice did you make?
+2. **Explain why the chosen approach works** - Connect to specific requirements
+3. **Explain why the alternative fails** - Not just "worse" but *how* it breaks
+4. **Acknowledge what you're giving up** - Every choice has costs
+
+**Bad trade-off explanation (too shallow):**
+> "We chose WebSockets over polling because WebSockets are faster and more efficient."
+
+**Good trade-off explanation (demonstrates judgment):**
+> "We chose WebSockets over HTTP polling because our chat application requires sub-100ms message delivery. Polling at 1-second intervals means average latency of 500ms—users perceive this as laggy and lose trust in message ordering. Polling at 100ms intervals would create 600 requests/minute per user, overwhelming our API servers at 100K concurrent users. WebSockets maintain a single persistent connection, enabling instant message push with minimal overhead. The trade-off is connection management complexity—we now need heartbeat mechanisms to detect stale connections and graceful reconnection logic when users switch networks. For a messaging product where perceived responsiveness directly impacts retention, this operational complexity is justified."
+
+**Trade-off categories to address:**
+
+| Category | Example Questions |
+|----------|-------------------|
+| **Consistency vs Availability** | What happens during network partitions? Can we show stale data? |
+| **Latency vs Throughput** | Do we optimize for individual request speed or batch efficiency? |
+| **Complexity vs Correctness** | Is eventual consistency acceptable, or do we need distributed transactions? |
+| **Cost vs Performance** | Can we cache aggressively, or is real-time accuracy critical? |
+| **Developer Experience vs Runtime Efficiency** | SQL vs NoSQL for this access pattern? |
+
+**Example trade-off for an e-commerce inventory system:**
+
+> "We chose optimistic locking with version numbers over pessimistic row locks for inventory updates. With 10,000 concurrent flash sale buyers, pessimistic locks would serialize access to a single row—creating a bottleneck where buyers queue for seconds watching 'Processing' spinners. Optimistic locking lets all 10,000 `SELECT` queries proceed in parallel, and only fails at `UPDATE` time when the version has changed. The retry cost (re-reading and re-attempting) is lower than the waiting cost of locking, and failed retries can immediately show 'Sold Out' rather than hanging. The trade-off: we must handle retry storms. If 1,000 buyers retry simultaneously, we could overwhelm the database. We mitigate this with exponential backoff and a reservation queue that guarantees ordering—but this adds 200 lines of coordination code that wouldn't exist with simple locks."
+
+**Common mistakes:**
+
+1. **Listing features instead of trade-offs** - "Redis is fast, supports pub/sub, and has TTL" isn't a trade-off analysis
+2. **Missing the 'why it fails' half** - Saying "we chose X" without explaining what's wrong with Y
+3. **Generic statements** - "This doesn't scale" without explaining the specific bottleneck
+4. **Ignoring operational costs** - Every distributed system has monitoring, debugging, and deployment overhead
+
+**Where to place trade-off discussions:**
+
+- **🔧 Deep Dive sections** - 1 major trade-off per deep dive topic
+- **⚖️ Trade-offs Summary table** - Brief version, linking to detailed discussion above
+- **Inline with architecture decisions** - When introducing a component, explain why not the alternative
+
 **Note:** Some projects (mdreader, MCPlator, 20forms-20designs) are external personal projects with architecture documentation only - they link to separate repositories for implementation.
 
 ## Common Commands

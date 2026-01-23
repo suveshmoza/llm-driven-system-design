@@ -103,46 +103,15 @@ Design the App Store, Apple's digital marketplace serving 2M+ apps to billions o
 
 ### Frontend: Debounced Search Input
 
-**SearchBar Component:**
-- State: query (immediate), debouncedQuery (150ms delayed)
-- Uses `useDebouncedCallback` for API call reduction
-- React Query for caching and deduplication (staleTime: 60s)
-- Minimum 2 characters before triggering search
-- Returns SearchSuggestion[] with type (app/developer/category), id, text, icon
+> "I'm debouncing user input at 150ms with a 2-character minimum before API calls. This balances responsiveness with API efficiency. React Query handles caching with a 60-second stale time, so repeated searches are instant."
 
-**SearchSuggestion Type:**
-- type: 'app' | 'developer' | 'category'
-- id, text, icon (optional)
+The SearchBar component maintains both immediate query state (for the input) and a debounced query (for API calls). Search suggestions are typed by category (app/developer/category) with optional icons for visual distinction.
 
 ### Backend: Search with Quality Re-ranking
 
-**GET /api/v1/search Endpoint:**
+> "I'm fetching 2x the requested results from Elasticsearch to create headroom for re-ranking. This lets us balance text relevance (60%) with quality signals (40%) before returning the final set."
 
-**Query Parameters:**
-- q: search query
-- category, price, rating: filters
-- limit (default: 20), offset (default: 0)
-
-**Flow:**
-1. Check Redis cache for first page results
-2. Build Elasticsearch query with multi_match (fields: name^3, developer^2, description, keywords)
-3. Apply fuzzy matching with AUTO fuzziness
-4. Fetch 2x limit for re-ranking headroom
-5. Re-rank with quality signals
-6. Cache first page for 5 minutes
-
-**Re-ranking Algorithm (60% text, 40% quality):**
-- Text relevance: Elasticsearch _score
-- Quality score composition:
-  - averageRating * 0.3
-  - log1p(ratingCount) * 0.2
-  - log1p(downloads) * 0.3
-  - engagementScore * 0.2
-
-**Filter Building:**
-- category: term filter
-- price='free': isFree=true term filter
-- rating: range filter (gte)
+**GET /api/v1/search** accepts query, category, price, rating filters with pagination. The flow checks Redis cache first, builds a multi_match Elasticsearch query (boosting name 3×, developer 2×), applies fuzzy matching, then re-ranks results combining text score with quality metrics (rating, review count, downloads, engagement). First-page results are cached for 5 minutes.
 
 ## Deep Dive: Review Submission Pipeline
 
@@ -194,68 +163,21 @@ Design the App Store, Apple's digital marketplace serving 2M+ apps to billions o
 
 ### Frontend: Review Form
 
-**ReviewForm Component Props:**
-- appId: string
-- onSuccess: () => void
+> "I'm validating on both ends with Zod - same schema shared between frontend and backend. This gives users immediate feedback while maintaining server-side security."
 
-**Validation Schema (Zod):**
-- rating: number 1-5
-- title: string 5-100 chars
-- body: string 20-2000 chars
-
-**Error Handling:**
-- 409: "You have already reviewed this app"
-- 403: "You must download the app before reviewing"
-- Default: "Failed to submit review"
-
-**UI Elements:**
-- StarRatingInput component
-- Title input with error display
-- Textarea for review body
-- Submit button with loading state
+The ReviewForm validates rating (1-5), title (5-100 chars), and body (20-2000 chars). Error states handle 409 (already reviewed) and 403 (must download first). The UI includes a star rating input, text fields with inline errors, and a submit button with loading state.
 
 ### Backend: Review Submission
 
-**POST /api/v1/reviews (requireAuth):**
+> "Reviews start in 'pending' status and process asynchronously. This keeps the API responsive while integrity analysis runs in the background."
 
-**Validation Steps:**
-1. Parse body with Zod schema
-2. Check user_apps table for download verification
-3. Check reviews table for existing review (one per user per app)
-
-**On Success:**
-1. Insert review with status='pending'
-2. Publish review.created event to RabbitMQ
-3. Update app rating aggregates (rating_sum, rating_count)
-4. Return 201 with review id, status, message
+**POST /api/v1/reviews** validates the request, verifies the user has downloaded the app, checks for duplicate reviews, then inserts with status='pending'. A review.created event publishes to RabbitMQ, and app rating aggregates update in the same transaction.
 
 ### Backend: Integrity Worker
 
-**ReviewEvent Message:**
-- eventId, reviewId, userId, appId
-- review: { rating, title, body }
+> "The worker uses Redis for deduplication - if we've already processed an event, we skip it. This makes the queue consumer idempotent and safe for retries."
 
-**Processing Flow:**
-1. Deduplication check via Redis (processed:review:{eventId})
-2. Multi-signal integrity analysis
-3. Calculate weighted score
-4. Determine action (approved/rejected/manual_review)
-5. Update review status in PostgreSQL
-6. Mark as processed in Redis (24h TTL)
-
-**Integrity Signals:**
-
-| Signal | Weight | Scoring |
-|--------|--------|---------|
-| review_velocity | 0.15 | >5/day: 0.2, >2/day: 0.6, else: 1.0 |
-| content_quality | 0.25 | Generic phrases: 0.5, length: min(len/100,1), specifics bonus |
-| account_age | 0.10 | min(days/30, 1.0) |
-| coordination | 0.20 | >5x daily average: 0.3, else: 1.0 |
-
-**Action Thresholds:**
-- score < 0.3: rejected
-- score < 0.6: manual_review
-- score >= 0.6: approved
+The worker consumes review.created events, runs multi-signal integrity analysis (velocity, content quality, account age, coordination detection), calculates a weighted score, and updates the review status. Scores below 0.3 are rejected, 0.3-0.6 require manual review, and above 0.6 are approved.
 
 ## Deep Dive: Purchase Flow
 
@@ -302,133 +224,54 @@ Design the App Store, Apple's digital marketplace serving 2M+ apps to billions o
 
 ### Frontend: Checkout Modal
 
-**CheckoutModalProps:**
-- app: App object
-- priceId: string
-- onSuccess: (receipt: Receipt) => void
-- onClose: () => void
+> "The idempotency key is generated once when the modal opens and reused for retries. This ensures duplicate clicks or network retries don't result in double charges."
 
-**Key Behaviors:**
-- Generate idempotency key once per checkout attempt (useState with UUID)
-- useMutation with retry: 3 (safe with idempotency key)
-- Idempotency-Key header sent with request
-
-**UI Elements:**
-- App icon, name, developer display
-- Price summary
-- Error display for mutation failures
-- Cancel and Confirm Purchase buttons
+The modal displays app details with price confirmation. A UUID idempotency key is generated via useState on mount. The mutation includes this key as a header and enables retry: 3 since the operation is safe to retry. Error display shows payment failures while Cancel and Confirm buttons handle user actions.
 
 ### Backend: Idempotent Purchase API
 
-**POST /api/v1/purchases (requireAuth):**
+> "I'm using three layers of protection: Redis cache check, distributed lock, then database verification. The lock prevents concurrent requests from the same user while the cache makes retries instant."
 
-**Idempotency Implementation:**
-1. Layer 1: Check Redis cache (idem:purchase:{userId}:{key})
-2. Layer 2: Acquire Redis lock (lock:purchase:{userId}:{key}, NX, EX 30)
-3. If lock fails: 409 "Purchase in progress"
-
-**Purchase Flow:**
-1. Validate body (appId, priceId as UUIDs)
-2. Fetch app with price from PostgreSQL
-3. Check for existing purchase
-4. Process payment via payment service
-5. Create purchase in transaction:
-   - Insert into purchases table
-   - Insert into user_apps table
-   - Increment app download_count
-6. Generate receipt
-7. Cache result (24h TTL)
-8. Publish purchase.completed event
-9. Release lock in finally block
-
-**Receipt Structure:**
-- id, appId, amount, currency, purchasedAt
+**POST /api/v1/purchases** first checks Redis for a cached result (instant for retries), then acquires a 30-second lock. The purchase flow validates the request, processes payment, creates database records in a transaction (purchase, user_apps, download count), generates a receipt, caches the result for 24 hours, publishes purchase.completed, and releases the lock.
 
 ## Deep Dive: Developer Analytics Dashboard
 
 ### Frontend: Analytics Component
 
-**AppAnalytics Component:**
-- Props: appId
-- Uses React Query with 1-minute staleTime
+> "Analytics data has 1-minute staleness which balances real-time feel with API efficiency. The dashboard shows summary cards for quick KPIs and a time-series chart for trend analysis."
 
-**AnalyticsData Type:**
-- downloads: { date, count }[]
-- revenue: { date, amount }[]
-- summary: { totalDownloads, totalRevenue, averageRating }
-
-**UI Structure:**
-1. Summary Cards (3-column grid):
-   - Total Downloads with icon
-   - Total Revenue with dollar formatting
-   - Average Rating with star icon
-
-2. Downloads Over Time Chart:
-   - Recharts LineChart with ResponsiveContainer
-   - CartesianGrid, XAxis (date formatted), YAxis
-   - Tooltip with locale formatting
-   - Line: monotone, blue stroke, no dots
+The AppAnalytics component fetches downloads and revenue over time plus summary totals. The UI presents three summary cards (downloads, revenue, rating) above a Recharts line chart showing downloads over the last 30 days with formatted axes and tooltips.
 
 ### Backend: Analytics API
 
-**GET /api/v1/developer/apps/:id/analytics (requireDeveloper):**
+> "I'm caching analytics for 5 minutes since developers don't need real-time data - they're looking at trends, not individual transactions."
 
-**Flow:**
-1. Verify app ownership (developer_id match)
-2. Check Redis cache (analytics:{id})
-3. Query download trend (last 30 days, grouped by date)
-4. Query revenue trend (last 30 days, grouped by date)
-5. Query summary (total downloads, total revenue, average rating)
-6. Cache result for 5 minutes
-
-**SQL Queries:**
-- Downloads: COUNT from user_apps grouped by DATE(purchased_at)
-- Revenue: SUM(amount) from purchases grouped by DATE(purchased_at)
-- Summary: Subqueries for each metric
+**GET /api/v1/developer/apps/:id/analytics** verifies app ownership, checks Redis cache, then queries the last 30 days of download and revenue trends grouped by date. Summary metrics aggregate totals in a single query. Results cache for 5 minutes to reduce database load.
 
 ## Deep Dive: Developer Review Response
 
 ### Frontend: Response Form
 
-**ResponseFormProps:**
-- reviewId: string
-- existingResponse?: string
-- appId: string
+> "Developers can respond to reviews which shows users their feedback is heard. The form is collapsed by default to reduce visual clutter, expanding only when the developer wants to engage."
 
-**Behaviors:**
-- Collapsed by default (unless existingResponse exists)
-- useMutation for POST /developer/reviews/:id/respond
-- Invalidates app-reviews query on success
-- Toggle between "Edit Response" and "Respond to Review" buttons
-
-**UI Elements:**
-- Textarea (4 rows, placeholder: "Write your response...")
-- Cancel and Post Response buttons
-- Disabled states during mutation
+The ResponseForm component toggles between collapsed/expanded states and handles both new responses and edits to existing ones. Mutation invalidates the reviews query to show updated responses immediately.
 
 ### Backend: Response API
 
-**POST /api/v1/developer/reviews/:id/respond (requireDeveloper):**
+> "I'm verifying ownership through a JOIN rather than separate queries - this ensures atomic authorization checking."
 
-**Validation:**
-- response: string 10-1000 chars (Zod)
-
-**Flow:**
-1. Verify review belongs to developer's app (JOIN reviews with apps)
-2. Update review with developer_response and developer_response_at
-3. Return success: true
+**POST /api/v1/developer/reviews/:id/respond** validates the response text (10-1000 chars), verifies the review belongs to the developer's app via a single JOIN query, then updates the review with the response and timestamp.
 
 ## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| Search debouncing | 150ms client-side | Server throttle | Better UX, reduces latency |
-| Review processing | Async with queue | Sync in request | Non-blocking, scales integrity analysis |
-| Purchase idempotency | Redis + header key | DB constraint only | Handles concurrent retries |
-| Analytics caching | 5 min Redis TTL | Real-time queries | Balance freshness with DB load |
-| Review validation | Zod on both ends | Backend only | Fast feedback, security defense |
-| Chart rendering | Recharts | Custom Canvas | Development speed, accessibility |
+| Search debouncing | ✅ 150ms client-side | ❌ Server throttle | Better UX, reduces latency |
+| Review processing | ✅ Async with queue | ❌ Sync in request | Non-blocking, scales integrity analysis |
+| Purchase idempotency | ✅ Redis + header key | ❌ DB constraint only | Handles concurrent retries |
+| Analytics caching | ✅ 5 min Redis TTL | ❌ Real-time queries | Balance freshness with DB load |
+| Review validation | ✅ Zod on both ends | ❌ Backend only | Fast feedback, security defense |
+| Chart rendering | ✅ Recharts | ❌ Custom Canvas | Development speed, accessibility |
 
 ## Future Fullstack Enhancements
 
