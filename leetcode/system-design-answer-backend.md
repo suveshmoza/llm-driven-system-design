@@ -2,7 +2,9 @@
 
 *45-minute system design interview format - Backend Engineer Position*
 
-## Problem Statement
+---
+
+## 🎯 Problem Statement
 
 Design the backend infrastructure for an online coding practice and evaluation platform that allows users to:
 - Browse and solve coding problems
@@ -11,9 +13,12 @@ Design the backend infrastructure for an online coding practice and evaluation p
 - Validate outputs against test cases with resource limits
 - Track progress and maintain leaderboards
 
-## Requirements Clarification
+---
+
+## 📋 Requirements Clarification
 
 ### Functional Requirements
+
 1. **Problem Management**: CRUD operations for coding problems with descriptions, test cases, constraints
 2. **Code Submission**: Accept code in multiple languages (Python, JavaScript, Java, C++)
 3. **Sandboxed Execution**: Run untrusted code safely with resource limits
@@ -22,12 +27,14 @@ Design the backend infrastructure for an online coding practice and evaluation p
 6. **Leaderboards**: Rankings by problems solved and performance metrics
 
 ### Non-Functional Requirements
+
 1. **Security**: Sandboxed execution preventing system access, network calls, resource exhaustion
 2. **Latency**: Results within 5 seconds for simple problems, 15 seconds for complex
 3. **Fairness**: Consistent evaluation across all users and submissions
 4. **Scale**: Support 100K concurrent users, 10K submissions/minute during contests
 
 ### Scale Estimates
+
 - 10 million registered users
 - 500K daily active users
 - Normal: 1M submissions/day = 12/second
@@ -35,7 +42,9 @@ Design the backend infrastructure for an online coding practice and evaluation p
 - Average execution time: 2 seconds
 - Concurrent executions needed at peak: ~340
 
-## High-Level Architecture
+---
+
+## 🏗️ High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -72,7 +81,9 @@ Design the backend infrastructure for an online coding practice and evaluation p
     └─────────────┘      └─────────────┘       └─────────────┘
 ```
 
-## Deep Dive: Sandboxed Code Execution
+---
+
+## 🔒 Deep Dive: Sandboxed Code Execution
 
 ### Security Requirements
 
@@ -115,506 +126,289 @@ User code is untrusted. We must prevent:
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Container Security Configuration
+### Trade-off 1: gVisor vs Docker vs Firecracker
 
-```yaml
-# Docker security options
-security_opt:
-  - no-new-privileges:true
-  - seccomp:./seccomp-profile.json
-cap_drop:
-  - ALL
-network_mode: none
-read_only: true
-mem_limit: 256m
-cpus: 0.5
-pids_limit: 10
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ gVisor | Strong isolation, syscall filtering, user-space kernel | 10-20% performance overhead |
+| ❌ Docker alone | Simple, fast startup, wide tooling support | Shared kernel, escape vulnerabilities |
+| ❌ Firecracker | VM-level isolation, used by AWS Lambda | 125MB memory per VM, 150ms cold start |
+
+> "I chose gVisor over plain Docker or Firecracker for code execution sandboxing. Docker containers share the host kernel, so a kernel exploit could escape the sandbox—this happened with CVE-2019-5736 where a malicious container could overwrite the host runc binary. For an online judge running arbitrary user code, kernel-level vulnerabilities are unacceptable. Firecracker provides true VM isolation but adds 125MB memory overhead per microVM and 150ms cold start—with 340 concurrent executions at peak, that's 42GB just for VM overhead, plus we'd need to pre-warm VMs extensively to hide latency. gVisor runs a user-space kernel (called Sentry) that intercepts syscalls and reimplements them safely. A kernel exploit in user code can only compromise Sentry, not the host. The trade-off is 10-20% execution slowdown, but since we control the time limits, we adjust multipliers per language to compensate. For the specific threat model of untrusted code execution, gVisor's syscall-level isolation is the right balance of security and performance."
+
+### Security Configuration Layers
+
+| Layer | Configuration | Purpose |
+|-------|---------------|---------|
+| Network | network_mode: none | Block all external requests |
+| Filesystem | read_only: true | Prevent persistent changes |
+| Capabilities | cap_drop: ALL | No privilege escalation |
+| Memory | mem_limit: 256m | Prevent memory bombs |
+| CPU | cpus: 0.5 | Limit compute usage |
+| Processes | pids_limit: 50 | Prevent fork bombs |
+| Privileges | no-new-privileges: true | Block privilege escalation |
+| Seccomp | custom profile | Whitelist allowed syscalls |
+
+---
+
+## 🔧 Deep Dive: Test Execution Strategy
+
+### Trade-off 2: Sequential vs Parallel Test Execution
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Sequential | Fair timing, predictable resources, early termination | Slower total time |
+| ❌ Parallel | Faster completion, better throughput | Resource contention, unfair timing, no early exit |
+
+> "I chose sequential test case execution over parallel execution, and this is a critical fairness decision. If we run 50 test cases in parallel, they compete for CPU and memory—a solution's measured runtime depends on what other test cases are doing simultaneously, introducing non-determinism. User A's submission might report 45ms while User B's identical code reports 62ms due to resource contention. For a platform where users compare runtimes and compete on leaderboards, this inconsistency destroys trust. Sequential execution ensures each test case runs in isolation with dedicated resources, producing reproducible timing. The trade-off is speed: 50 test cases at 100ms each take 5 seconds sequentially vs ~200ms parallel. But correctness and fairness trump speed—users would rather wait 5 seconds for accurate results than get instant but unreliable measurements. Sequential also enables early termination: when a test fails, we stop immediately rather than wasting resources on remaining tests. For 'Wrong Answer' submissions (70% of failures), we often stop at test case 3 instead of running all 50."
+
+### Test Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  Sequential Test Execution                       │
+│                                                                  │
+│  Test 1 ──▶ Run ──▶ Compare ──▶ PASS ──▶ Continue               │
+│                                    │                             │
+│  Test 2 ──▶ Run ──▶ Compare ──▶ PASS ──▶ Continue               │
+│                                    │                             │
+│  Test 3 ──▶ Run ──▶ Compare ──▶ FAIL ──▶ STOP (early exit)      │
+│                                    │                             │
+│  Tests 4-50: Not executed (saved resources)                      │
+│                                                                  │
+│  Result: Wrong Answer on test 3 of 50                            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Execution Flow
+### Trade-off 3: Early Termination vs Run All Tests
 
-```typescript
-async function executeSubmission(submission: Submission): Promise<Result> {
-  const sandbox = await sandboxPool.acquire(submission.language);
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Early termination (default) | Fast feedback, saves resources | Less debugging info |
+| ❌ Run all tests | Shows all failures | Wastes resources, slower |
 
-  try {
-    // 1. Write user code to sandbox
-    await sandbox.writeFile('/code/solution.py', submission.code);
+> "I chose early termination as the default, stopping execution on first failure. Most failed submissions fail early—test case 1 catches syntax errors, test cases 2-5 catch basic logic bugs. Running all 50 tests for a submission that fails on test 3 wastes 47 test executions worth of resources. At 170 submissions/second during contests, this adds up quickly. Early termination also provides faster feedback: users see 'Wrong Answer on test 3' in 300ms instead of waiting 5 seconds for all tests. The trade-off is reduced debugging information—users don't know if their fix for test 3 will break test 47. We mitigate this with a 'Run All Tests' option for debugging, but charge it against a daily quota since it's resource-intensive. The default optimizes for the common case: fix one bug at a time, resubmit, iterate."
 
-    // 2. Compile if needed (for compiled languages)
-    if (needsCompilation(submission.language)) {
-      const compileResult = await sandbox.exec(
-        getCompileCommand(submission.language),
-        { timeout: 30000, memory: '512m' }
-      );
-      if (compileResult.exitCode !== 0) {
-        return { status: 'COMPILE_ERROR', error: compileResult.stderr };
-      }
-    }
+---
 
-    // 3. Run against each test case
-    const results: TestCaseResult[] = [];
-    for (const testCase of submission.problem.testCases) {
-      const result = await runTestCase(sandbox, submission, testCase);
-      results.push(result);
+## 🔧 Deep Dive: Worker Architecture
 
-      // Early termination on failure
-      if (result.status !== 'PASSED' && !submission.showAllResults) {
-        break;
-      }
-    }
+### Trade-off 4: Per-Language Workers vs Generic Workers
 
-    return aggregateResults(results);
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Per-language workers | Optimized containers, independent scaling, tuned limits | More infrastructure |
+| ❌ Generic workers | Simpler ops, better utilization, fewer images | Cold starts, bloated containers |
 
-  } finally {
-    await sandbox.reset();
-    sandboxPool.release(sandbox);
-  }
-}
+> "I chose per-language worker pools over generic workers that handle all languages. A generic worker would need Python, Java, Node.js, GCC, Go, and Rust all installed—creating a 2GB+ container image with long pull times and security surface area from unused runtimes. Per-language workers use minimal images: Python worker is 150MB, C++ worker is 200MB. This also enables language-specific tuning: Java workers get 512MB memory for JVM heap while Python gets 256MB. Most importantly, per-language pools enable independent scaling. Python represents 70% of submissions, so we run 5 Python workers vs 3 for other languages. During a contest with mostly Python submissions, we scale Python workers without wasting resources on idle Java workers. The trade-off is operational complexity—we manage 6 worker deployments instead of 1—but Kubernetes makes this manageable, and the resource efficiency and cold-start improvements justify the complexity."
 
-async function runTestCase(
-  sandbox: Sandbox,
-  submission: Submission,
-  testCase: TestCase
-): Promise<TestCaseResult> {
-  const startTime = Date.now();
+### Worker Pool Architecture
 
-  try {
-    const result = await sandbox.exec(
-      getRunCommand(submission.language),
-      {
-        stdin: testCase.input,
-        timeout: submission.problem.timeLimit,
-        memory: submission.problem.memoryLimit
-      }
-    );
-
-    const executionTime = Date.now() - startTime;
-
-    if (result.timeout) {
-      return { status: 'TIME_LIMIT_EXCEEDED', time: executionTime };
-    }
-    if (result.memoryExceeded) {
-      return { status: 'MEMORY_LIMIT_EXCEEDED', time: executionTime };
-    }
-    if (result.exitCode !== 0) {
-      return { status: 'RUNTIME_ERROR', error: result.stderr };
-    }
-
-    const passed = compareOutput(result.stdout, testCase.expectedOutput);
-    return {
-      status: passed ? 'PASSED' : 'WRONG_ANSWER',
-      time: executionTime,
-      output: result.stdout.substring(0, 1000)
-    };
-
-  } catch (error) {
-    return { status: 'SYSTEM_ERROR', error: error.message };
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Per-Language Worker Pools                    │
+│                                                                  │
+│  Kafka Topic: submissions.python                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Python Workers (5)                                          ││
+│  │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐                    ││
+│  │  │ W1  │ │ W2  │ │ W3  │ │ W4  │ │ W5  │   Image: 150MB     ││
+│  │  └─────┘ └─────┘ └─────┘ └─────┘ └─────┘   Memory: 256MB    ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  Kafka Topic: submissions.java                                   │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Java Workers (3)                                            ││
+│  │  ┌─────┐ ┌─────┐ ┌─────┐                                     ││
+│  │  │ W1  │ │ W2  │ │ W3  │               Image: 300MB          ││
+│  │  └─────┘ └─────┘ └─────┘               Memory: 512MB (JVM)   ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  Scaling: Workers scale independently based on queue depth       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Output Comparison
+---
 
-```typescript
-function compareOutput(actual: string, expected: string): boolean {
-  // Normalize whitespace
-  const normalizeWhitespace = (s: string) =>
-    s.trim().replace(/\r\n/g, '\n').replace(/\s+$/gm, '');
+## 🔧 Deep Dive: Queue-Based Processing
 
-  const actualNorm = normalizeWhitespace(actual);
-  const expectedNorm = normalizeWhitespace(expected);
+### Trade-off 5: Kafka vs RabbitMQ vs Redis Streams
 
-  if (actualNorm === expectedNorm) return true;
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Kafka | Log retention, replay, consumer groups, high throughput | Operational complexity, higher latency |
+| ❌ RabbitMQ | Lower latency, flexible routing, simpler ops | No replay, message loss on crash without confirms |
+| ❌ Redis Streams | Simple, already have Redis, low latency | Limited durability, single-node bottleneck |
 
-  // Handle floating point comparison
-  if (isNumericOutput(expectedNorm)) {
-    return compareNumeric(actualNorm, expectedNorm, 1e-6);
-  }
+> "I chose Kafka over RabbitMQ or Redis Streams for submission queuing. The critical requirement is durability: a submission must never be lost, especially during rated contests where losing someone's accepted solution would be catastrophic. RabbitMQ can achieve durability with publisher confirms, persistent messages, and mirrored queues—but this configuration adds latency and complexity, and replay after a bug fix requires external tooling. Kafka's log-based architecture provides replay by default: if we discover our judge had a bug last week, we can reprocess all affected submissions from the log. Redis Streams would work for simple cases but lacks the partitioning and consumer group semantics needed for per-language worker pools. The trade-off is operational complexity: Kafka requires ZooKeeper (or KRaft), careful partition configuration, and more monitoring. But for a system where 'your submission was lost' is unacceptable, Kafka's durability guarantees are worth the operational investment. The per-language topics (submissions.python, submissions.java) enable independent scaling and prevent a Java backlog from blocking Python submissions."
 
-  return false;
-}
+### Message Flow
+
+```
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│  API Server  │      │    Kafka     │      │   Worker     │
+└──────┬───────┘      └──────┬───────┘      └──────┬───────┘
+       │                     │                     │
+       │  1. Create DB record (status: pending)    │
+       │────────────────────────────────────────────────────▶
+       │                     │                     │
+       │  2. Publish message │                     │
+       │────────────────────▶│                     │
+       │                     │                     │
+       │  3. Return 202 + ID │                     │
+       │◀────────────────────│                     │
+       │                     │                     │
+       │                     │  4. Consume         │
+       │                     │────────────────────▶│
+       │                     │                     │
+       │                     │  5. Execute tests   │
+       │                     │  6. Update Valkey   │
+       │                     │  7. Commit offset   │
+       │                     │◀────────────────────│
+       │                     │                     │
+       │                     │  8. Update DB       │
+       │                     │────────────────────▶│
+       ▼                     ▼                     ▼
 ```
 
-## Deep Dive: Database Schema
+---
+
+## 🔧 Deep Dive: Output Comparison
+
+### Trade-off 6: Strict vs Tolerant Output Matching
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Tolerant (whitespace-normalized) | Fewer false negatives, better UX | Slightly more complex |
+| ❌ Strict byte-for-byte | Simple implementation | Fails on trailing newlines, Windows line endings |
+| ❌ Custom judger per problem | Handles any format | High maintenance, security risk |
+
+> "I chose tolerant output matching with whitespace normalization over strict byte comparison. Strict matching rejects correct solutions due to trivial formatting differences: trailing newlines, Windows line endings (CRLF vs LF), trailing spaces on lines. Users submit 'Hello World\n' and get 'Wrong Answer' because expected output is 'Hello World'—this is frustrating and wastes support time. Our tolerant comparison normalizes both outputs: trim leading/trailing whitespace, convert CRLF to LF, remove trailing spaces per line, then compare. For floating-point problems, we accept relative error within 1e-6. The trade-off is that strictly-formatted problems (where whitespace matters) need explicit handling, and our comparison logic is more complex than strcmp(). For problems with multiple valid answers (like 'print any valid path'), we'd need custom judgers—but these are rare (<5% of problems) and we implement them as trusted server-side code, not user-submitted. The default tolerant matching handles 95% of problems correctly while dramatically reducing false rejections."
+
+### Output Comparison Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Output Comparison Pipeline                    │
+│                                                                  │
+│  User Output                    Expected Output                  │
+│  "42\n"                         "42"                             │
+│      │                              │                            │
+│      ▼                              ▼                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  1. Trim leading/trailing whitespace                         ││
+│  │  2. Normalize line endings (CRLF → LF)                       ││
+│  │  3. Remove trailing spaces per line                          ││
+│  │  4. Handle floating point (if numeric, 1e-6 tolerance)       ││
+│  └─────────────────────────────────────────────────────────────┘│
+│      │                              │                            │
+│      ▼                              ▼                            │
+│  "42"                           "42"                             │
+│      │                              │                            │
+│      └──────────────┬───────────────┘                            │
+│                     ▼                                            │
+│              Compare: MATCH ✓                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 💾 Data Model
 
 ### PostgreSQL Schema
 
-```sql
--- Problems table
-CREATE TABLE problems (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title VARCHAR(255) NOT NULL,
-  slug VARCHAR(100) UNIQUE NOT NULL,
-  description TEXT NOT NULL,
-  difficulty VARCHAR(20) CHECK (difficulty IN ('easy', 'medium', 'hard')),
-  time_limit_ms INTEGER DEFAULT 2000,
-  memory_limit_mb INTEGER DEFAULT 256,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+**Problems Table**
+- id (UUID, PK), title, slug (unique), description (TEXT)
+- difficulty ('easy'/'medium'/'hard')
+- time_limit_ms (default 2000), memory_limit_mb (default 256)
+- created_at, updated_at
 
--- Test cases with sample flag
-CREATE TABLE test_cases (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  problem_id UUID REFERENCES problems(id) ON DELETE CASCADE,
-  input TEXT NOT NULL,
-  expected_output TEXT NOT NULL,
-  is_sample BOOLEAN DEFAULT FALSE,
-  order_index INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+**Test Cases Table**
+- id (UUID, PK), problem_id (FK → problems, CASCADE DELETE)
+- input (TEXT), expected_output (TEXT)
+- is_sample (boolean, default false)
+- order_index (integer)
 
--- Submissions with status tracking
-CREATE TABLE submissions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  problem_id UUID REFERENCES problems(id) ON DELETE CASCADE,
-  contest_id UUID REFERENCES contests(id),
-  language VARCHAR(20) NOT NULL,
-  code TEXT NOT NULL,
-  status VARCHAR(30) DEFAULT 'pending',
-  runtime_ms INTEGER,
-  memory_kb INTEGER,
-  test_cases_passed INTEGER DEFAULT 0,
-  test_cases_total INTEGER DEFAULT 0,
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+**Submissions Table**
+- id (UUID, PK), user_id (FK), problem_id (FK), contest_id (FK, nullable)
+- language, code (TEXT), status (default 'pending')
+- runtime_ms, memory_kb
+- test_cases_passed, test_cases_total
+- error_message (TEXT), created_at
 
--- User progress tracking
-CREATE TABLE user_problem_status (
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  problem_id UUID REFERENCES problems(id) ON DELETE CASCADE,
-  status VARCHAR(20) DEFAULT 'unsolved',
-  best_runtime_ms INTEGER,
-  best_memory_kb INTEGER,
-  attempts INTEGER DEFAULT 0,
-  solved_at TIMESTAMP,
-  PRIMARY KEY (user_id, problem_id)
-);
-
--- Performance indexes
-CREATE INDEX idx_submissions_user_problem ON submissions(user_id, problem_id);
-CREATE INDEX idx_submissions_created_at ON submissions(created_at DESC);
-CREATE INDEX idx_submissions_status ON submissions(status);
-CREATE INDEX idx_test_cases_problem ON test_cases(problem_id, order_index);
-CREATE INDEX idx_problems_difficulty ON problems(difficulty);
-```
+**User Progress Table**
+- user_id + problem_id (composite PK)
+- status ('solved'/'attempted'/'unsolved')
+- best_runtime_ms, best_memory_kb
+- attempts (default 0), solved_at
 
 ### Why PostgreSQL?
 
 | Consideration | PostgreSQL | MongoDB | Cassandra |
 |---------------|------------|---------|-----------|
-| ACID transactions | Excellent | Limited | Limited |
-| Complex queries | Excellent | Moderate | Poor |
-| JSON storage | Good (JSONB) | Excellent | Poor |
-| Operational simplicity | High | Moderate | Complex |
-| Submission history | Excellent | Good | Excellent |
+| ACID transactions | ✅ Full support | ⚠️ Multi-doc overhead | ❌ No transactions |
+| Complex queries | ✅ Full SQL | ⚠️ Aggregation pipeline | ❌ Limited |
+| Joins | ✅ Native | ⚠️ $lookup (slow) | ❌ None |
+| Horizontal scale | ⚠️ Manual sharding | ✅ Built-in | ✅ Linear |
 
-**Decision**: PostgreSQL provides strong consistency for submissions and user progress, with good query flexibility for leaderboards.
+> "PostgreSQL wins because submission processing requires ACID: updating submission status and user progress must succeed or fail together. At 12 writes/second (normal load), a single PostgreSQL instance handles this trivially. When we need to scale, we shard by user_id—each user's data stays on one shard, preserving transaction guarantees."
 
-## Deep Dive: Queue-Based Submission Processing
+---
 
-### Why Kafka for Submissions?
+## 🚀 Caching Strategy
 
-```
-┌───────────────┐     ┌────────────────────────────────────┐
-│  API Server   │────►│             Kafka                  │
-│  (Producer)   │     │                                    │
-└───────────────┘     │  ┌────────────────────────────┐   │
-                      │  │ Topic: submissions.python   │   │
-                      │  │ Partitions: 10              │   │
-                      │  └────────────────────────────┘   │
-                      │  ┌────────────────────────────┐   │
-                      │  │ Topic: submissions.java     │   │
-                      │  │ Partitions: 10              │   │
-                      │  └────────────────────────────┘   │
-                      │  ┌────────────────────────────┐   │
-                      │  │ Topic: submissions.cpp      │   │
-                      │  │ Partitions: 10              │   │
-                      │  └────────────────────────────┘   │
-                      └────────────────────────────────────┘
-                                      │
-           ┌──────────────────────────┼──────────────────────────┐
-           ▼                          ▼                          ▼
-    ┌─────────────┐           ┌─────────────┐            ┌─────────────┐
-    │ Python      │           │ Java        │            │ C++         │
-    │ Workers (5) │           │ Workers (3) │            │ Workers (3) │
-    └─────────────┘           └─────────────┘            └─────────────┘
-```
-
-### Benefits
-
-1. **Decoupling**: API servers return immediately, workers process asynchronously
-2. **Backpressure**: Queue buffers traffic spikes during contests
-3. **Language-specific scaling**: Scale Python workers independently from Java
-4. **Retry semantics**: Failed submissions can be retried automatically
-5. **Ordering guarantees**: FIFO within partition
-
-### Producer Implementation
-
-```typescript
-async function submitCode(req, res) {
-  const { problemSlug, language, code } = req.body;
-  const userId = req.session.userId;
-
-  // Validate request
-  const problem = await getProblem(problemSlug);
-  if (!problem) return res.status(404).json({ error: 'Problem not found' });
-
-  // Create submission record
-  const submission = await pool.query(`
-    INSERT INTO submissions (user_id, problem_id, language, code, status)
-    VALUES ($1, $2, $3, $4, 'pending')
-    RETURNING id
-  `, [userId, problem.id, language, code]);
-
-  // Queue for execution
-  await kafka.send({
-    topic: `submissions.${language}`,
-    messages: [{
-      key: submission.rows[0].id,
-      value: JSON.stringify({
-        submissionId: submission.rows[0].id,
-        problemId: problem.id,
-        language,
-        code,
-        timeLimit: problem.time_limit_ms,
-        memoryLimit: problem.memory_limit_mb
-      })
-    }]
-  });
-
-  // Return immediately
-  res.status(202).json({
-    submissionId: submission.rows[0].id,
-    status: 'pending'
-  });
-}
-```
-
-### Consumer Implementation
-
-```typescript
-async function startWorker(language: string) {
-  const consumer = kafka.consumer({ groupId: `judge-${language}` });
-  await consumer.subscribe({ topic: `submissions.${language}` });
-
-  await consumer.run({
-    eachMessage: async ({ message }) => {
-      const submission = JSON.parse(message.value);
-
-      // Update status
-      await updateSubmissionStatus(submission.submissionId, 'running');
-      await cacheStatus(submission.submissionId, { status: 'running' });
-
-      try {
-        const result = await executeSubmission(submission);
-
-        await pool.query(`
-          UPDATE submissions
-          SET status = $1, runtime_ms = $2, memory_kb = $3,
-              test_cases_passed = $4, test_cases_total = $5
-          WHERE id = $6
-        `, [result.status, result.runtime, result.memory,
-            result.passed, result.total, submission.submissionId]);
-
-        // Update user progress if accepted
-        if (result.status === 'accepted') {
-          await updateUserProgress(submission);
-        }
-
-      } catch (error) {
-        await updateSubmissionStatus(submission.submissionId, 'system_error');
-      }
-    }
-  });
-}
-```
-
-## Deep Dive: Resource Limits by Language
-
-```typescript
-const resourceLimits: Record<string, ResourceLimits> = {
-  python: { time: 10000, memory: '256m', multiplier: 3 },
-  java: { time: 5000, memory: '512m', multiplier: 2 },
-  cpp: { time: 2000, memory: '256m', multiplier: 1 },
-  javascript: { time: 8000, memory: '256m', multiplier: 2.5 },
-  go: { time: 3000, memory: '256m', multiplier: 1.2 },
-  rust: { time: 2000, memory: '256m', multiplier: 1 },
-};
-
-// Problem time limit = base_limit * language_multiplier
-function getTimeLimit(problem: Problem, language: string): number {
-  return problem.time_limit_ms * resourceLimits[language].multiplier;
-}
-```
-
-## Caching Strategy
-
-### Cache Layers
+### Valkey Cache Layers
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      Valkey Cache                         │
 │                                                           │
 │  ┌─────────────────────────────────────────────────────┐ │
-│  │  problem:{slug}           -> Problem JSON (5 min)   │ │
-│  │  submission:{id}:status   -> Status JSON (5 min)    │ │
-│  │  user:{id}:progress       -> Progress JSON (1 min)  │ │
-│  │  leaderboard:global       -> Top 100 users (1 min)  │ │
-│  │  session:{sid}            -> Session data (7 days)  │ │
+│  │  problem:{slug}           ──▶ Problem JSON (5 min)  │ │
+│  │  problem:{slug}:tests     ──▶ Test cases (5 min)    │ │
+│  │  submission:{id}:status   ──▶ Status JSON (5 min)   │ │
+│  │  user:{id}:progress       ──▶ Progress JSON (1 min) │ │
+│  │  leaderboard:global       ──▶ Top 100 users (1 min) │ │
+│  │  session:{sid}            ──▶ Session data (7 days) │ │
 │  └─────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────┘
 ```
 
-### Submission Status Caching
+> "Caching submission status in Valkey is critical for polling performance. With 10K concurrent users polling every second, that's 10K reads/second. Database queries at this rate would overwhelm PostgreSQL. Valkey handles 100K+ reads/second. Workers update status after each test case, enabling real-time progress display."
 
-```typescript
-// Real-time status updates during execution
-async function updateProgress(submissionId: string, progress: Progress) {
-  await valkey.setex(
-    `submission:${submissionId}:status`,
-    300, // 5 minute TTL
-    JSON.stringify(progress)
-  );
-}
+---
 
-// Fast polling from frontend
-async function getStatus(submissionId: string): Promise<Progress> {
-  const cached = await valkey.get(`submission:${submissionId}:status`);
-  if (cached) return JSON.parse(cached);
-
-  // Fallback to database
-  const result = await pool.query(
-    'SELECT status, test_cases_passed, test_cases_total FROM submissions WHERE id = $1',
-    [submissionId]
-  );
-  return result.rows[0];
-}
-```
-
-## API Design
+## 🌐 API Design
 
 ### RESTful Endpoints
 
 ```
-Authentication:
-POST   /api/v1/auth/register     Create new account
-POST   /api/v1/auth/login        Authenticate and create session
-POST   /api/v1/auth/logout       Destroy session
-GET    /api/v1/auth/me           Get current user
+POST   /api/v1/submissions       ──▶ Submit (returns 202 + ID)
+GET    /api/v1/submissions/:id/status ──▶ Poll status (cached)
+POST   /api/v1/submissions/run   ──▶ Run samples only (no record)
 
-Problems:
-GET    /api/v1/problems          List problems (paginated, filterable)
-GET    /api/v1/problems/:slug    Get problem details + sample test cases
-POST   /api/v1/problems          Create problem (admin only)
+GET    /api/v1/problems          ──▶ List (paginated, filterable)
+GET    /api/v1/problems/:slug    ──▶ Get details + sample tests
 
-Submissions:
-POST   /api/v1/submissions       Submit code for judging
-POST   /api/v1/submissions/run   Run against sample tests only
-GET    /api/v1/submissions/:id   Get submission details
-GET    /api/v1/submissions/:id/status  Poll status (cached)
-
-Users:
-GET    /api/v1/users/progress    Get solve progress
-GET    /api/v1/users/:id/profile User profile + stats
+GET    /api/v1/users/progress    ──▶ Get solve progress
 ```
 
-### WebSocket for Real-time Updates
+---
 
-```typescript
-// Subscribe to submission result
-ws.on('subscribe', (submissionId) => {
-  subscriptions.set(submissionId, ws);
-});
+## ⚖️ Trade-offs Summary
 
-// Push updates as execution progresses
-async function notifyProgress(submissionId: string, progress: Progress) {
-  const ws = subscriptions.get(submissionId);
-  if (ws) {
-    ws.send(JSON.stringify({
-      type: 'progress',
-      submissionId,
-      ...progress
-    }));
-  }
-}
-```
+| Decision | Choice | Trade-off |
+|----------|--------|-----------|
+| Sandbox | ✅ gVisor | 10-20% overhead vs kernel-level isolation |
+| Test execution | ✅ Sequential | Slower vs fair, reproducible timing |
+| Early termination | ✅ Stop on failure | Less debug info vs resource efficiency |
+| Workers | ✅ Per-language pools | More infrastructure vs optimized scaling |
+| Queue | ✅ Kafka | Complexity vs durability + replay |
+| Output matching | ✅ Tolerant | Complexity vs fewer false rejections |
+| Database | ✅ PostgreSQL | Manual sharding vs ACID + joins |
 
-## Scalability Considerations
+---
 
-### Worker Pool Auto-Scaling
+## 📝 Closing Summary
 
-```typescript
-async function autoScaleWorkers() {
-  const queueDepth = await getQueueDepth();
-  const processingCapacity = activeWorkers * avgThroughput;
-
-  // Target: process queue in 30 seconds
-  const targetCapacity = queueDepth / 30;
-
-  if (targetCapacity > processingCapacity * 1.2) {
-    const newWorkers = Math.ceil(
-      (targetCapacity - processingCapacity) / avgThroughput
-    );
-    await kubernetes.scaleDeployment('judge-workers', newWorkers);
-  }
-}
-```
-
-### Container Pre-warming
-
-```typescript
-class SandboxPool {
-  private warmContainers: Map<string, Sandbox[]> = new Map();
-  private minWarm = 5;
-
-  async acquire(language: string): Promise<Sandbox> {
-    const pool = this.warmContainers.get(language) || [];
-    if (pool.length > 0) {
-      return pool.pop()!;
-    }
-    return this.createSandbox(language);
-  }
-
-  async release(sandbox: Sandbox): Promise<void> {
-    await sandbox.reset();
-    const pool = this.warmContainers.get(sandbox.language) || [];
-    if (pool.length < this.minWarm * 2) {
-      pool.push(sandbox);
-    } else {
-      await sandbox.destroy();
-    }
-  }
-}
-```
-
-### Estimated Capacity
-
-| Component | Single Node | Scaled (4x) |
-|-----------|-------------|-------------|
-| PostgreSQL writes | 500/sec | 2K/sec (with pooling) |
-| PostgreSQL reads | 5K/sec | 20K/sec (replicas) |
-| Kafka throughput | 50K msgs/sec | 50K msgs/sec |
-| Judge workers | 50 concurrent | 200 concurrent |
-| Valkey cache | 100K/sec | 100K/sec |
-
-## Trade-offs Summary
-
-| Decision | Pros | Cons |
-|----------|------|------|
-| gVisor sandboxing | Strong security, syscall filtering | 10-20% overhead |
-| Kafka for queuing | Durability, backpressure, ordering | Operational complexity |
-| Language-specific workers | Optimized containers, independent scaling | More infrastructure |
-| Sequential test execution | Fair comparison, predictable | Slower than parallel |
-| Polling with cache | Simple, stateless | 1-2s latency |
-
-## Future Backend Enhancements
-
-1. **WebAssembly Sandbox**: For browser-based execution
-2. **Distributed Tracing**: OpenTelemetry for execution pipeline
-3. **Code Similarity Detection**: MOSS algorithm for plagiarism
-4. **Contest Mode**: Time-limited competitions with rate limiting
-5. **Custom Test Cases**: User-provided inputs for debugging
+> "I've designed a backend for an online judge with six key trade-off decisions: gVisor sandboxing for security without VM overhead, sequential test execution for fair timing, early termination for resource efficiency, per-language workers for optimized scaling, Kafka queuing for durability and replay, and tolerant output matching for better user experience. The unifying principle is that correctness and fairness trump performance—users trust our timing comparisons for leaderboards, so we sacrifice parallel execution speed for reproducible measurements. The async architecture with Kafka decouples API responsiveness from execution capacity, enabling independent scaling during contest bursts."

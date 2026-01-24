@@ -2,7 +2,9 @@
 
 *45-minute system design interview format - Full-Stack Engineer Position*
 
-## Problem Statement
+---
+
+## 🎯 Problem Statement
 
 Design an online coding practice and evaluation platform that allows users to:
 - Browse and solve coding problems across difficulty levels
@@ -12,9 +14,12 @@ Design an online coding practice and evaluation platform that allows users to:
 
 This answer covers the end-to-end architecture, emphasizing the integration between frontend and backend components.
 
-## Requirements Clarification
+---
+
+## 📋 Requirements Clarification
 
 ### Functional Requirements
+
 1. **Problem browsing** with filtering by difficulty, tags, and status
 2. **Code editor** with syntax highlighting and multi-language support
 3. **Code submission** with secure sandbox execution
@@ -22,759 +27,361 @@ This answer covers the end-to-end architecture, emphasizing the integration betw
 5. **User progress** tracking solved problems and performance
 
 ### Non-Functional Requirements
+
 1. **Security**: Sandboxed execution preventing malicious code
 2. **Low latency**: Results within 5 seconds for simple problems
 3. **Responsive UI**: Smooth editor experience, instant feedback
 4. **Scale**: Support 10K+ concurrent users during contests
 
 ### Scale Estimates
+
 - 500K daily active users
 - 1M submissions/day (normal), 10K/minute (contest peak)
 - 3,000 problems with 50 test cases each
 
-## High-Level Architecture
+---
+
+## 🏗️ High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     Browser (React Application)                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  Components: ProblemList, CodeEditor, TestResults, ProgressDash   │  │
-│  └───────────────────────────┬───────────────────────────────────────┘  │
-│  ┌───────────────────────────┴───────────────────────────────────────┐  │
-│  │  Zustand Store: problems[], code{}, submissions[], language       │  │
-│  └───────────────────────────┬───────────────────────────────────────┘  │
-│  ┌───────────────────────────┴───────────────────────────────────────┐  │
-│  │  API Service: submit, poll status, fetch problems                 │  │
-│  └───────────────────────────┬───────────────────────────────────────┘  │
-└──────────────────────────────┼───────────────────────────────────────────┘
-                               │ REST API (JSON)
-                               ▼
+│                        Browser (React Application)                       │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │    ProblemList  │  CodeEditor  │  TestResults  │  ProgressDash     │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                     │
+│  ┌────────────────────────────────┴────────────────────────────────────┐│
+│  │  Zustand Store: problems[], code{}, submissions[], language          ││
+│  └────────────────────────────────┬────────────────────────────────────┘│
+│                                   │                                      │
+│  ┌────────────────────────────────┴────────────────────────────────────┐│
+│  │  API Service: submit(), pollStatus(), fetchProblems()                ││
+│  └────────────────────────────────┬────────────────────────────────────┘│
+└───────────────────────────────────┼──────────────────────────────────────┘
+                                    │ REST API (JSON)
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        Express API Server                                │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  Middleware: cors, session, auth, rateLimit                       │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│  ┌────────────────┐  ┌──────────────────┐  ┌───────────────────────┐   │
-│  │  auth.ts       │  │  problems.ts      │  │  submissions.ts       │   │
-│  │  - login       │  │  - list           │  │  - submit             │   │
-│  │  - register    │  │  - getBySlug      │  │  - run (sample only)  │   │
-│  │  - logout      │  │  - create (admin) │  │  - status             │   │
-│  └────────────────┘  └──────────────────┘  └───────────────────────┘   │
-└─────────────────────────────┬───────────────────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│  PostgreSQL  │      │    Valkey    │      │   Docker     │
-│  - problems  │      │  - sessions  │      │   Sandbox    │
-│  - users     │      │  - status    │      │  - python    │
-│  - submits   │      │  - cache     │      │  - node      │
-└──────────────┘      └──────────────┘      └──────────────┘
+│                          Express API Server                              │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │  Middleware: cors │ session │ auth │ rateLimit                      │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
+│                                                                          │
+│  ┌────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐  │
+│  │  /auth         │  │  /problems      │  │  /submissions           │  │
+│  │  - login       │  │  - list         │  │  - submit               │  │
+│  │  - register    │  │  - getBySlug    │  │  - run (sample only)    │  │
+│  │  - logout      │  │  - create(admin)│  │  - status               │  │
+│  └────────────────┘  └─────────────────┘  └─────────────────────────┘  │
+└─────────────────────────────────┬────────────────────────────────────────┘
+                                  │
+        ┌─────────────────────────┼─────────────────────┐
+        ▼                         ▼                     ▼
+┌──────────────┐          ┌──────────────┐      ┌──────────────┐
+│  PostgreSQL  │          │    Valkey    │      │    Docker    │
+│  - problems  │          │  - sessions  │      │   Sandbox    │
+│  - users     │          │  - status    │      │  - python    │
+│  - submits   │          │  - cache     │      │  - node      │
+└──────────────┘          └──────────────┘      └──────────────┘
 ```
 
-## Data Model
+---
 
-### Database Schema
+## 💾 Data Model
 
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  username VARCHAR(50) UNIQUE NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(20) DEFAULT 'user',
-  created_at TIMESTAMP DEFAULT NOW()
-);
+### Database Schema (PostgreSQL)
 
-CREATE TABLE problems (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title VARCHAR(255) NOT NULL,
-  slug VARCHAR(100) UNIQUE NOT NULL,
-  description TEXT NOT NULL,
-  difficulty VARCHAR(20) CHECK (difficulty IN ('easy', 'medium', 'hard')),
-  time_limit_ms INTEGER DEFAULT 2000,
-  memory_limit_mb INTEGER DEFAULT 256,
-  starter_code_python TEXT,
-  starter_code_javascript TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+**Users Table**
+- id (UUID, PK), username (unique), email (unique), password_hash
+- role (default 'user'), created_at
 
-CREATE TABLE test_cases (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  problem_id UUID REFERENCES problems(id) ON DELETE CASCADE,
-  input TEXT NOT NULL,
-  expected_output TEXT NOT NULL,
-  is_sample BOOLEAN DEFAULT FALSE,
-  order_index INTEGER DEFAULT 0
-);
+**Problems Table**
+- id (UUID, PK), title, slug (unique), description (TEXT)
+- difficulty ('easy'/'medium'/'hard'), time_limit_ms, memory_limit_mb
+- starter_code_python (TEXT), starter_code_javascript (TEXT)
 
-CREATE TABLE submissions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  problem_id UUID REFERENCES problems(id) ON DELETE CASCADE,
-  language VARCHAR(20) NOT NULL,
-  code TEXT NOT NULL,
-  status VARCHAR(30) DEFAULT 'pending',
-  runtime_ms INTEGER,
-  memory_kb INTEGER,
-  test_cases_passed INTEGER DEFAULT 0,
-  test_cases_total INTEGER DEFAULT 0,
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
+**Test Cases Table**
+- id (UUID, PK), problem_id (FK → problems)
+- input (TEXT), expected_output (TEXT)
+- is_sample (boolean), order_index (integer)
 
-CREATE TABLE user_problem_status (
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  problem_id UUID REFERENCES problems(id) ON DELETE CASCADE,
-  status VARCHAR(20) DEFAULT 'unsolved',
-  best_runtime_ms INTEGER,
-  attempts INTEGER DEFAULT 0,
-  solved_at TIMESTAMP,
-  PRIMARY KEY (user_id, problem_id)
-);
+**Submissions Table**
+- id (UUID, PK), user_id (FK), problem_id (FK)
+- language, code (TEXT), status (default 'pending')
+- runtime_ms, memory_kb, test_cases_passed, test_cases_total
+- error_message (TEXT), created_at
 
-CREATE INDEX idx_submissions_user_problem ON submissions(user_id, problem_id);
-CREATE INDEX idx_problems_difficulty ON problems(difficulty);
-```
+**User Progress Table**
+- user_id + problem_id (composite PK)
+- status ('solved'/'attempted'/'unsolved')
+- best_runtime_ms, attempts, solved_at
 
-### TypeScript Interfaces (Shared Types)
+### Shared TypeScript Types
 
-```typescript
-// shared/types.ts - Used by both frontend and backend
+| Type | Key Fields | Purpose |
+|------|------------|---------|
+| Problem | id, title, slug, difficulty, starterCode | Problem metadata |
+| TestCase | id, input, expectedOutput, isSample | Test validation |
+| Submission | id, status, runtimeMs, memoryKb, testCasesPassed | Submission result |
+| SubmissionProgress | status, currentTest, testCasesTotal, failedTest | Real-time updates |
 
-interface Problem {
-  id: string;
-  title: string;
-  slug: string;
-  description: string;
-  difficulty: 'easy' | 'medium' | 'hard';
-  timeLimitMs: number;
-  memoryLimitMb: number;
-  starterCode: Record<string, string>;
-  acceptanceRate?: number;
-  userStatus?: 'solved' | 'attempted' | 'unsolved';
-}
+---
 
-interface TestCase {
-  id: string;
-  input: string;
-  expectedOutput: string;
-  isSample: boolean;
-}
+## 🔧 Deep Dive: Code Execution Pipeline
 
-interface Submission {
-  id: string;
-  problemSlug: string;
-  language: string;
-  code: string;
-  status: SubmissionStatus;
-  runtimeMs?: number;
-  memoryKb?: number;
-  testCasesPassed: number;
-  testCasesTotal: number;
-  errorMessage?: string;
-  createdAt: string;
-}
-
-type SubmissionStatus =
-  | 'pending'
-  | 'running'
-  | 'accepted'
-  | 'wrong_answer'
-  | 'time_limit_exceeded'
-  | 'memory_limit_exceeded'
-  | 'runtime_error'
-  | 'compile_error';
-
-interface SubmissionProgress {
-  status: SubmissionStatus;
-  currentTest: number;
-  testCasesPassed: number;
-  testCasesTotal: number;
-  runtimeMs?: number;
-  memoryKb?: number;
-  failedTest?: {
-    input: string;
-    expected: string;
-    actual: string;
-  };
-}
-```
-
-## Deep Dive: API Design
-
-### RESTful Endpoints
+### End-to-End Flow
 
 ```
-POST   /api/v1/auth/login        - Create session
-POST   /api/v1/auth/register     - Create account
-POST   /api/v1/auth/logout       - Destroy session
-GET    /api/v1/auth/me           - Get current user
-
-GET    /api/v1/problems          - List problems (paginated)
-GET    /api/v1/problems/:slug    - Get problem with sample tests
-
-POST   /api/v1/submissions       - Submit code for judging
-POST   /api/v1/submissions/run   - Run against sample tests
-GET    /api/v1/submissions/:id/status - Poll execution status
-
-GET    /api/v1/users/progress    - Get user's solve progress
+┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
+│  Editor  │─────▶│  API     │─────▶│  Create  │─────▶│  Return  │
+│  Submit  │      │  Server  │      │  Record  │      │  ID      │
+└──────────┘      └──────────┘      └──────────┘      └──────────┘
+                                          │
+                                          │ Async (don't await)
+                                          ▼
+                                    ┌──────────────┐
+                                    │  Execution   │
+                                    │  Pipeline    │
+                                    └──────┬───────┘
+                                           │
+            ┌──────────────────────────────┼──────────────────────────────┐
+            │                              │                              │
+            ▼                              ▼                              ▼
+     ┌─────────────┐              ┌─────────────┐              ┌─────────────┐
+     │  Create     │              │  Run Each   │              │  Compare    │
+     │  Container  │─────────────▶│  Test Case  │─────────────▶│  Output     │
+     │  (Docker)   │              │  w/ Limits  │              │  Update DB  │
+     └─────────────┘              └─────────────┘              └─────────────┘
+                                         │
+                                         │ After each test
+                                         ▼
+                                  ┌─────────────┐
+                                  │  Update     │
+                                  │  Valkey     │
+                                  │  Status     │
+                                  └─────────────┘
 ```
 
-### API Integration Pattern
+### Frontend Polling Flow
 
-```typescript
-// Frontend: services/api.ts
-const api = {
-  async submitCode(data: { problemSlug: string; language: string; code: string }): Promise<{ submissionId: string }> {
-    const res = await fetch('/api/v1/submissions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) throw new ApiError(res);
-    return res.json();
-  },
-
-  async getSubmissionStatus(submissionId: string): Promise<SubmissionProgress> {
-    const res = await fetch(`/api/v1/submissions/${submissionId}/status`, {
-      credentials: 'include',
-    });
-    if (!res.ok) throw new ApiError(res);
-    return res.json();
-  },
-
-  async getProblems(filters: ProblemFilters): Promise<Problem[]> {
-    const params = new URLSearchParams(filters as Record<string, string>);
-    const res = await fetch(`/api/v1/problems?${params}`, {
-      credentials: 'include',
-    });
-    if (!res.ok) throw new ApiError(res);
-    return res.json();
-  },
-};
+```
+┌────────────────┐         ┌────────────────┐         ┌────────────────┐
+│   Submit Code  │         │   Backend API  │         │   Valkey Cache │
+└───────┬────────┘         └───────┬────────┘         └───────┬────────┘
+        │                          │                          │
+        │  POST /submissions       │                          │
+        │─────────────────────────▶│                          │
+        │  { submissionId }        │                          │
+        │◀─────────────────────────│                          │
+        │                          │                          │
+        ├──────────────────────────── POLLING LOOP ───────────┤
+        │                          │                          │
+        │  GET /status/{id}        │                          │
+        │─────────────────────────▶│   GET submission:{id}    │
+        │                          │─────────────────────────▶│
+        │                          │   { status: "running" }  │
+        │  { status, currentTest } │◀─────────────────────────│
+        │◀─────────────────────────│                          │
+        │                          │                          │
+        │  ...poll every 1s...     │                          │
+        │                          │                          │
+        │  GET /status/{id}        │                          │
+        │─────────────────────────▶│                          │
+        │  { status: "accepted",   │                          │
+        │    runtimeMs: 42 }       │                          │
+        │◀─────────────────────────│                          │
+        │                          │                          │
+        │  STOP POLLING            │                          │
+        ▼                          ▼                          ▼
 ```
 
-```typescript
-// Backend: routes/submissions.ts
-router.post('/', requireAuth, async (req, res) => {
-  const { problemSlug, language, code } = req.body;
-  const userId = req.session.userId!;
+### Docker Sandbox Security
 
-  // Get problem
-  const problem = await pool.query(
-    'SELECT id, time_limit_ms, memory_limit_mb FROM problems WHERE slug = $1',
-    [problemSlug]
-  );
-  if (problem.rows.length === 0) {
-    return res.status(404).json({ error: 'Problem not found' });
-  }
+| Security Layer | Configuration | Purpose |
+|----------------|---------------|---------|
+| Network | network_mode: none | Block external calls |
+| Filesystem | read_only: true | Prevent writes |
+| Capabilities | cap_drop: ALL | No privilege escalation |
+| Resources | memory: 256MB, CPU: 0.5 | Prevent exhaustion |
+| Processes | pids_limit: 50 | Prevent fork bombs |
+| Privileges | no-new-privileges | Prevent escalation |
 
-  // Get test cases
-  const testCases = await pool.query(
-    'SELECT input, expected_output FROM test_cases WHERE problem_id = $1 ORDER BY order_index',
-    [problem.rows[0].id]
-  );
+---
 
-  // Create submission record
-  const submission = await pool.query(`
-    INSERT INTO submissions (user_id, problem_id, language, code, test_cases_total)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING id
-  `, [userId, problem.rows[0].id, language, code, testCases.rows.length]);
+## 🔧 Deep Dive: Code Editor Integration
 
-  const submissionId = submission.rows[0].id;
+### CodeMirror 6 Architecture
 
-  // Start async execution (don't await)
-  executeSubmission(submissionId, {
-    language,
-    code,
-    testCases: testCases.rows,
-    timeLimit: problem.rows[0].time_limit_ms,
-    memoryLimit: problem.rows[0].memory_limit_mb,
-  });
-
-  res.status(202).json({ submissionId });
-});
-
-router.get('/:id/status', requireAuth, async (req, res) => {
-  const { id } = req.params;
-
-  // Check cache first
-  const cached = await valkey.get(`submission:${id}:status`);
-  if (cached) {
-    return res.json(JSON.parse(cached));
-  }
-
-  // Fallback to database
-  const result = await pool.query(`
-    SELECT status, test_cases_passed, test_cases_total, runtime_ms, memory_kb, error_message
-    FROM submissions WHERE id = $1
-  `, [id]);
-
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Submission not found' });
-  }
-
-  res.json(result.rows[0]);
-});
 ```
-
-## Deep Dive: Code Execution Pipeline (Full Stack Flow)
-
-### Backend: Sandbox Execution
-
-```typescript
-// services/codeExecutor.ts
-import Docker from 'dockerode';
-
-const docker = new Docker();
-
-interface ExecutionConfig {
-  language: string;
-  code: string;
-  testCases: Array<{ input: string; expected_output: string }>;
-  timeLimit: number;
-  memoryLimit: number;
-}
-
-async function executeSubmission(submissionId: string, config: ExecutionConfig) {
-  const { language, code, testCases, timeLimit, memoryLimit } = config;
-
-  // Update status to running
-  await updateStatus(submissionId, { status: 'running', currentTest: 1 });
-
-  const image = language === 'python' ? 'python:3.11-alpine' : 'node:20-alpine';
-  let passed = 0;
-
-  for (let i = 0; i < testCases.length; i++) {
-    const testCase = testCases[i];
-
-    const result = await runInContainer({
-      image,
-      code,
-      stdin: testCase.input,
-      timeLimit,
-      memoryLimit,
-      language,
-    });
-
-    // Update progress in cache
-    await updateStatus(submissionId, {
-      status: 'running',
-      currentTest: i + 1,
-      testCasesPassed: passed,
-      testCasesTotal: testCases.length,
-    });
-
-    if (result.error) {
-      await finishSubmission(submissionId, {
-        status: result.timeout ? 'time_limit_exceeded' :
-                result.memoryExceeded ? 'memory_limit_exceeded' : 'runtime_error',
-        passed,
-        total: testCases.length,
-        errorMessage: result.stderr,
-      });
-      return;
-    }
-
-    const outputMatches = compareOutput(result.stdout, testCase.expected_output);
-    if (outputMatches) {
-      passed++;
-    } else {
-      await finishSubmission(submissionId, {
-        status: 'wrong_answer',
-        passed,
-        total: testCases.length,
-        failedTest: {
-          input: testCase.input,
-          expected: testCase.expected_output,
-          actual: result.stdout,
-        },
-      });
-      return;
-    }
-  }
-
-  // All tests passed
-  await finishSubmission(submissionId, {
-    status: 'accepted',
-    passed,
-    total: testCases.length,
-    runtimeMs: result.runtimeMs,
-    memoryKb: result.memoryKb,
-  });
-
-  // Update user progress
-  await updateUserProgress(submissionId);
-}
-
-async function runInContainer(config: ContainerConfig): Promise<ExecutionResult> {
-  const container = await docker.createContainer({
-    Image: config.image,
-    Cmd: getRunCommand(config.language),
-    HostConfig: {
-      Memory: config.memoryLimit * 1024 * 1024,
-      MemorySwap: config.memoryLimit * 1024 * 1024,
-      NetworkMode: 'none',
-      AutoRemove: true,
-      CapDrop: ['ALL'],
-      SecurityOpt: ['no-new-privileges'],
-      PidsLimit: 50,
-    },
-  });
-
-  // Write code and run with timeout
-  // ...
-}
-
-async function updateStatus(submissionId: string, progress: Partial<SubmissionProgress>) {
-  await valkey.setex(
-    `submission:${submissionId}:status`,
-    300,
-    JSON.stringify(progress)
-  );
-}
-```
-
-### Frontend: Real-time Status Polling
-
-```tsx
-// components/SubmissionTracker.tsx
-import { useState, useEffect } from 'react';
-
-function useSubmissionStatus(submissionId: string | null) {
-  const [progress, setProgress] = useState<SubmissionProgress | null>(null);
-  const [isComplete, setIsComplete] = useState(false);
-
-  useEffect(() => {
-    if (!submissionId) return;
-
-    let cancelled = false;
-
-    async function poll() {
-      while (!cancelled) {
-        try {
-          const status = await api.getSubmissionStatus(submissionId);
-          setProgress(status);
-
-          if (isFinalStatus(status.status)) {
-            setIsComplete(true);
-            break;
-          }
-        } catch (error) {
-          console.error('Polling error:', error);
-        }
-
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
-    poll();
-    return () => { cancelled = true; };
-  }, [submissionId]);
-
-  return { progress, isComplete };
-}
-
-function isFinalStatus(status: string): boolean {
-  return ['accepted', 'wrong_answer', 'time_limit_exceeded',
-          'memory_limit_exceeded', 'runtime_error', 'compile_error'].includes(status);
-}
-
-export function TestResultsPanel() {
-  const { activeSubmission } = useProblemStore();
-  const { progress, isComplete } = useSubmissionStatus(activeSubmission?.id);
-
-  if (!activeSubmission) {
-    return <div className="p-4 text-gray-500">Run your code to see results</div>;
-  }
-
-  return (
-    <div className="p-4">
-      {!isComplete ? (
-        <RunningIndicator progress={progress} />
-      ) : (
-        <FinalResults progress={progress} />
-      )}
-    </div>
-  );
-}
-
-function RunningIndicator({ progress }: { progress: SubmissionProgress | null }) {
-  return (
-    <div className="flex items-center gap-3">
-      <Spinner className="w-5 h-5 text-blue-500 animate-spin" />
-      <span>
-        Running test {progress?.currentTest || 1} of {progress?.testCasesTotal || '?'}...
-      </span>
-    </div>
-  );
-}
-
-function FinalResults({ progress }: { progress: SubmissionProgress }) {
-  return (
-    <div className="space-y-4">
-      <StatusBanner status={progress.status} />
-
-      <div className="flex gap-6 text-sm text-gray-600">
-        <span>Runtime: {progress.runtimeMs}ms</span>
-        <span>Memory: {(progress.memoryKb / 1024).toFixed(1)}MB</span>
-        <span>Tests: {progress.testCasesPassed}/{progress.testCasesTotal}</span>
-      </div>
-
-      {progress.failedTest && (
-        <FailedTestCase test={progress.failedTest} />
-      )}
-    </div>
-  );
-}
-```
-
-## Deep Dive: Code Editor Integration
-
-### CodeMirror Setup
-
-```tsx
-// components/CodeEditor.tsx
-import { EditorView, basicSetup } from 'codemirror';
-import { EditorState } from '@codemirror/state';
-import { python } from '@codemirror/lang-python';
-import { javascript } from '@codemirror/lang-javascript';
-import { oneDark } from '@codemirror/theme-one-dark';
-
-const languageExtensions = {
-  python: python(),
-  javascript: javascript(),
-};
-
-export function CodeEditor({ language, value, onChange }: CodeEditorProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const state = EditorState.create({
-      doc: value,
-      extensions: [
-        basicSetup,
-        languageExtensions[language] || python(),
-        oneDark,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            onChange(update.state.doc.toString());
-          }
-        }),
-      ],
-    });
-
-    viewRef.current = new EditorView({
-      state,
-      parent: containerRef.current,
-    });
-
-    return () => viewRef.current?.destroy();
-  }, [language]);
-
-  return <div ref={containerRef} className="h-full overflow-auto" />;
-}
+┌─────────────────────────────────────────────────────────────────┐
+│                      CodeEditor Component                        │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                      EditorState                            │ │
+│  │                                                             │ │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────────────┐    │ │
+│  │  │ basicSetup │  │ Language   │  │    Theme           │    │ │
+│  │  │ (line nums,│  │ Extension  │  │    (oneDark)       │    │ │
+│  │  │  folding)  │  │ (python/js)│  │                    │    │ │
+│  │  └────────────┘  └────────────┘  └────────────────────┘    │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                      EditorView                             │ │
+│  │                                                             │ │
+│  │  updateListener ──▶ onChange callback                       │ │
+│  │  Recreates on language change                               │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Code Draft Persistence
 
-```typescript
-// stores/problemStore.ts
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
-export const useProblemStore = create<ProblemState>()(
-  persist(
-    (set, get) => ({
-      code: {},  // { [problemSlug]: code }
-      currentLanguage: 'python',
-
-      setCode: (slug, code) =>
-        set((state) => ({
-          code: { ...state.code, [slug]: code },
-        })),
-
-      getCode: (slug, starterCode) => {
-        const saved = get().code[slug];
-        return saved || starterCode[get().currentLanguage] || '';
-      },
-    }),
-    {
-      name: 'leetcode-drafts',
-      partialize: (state) => ({
-        code: state.code,
-        currentLanguage: state.currentLanguage,
-      }),
-    }
-  )
-);
+```
+┌────────────────┐     keystroke      ┌─────────────────┐
+│  CodeEditor    │───────────────────▶│  In-memory      │
+│  onChange      │                    │  Draft          │
+└────────────────┘                    └────────┬────────┘
+                                               │
+                                      500ms debounce
+                                               │
+                                               ▼
+                                      ┌─────────────────┐
+                                      │  Zustand Store  │
+                                      │  + localStorage │
+                                      │  persist()      │
+                                      └─────────────────┘
 ```
 
-## Session Management
+> "I persist code drafts to localStorage via Zustand's persist middleware. This prevents users from losing work if they accidentally close the browser. The 500ms debounce prevents excessive writes during rapid typing."
 
-### Backend Configuration
+---
 
-```typescript
-// app.ts
-import session from 'express-session';
-import RedisStore from 'connect-redis';
-import { valkey } from './shared/cache';
+## 🔧 Deep Dive: Trade-off Analysis
 
-app.use(session({
-  store: new RedisStore({ client: valkey }),
-  secret: process.env.SESSION_SECRET!,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-  },
-}));
-```
+### Trade-off 1: Polling vs WebSocket for Results
 
-### Frontend Auth State
-
-```typescript
-// stores/authStore.ts
-interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
-}
-
-export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
-
-  checkAuth: async () => {
-    try {
-      const user = await api.getCurrentUser();
-      set({ user, isAuthenticated: true });
-    } catch {
-      set({ user: null, isAuthenticated: false });
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-
-  login: async (username, password) => {
-    const user = await api.login(username, password);
-    set({ user, isAuthenticated: true });
-  },
-
-  logout: async () => {
-    await api.logout();
-    set({ user: null, isAuthenticated: false });
-  },
-}));
-```
-
-## User Progress Tracking
-
-### Backend Update
-
-```typescript
-async function updateUserProgress(submissionId: string) {
-  const submission = await pool.query(`
-    SELECT user_id, problem_id, runtime_ms
-    FROM submissions WHERE id = $1
-  `, [submissionId]);
-
-  const { user_id, problem_id, runtime_ms } = submission.rows[0];
-
-  await pool.query(`
-    INSERT INTO user_problem_status (user_id, problem_id, status, best_runtime_ms, attempts, solved_at)
-    VALUES ($1, $2, 'solved', $3, 1, NOW())
-    ON CONFLICT (user_id, problem_id) DO UPDATE SET
-      status = 'solved',
-      best_runtime_ms = LEAST(EXCLUDED.best_runtime_ms, user_problem_status.best_runtime_ms),
-      attempts = user_problem_status.attempts + 1,
-      solved_at = COALESCE(user_problem_status.solved_at, NOW())
-  `, [user_id, problem_id, runtime_ms]);
-}
-```
-
-### Frontend Progress Dashboard
-
-```tsx
-// components/ProgressDashboard.tsx
-export function ProgressDashboard() {
-  const { progress } = useUserProgress();
-
-  const stats = useMemo(() => ({
-    total: progress.length,
-    solved: progress.filter(p => p.status === 'solved').length,
-    byDifficulty: {
-      easy: progress.filter(p => p.difficulty === 'easy' && p.status === 'solved').length,
-      medium: progress.filter(p => p.difficulty === 'medium' && p.status === 'solved').length,
-      hard: progress.filter(p => p.difficulty === 'hard' && p.status === 'solved').length,
-    },
-  }), [progress]);
-
-  return (
-    <div className="grid grid-cols-3 gap-4">
-      <StatCard
-        label="Problems Solved"
-        value={`${stats.solved}/${stats.total}`}
-        percentage={(stats.solved / stats.total) * 100}
-      />
-      <DifficultyBreakdown stats={stats.byDifficulty} />
-      <StreakCard />
-    </div>
-  );
-}
-```
-
-## Trade-offs Summary
-
-| Decision | Pros | Cons |
+| Approach | Pros | Cons |
 |----------|------|------|
-| Docker sandbox | Strong isolation, language-agnostic | ~200ms overhead per execution |
-| HTTP polling | Simple, works behind firewalls | 1-2s latency vs WebSocket |
-| CodeMirror | Small bundle, mobile-friendly | Less features than Monaco |
-| Zustand + persist | Auto-save code drafts | Extra dependency |
-| PostgreSQL | ACID, complex queries | More setup than SQLite |
+| ✅ HTTP Polling | Simple, works behind firewalls, stateless | 1-2s latency, more requests |
+| ❌ WebSocket | Real-time, fewer requests | Connection management, stateful |
 
-## Scalability Path
+> "I chose HTTP polling over WebSockets for submission status updates. Polling at 1-second intervals introduces acceptable latency for a code execution flow where users expect 2-5 second turnaround anyway. The simplicity benefit is significant: polling is stateless, works through corporate proxies that block WebSockets, and requires no connection lifecycle management. WebSockets would be premature optimization—the ~1s polling delay is imperceptible when sandboxed execution itself takes 1-3 seconds. The trade-off is slightly higher server load from repeated requests, but Valkey caching makes these status checks sub-millisecond. For contests with 10K concurrent users, we can easily handle 10K requests/second to a cached endpoint. If we later need sub-100ms updates (e.g., streaming compiler output), WebSocket upgrade is straightforward since the status shape already supports incremental progress."
+
+### Trade-off 2: CodeMirror vs Monaco Editor
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ CodeMirror 6 | 150KB bundle, mobile-friendly, customizable | Less IDE-like |
+| ❌ Monaco Editor | Full IDE features, familiar to VS Code users | 2MB bundle, poor mobile |
+
+> "I chose CodeMirror 6 over Monaco for the code editor. Monaco provides a richer IDE experience—IntelliSense, multi-cursor, VS Code keybindings—but at 2MB it bloats our bundle significantly and performs poorly on mobile devices. For a LeetCode-style platform, users don't need IntelliSense since they're implementing known function signatures against known test cases. CodeMirror 6's 150KB footprint means faster initial load, and its modular architecture lets us add exactly the features we need: syntax highlighting, line numbers, and bracket matching. The trade-off is that power users accustomed to VS Code may miss features like go-to-definition, but these features aren't useful when working with single-file algorithm problems. Mobile support matters because users practice during commutes—CodeMirror handles touch input well while Monaco is effectively desktop-only."
+
+### Trade-off 3: Synchronous vs Async Execution
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Async with Polling | Non-blocking, handles bursts, clean separation | More complex |
+| ❌ Synchronous Response | Simpler API contract | Blocks connections, timeouts |
+
+> "I chose asynchronous execution with polling over synchronous HTTP responses. If we waited for code execution to complete before responding, a 10-second C++ problem would hold an HTTP connection open for 10 seconds. With 1000 concurrent submissions during a contest, we'd need 1000 sustained connections just for execution waits—exhausting connection pools and hitting load balancer timeouts. Async execution returns a submission ID immediately, freeing the connection. The execution pipeline runs in the background, updating Valkey with progress. Frontend polls at 1-second intervals. This decoupling also enables future improvements: we can add a Kafka queue between API and workers, scale workers independently, and implement priority queuing for contest submissions. The trade-off is implementation complexity—we need cache-based status tracking and idempotent status endpoints—but this complexity is well-contained and enables true horizontal scaling."
+
+---
+
+## 🌐 API Design
+
+### RESTful Endpoints
+
+```
+Authentication:
+POST   /api/v1/auth/login        ──▶ Create session
+POST   /api/v1/auth/register     ──▶ Create account
+POST   /api/v1/auth/logout       ──▶ Destroy session
+GET    /api/v1/auth/me           ──▶ Get current user
+
+Problems:
+GET    /api/v1/problems          ──▶ List (paginated, filterable)
+GET    /api/v1/problems/:slug    ──▶ Get with sample tests
+
+Submissions:
+POST   /api/v1/submissions       ──▶ Submit for judging (returns ID)
+POST   /api/v1/submissions/run   ──▶ Run sample tests only
+GET    /api/v1/submissions/:id/status ──▶ Poll execution status
+
+Users:
+GET    /api/v1/users/progress    ──▶ Get solve progress
+```
+
+### Response Flow
+
+```
+POST /submissions { problemSlug, language, code }
+     │
+     ▼
+202 Accepted { submissionId: "uuid" }
+     │
+     │  Client polls GET /submissions/{id}/status
+     ▼
+     ┌─────────────────────────────────────────┐
+     │ { status: "pending" }                   │
+     │ { status: "running", currentTest: 3 }   │
+     │ { status: "accepted", runtimeMs: 42 }   │
+     └─────────────────────────────────────────┘
+```
+
+---
+
+## ⚖️ Trade-offs Summary
+
+| Decision | Choice | Trade-off |
+|----------|--------|-----------|
+| Editor | ✅ CodeMirror 6 | Less features vs 10x smaller bundle |
+| Status updates | ✅ Polling | Simpler vs 1-2s latency |
+| Execution | ✅ Async pipeline | Complex vs connection-efficient |
+| Sandbox | ✅ Docker | ~200ms overhead vs strong isolation |
+| State | ✅ Zustand + persist | Extra dependency vs auto-save drafts |
+| Database | ✅ PostgreSQL | More setup vs ACID guarantees |
+
+---
+
+## 📈 Scalability Path
 
 ### Current: Single Server
 
 ```
-Browser → Express (Node.js) → PostgreSQL + Docker
+Browser ──▶ Express (Node.js) ──▶ PostgreSQL + Docker
 ```
 
-### Future: Scaled
+### Future: Scaled Architecture
 
 ```
-Browser → CDN → Load Balancer → Express (N nodes) → Kafka → Judge Workers
-                                    ↓                         ↓
-                              Valkey Cluster            Container Pools
-                                    ↓
-                              PostgreSQL + Replicas
+Browser ──▶ CDN ──▶ Load Balancer ──▶ Express (N nodes) ──▶ Kafka ──▶ Workers
+                                           │                          │
+                                     Valkey Cluster           Container Pools
+                                           │
+                                     PostgreSQL + Replicas
 ```
 
+**Scaling steps:**
 1. **Kafka queue**: Decouple submission handling from execution
 2. **Judge workers**: Scale execution independently per language
 3. **Container pools**: Pre-warm containers for faster cold start
 4. **Read replicas**: Scale problem queries
 
-## Future Enhancements
+---
+
+## 🔮 Future Enhancements
 
 1. **WebSocket Updates**: Real-time progress without polling
 2. **Contest Mode**: Time-limited competitions with special scoring
 3. **Code Similarity**: MOSS-based plagiarism detection
 4. **More Languages**: C++, Java, Go, Rust support
 5. **Collaborative Editing**: Pair programming mode
+
+---
+
+## 📝 Closing Summary
+
+> "I've designed a full-stack online judge with CodeMirror 6 for lightweight editing, async execution with Docker sandboxes for security, and HTTP polling for submission status. The key architectural insight is the async execution pattern—returning immediately with a submission ID, then polling for results—which prevents connection exhaustion during contests and enables independent scaling of API servers and judge workers. The frontend uses Zustand with persistence to auto-save code drafts, and the API follows REST conventions with clear separation between synchronous operations (auth, problem fetching) and asynchronous workflows (code submission)."
