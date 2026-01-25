@@ -15,7 +15,9 @@ const docker = new Docker();
 interface LanguageConfig {
   image: string;
   extension: string;
-  command: (file: string) => string[];
+  fileName: string;
+  compileCommand?: (file: string) => string[];
+  runCommand: (file: string) => string[];
   timeout: number;
   memoryMb: number;
 }
@@ -25,16 +27,36 @@ const LANGUAGE_CONFIG: Record<string, LanguageConfig> = {
   python: {
     image: 'python:3.11-alpine',
     extension: '.py',
-    command: (file: string) => ['python3', file],
+    fileName: 'solution.py',
+    runCommand: (file: string) => ['python3', file],
     timeout: 10000,
     memoryMb: 256
   },
   javascript: {
     image: 'node:20-alpine',
     extension: '.js',
-    command: (file: string) => ['node', file],
+    fileName: 'solution.js',
+    runCommand: (file: string) => ['node', file],
     timeout: 8000,
     memoryMb: 256
+  },
+  cpp: {
+    image: 'gcc:13',
+    extension: '.cpp',
+    fileName: 'solution.cpp',
+    compileCommand: (_file: string) => ['g++', '-O2', '-std=c++17', '-o', '/code/solution', '/code/solution.cpp'],
+    runCommand: (_file: string) => ['/code/solution'],
+    timeout: 15000,
+    memoryMb: 512
+  },
+  java: {
+    image: 'openjdk:21-slim',
+    extension: '.java',
+    fileName: 'Solution.java',
+    compileCommand: (_file: string) => ['javac', '/code/Solution.java'],
+    runCommand: (_file: string) => ['java', '-cp', '/code', 'Solution'],
+    timeout: 15000,
+    memoryMb: 512
   }
 };
 
@@ -82,7 +104,7 @@ class CodeExecutor {
 
     const executionId = uuidv4();
     const workDir = path.join(this.tempDir, executionId);
-    const codeFile = `solution${config.extension}`;
+    const codeFile = config.fileName;
     const codePath = path.join(workDir, codeFile);
     const inputPath = path.join(workDir, 'input.txt');
 
@@ -104,7 +126,8 @@ class CodeExecutor {
         image: config.image,
         workDir,
         codeFile,
-        command: config.command(`/code/${codeFile}`),
+        compileCommand: config.compileCommand ? config.compileCommand(`/code/${codeFile}`) : undefined,
+        runCommand: config.runCommand(`/code/${codeFile}`),
         timeout: Math.min(timeLimit, config.timeout),
         memoryMb: Math.min(memoryLimit, config.memoryMb),
         language

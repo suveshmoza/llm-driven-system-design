@@ -8,7 +8,7 @@
 
 ---
 
-## 1. Requirements Clarification (4 minutes)
+## 🎯 1. Requirements Clarification (4 minutes)
 
 ### Functional Requirements
 
@@ -35,7 +35,7 @@
 
 ---
 
-## 2. High-Level Architecture (5 minutes)
+## 🏗️ 2. High-Level Architecture (5 minutes)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -74,7 +74,7 @@
 
 ---
 
-## 3. Deep Dive: End-to-End Pixel Placement Flow (10 minutes)
+## 🔧 3. Deep Dive: End-to-End Pixel Placement Flow (10 minutes)
 
 ### Complete Flow Diagram
 
@@ -87,612 +87,313 @@
 │     │                        │                         │        │
 │     │ 1. Click canvas (x,y)  │                         │        │
 │     │───────────────────────▶│                         │        │
-│     │    WebSocket: {        │                         │        │
-│     │      type: "place",    │                         │        │
-│     │      x, y, color       │                         │        │
-│     │    }                   │                         │        │
+│     │    WebSocket: place    │                         │        │
 │     │                        │                         │        │
 │     │                        │ 2. Check rate limit     │        │
 │     │                        │────────────────────────▶│        │
-│     │                        │ GET ratelimit:user:{id} │        │
+│     │                        │ SET NX EX               │        │
 │     │                        │                         │        │
-│     │                        │ 3. Rate limit OK        │        │
-│     │                        │◀────────────────────────│        │
-│     │                        │ SET ratelimit:user:{id} │        │
-│     │                        │ EX 5 NX                 │        │
-│     │                        │                         │        │
-│     │                        │ 4. Update canvas        │        │
+│     │                        │ 3. Update canvas        │        │
 │     │                        │────────────────────────▶│        │
-│     │                        │ SETRANGE canvas:main    │        │
-│     │                        │ offset colorByte        │        │
+│     │                        │ SETRANGE                │        │
 │     │                        │                         │        │
-│     │                        │ 5. Publish update       │        │
+│     │                        │ 4. Publish update       │        │
 │     │                        │────────────────────────▶│        │
-│     │                        │ PUBLISH canvas:updates  │        │
-│     │                        │ {x, y, color, userId}   │        │
+│     │                        │ PUBLISH                 │        │
 │     │                        │                         │        │
-│     │ 6. Receive update      │                         │        │
+│     │ 5. Receive update      │                         │        │
 │     │◀───────────────────────│                         │        │
-│     │    { type: "pixels",   │                         │        │
-│     │      events: [...] }   │                         │        │
+│     │    pixels: [...]       │                         │        │
 │     │                        │                         │        │
-│     │ 7. Update local canvas │                         │        │
+│     │ 6. Update local canvas │                         │        │
 │     ▼                        ▼                         ▼        │
-│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Frontend: Pixel Placement Handler
+### Frontend: Click Handler with Optimistic Update
 
-"We use optimistic updates to show the pixel immediately, then rollback if the server rejects it. This makes the UI feel instant while maintaining server authority."
+"We use optimistic updates to show the pixel immediately, then rollback if the server rejects it."
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                FRONTEND CLICK HANDLER                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   handleCanvasClick(event):                                     │
-│                                                                 │
-│   1. GET COORDINATES                                            │
-│      (x, y) = getCanvasCoordinates(event)                       │
-│      { selectedColor, cooldownEnd, canvasData } = store         │
-│                                                                 │
-│   2. LOCAL COOLDOWN CHECK (optimistic)                          │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ IF cooldownEnd && now < cooldownEnd:                  │  │
-│      │     showToast("Wait ${remaining}s")                   │  │
-│      │     RETURN                                            │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   3. STORE PREVIOUS (for rollback)                              │
-│      previousColor = canvasData[y * WIDTH + x]                  │
-│                                                                 │
-│   4. OPTIMISTIC UPDATE                                          │
-│      store.updatePixel(x, y, selectedColor)                     │
-│      store.setCooldown(now + COOLDOWN_MS)                       │
-│                                                                 │
-│   5. SEND TO SERVER                                             │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ TRY:                                                  │  │
-│      │   result = wsManager.placePixel(x, y, selectedColor)  │  │
-│      │   store.setCooldown(result.nextPlacement)             │  │
-│      │                                                       │  │
-│      │ CATCH error:                                          │  │
-│      │   store.updatePixel(x, y, previousColor)  ◀─ ROLLBACK│  │
-│      │   store.setCooldown(null)                             │  │
-│      │                                                       │  │
-│      │   IF error.code === 'RATE_LIMITED':                   │  │
-│      │       store.setCooldown(now + error.remainingSeconds) │  │
-│      │       showToast("Rate limited")                       │  │
-│      │   ELSE:                                               │  │
-│      │       showToast("Failed to place pixel")              │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Step-by-step:**
+1. **Get coordinates** - Convert click position to canvas (x, y)
+2. **Check local cooldown** - If cooldownEnd > now, show toast and return
+3. **Store previous color** - For rollback: previousColor = canvas[y × width + x]
+4. **Optimistic update** - Immediately update canvas and start cooldown
+5. **Send to server** - WebSocket message with x, y, color, requestId
+6. **Handle response:**
+   - On success: Update cooldown from server's nextPlacement
+   - On error: Rollback to previousColor, show error toast
 
-### Backend: WebSocket Message Handler
+### Backend: Placement Handler
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              BACKEND PLACEMENT HANDLER                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   handlePlaceMessage(ws, session, message):                     │
-│                                                                 │
-│   1. VALIDATE INPUT                                             │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ IF x < 0 OR x >= WIDTH OR y < 0 OR y >= HEIGHT:       │  │
-│      │     ws.send({ type: 'error', code: 'INVALID_COORDS'}) │  │
-│      │     RETURN                                            │  │
-│      │                                                       │  │
-│      │ IF color < 0 OR color >= 16:                          │  │
-│      │     ws.send({ type: 'error', code: 'INVALID_COLOR' }) │  │
-│      │     RETURN                                            │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   2. CHECK RATE LIMIT (atomic Redis SET NX EX)                  │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ cooldownKey = `ratelimit:user:${session.userId}`      │  │
-│      │ canPlace = redis.set(cooldownKey, '1', NX, EX: 5)     │  │
-│      │                                                       │  │
-│      │ IF NOT canPlace:                                      │  │
-│      │     ttl = redis.ttl(cooldownKey)                      │  │
-│      │     ws.send({                                         │  │
-│      │       type: 'error',                                  │  │
-│      │       code: 'RATE_LIMITED',                           │  │
-│      │       remainingSeconds: ttl                           │  │
-│      │     })                                                │  │
-│      │     RETURN                                            │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   3. UPDATE CANVAS                                              │
-│      offset = y * WIDTH + x                                     │
-│      redis.setRange('canvas:main', offset, Buffer([color]))     │
-│                                                                 │
-│   4. CREATE AND BROADCAST EVENT                                 │
-│      event = { x, y, color, userId, timestamp: now }            │
-│      redis.publish('canvas:updates', JSON.stringify(event))     │
-│                                                                 │
-│   5. QUEUE FOR PERSISTENCE (async)                              │
-│      rabbitMQ.publish('pixel_events', event)                    │
-│                                                                 │
-│   6. SEND SUCCESS                                               │
-│      ws.send({                                                  │
-│        type: 'success',                                         │
-│        requestId,                                               │
-│        nextPlacement: now + COOLDOWN_SECONDS * 1000             │
-│      })                                                         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Validation:**
+1. Check 0 ≤ x < WIDTH and 0 ≤ y < HEIGHT → INVALID_COORDS error
+2. Check 0 ≤ color < 16 → INVALID_COLOR error
+
+**Rate limit check:**
+- Key: `ratelimit:user:{userId}`
+- Command: SET key 1 NX EX 5 (only set if not exists, expire in 5s)
+- If returns null → RATE_LIMITED error with TTL
+
+**Update canvas:**
+- offset = y × WIDTH + x
+- SETRANGE canvas:main {offset} {colorByte}
+
+**Broadcast and persist:**
+- PUBLISH canvas:updates {x, y, color, userId, timestamp}
+- Queue event for PostgreSQL via RabbitMQ
+
+**Return success:**
+- `{ type: 'success', requestId, nextPlacement: now + cooldownMs }`
 
 ---
 
-## 4. Deep Dive: WebSocket Protocol Design (8 minutes)
+## 📡 4. Deep Dive: WebSocket Protocol Design (8 minutes)
 
 ### Message Types
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    WEBSOCKET PROTOCOL                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   CLIENT → SERVER:                                              │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ { type: 'place', x, y, color, requestId? }              │  │
-│   │ { type: 'ping' }                                        │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   SERVER → CLIENT:                                              │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ welcome:  { userId, cooldown, canvasInfo }              │  │
-│   │ canvas:   { data (base64), width, height }              │  │
-│   │ pixels:   { events: PixelEvent[] }                      │  │
-│   │ success:  { requestId?, nextPlacement }                 │  │
-│   │ error:    { code, message, requestId?, remainingSeconds?}│  │
-│   │ pong:     { }                                           │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   PixelEvent:                                                   │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ { x, y, color, userId?, timestamp? }                    │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   CanvasInfo:                                                   │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ { width, height, cooldownSeconds, colorCount }          │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Client → Server:**
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| `place` | x, y, color, requestId | Place a pixel |
+| `ping` | — | Keepalive |
+
+**Server → Client:**
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| `welcome` | userId, cooldown, canvasInfo | Connection established |
+| `canvas` | data (base64), width, height | Full canvas state |
+| `pixels` | events[] | Batch of pixel updates |
+| `success` | requestId, nextPlacement | Placement confirmed |
+| `error` | code, message, requestId?, remainingSeconds? | Placement failed |
+| `pong` | — | Heartbeat response |
+
+**CanvasInfo structure:**
+- width: number (e.g., 500)
+- height: number (e.g., 500)
+- cooldownSeconds: number (e.g., 5)
+- colorCount: number (e.g., 16)
 
 ### Backend: Connection Lifecycle
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                CONNECTION HANDLER                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   INITIALIZATION (once at server start):                        │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ 1. Create Redis subscriber                               │  │
-│   │ 2. Subscribe to 'canvas:updates' channel                 │  │
-│   │ 3. On message: broadcastPixelUpdate(JSON.parse(msg))     │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   handleConnection(ws, req):                                    │
-│                                                                 │
-│   1. GET OR CREATE SESSION                                      │
-│      session = getOrCreateSession(req)                          │
-│      connections.set(ws, session)                               │
-│                                                                 │
-│   2. SEND WELCOME MESSAGE                                       │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ cooldownTTL = redis.ttl(`ratelimit:user:${userId}`)   │  │
-│      │                                                       │  │
-│      │ ws.send({                                             │  │
-│      │   type: 'welcome',                                    │  │
-│      │   userId: session.userId,                             │  │
-│      │   cooldown: max(0, cooldownTTL),                      │  │
-│      │   canvasInfo: { width, height, cooldownSeconds, 16 }  │  │
-│      │ })                                                    │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   3. SEND CURRENT CANVAS STATE                                  │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ canvasData = redis.getBuffer('canvas:main')           │  │
-│      │                                                       │  │
-│      │ ws.send({                                             │  │
-│      │   type: 'canvas',                                     │  │
-│      │   data: canvasData.toString('base64'),                │  │
-│      │   width, height                                       │  │
-│      │ })                                                    │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   4. SET UP EVENT HANDLERS                                      │
-│      ws.on('message', msg ──▶ handleMessage(ws, session, msg))  │
-│      ws.on('close', () ──▶ connections.delete(ws))              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**On server start:**
+1. Create Redis subscriber
+2. Subscribe to `canvas:updates` channel
+3. On message: broadcast to all connected clients
+
+**On new connection:**
+1. Get or create session from cookie
+2. Add to connections set
+3. Send welcome message with userId, remaining cooldown
+4. Send full canvas state (base64 encoded)
+5. Set up message and close handlers
+
+**On disconnect:**
+1. Remove from connections set
+2. Clean up pending requests
 
 ### Frontend: WebSocket Manager
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 WEBSOCKET MANAGER                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   STATE:                                                        │
-│   ├── ws: WebSocket | null                                      │
-│   ├── reconnectAttempts: number                                 │
-│   └── pendingRequests: Map<requestId, { resolve, reject }>      │
-│                                                                 │
-│   connect():                                                    │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'│  │
-│   │ ws = new WebSocket(`${protocol}//${location.host}/ws`)   │  │
-│   │                                                          │  │
-│   │ ws.onopen  = () ──▶ resetAttempts(), setConnected(true)  │  │
-│   │ ws.onmessage = (e) ──▶ handleMessage(JSON.parse(e.data)) │  │
-│   │ ws.onclose = () ──▶ setConnected(false), reconnect()     │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   handleMessage(msg):                                           │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ SWITCH msg.type:                                         │  │
-│   │                                                          │  │
-│   │   'welcome':                                             │  │
-│   │       store.set({ userId, cooldownEnd })                 │  │
-│   │                                                          │  │
-│   │   'canvas':                                              │  │
-│   │       data = Uint8Array.from(atob(msg.data), ...)        │  │
-│   │       store.setCanvasData(data)                          │  │
-│   │                                                          │  │
-│   │   'pixels':                                              │  │
-│   │       store.updatePixelsBatch(msg.events)                │  │
-│   │                                                          │  │
-│   │   'success' | 'error':                                   │  │
-│   │       IF msg.requestId in pendingRequests:               │  │
-│   │           resolve/reject and delete                      │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   placePixel(x, y, color): Promise<SuccessMessage>              │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ IF NOT connected: reject({ code: 'NOT_CONNECTED' })      │  │
-│   │                                                          │  │
-│   │ requestId = crypto.randomUUID()                          │  │
-│   │ pendingRequests.set(requestId, { resolve, reject })      │  │
-│   │                                                          │  │
-│   │ ws.send({ type: 'place', x, y, color, requestId })       │  │
-│   │                                                          │  │
-│   │ setTimeout(5000, () ──▶ reject if still pending)         │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   scheduleReconnect():                                          │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ delay = min(1000 × 2^attempts, 30000)                    │  │
-│   │ jitter = random() × 1000                                 │  │
-│   │                                                          │  │
-│   │ setTimeout(delay + jitter, () ──▶ attempts++, connect()) │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**State:**
+- ws: WebSocket | null
+- reconnectAttempts: number
+- pendingRequests: Map<requestId, { resolve, reject }>
+
+**connect():**
+1. Determine protocol (wss: for https:, ws: for http:)
+2. Create WebSocket to `${protocol}//${host}/ws`
+3. Set up handlers for open, message, close, error
+4. On open: reset attempts, set connected, start batch processing
+
+**Reconnection:**
+- Delay: min(1000 × 2^attempts, 30000)
+- Jitter: random() × 1000
+- Schedule reconnect with delay + jitter
+
+**placePixel(x, y, color) → Promise:**
+1. Generate requestId (UUID)
+2. Store { resolve, reject } in pendingRequests
+3. Send message, set 5s timeout
+4. On response: match by requestId, resolve or reject
 
 ---
 
-## 5. Deep Dive: Session Management (6 minutes)
+## 🔐 5. Deep Dive: Session Management (6 minutes)
+
+### Session Structure
+
+| Field | Type | Description |
+|-------|------|-------------|
+| userId | string | Unique identifier |
+| username | string | Display name |
+| isGuest | boolean | Anonymous or registered |
+| isAdmin | boolean | Admin privileges |
+| createdAt | Date | Session creation time |
 
 ### Backend: Session Middleware
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   SESSION MIDDLEWARE                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   SESSION STRUCTURE:                                            │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ userId:    string                                        │  │
-│   │ username:  string                                        │  │
-│   │ isGuest:   boolean                                       │  │
-│   │ isAdmin:   boolean                                       │  │
-│   │ createdAt: Date                                          │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   sessionMiddleware(req, res, next):                            │
-│                                                                 │
-│   1. CHECK EXISTING SESSION                                     │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ sessionId = req.cookies?.sessionId                    │  │
-│      │                                                       │  │
-│      │ IF sessionId:                                         │  │
-│      │     sessionData = redis.get(`session:${sessionId}`)   │  │
-│      │                                                       │  │
-│      │     IF sessionData:                                   │  │
-│      │         req.session = JSON.parse(sessionData)         │  │
-│      │         redis.expire(`session:${sessionId}`, 86400)   │  │
-│      │         RETURN next()                                 │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   2. CREATE GUEST SESSION                                       │
-│      ┌──────────────────────────────────────────────────────┐  │
-│      │ newSessionId = crypto.randomUUID()                    │  │
-│      │                                                       │  │
-│      │ session = {                                           │  │
-│      │   userId: crypto.randomUUID(),                        │  │
-│      │   username: `Guest_${random6chars()}`,                │  │
-│      │   isGuest: true,                                      │  │
-│      │   isAdmin: false,                                     │  │
-│      │   createdAt: new Date()                               │  │
-│      │ }                                                     │  │
-│      │                                                       │  │
-│      │ redis.setex(`session:${newSessionId}`, 86400, session)│  │
-│      │                                                       │  │
-│      │ res.cookie('sessionId', newSessionId, {               │  │
-│      │   httpOnly: true,                                     │  │
-│      │   secure: production,                                 │  │
-│      │   sameSite: 'lax',                                    │  │
-│      │   maxAge: 86400000                                    │  │
-│      │ })                                                    │  │
-│      │                                                       │  │
-│      │ req.session = session                                 │  │
-│      │ next()                                                │  │
-│      └──────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**On each request:**
+1. Check for sessionId cookie
+2. If exists: fetch session from Redis (`session:{sessionId}`)
+3. If valid: attach to request, refresh TTL
+4. If missing/invalid: create guest session
 
-### Backend: Auth Routes
+**Creating guest session:**
+- Generate new sessionId (UUID)
+- Create session with random username (Guest_XXXXXX)
+- Store in Redis with 24h TTL
+- Set httpOnly, secure, sameSite cookie
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     AUTH ROUTES                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   POST /api/v1/auth/register                                    │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ VALIDATE:                                                │  │
-│   │   username: 3-32 chars                                   │  │
-│   │   password: >= 8 chars                                   │  │
-│   │                                                          │  │
-│   │ CHECK EXISTING:                                          │  │
-│   │   SELECT id FROM users WHERE username = $1               │  │
-│   │   IF exists ──▶ 409 "Username already taken"             │  │
-│   │                                                          │  │
-│   │ CREATE USER:                                             │  │
-│   │   passwordHash = bcrypt.hash(password, 12)               │  │
-│   │   INSERT INTO users (username, password_hash)            │  │
-│   │                                                          │  │
-│   │ UPDATE SESSION:                                          │  │
-│   │   session = { userId, username, isGuest: false, ... }    │  │
-│   │   redis.setex(`session:${sessionId}`, 86400, session)    │  │
-│   │                                                          │  │
-│   │ RETURN { success: true, username }                       │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   POST /api/v1/auth/login                                       │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ LOOKUP USER:                                             │  │
-│   │   SELECT id, username, password_hash, is_admin           │  │
-│   │   FROM users WHERE username = $1 AND is_banned = false   │  │
-│   │                                                          │  │
-│   │   IF NOT found ──▶ 401 "Invalid credentials"             │  │
-│   │                                                          │  │
-│   │ VERIFY PASSWORD:                                         │  │
-│   │   valid = bcrypt.compare(password, hash)                 │  │
-│   │   IF NOT valid ──▶ 401 "Invalid credentials"             │  │
-│   │                                                          │  │
-│   │ UPDATE SESSION:                                          │  │
-│   │   session = { userId, username, isGuest: false, isAdmin }│  │
-│   │   redis.setex(`session:${sessionId}`, 86400, session)    │  │
-│   │                                                          │  │
-│   │ RETURN { success: true, username, isAdmin }              │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   GET /api/v1/auth/me                                           │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ RETURN {                                                 │  │
-│   │   userId, username, isGuest, isAdmin                     │  │
-│   │ }                                                        │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Auth API Endpoints
 
-### Frontend: Auth Store
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/auth/register` | Create account |
+| POST | `/api/v1/auth/login` | Login |
+| POST | `/api/v1/auth/logout` | End session |
+| GET | `/api/v1/auth/me` | Get current user |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    AUTH STORE (Zustand)                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   STATE:                                                        │
-│   ├── userId: string | null                                     │
-│   ├── username: string | null                                   │
-│   ├── isGuest: boolean                                          │
-│   ├── isAdmin: boolean                                          │
-│   └── isLoading: boolean                                        │
-│                                                                 │
-│   ACTIONS:                                                      │
-│                                                                 │
-│   fetchSession():                                               │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ TRY:                                                     │  │
-│   │   res = await fetch('/api/v1/auth/me')                   │  │
-│   │   data = await res.json()                                │  │
-│   │   set({ ...data, isLoading: false })                     │  │
-│   │ CATCH:                                                   │  │
-│   │   set({ isLoading: false })                              │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   login(username, password):                                    │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ res = await fetch('/api/v1/auth/login', {                │  │
-│   │   method: 'POST', body: { username, password }           │  │
-│   │ })                                                       │  │
-│   │                                                          │  │
-│   │ IF NOT res.ok: throw new Error(res.json().error)         │  │
-│   │                                                          │  │
-│   │ data = await res.json()                                  │  │
-│   │ set({ username: data.username, isGuest: false, ... })    │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   logout():                                                     │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ await fetch('/api/v1/auth/logout', { method: 'POST' })   │  │
-│   │ set({ userId: null, username: null, isGuest: true, ... })│  │
-│   │ window.location.reload()                                 │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+**Register flow:**
+1. Validate username (3-32 chars) and password (≥8 chars)
+2. Check username not taken
+3. Hash password with bcrypt (cost 12)
+4. Insert into users table
+5. Update session to non-guest
+
+**Login flow:**
+1. Look up user by username (check not banned)
+2. Verify password with bcrypt
+3. Update session with user data
+
+### Frontend: Auth Store (Zustand)
+
+**State:**
+- userId, username, isGuest, isAdmin, isLoading
+
+**Actions:**
+- fetchSession(): GET /api/v1/auth/me on app load
+- login(username, password): POST /api/v1/auth/login
+- logout(): POST /api/v1/auth/logout, reload page
 
 ---
 
-## 6. Deep Dive: Error Handling (5 minutes)
+## 🚨 6. Deep Dive: Error Handling (5 minutes)
 
 ### Error Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     ERROR HANDLING FLOW                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   FRONTEND                 BACKEND               USER FEEDBACK  │
-│      │                        │                       │         │
-│      │ 1. Place pixel         │                       │         │
-│      │───────────────────────▶│                       │         │
-│      │                        │                       │         │
-│      │ 2. Rate limited        │                       │         │
-│      │◀───────────────────────│                       │         │
-│      │  { type: "error",      │                       │         │
-│      │    code: "RATE_LIMITED"│                       │         │
-│      │    remainingSeconds: 3}│                       │         │
-│      │                        │                       │         │
-│      │ 3. Rollback optimistic │                       │         │
-│      │    update              │                       │         │
-│      │                        │                       │         │
-│      │ 4. Update cooldown     │                       │         │
-│      │    timer               │                       │         │
-│      │                        │                       │         │
-│      │ 5. Show toast          │───────────────────────▶│        │
-│      │                        │    "Wait 3 seconds"   │         │
-│      ▼                        ▼                       ▼         │
-│                                                                 │
+│  FRONTEND                 BACKEND               USER FEEDBACK   │
+│     │                        │                       │          │
+│     │ 1. Place pixel         │                       │          │
+│     │───────────────────────▶│                       │          │
+│     │                        │                       │          │
+│     │ 2. Rate limited        │                       │          │
+│     │◀───────────────────────│                       │          │
+│     │  error: RATE_LIMITED   │                       │          │
+│     │  remainingSeconds: 3   │                       │          │
+│     │                        │                       │          │
+│     │ 3. Rollback pixel      │                       │          │
+│     │ 4. Update cooldown     │                       │          │
+│     │ 5. Show toast ─────────────────────────────────▶│         │
+│     │                        │    "Wait 3 seconds"   │          │
+│     ▼                        ▼                       ▼          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Backend: Error Handler
+### Backend: AppError Class
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   ERROR HANDLER MIDDLEWARE                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   AppError CLASS:                                               │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ constructor(code, message, statusCode = 400, metadata?)  │  │
-│   │                                                          │  │
-│   │ code:       string       (e.g., 'RATE_LIMITED')          │  │
-│   │ message:    string       (human-readable)                │  │
-│   │ statusCode: number       (HTTP status)                   │  │
-│   │ metadata:   Record<k,v>  (extra data)                    │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   errorHandler(err, req, res, next):                            │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ IF err instanceof AppError:                              │  │
-│   │     res.status(err.statusCode).json({                    │  │
-│   │       error: err.code,                                   │  │
-│   │       message: err.message,                              │  │
-│   │       ...err.metadata                                    │  │
-│   │     })                                                   │  │
-│   │                                                          │  │
-│   │ ELSE:                                                    │  │
-│   │     logger.error('Unhandled error', { error: err })      │  │
-│   │     res.status(500).json({                               │  │
-│   │       error: 'INTERNAL_ERROR',                           │  │
-│   │       message: 'An unexpected error occurred'            │  │
-│   │     })                                                   │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Property | Type | Example |
+|----------|------|---------|
+| code | string | 'RATE_LIMITED' |
+| message | string | 'Please wait before placing another pixel' |
+| statusCode | number | 429 |
+| metadata | object | { remainingSeconds: 3 } |
 
-### Frontend: Error Boundary and Toast
+**Error handler middleware:**
+- If AppError: respond with code, message, metadata
+- Else: log error, respond with generic INTERNAL_ERROR
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│               FRONTEND ERROR HANDLING                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   APP STRUCTURE:                                                │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ <ErrorBoundary fallback={<ErrorFallback />}>             │  │
-│   │   <ToastProvider>                                        │  │
-│   │     <RouterProvider router={router} />                   │  │
-│   │   </ToastProvider>                                       │  │
-│   │ </ErrorBoundary>                                         │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   useToast HOOK:                                                │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │ state: toasts[]                                          │  │
-│   │                                                          │  │
-│   │ showToast(message, type = 'info'):                       │  │
-│   │   id = crypto.randomUUID()                               │  │
-│   │   setToasts(prev ──▶ [...prev, { id, message, type }])   │  │
-│   │                                                          │  │
-│   │   setTimeout(3000, () ──▶                                │  │
-│   │     setToasts(prev ──▶ prev.filter(t ──▶ t.id !== id))   │  │
-│   │   )                                                      │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Frontend: Error Handling
+
+**ErrorBoundary:**
+- Wrap entire app
+- Show fallback UI on crash
+- Log error to monitoring
+
+**Toast notifications:**
+- Queue of toasts with auto-dismiss (3s)
+- Color-coded by type (error, success, info)
 
 ---
 
-## 7. Trade-offs Summary
+## 📡 7. API Design Summary
 
-| Decision | Choice | Trade-off | Alternative |
-|----------|--------|-----------|-------------|
-| Protocol | WebSocket | Bidirectional, complex | SSE + REST (simpler) |
-| Updates | Optimistic | Can show incorrect state | Wait for confirmation |
-| Session | Redis + cookie | Distributed, stateless servers | JWT (no server state) |
-| Auth | Session-based | Simple, familiar | OAuth (more features) |
-| Validation | Both ends | Redundant code | Server-only (slower UX) |
+### REST Endpoints
 
----
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| GET | `/api/v1/canvas` | Full canvas binary | Binary (250KB) |
+| GET | `/api/v1/canvas/info` | Canvas metadata | `{ width, height, colorCount, cooldownSeconds }` |
+| GET | `/api/v1/history/pixel?x=&y=` | Pixel history | `{ placements: [...] }` |
+| POST | `/api/v1/auth/register` | Create account | `{ success, username }` |
+| POST | `/api/v1/auth/login` | Login | `{ success, username, isAdmin }` |
+| POST | `/api/v1/auth/logout` | Logout | `{ success }` |
+| GET | `/api/v1/auth/me` | Current user | `{ userId, username, isGuest, isAdmin }` |
 
-## 8. API Contract Summary
+### WebSocket Endpoint
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/v1/auth/register` | POST | Create account |
-| `/api/v1/auth/login` | POST | Login |
-| `/api/v1/auth/logout` | POST | End session |
-| `/api/v1/auth/me` | GET | Get current user |
-| `/api/v1/canvas` | GET | Get full canvas (binary) |
-| `/api/v1/canvas/info` | GET | Get canvas metadata |
-| `/api/v1/history/pixel` | GET | Pixel placement history |
-| `/ws` | WebSocket | Real-time updates |
+| Endpoint | Protocol | Purpose |
+|----------|----------|---------|
+| `/ws` | WS/WSS | Real-time bidirectional communication |
 
 ---
 
-## 9. Future Enhancements
+## ⚖️ 8. Trade-offs Analysis
 
-1. **Request Deduplication** - Idempotency keys for exactly-once semantics
-2. **Offline Support** - Queue placements when disconnected
-3. **Collaborative Features** - Show active user cursors
-4. **OAuth Integration** - Login with Reddit/Google
-5. **Progressive Loading** - Load canvas tiles on demand
+### Trade-off 1: WebSocket vs. Server-Sent Events + REST
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ WebSocket | Bidirectional, single connection, request/response matching | Connection management complexity |
+| ❌ SSE + REST | Simpler server, built-in reconnection | Two connections, no request/response correlation |
+
+> "We chose WebSocket because pixel placement needs request/response correlation—when a user places a pixel, we need to tell them specifically whether THAT placement succeeded or failed. With SSE+REST, we'd have to correlate a POST response with an SSE event, adding complexity. WebSocket lets us send a requestId and match the response. The trade-off is we need to implement reconnection logic, but that's well-understood. For a read-only feed, SSE would be simpler, but r/place is inherently bidirectional."
+
+### Trade-off 2: Session-Based Auth vs. JWT
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Session + Redis | Revocable, simple, server can invalidate | Requires Redis lookup on each request |
+| ❌ JWT | Stateless, no Redis lookup | Can't revoke without blacklist, token bloat |
+
+> "We chose session-based auth because we need instant session invalidation for moderation (banning abusive users must take effect immediately). With JWT, a banned user's token remains valid until expiration. The Redis lookup adds ~1ms latency, which is negligible compared to our 100ms target. Sessions also keep the cookie small (just a session ID vs. a full JWT payload). The trade-off is that every request hits Redis, but we're already hitting Redis for rate limiting, so it's not an additional dependency."
+
+### Trade-off 3: Optimistic UI vs. Wait for Confirmation
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Optimistic + rollback | Instant feedback, responsive UX | Brief incorrect state on rejection |
+| ❌ Wait for server | Always accurate | 50-200ms delay feels sluggish |
+
+> "We show the pixel immediately because users expect instant feedback. A 100ms delay is perceptible and makes the app feel broken. The trade-off is that ~1% of placements get rejected (mostly rate limiting), requiring rollback. We mitigate this by checking local cooldown state first—if the frontend knows the user is on cooldown, we don't even try to place. Rollback is visually smooth since we restore a single pixel. For financial transactions this would be unacceptable, but for collaborative art, brief optimistic inaccuracy is fine."
 
 ---
 
-## Summary
+## 🚨 9. Failure Handling
+
+| Component | Failure Mode | Mitigation |
+|-----------|--------------|------------|
+| Redis | Down | Circuit breaker, serve cached canvas from CDN |
+| PostgreSQL | Down | Buffer events in RabbitMQ, retry on recovery |
+| WebSocket | Disconnect | Auto-reconnect with exponential backoff |
+| API Server | Crash | Load balancer health checks, stateless servers |
+
+---
+
+## 📝 Summary
 
 "To summarize, I've designed r/place as a fullstack application with:
 
@@ -703,4 +404,4 @@
 5. **Frontend state** in Zustand with optimistic updates and automatic reconnection
 6. **Backend services** with rate limiting, event persistence, and pub/sub broadcasting
 
-The key insight is that the frontend and backend work together as a unified system - optimistic updates provide instant feedback while server validation ensures correctness. The WebSocket protocol enables true real-time collaboration while the session system provides flexible authentication for both casual and engaged users."
+The key insight is that the frontend and backend work together as a unified system—optimistic updates provide instant feedback while server validation ensures correctness. The WebSocket protocol enables true real-time collaboration while the session system provides flexible authentication for both casual and engaged users."

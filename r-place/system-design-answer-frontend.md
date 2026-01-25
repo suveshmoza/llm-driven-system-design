@@ -8,7 +8,7 @@
 
 ---
 
-## 1. Requirements Clarification (4 minutes)
+## 🎯 1. Requirements Clarification (4 minutes)
 
 ### Functional Requirements
 
@@ -23,7 +23,7 @@
 
 - **60 FPS** - Smooth zoom/pan even during high update rates
 - **Low Latency** - Visual feedback within 100ms of server confirmation
-- **Memory Efficient** - Handle 500x500+ canvas without browser lag
+- **Memory Efficient** - Handle 500×500+ canvas without browser lag
 - **Mobile Support** - Touch gestures for zoom/pan, responsive layout
 
 ### Frontend-Specific Considerations
@@ -35,7 +35,7 @@
 
 ---
 
-## 2. High-Level Architecture (5 minutes)
+## 🏗️ 2. High-Level Architecture (5 minutes)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -78,23 +78,30 @@
 
 ---
 
-## 3. Deep Dive: Canvas Rendering (10 minutes)
+## 🔧 3. Deep Dive: Canvas Rendering (10 minutes)
 
 ### HTML5 Canvas Architecture
 
 "The core rendering uses a single HTML5 canvas element with the 2D context. The key insight is using ImageData for efficient bulk pixel updates."
 
-**Canvas Setup:**
-- Disable alpha channel for performance: `getContext('2d', { alpha: false })`
-- Disable image smoothing for crisp pixel edges: `ctx.imageSmoothingEnabled = false`
-- CSS property: `image-rendering: pixelated` for sharp scaling
+**Canvas Configuration:**
 
-**Canvas State:**
-- `canvasData`: Uint8Array of color indices (1 byte per pixel)
-- `canvasWidth`, `canvasHeight`: Grid dimensions (e.g., 500x500)
-- `imageDataRef`: Reusable ImageData object for rendering
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `getContext('2d', { alpha: false })` | Disable alpha | Performance boost (no compositing) |
+| `ctx.imageSmoothingEnabled = false` | Disable smoothing | Crisp pixel edges when zoomed |
+| CSS `image-rendering: pixelated` | Pixelated | Sharp scaling at all zoom levels |
 
-**Render Flow:**
+### Canvas State Structure
+
+| Property | Type | Description |
+|----------|------|-------------|
+| canvasData | Uint8Array | Color indices (1 byte per pixel) |
+| canvasWidth | number | Grid width (e.g., 500) |
+| canvasHeight | number | Grid height (e.g., 500) |
+| imageDataRef | ImageData | Reusable buffer for rendering |
+
+### Render Flow
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -103,34 +110,28 @@
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-"For each pixel, look up the color in the palette, write RGBA values to the ImageData buffer, then call putImageData once for the entire canvas."
+**Full canvas render:**
+1. For each pixel index in Uint8Array
+2. Look up RGB values from color palette
+3. Write R, G, B, 255 (alpha) to ImageData buffer
+4. Call putImageData once for entire canvas
 
-### Color Palette Definition (16 colors)
+### Color Palette (16 colors)
 
-| Index | Color | Name |
-|-------|-------|------|
-| 0 | #FFFFFF | White |
-| 1 | #E4E4E4 | Light Gray |
-| 2 | #888888 | Gray |
-| 3 | #222222 | Black |
-| 4 | #FFA7D1 | Pink |
-| 5 | #E50000 | Red |
-| 6 | #E59500 | Orange |
-| 7 | #A06A42 | Brown |
-| 8 | #E5D900 | Yellow |
-| 9 | #94E044 | Light Green |
-| 10 | #02BE01 | Green |
-| 11 | #00D3DD | Cyan |
-| 12 | #0083C7 | Light Blue |
-| 13 | #0000EA | Blue |
-| 14 | #CF6EE4 | Light Purple |
-| 15 | #820080 | Purple |
+| Index | Hex | Name | Index | Hex | Name |
+|-------|-----|------|-------|-----|------|
+| 0 | #FFFFFF | White | 8 | #E5D900 | Yellow |
+| 1 | #E4E4E4 | Light Gray | 9 | #94E044 | Light Green |
+| 2 | #888888 | Gray | 10 | #02BE01 | Green |
+| 3 | #222222 | Black | 11 | #00D3DD | Cyan |
+| 4 | #FFA7D1 | Pink | 12 | #0083C7 | Light Blue |
+| 5 | #E50000 | Red | 13 | #0000EA | Blue |
+| 6 | #E59500 | Orange | 14 | #CF6EE4 | Light Purple |
+| 7 | #A06A42 | Brown | 15 | #820080 | Purple |
 
 ### Efficient Partial Updates
 
 "Instead of redrawing the entire canvas for each incoming pixel, I draw only the changed pixels using fillRect."
-
-**Incremental Update Flow:**
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -139,97 +140,100 @@
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-"For each update: look up color from palette, set fillStyle, call fillRect(x, y, 1, 1)."
+**For each update:** Look up color from palette → set fillStyle → call fillRect(x, y, 1, 1)
 
 ### Zoom and Pan Implementation
 
 **State:**
-- `zoom`: Current zoom level (0.5 to 32)
-- `pan`: { x, y } offset in pixels
-- `isPanning`: Boolean for drag state
+
+| Property | Type | Range | Description |
+|----------|------|-------|-------------|
+| zoom | number | 0.5 - 32 | Current zoom level |
+| panX, panY | number | — | Viewport offset in pixels |
+| isPanning | boolean | — | Drag state |
 
 **Mouse Wheel Zoom:**
-- Calculate zoom delta (0.9 for zoom out, 1.1 for zoom in)
-- Clamp to range [0.5, 32]
-- Adjust pan to keep cursor position stable during zoom
-- Formula: `newPan = cursorPos - (cursorPos - oldPan) * (newZoom / oldZoom)`
+1. Calculate zoom delta (×0.9 for out, ×1.1 for in)
+2. Clamp to range [0.5, 32]
+3. Adjust pan to keep cursor position stable
+4. Formula: newPan = cursorPos - (cursorPos - oldPan) × (newZoom / oldZoom)
 
 **Mouse Drag Pan:**
-- Track mouse position on mousedown
+- Track position on mousedown
 - Calculate delta on mousemove
 - Update pan by delta
-- Works with middle click, right click, or ctrl+left click
+- Works with middle click, right click, or Ctrl+left click
 
 **Touch Gestures (Mobile):**
-- Two-finger pinch for zoom (track distance between touches)
-- Single finger drag for pan
-- Store initial pinch distance on touchstart with 2 touches
+
+| Gesture | Action |
+|---------|--------|
+| Two-finger pinch | Zoom in/out based on finger distance change |
+| Single finger drag | Pan canvas |
 
 **CSS Transform Approach:**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  style={{                                                    │
-│    transform: `scale(${zoom}) translate(${-panX}px, ...)`,  │
-│    transformOrigin: 'top left',                              │
-│    imageRendering: 'pixelated'                               │
-│  }}                                                          │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  style={{                                                        │
+│    transform: `scale(${zoom}) translate(${-panX}px, ${-panY}px)`,│
+│    transformOrigin: 'top left',                                  │
+│    imageRendering: 'pixelated'                                   │
+│  }}                                                              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Deep Dive: Zustand State Management (8 minutes)
+## 🔧 4. Deep Dive: Zustand State Management (8 minutes)
 
 ### Store Structure
 
 **Canvas Data:**
-- `canvasData`: Uint8Array | null (the pixel grid)
-- `canvasWidth`, `canvasHeight`: number (grid dimensions)
+
+| Property | Type | Description |
+|----------|------|-------------|
+| canvasData | Uint8Array \| null | The pixel grid |
+| canvasWidth | number | Grid width |
+| canvasHeight | number | Grid height |
 
 **User State:**
-- `selectedColor`: number (0-15 palette index)
-- `cooldownEnd`: number | null (timestamp when user can place again)
-- `userId`: string | null
+
+| Property | Type | Description |
+|----------|------|-------------|
+| selectedColor | number | Palette index (0-15) |
+| cooldownEnd | number \| null | Timestamp when user can place again |
+| userId | string \| null | Current user ID |
 
 **Viewport State:**
-- `zoom`: number (current zoom level)
-- `panX`, `panY`: number (viewport offset)
+
+| Property | Type | Description |
+|----------|------|-------------|
+| zoom | number | Current zoom level |
+| panX, panY | number | Viewport offset |
 
 **Connection State:**
-- `isConnected`: boolean
-- `connectionError`: string | null
+
+| Property | Type | Description |
+|----------|------|-------------|
+| isConnected | boolean | WebSocket connected |
+| connectionError | string \| null | Error message if any |
 
 ### Store Actions
 
-**setCanvasData(data: Uint8Array):**
-- Called on initial canvas load from WebSocket
-
-**updatePixel(x, y, color):**
-- Updates single pixel in canvasData
-- Triggers re-render with new Uint8Array reference: `new Uint8Array(canvasData)`
-
-**updatePixelsBatch(updates: PixelUpdate[]):**
-- Efficiently updates multiple pixels
-- Single re-render at end of batch
-
-**setSelectedColor(color):**
-- Updates palette selection
-
-**setCooldown(endTime):**
-- Sets cooldown timer end timestamp
-
-**setViewport(zoom, panX, panY):**
-- Updates viewport state
-
-**setConnectionState(connected, error?):**
-- Tracks WebSocket connection status
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| setCanvasData | data: Uint8Array | Initial canvas load |
+| updatePixel | x, y, color | Single pixel update |
+| updatePixelsBatch | updates[] | Efficient batch update |
+| setSelectedColor | color | Change palette selection |
+| setCooldown | endTime | Set cooldown timer |
+| setViewport | zoom, panX, panY | Update viewport |
+| setConnectionState | connected, error? | Track WebSocket status |
 
 ### Optimistic Updates
 
 "When the user places a pixel, I update the UI immediately before server confirmation."
-
-**Optimistic Update Flow:**
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -244,34 +248,33 @@
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-**On Success:**
-- Set cooldown from server response (nextPlacement timestamp)
+**On Success:** Set cooldown from server response (nextPlacement timestamp)
 
 **On Failure (rate limited):**
-- Rollback to previous color
-- Set cooldown from error response
-- Show toast notification
+1. Rollback to previous color
+2. Set cooldown from error response
+3. Show toast notification
 
 ---
 
-## 5. Deep Dive: WebSocket Management (8 minutes)
+## 🔧 5. Deep Dive: WebSocket Management (8 minutes)
 
-### WebSocket Manager Architecture
+### WebSocket Manager State
 
-**State:**
-- `ws`: WebSocket | null (the connection)
-- `reconnectAttempts`: number (for exponential backoff)
-- `maxReconnectAttempts`: 10
-- `messageQueue`: PixelUpdate[] (incoming updates buffer)
-- `batchInterval`: number | null (processing interval ID)
-- `pendingRequests`: Map<requestId, { resolve, reject }> (for request/response matching)
+| Property | Type | Description |
+|----------|------|-------------|
+| ws | WebSocket \| null | The connection |
+| reconnectAttempts | number | For exponential backoff |
+| maxReconnectAttempts | 10 | Give up threshold |
+| messageQueue | PixelUpdate[] | Incoming updates buffer |
+| pendingRequests | Map | Request/response matching |
 
 ### Connection Lifecycle
 
 **connect():**
-- Create WebSocket with dynamic protocol (wss: for https:, ws: for http:)
-- Set up event handlers (onopen, onmessage, onclose, onerror)
-- On open: reset reconnect attempts, update connection state, start batch processing
+1. Create WebSocket with dynamic protocol (wss: for https:, ws: for http:)
+2. Set up event handlers (onopen, onmessage, onclose, onerror)
+3. On open: reset reconnect attempts, update connection state, start batch processing
 
 **Reconnection with Exponential Backoff:**
 
@@ -283,87 +286,93 @@
 ```
 
 **Delay Formula:**
-- Base delay: 1000ms * 2^attempt
+- Base delay: 1000ms × 2^attempt
 - Cap at 30 seconds
 - Add random jitter (0-1000ms) to prevent thundering herd
 
-### Message Handling
-
-**Message Types from Server:**
+### Message Types from Server
 
 | Type | Description | Action |
 |------|-------------|--------|
 | `canvas` | Initial canvas data (base64) | Decode and set canvasData |
 | `pixels` | Batch of pixel updates | Queue for batch processing |
 | `welcome` | Connection established | Set userId, initial cooldown |
+| `success` | Placement confirmed | Resolve pending request |
 | `error` | Server error | Handle based on error code |
 
-**Batch Processing:**
-- Every 50ms, process all queued pixel updates
-- Call `updatePixelsBatch` with accumulated updates
-- Clear queue after processing
+### Batch Processing
+
+"Every 50ms, process all queued pixel updates together."
+
+1. Collect incoming `pixels` messages in queue
+2. Every 50ms interval:
+   - Call updatePixelsBatch with accumulated updates
+   - Clear queue
+3. Trigger single re-render for all updates
 
 ### Sending Pixel Placements
 
-**placePixel(x, y, color) -> Promise<PlaceResult>:**
-- Generate unique requestId (UUID)
-- Store resolve/reject callbacks in pendingRequests map
-- Send JSON message: `{ type: 'place', x, y, color, requestId }`
-- Set 5-second timeout, reject if no response
-- On response: match by requestId, resolve or reject accordingly
-
-### Connection Status Indicator
-
-**Visual States:**
-
-| State | Indicator | Text |
-|-------|-----------|------|
-| Connected | Green pulsing dot | "Connected" |
-| Disconnected | Red static dot | Error message or "Reconnecting..." |
+**placePixel(x, y, color) → Promise:**
+1. Generate unique requestId (UUID)
+2. Store resolve/reject callbacks in pendingRequests map
+3. Send JSON message: `{ type: 'place', x, y, color, requestId }`
+4. Set 5-second timeout, reject if no response
+5. On response: match by requestId, resolve or reject
 
 ---
 
-## 6. Deep Dive: UI Components (5 minutes)
+## 🎨 6. Deep Dive: UI Components (5 minutes)
 
 ### Color Palette Component
 
 **Layout:**
-- Flex wrap container with 1px gap
-- Dark background (gray-800) with rounded corners
-- Max width to create 4x4 grid of colors
+- Flex wrap container with 4×4 grid
+- Dark background with rounded corners
+- Clear visual selection state
 
 **Each Color Button:**
-- 32x32 pixel square with rounded border
-- Border: 2px white when selected, transparent otherwise
-- Transform: scale(1.1) when selected, scale(1.05) on hover
-- Shadow on selected color
-- Background: RGB from palette
-- Accessibility: title and aria-label with color name
+
+| Property | Selected | Unselected | Hover |
+|----------|----------|------------|-------|
+| Border | 2px white | Transparent | — |
+| Transform | scale(1.1) | scale(1.0) | scale(1.05) |
+| Shadow | Yes | No | — |
+
+**Accessibility:**
+- title and aria-label with color name
+- Keyboard navigation support
 
 ### Cooldown Timer Component
 
 **States:**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Ready State:                                                │
-│  [Green Check Icon] "Ready to place!"                       │
-├─────────────────────────────────────────────────────────────┤
-│  Cooldown State:                                             │
-│  "Next pixel in:" [Remaining Seconds]                       │
-│  [Progress Bar: fills as cooldown expires]                  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Ready State:                                                    │
+│  [Green Check Icon] "Ready to place!"                           │
+├─────────────────────────────────────────────────────────────────┤
+│  Cooldown State:                                                 │
+│  "Next pixel in:" [Remaining Seconds]                           │
+│  [Progress Bar: fills as cooldown expires]                      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **Timer Logic:**
 - useEffect hook with cleanup
 - Update remaining seconds every 100ms
-- Calculate progress as percentage of 5-second cooldown
+- Calculate progress as percentage of cooldown
 - Clear interval when cooldownEnd is null or expired
+
+### Connection Status Indicator
+
+| State | Indicator | Text |
+|-------|-----------|------|
+| Connected | Green pulsing dot | "Connected" |
+| Disconnected | Red static dot | Error message or "Reconnecting..." |
 
 ### Pixel Info Tooltip
 
-**Trigger:** Hover over canvas with delay
+**Trigger:** Hover over canvas with 500ms delay
 
 **Display:**
 - Position: (x, y) coordinates
@@ -371,29 +380,19 @@
 - Placed by: Username (if available)
 - When: Relative time (e.g., "2 minutes ago")
 
-**Fetch Logic:**
-- API call to `/api/v1/history/pixel?x={x}&y={y}`
-- Only fetch when visible changes
-- Show loading state while fetching
-
 ---
 
-## 7. Performance Optimizations
+## ⚡ 7. Performance Optimizations
 
 ### Canvas Rendering Optimizations
 
-**OffscreenCanvas for Non-blocking Rendering:**
-- Check for OffscreenCanvas support
-- Create Web Worker for rendering if available
-- Post canvas data to worker, receive rendered result
-- Falls back to main thread if unsupported
+**OffscreenCanvas (when supported):**
+- Create Web Worker for rendering
+- Post canvas data to worker
+- Receive rendered ImageData
+- Non-blocking main thread
 
 **Viewport Culling:**
-- Calculate visible region based on zoom and pan
-- Only process updates within visible bounds for rendering
-- Still update internal state for off-screen pixels
-
-**Visible Region Calculation:**
 
 | Parameter | Formula |
 |-----------|---------|
@@ -402,70 +401,120 @@
 | endX | min(CANVAS_WIDTH, ceil((viewportWidth - panX) / zoom)) |
 | endY | min(CANVAS_HEIGHT, ceil((viewportHeight - panY) / zoom)) |
 
-### Request Animation Frame Batching
+"Only process updates within visible bounds for rendering. Still update internal state for off-screen pixels."
+
+### RequestAnimationFrame Batching
 
 "Batch visual updates to match display refresh rate."
 
-**Implementation:**
-- Maintain pendingUpdates array
-- On each update, push to array and schedule RAF if not already scheduled
-- In RAF callback: process all pending updates, clear array
-- Prevents multiple renders per frame during high-frequency updates
+1. Maintain pendingUpdates array
+2. On each update, push to array and schedule RAF if not scheduled
+3. In RAF callback: process all pending updates, clear array
+4. Prevents multiple renders per frame during high-frequency updates
+
+### Memory Management
+
+| Optimization | Technique |
+|--------------|-----------|
+| Reuse ImageData | Keep single ImageData object, overwrite pixels |
+| Avoid allocations in hot path | Pre-allocate color lookup arrays |
+| TypedArray for canvas | Uint8Array instead of regular array |
 
 ---
 
-## 8. Trade-offs Summary
+## 📡 8. API Design (Frontend Perspective)
 
-| Decision | Choice | Trade-off | Alternative |
-|----------|--------|-----------|-------------|
-| Canvas API | HTML5 Canvas 2D | No GPU acceleration | WebGL (more complex) |
-| State management | Zustand | Simple, minimal boilerplate | Redux (more structure) |
-| Real-time | WebSocket | Requires reconnection logic | SSE (simpler, one-way) |
-| Updates | Optimistic | Can show incorrect state briefly | Wait for confirmation |
-| Rendering | Full canvas | Simple, works everywhere | Tile-based (better for huge canvases) |
+### WebSocket Message Handling
+
+**Incoming Messages:**
+
+| Type | Handler | Store Update |
+|------|---------|--------------|
+| `welcome` | Extract userId, cooldown | setUserId, setCooldown |
+| `canvas` | Base64 decode to Uint8Array | setCanvasData |
+| `pixels` | Queue updates | updatePixelsBatch (on interval) |
+| `success` | Match requestId | setCooldown(nextPlacement) |
+| `error` | Match requestId, handle code | Rollback, show toast |
+
+**Outgoing Messages:**
+
+| Type | Trigger | Payload |
+|------|---------|---------|
+| `place` | User clicks canvas | `{ x, y, color, requestId }` |
+| `ping` | 30s interval | `{}` |
+
+### REST API Endpoints Used
+
+| Method | Endpoint | When | Response Handling |
+|--------|----------|------|-------------------|
+| GET | `/api/v1/auth/me` | App load | Set user state |
+| POST | `/api/v1/auth/login` | Login form | Set user, refresh WS |
+| POST | `/api/v1/auth/logout` | Logout button | Clear user, refresh WS |
+| GET | `/api/v1/history/pixel?x=&y=` | Hover tooltip | Display in tooltip |
 
 ---
 
-## 9. Accessibility Considerations
+## ⚖️ 9. Trade-offs Analysis
+
+### Trade-off 1: HTML5 Canvas 2D vs. WebGL
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Canvas 2D | Simple API, works everywhere, sufficient for 500×500 | No GPU acceleration |
+| ❌ WebGL | GPU-accelerated, handles millions of pixels | Complex shader setup, overkill for our scale |
+
+> "We chose Canvas 2D because our 500×500 canvas (250K pixels) renders comfortably at 60 FPS with putImageData. WebGL would require writing shaders, managing GPU buffers, and handling WebGL context loss—significant complexity for marginal benefit. The breakpoint where WebGL becomes necessary is around 2000×2000+ pixels where CPU-based rendering struggles. For our scale, the simplicity of ctx.fillRect() and putImageData() wins. The trade-off is we can't easily add effects like glow or blur that WebGL handles trivially, but r/place doesn't need those."
+
+### Trade-off 2: Optimistic Updates vs. Wait for Confirmation
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Optimistic update | Instant feedback, feels responsive | May show incorrect state briefly |
+| ❌ Wait for server | Always accurate | 50-200ms delay feels sluggish |
+
+> "We update the UI immediately on click because perceived latency directly impacts user satisfaction. Waiting 100ms for server confirmation makes the app feel broken—users expect their click to register instantly. The trade-off is that if the server rejects (rate limited, coordinates changed), we must rollback. We mitigate this by checking local cooldown state first (preventing most rejections) and making rollback visually smooth. In practice, rejections are rare (<1% of placements), so optimistic updates are correct 99% of the time."
+
+### Trade-off 3: Single Canvas vs. Tile-Based Rendering
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Single canvas | Simple viewport math, no seams | Must render/transform entire canvas |
+| ❌ Tile-based | Only render visible tiles, infinite canvas possible | Tile boundary handling, complex virtualization |
+
+> "We render the entire canvas as a single HTML5 canvas element because our 500×500 pixel grid is small enough that CSS transforms handle zoom/pan smoothly. Tile-based rendering would require calculating which tiles are visible, loading tiles on demand, and handling seams between tiles during zoom. For canvases larger than ~4000×4000, tiles become necessary because a single canvas exceeds browser memory limits. Our 500×500 canvas at 4 bytes per pixel is only 1MB—well within limits. The trade-off is we can't support truly massive (100K×100K) canvases without a major refactor."
+
+---
+
+## ♿ 10. Accessibility Considerations
 
 ### Keyboard Navigation
 
-**Arrow Keys:** Move cursor position by 1 pixel
-
 | Key | Action |
 |-----|--------|
-| ArrowUp | y = max(0, y - 1) |
-| ArrowDown | y = min(height - 1, y + 1) |
-| ArrowLeft | x = max(0, x - 1) |
-| ArrowRight | x = min(width - 1, x + 1) |
+| Arrow keys | Move cursor position by 1 pixel |
 | Enter / Space | Place pixel at cursor position |
+| Tab | Cycle through color palette |
+| +/- | Zoom in/out |
 
-**Component Attributes:**
-- `tabIndex={0}` for focus
-- `role="application"` for proper screen reader context
-- Dynamic `aria-label` announcing current position
+### Component Attributes
 
----
-
-## 10. Future Enhancements
-
-1. **WebGL Renderer** - GPU-accelerated rendering for larger canvases
-2. **Viewport-Only Updates** - Request only visible region updates from server
-3. **Touch Gestures** - Better mobile pinch-zoom and pan
-4. **Collaborative Cursor** - Show other users' cursor positions
-5. **Undo History** - Local undo for recent placements
+| Attribute | Value | Purpose |
+|-----------|-------|---------|
+| tabIndex | 0 | Enable focus on canvas |
+| role | "application" | Proper screen reader context |
+| aria-label | Dynamic | Announce current position and color |
 
 ---
 
-## Summary
+## 📝 Summary
 
 "To summarize, I've designed r/place's frontend with:
 
 1. **HTML5 Canvas rendering** using ImageData for efficient pixel manipulation with CSS `image-rendering: pixelated` for crisp scaling
-2. **Zustand state management** storing the canvas as a Uint8Array with optimistic updates and rollback
+2. **Zustand state management** storing the canvas as a Uint8Array with optimistic updates and rollback on failure
 3. **WebSocket manager** with automatic reconnection, exponential backoff, and message batching
 4. **Zoom/pan interactions** supporting mouse wheel, drag, and touch gestures with smooth 60 FPS performance
 5. **Cooldown timer UI** with visual countdown and progress bar
 6. **Performance optimizations** including requestAnimationFrame batching and viewport culling
 
-The key insight is that even a 500x500 canvas (250K pixels) can be efficiently rendered using the Canvas 2D API when we leverage ImageData for bulk updates and only redraw changed pixels for incremental updates. The WebSocket batching ensures we can handle thousands of updates per second without overwhelming the render loop."
+The key insight is that even a 500×500 canvas (250K pixels) can be efficiently rendered using the Canvas 2D API when we leverage ImageData for bulk updates and fillRect for incremental updates. The WebSocket batching ensures we can handle thousands of updates per second without overwhelming the render loop."

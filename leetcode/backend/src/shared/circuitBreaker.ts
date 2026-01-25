@@ -15,7 +15,8 @@ export interface ExecutionOptions {
   image: string;
   workDir: string;
   codeFile: string;
-  command: string[];
+  compileCommand?: string[];
+  runCommand: string[];
   timeout: number;
   memoryMb: number;
   language: string;

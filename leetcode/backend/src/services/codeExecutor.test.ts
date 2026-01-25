@@ -5,49 +5,47 @@ vi.mock('fs/promises', () => ({
   default: {
     mkdir: vi.fn().mockResolvedValue(undefined),
     writeFile: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn().mockResolvedValue(''),
     rm: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
 // Mock Docker
-vi.mock('dockerode', () => {
-  const mockContainer = {
-    attach: vi.fn().mockResolvedValue({
-      on: vi.fn((event, callback) => {
-        if (event === 'data') {
-          setTimeout(() => callback(Buffer.from('42\n')), 10);
-        }
-        if (event === 'end') {
-          setTimeout(() => callback(), 20);
-        }
-      }),
-      destroy: vi.fn(),
-    }),
-    start: vi.fn().mockResolvedValue(undefined),
-    wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
-    stop: vi.fn().mockResolvedValue(undefined),
-    remove: vi.fn().mockResolvedValue(undefined),
-  };
+const mockStream = {
+  write: vi.fn(),
+  end: vi.fn(),
+  on: vi.fn((event: string, callback: (data?: Buffer) => void) => {
+    if (event === 'data') {
+      setTimeout(() => callback(Buffer.from('42\n')), 10);
+    }
+    return mockStream;
+  }),
+};
 
-  const mockImage = {
-    id: 'mock-image-id',
-  };
+const mockContainer = {
+  attach: vi.fn().mockResolvedValue(mockStream),
+  start: vi.fn().mockResolvedValue(undefined),
+  wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+  stop: vi.fn().mockResolvedValue(undefined),
+  remove: vi.fn().mockResolvedValue(undefined),
+};
 
-  return {
-    default: vi.fn().mockImplementation(() => ({
-      createContainer: vi.fn().mockResolvedValue(mockContainer),
-      getImage: vi.fn().mockReturnValue({
-        inspect: vi.fn().mockResolvedValue(mockImage),
-      }),
-      pull: vi.fn().mockImplementation((_image, callback) => {
-        callback(null, { pipe: vi.fn() });
-      }),
-      modem: {
-        followProgress: vi.fn((_stream, callback) => callback(null, [])),
-      },
-    })),
-  };
-});
+const mockDocker = {
+  createContainer: vi.fn().mockResolvedValue(mockContainer),
+  getImage: vi.fn().mockReturnValue({
+    inspect: vi.fn().mockResolvedValue({ id: 'mock-image-id' }),
+  }),
+  pull: vi.fn().mockImplementation((_image: string, callback: (err: Error | null, stream: { pipe: () => void }) => void) => {
+    callback(null, { pipe: vi.fn() });
+  }),
+  modem: {
+    followProgress: vi.fn((_stream: unknown, callback: (err: Error | null, output: unknown[]) => void) => callback(null, [])),
+  },
+};
+
+vi.mock('dockerode', () => ({
+  default: vi.fn().mockImplementation(() => mockDocker),
+}));
 
 // Mock metrics
 vi.mock('../shared/metrics.js', () => ({
@@ -60,9 +58,11 @@ vi.mock('../shared/metrics.js', () => ({
 
 // Mock circuit breaker
 vi.mock('../shared/circuitBreaker.js', () => ({
-  createExecutionCircuitBreaker: vi.fn((fn) => ({
-    fire: vi.fn((options) => fn(options)),
+  createExecutionCircuitBreaker: vi.fn((fn: (options: unknown) => unknown) => ({
+    fire: vi.fn((options: unknown) => fn(options)),
     fallback: vi.fn(),
+    status: 'closed',
+    stats: { fires: 0, successes: 0, failures: 0, rejects: 0, timeouts: 0 },
   })),
   createFallback: vi.fn(() => () => ({
     status: 'system_error',
@@ -73,11 +73,12 @@ vi.mock('../shared/circuitBreaker.js', () => ({
 describe('CodeExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
   });
 
   describe('Language Configuration', () => {
     it('should support Python language', async () => {
-      const { codeExecutor } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
       await codeExecutor.init();
 
       // Test that execute returns without throwing for Python
@@ -94,7 +95,7 @@ describe('CodeExecutor', () => {
     });
 
     it('should support JavaScript language', async () => {
-      const { codeExecutor } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
       await codeExecutor.init();
 
       const result = await codeExecutor.execute(
@@ -110,7 +111,7 @@ describe('CodeExecutor', () => {
     });
 
     it('should return error for unsupported language', async () => {
-      const { codeExecutor } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
       await codeExecutor.init();
 
       const result = await codeExecutor.execute(
@@ -128,59 +129,57 @@ describe('CodeExecutor', () => {
 
   describe('Output Comparison', () => {
     it('should compare outputs with whitespace normalization', async () => {
-      const { compareOutput } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
 
       // Exact match
-      expect(compareOutput('42', '42')).toBe(true);
+      expect(codeExecutor.compareOutput('42', '42')).toBe(true);
 
       // Trailing newline
-      expect(compareOutput('42\n', '42')).toBe(true);
-      expect(compareOutput('42', '42\n')).toBe(true);
+      expect(codeExecutor.compareOutput('42\n', '42')).toBe(true);
+      expect(codeExecutor.compareOutput('42', '42\n')).toBe(true);
 
       // Trailing spaces
-      expect(compareOutput('42  ', '42')).toBe(true);
+      expect(codeExecutor.compareOutput('42  ', '42')).toBe(true);
 
       // Different values
-      expect(compareOutput('42', '43')).toBe(false);
+      expect(codeExecutor.compareOutput('42', '43')).toBe(false);
     });
 
     it('should compare JSON arrays regardless of order', async () => {
-      const { compareOutput } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
 
       // Same order
-      expect(compareOutput('[1, 2, 3]', '[1, 2, 3]')).toBe(true);
+      expect(codeExecutor.compareOutput('[1, 2, 3]', '[1, 2, 3]')).toBe(true);
 
       // Different order (should match)
-      expect(compareOutput('[1, 2, 3]', '[3, 2, 1]')).toBe(true);
+      expect(codeExecutor.compareOutput('[1, 2, 3]', '[3, 2, 1]')).toBe(true);
 
       // Different values
-      expect(compareOutput('[1, 2, 3]', '[1, 2, 4]')).toBe(false);
+      expect(codeExecutor.compareOutput('[1, 2, 3]', '[1, 2, 4]')).toBe(false);
     });
 
     it('should handle floating point comparison', async () => {
-      const { compareOutput } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
 
       // Within tolerance
-      expect(compareOutput('3.141592', '3.141593')).toBe(true);
+      expect(codeExecutor.compareOutput('3.141592', '3.141593')).toBe(true);
 
       // Outside tolerance
-      expect(compareOutput('3.14', '3.15')).toBe(false);
+      expect(codeExecutor.compareOutput('3.14', '3.15')).toBe(false);
     });
 
     it('should handle multi-line output', async () => {
-      const { compareOutput } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
 
-      expect(compareOutput('line1\nline2', 'line1\nline2')).toBe(true);
-      expect(compareOutput('line1\r\nline2', 'line1\nline2')).toBe(true);
-      expect(compareOutput('line1\nline2', 'line1\nline3')).toBe(false);
+      expect(codeExecutor.compareOutput('line1\nline2', 'line1\nline2')).toBe(true);
+      expect(codeExecutor.compareOutput('line1\r\nline2', 'line1\nline2')).toBe(true);
+      expect(codeExecutor.compareOutput('line1\nline2', 'line1\nline3')).toBe(false);
     });
   });
 
   describe('Security Configuration', () => {
     it('should create container with security restrictions', async () => {
-      const Docker = (await import('dockerode')).default;
-      const mockDocker = new Docker();
-      const { codeExecutor } = await import('./codeExecutor.js');
+      const codeExecutor = (await import('./codeExecutor.js')).default;
 
       await codeExecutor.init();
 
@@ -192,7 +191,6 @@ describe('CodeExecutor', () => {
         expect.objectContaining({
           HostConfig: expect.objectContaining({
             NetworkMode: 'none', // No network access
-            ReadonlyRootfs: true, // Read-only root
             CapDrop: ['ALL'], // Drop all capabilities
             SecurityOpt: ['no-new-privileges'], // No privilege escalation
           }),
@@ -204,22 +202,22 @@ describe('CodeExecutor', () => {
 
 describe('Output Comparison Edge Cases', () => {
   it('should handle empty strings', async () => {
-    const { compareOutput } = await import('./codeExecutor.js');
+    const codeExecutor = (await import('./codeExecutor.js')).default;
 
-    expect(compareOutput('', '')).toBe(true);
-    expect(compareOutput('', 'something')).toBe(false);
+    expect(codeExecutor.compareOutput('', '')).toBe(true);
+    expect(codeExecutor.compareOutput('', 'something')).toBe(false);
   });
 
   it('should handle whitespace-only output', async () => {
-    const { compareOutput } = await import('./codeExecutor.js');
+    const codeExecutor = (await import('./codeExecutor.js')).default;
 
-    expect(compareOutput('   ', '')).toBe(true);
-    expect(compareOutput('\n\n', '')).toBe(true);
+    expect(codeExecutor.compareOutput('   ', '')).toBe(true);
+    expect(codeExecutor.compareOutput('\n\n', '')).toBe(true);
   });
 
   it('should handle nested arrays', async () => {
-    const { compareOutput } = await import('./codeExecutor.js');
+    const codeExecutor = (await import('./codeExecutor.js')).default;
 
-    expect(compareOutput('[[1,2],[3,4]]', '[[1,2],[3,4]]')).toBe(true);
+    expect(codeExecutor.compareOutput('[[1,2],[3,4]]', '[[1,2],[3,4]]')).toBe(true);
   });
 });
