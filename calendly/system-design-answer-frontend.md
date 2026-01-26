@@ -8,7 +8,7 @@
 
 ---
 
-## Step 1: Requirements Clarification
+## 🎯 Step 1: Requirements Clarification
 
 ### User-Facing Requirements
 
@@ -28,7 +28,7 @@
 
 ---
 
-## Step 2: Component Architecture
+## 🏗️ Step 2: Component Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -68,7 +68,7 @@
 
 ---
 
-## Step 3: Deep Dive - Guest Booking Flow
+## 🔧 Step 3: Deep Dive - Guest Booking Flow
 
 ### Progressive Disclosure Pattern
 
@@ -109,7 +109,7 @@ The BookingPage component manages a multi-step flow using a `step` state variabl
 
 ---
 
-## Step 4: Deep Dive - Timezone Handling
+## 🌍 Step 4: Deep Dive - Timezone Handling
 
 ### Timezone Hook Architecture
 
@@ -151,7 +151,7 @@ The TimezoneSelector provides a dropdown with:
 
 ---
 
-## Step 5: Deep Dive - Calendar Component
+## 📅 Step 5: Deep Dive - Calendar Component
 
 ### Booking Calendar Architecture
 
@@ -197,7 +197,7 @@ The TimezoneSelector provides a dropdown with:
 
 ---
 
-## Step 6: Deep Dive - Time Slot List
+## ⏰ Step 6: Deep Dive - Time Slot List
 
 ### Time Slot Component Architecture
 
@@ -235,7 +235,7 @@ The TimezoneSelector provides a dropdown with:
 
 ---
 
-## Step 7: State Management
+## 💾 Step 7: State Management
 
 ### Availability Store Architecture
 
@@ -290,7 +290,7 @@ The `useBookingFlow` hook encapsulates the booking submission logic:
 
 ---
 
-## Step 8: Confirmation Screen
+## ✅ Step 8: Confirmation Screen
 
 ### Dual Timezone Display
 
@@ -336,7 +336,7 @@ Host timezone only shown when different from guest timezone.
 
 ---
 
-## Step 9: Accessibility and Mobile
+## ♿ Step 9: Accessibility and Mobile
 
 ### Accessibility Features
 
@@ -376,20 +376,26 @@ Host timezone only shown when different from guest timezone.
 
 ---
 
-## Step 10: Trade-offs Summary
+## ⚖️ Step 10: Trade-offs Summary
 
-| Decision | Chosen | Alternative | Reasoning |
-|----------|--------|-------------|-----------|
-| State Management | Zustand | Redux | Simpler API for moderate complexity |
-| Timezone Display | UTC storage + client conversion | Server-side conversion | Instant timezone switching without refetch |
-| Calendar Caching | 3-min client TTL | Server-side only | Reduces availability API calls by 80% |
-| Progressive Disclosure | Step-by-step reveal | Show all at once | Reduces cognitive load, better mobile UX |
-| Slot Conflict Handling | Pre-check + 409 handler | Optimistic only | Better UX with early conflict detection |
-| Calendar Links | Client-side generation | Server-provided | Works offline, no extra API call |
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Zustand | Simpler API, minimal boilerplate, tiny bundle | Less structure than Redux for large teams |
+| ❌ Redux | Rich ecosystem, middleware, time-travel debugging | More boilerplate, steeper learning curve |
+| ✅ UTC Storage + Client Conversion | Instant timezone switching without refetch | Requires browser Intl API support |
+| ❌ Server-side Conversion | Works on all browsers | Requires refetch on timezone change |
+| ✅ 3-min Client Cache TTL | Reduces availability API calls by 80% | Stale data possible during high-traffic periods |
+| ❌ No Client Cache | Always fresh | Too many API calls on browsing behavior |
+| ✅ Progressive Disclosure (step-by-step) | Reduces cognitive load, better mobile UX | More state management complexity |
+| ❌ Show All at Once | Simpler implementation | Overwhelming for mobile, higher bounce rate |
+| ✅ Pre-check + 409 Handler | Better UX with early conflict detection | Extra API call before booking |
+| ❌ Optimistic Only | Fewer API calls | Poor UX when conflicts occur |
+| ✅ Client-side Calendar Links | Works offline, no extra API call | Must maintain link format logic |
+| ❌ Server-provided Links | Single source of truth | Extra network request, fails offline |
 
 ---
 
-## Summary
+## 🎯 Summary
 
 "To summarize the frontend architecture for Calendly:
 

@@ -8,7 +8,7 @@
 
 ---
 
-## Step 1: Requirements Clarification
+## 🎯 Step 1: Requirements Clarification
 
 ### Functional Requirements
 
@@ -28,7 +28,7 @@
 
 ---
 
-## Step 2: High-Level Architecture
+## 🏗️ Step 2: High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -60,7 +60,7 @@
 
 ---
 
-## Step 3: Database Schema Design
+## 💾 Step 3: Database Schema Design
 
 ### Core Tables
 
@@ -134,7 +134,7 @@
 
 ---
 
-## Step 4: Deep Dive - Double Booking Prevention
+## 🔒 Step 4: Deep Dive - Double Booking Prevention
 
 ### Multi-Layer Approach
 
@@ -219,7 +219,7 @@
 
 ---
 
-## Step 5: Deep Dive - Availability Calculation
+## 🔧 Step 5: Deep Dive - Availability Calculation
 
 ### Algorithm Flow
 
@@ -329,7 +329,7 @@
 
 ---
 
-## Step 6: Deep Dive - Calendar Integration
+## 📅 Step 6: Deep Dive - Calendar Integration
 
 ### OAuth Token Management Flow
 
@@ -422,7 +422,7 @@
 
 ---
 
-## Step 7: Notification System
+## 📧 Step 7: Notification System
 
 ### Queue-Based Architecture
 
@@ -498,7 +498,7 @@
 
 ---
 
-## Step 8: Database Scaling Strategy
+## 📈 Step 8: Database Scaling Strategy
 
 ### Table Partitioning
 
@@ -561,21 +561,28 @@
 
 ---
 
-## Step 9: Trade-offs Summary
+## ⚖️ Step 9: Trade-offs Summary
 
-| Decision | Chosen | Alternative | Reasoning |
-|----------|--------|-------------|-----------|
-| Database | PostgreSQL | DynamoDB | ACID transactions essential for double-booking prevention |
-| Locking | Pessimistic (FOR UPDATE) | Optimistic only | Correctness over latency for booking creation |
-| Time Storage | UTC only | Local time zones | Simpler, no DST issues in storage |
-| Calendar Sync | Hybrid (webhook + polling) | Polling only | Real-time freshness when supported |
-| Availability Cache | 5-min TTL | No cache | Balance freshness vs. 5000 RPS peak load |
-| Notifications | Async via RabbitMQ | Synchronous | Booking latency should not include email delivery |
-| Partitioning | Monthly by start_time | None | Efficient archival, query performance |
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ PostgreSQL | ACID transactions, exclusion constraints for overlap prevention | Single-node write bottleneck at extreme scale |
+| ❌ DynamoDB | Infinite horizontal scale, managed service | No native overlap prevention, eventual consistency |
+| ✅ Pessimistic Locking (FOR UPDATE) | Guarantees no double bookings, simple mental model | Adds 10-50ms latency, potential for lock contention |
+| ❌ Optimistic Only | Lower latency for happy path | More complex retry logic, higher conflict rate |
+| ✅ UTC Storage | No DST issues, single source of truth | Requires conversion for every display |
+| ❌ Local Time Storage | Simpler display logic | DST issues, timezone changes break existing data |
+| ✅ Hybrid Calendar Sync (webhook + polling) | Real-time when webhooks work, polling catches failures | More complex implementation |
+| ❌ Polling Only | Simpler implementation | 10-minute staleness, wastes API quota |
+| ✅ 5-min Availability Cache | Reduces load 80%+, good enough freshness | Stale data possible, requires invalidation logic |
+| ❌ No Cache | Always fresh | 5000 RPS would overwhelm database |
+| ✅ Async Notifications via RabbitMQ | Booking latency excludes email delivery, reliable | Adds infrastructure complexity |
+| ❌ Synchronous Email | Simpler implementation | User waits for email delivery, failure blocks booking |
+| ✅ Monthly Partitioning | Efficient archival, fast date-range queries | More complex schema management |
+| ❌ No Partitioning | Simpler schema | Full table scans, difficult archival |
 
 ---
 
-## Step 10: Monitoring
+## 📊 Step 10: Monitoring
 
 ### Key Backend Metrics
 
@@ -623,7 +630,7 @@
 
 ---
 
-## Summary
+## 🎯 Summary
 
 "To summarize the backend architecture for Calendly:
 

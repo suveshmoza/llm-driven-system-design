@@ -8,7 +8,7 @@
 
 ---
 
-## Step 1: Requirements Clarification
+## 🎯 Step 1: Requirements Clarification
 
 ### Functional Requirements
 
@@ -27,7 +27,7 @@
 
 ---
 
-## Step 2: High-Level Architecture
+## 🏗️ Step 2: High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -56,7 +56,7 @@
 
 ---
 
-## Step 3: Shared Type Definitions
+## 📋 Step 3: Shared Type Definitions
 
 ### Core Types (Shared Between Frontend and Backend)
 
@@ -85,7 +85,7 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Step 4: API Client Layer
+## 🔌 Step 4: API Client Layer
 
 ### Frontend API Client Architecture
 
@@ -115,7 +115,7 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Step 5: End-to-End Booking Flow
+## 🔧 Step 5: End-to-End Booking Flow
 
 ### Sequence Diagram
 
@@ -218,7 +218,7 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Step 6: Time Zone Handling (End-to-End)
+## 🌍 Step 6: Time Zone Handling (End-to-End)
 
 ### Storage Strategy
 
@@ -263,7 +263,7 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Step 7: Conflict Prevention (End-to-End)
+## 🔒 Step 7: Conflict Prevention (End-to-End)
 
 ### Frontend Pre-Check + Backend Validation
 
@@ -315,7 +315,7 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Step 8: Authentication Flow
+## 🔐 Step 8: Authentication Flow
 
 ### Session-Based Auth
 
@@ -350,21 +350,28 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Step 9: Trade-offs Summary
+## ⚖️ Step 9: Trade-offs Summary
 
-| Decision | Chosen | Alternative | Reasoning |
-|----------|--------|-------------|-----------|
-| Type Sharing | Duplicate with Zod validation | Monorepo with shared package | Simpler setup, schemas ensure consistency |
-| API Format | REST with JSON | GraphQL | Simpler caching, better for booking flow |
-| Time Zone Storage | UTC only | Store local + timezone | Single source of truth, no conversion errors |
-| Conflict Prevention | Pre-check + server validation | Server-only | Better UX (catches 95% before form) |
-| Session Storage | Redis with cookie | JWT | Instant invalidation, simpler revocation |
-| Idempotency | Client + server keys | Server-only | Prevents duplicates from network retries |
-| Cache Invalidation | Invalidate on write | TTL only | Immediate consistency for booking conflicts |
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Duplicate Types with Zod | Simpler setup, schemas ensure runtime validation | Must keep types in sync manually |
+| ❌ Monorepo Shared Package | Single source of truth | More complex build setup, versioning overhead |
+| ✅ REST with JSON | Simpler caching, browser-native, better for booking flow | Multiple endpoints for related data |
+| ❌ GraphQL | Flexible queries, single endpoint | Caching complexity, overkill for simple API |
+| ✅ UTC Only Storage | Single source of truth, no conversion errors | Requires client-side conversion |
+| ❌ Store Local + Timezone | Simpler display logic | Timezone changes break existing data |
+| ✅ Pre-check + Server Validation | Better UX (catches 95% before form) | Extra API call per booking |
+| ❌ Server-only Validation | Fewer API calls | Poor UX when conflicts occur (wasted form filling) |
+| ✅ Redis Sessions with Cookie | Instant invalidation, simpler revocation | Requires Redis infrastructure |
+| ❌ JWT | Stateless, no session store needed | Cannot revoke tokens, larger payload |
+| ✅ Client + Server Idempotency Keys | Prevents duplicates from network retries | More complex implementation |
+| ❌ Server-only Keys | Simpler implementation | Doesn't catch client-side retries |
+| ✅ Invalidate Cache on Write | Immediate consistency for booking conflicts | More invalidation logic |
+| ❌ TTL Only | Simpler implementation | Stale availability during active booking periods |
 
 ---
 
-## Step 10: API Contract Summary
+## 📡 Step 10: API Contract Summary
 
 ### Public (Guest-Facing) Endpoints
 
@@ -394,7 +401,7 @@ Zod schemas enforce validation on both sides:
 
 ---
 
-## Summary
+## 🎯 Summary
 
 "To summarize the fullstack architecture for Calendly:
 
