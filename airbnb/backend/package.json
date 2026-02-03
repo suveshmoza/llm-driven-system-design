@@ -16,7 +16,11 @@
     "format": "prettier --write src/**/*.ts",
     "seed": "tsx src/seed.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:worker:booking": "tsx watch src/workers/booking-worker.ts",
+    "dev:worker:notification": "tsx watch src/workers/notification-worker.ts",
+    "dev:worker:analytics": "tsx watch src/workers/analytics-worker.ts",
+    "dev:workers": "concurrently \"npm run dev:worker:booking\" \"npm run dev:worker:notification\" \"npm run dev:worker:analytics\""
   },
   "dependencies": {
     "amqplib": "^0.10.9",

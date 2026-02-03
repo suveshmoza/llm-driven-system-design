@@ -8,6 +8,8 @@
     "dev:server1": "PORT=3001 tsx watch src/index.ts",
     "dev:server2": "PORT=3002 tsx watch src/index.ts",
     "dev:server3": "PORT=3003 tsx watch src/index.ts",
+    "dev:worker:analytics": "tsx watch src/workers/analytics-worker.ts",
+    "dev:worker:metrics": "tsx watch src/workers/metrics-worker.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src/**/*.ts",
