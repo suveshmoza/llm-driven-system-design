@@ -1,0 +1,8 @@
+# Downloaded sample media (large files)
+videos/
+audio/
+images/
+
+# Keep the download script and README
+!README.md
+!download-media.mjs
