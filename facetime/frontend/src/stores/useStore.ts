@@ -8,7 +8,6 @@
 
 import { create } from 'zustand';
 import type { User, CallState } from '../types';
-import { signalingService } from '../services/signaling';
 
 /**
  * Application state interface defining all store properties and actions.

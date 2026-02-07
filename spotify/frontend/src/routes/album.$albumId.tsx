@@ -61,7 +61,7 @@ function AlbumPage() {
     }
   };
 
-  const handlePlayTrack = (track: Track, index: number) => {
+  const handlePlayTrack = (_track: Track, index: number) => {
     playQueue(tracks, index);
   };
 

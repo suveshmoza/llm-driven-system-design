@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, useNavigate, Link } from '@tanstack/react-router';
+import { useParams, useNavigate } from '@tanstack/react-router';
 import { Play, Plus, Check, ChevronDown, X } from 'lucide-react';
 import { Navbar, VideoRow } from '../components';
 import { videoService } from '../services/videos';
@@ -63,7 +63,7 @@ export function VideoDetailPage() {
         search: { episodeId },
       });
     } else {
-      navigate({ to: '/watch/$videoId', params: { videoId } });
+      navigate({ to: '/watch/$videoId', params: { videoId }, search: { episodeId: undefined } });
     }
   };
 
@@ -239,7 +239,7 @@ interface EpisodeCardProps {
   onPlay: () => void;
 }
 
-function EpisodeCard({ episode, seasonNumber, onPlay }: EpisodeCardProps) {
+function EpisodeCard({ episode, seasonNumber: _seasonNumber, onPlay }: EpisodeCardProps) {
   return (
     <div
       onClick={onPlay}

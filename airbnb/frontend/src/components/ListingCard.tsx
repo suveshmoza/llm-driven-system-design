@@ -13,7 +13,7 @@ export function ListingCard({ listing }: ListingCardProps) {
     `https://picsum.photos/seed/${listing.id}/400/300`;
 
   return (
-    <Link to={`/listing/${listing.id}`} className="block group">
+    <Link to="/listing/$id" params={{ id: String(listing.id) }} className="block group">
       <div className="relative aspect-[4/3] rounded-xl overflow-hidden mb-3">
         <img
           src={imageUrl}

@@ -90,7 +90,8 @@ function OrdersPage() {
                     {new Date(order.created_at).toLocaleDateString()}
                   </p>
                   <Link
-                    to={`/shop/${order.shop_slug}`}
+                    to="/shop/$shopSlug"
+                    params={{ shopSlug: order.shop_slug || '' }}
                     className="text-sm text-primary-600 hover:text-primary-700"
                   >
                     {order.shop_name}

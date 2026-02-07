@@ -25,7 +25,7 @@ export function Canvas() {
   const {
     config,
     canvas,
-    selectedColor,
+    selectedColor: _selectedColor,
     zoom,
     panOffset,
     setZoom,

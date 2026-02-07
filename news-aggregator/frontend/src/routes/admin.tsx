@@ -40,7 +40,7 @@ function AdminPage() {
   const { user } = useAuthStore();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlMessage, setCrawlMessage] = useState<string | null>(null);
   const [showAddSource, setShowAddSource] = useState(false);

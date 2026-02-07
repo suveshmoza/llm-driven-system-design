@@ -4,7 +4,6 @@ import { OTTransformer } from '../services/OTTransformer';
 import type {
   ClientInfo,
   CursorPosition,
-  OperationData,
   WSMessage,
   InitMessage,
   OperationMessage,
@@ -175,7 +174,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   applyLocalChange: (operation: TextOperation) => {
-    const { pendingOps, ws, serverVersion, inflightOp } = get();
+    const { pendingOps, ws, inflightOp } = get();
 
     // Apply locally
     const newContent = operation.apply(get().content);

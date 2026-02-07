@@ -6,8 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import type { Panel, QueryResult, Threshold } from '../types';
+import type { Panel, Threshold } from '../types';
 import { getPanelData } from '../services/api';
 import { TIME_RANGE_OPTIONS, TimeRange } from '../types';
 

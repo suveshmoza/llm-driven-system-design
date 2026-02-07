@@ -7,7 +7,7 @@
  * logged-in user's nickname and a disconnect button.
  */
 
-import { useNavigate, Link } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { useChatStore } from '../stores/chatStore';
 
 /**

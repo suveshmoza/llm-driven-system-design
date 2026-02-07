@@ -8,7 +8,8 @@ interface StreamCardProps {
 export function StreamCard({ channel }: StreamCardProps) {
   return (
     <Link
-      to={`/${channel.name}`}
+      to="/$channelName"
+      params={{ channelName: channel.name }}
       className="stream-card block group"
     >
       {/* Thumbnail */}

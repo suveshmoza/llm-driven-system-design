@@ -3,9 +3,10 @@ import { redisClient } from '../db.js';
 import { getPresignedUrl, AUDIO_BUCKET } from '../storage.js';
 import { publishPlaybackEvent } from '../shared/kafka.js';
 import { logger } from '../shared/logger.js';
+import type { PlaybackEventType, PlaybackState } from '../types.js';
 
 // Get stream URL for a track
-export async function getStreamUrl(trackId, _userId) {
+export async function getStreamUrl(trackId: string, _userId: string) {
   // Get track info
   const trackResult = await pool.query(
     'SELECT audio_url, duration_ms FROM tracks WHERE id = $1',
@@ -44,7 +45,7 @@ export async function getStreamUrl(trackId, _userId) {
 }
 
 // Record playback event
-export async function recordPlaybackEvent(userId, trackId, eventType, positionMs = 0, deviceType = 'web') {
+export async function recordPlaybackEvent(userId: string, trackId: string, eventType: PlaybackEventType, positionMs: number = 0, deviceType: string = 'web') {
   await pool.query(
     `INSERT INTO playback_events (user_id, track_id, event_type, position_ms, device_type)
      VALUES ($1, $2, $3, $4, $5)`,
@@ -86,14 +87,14 @@ export async function recordPlaybackEvent(userId, trackId, eventType, positionMs
     await publishPlaybackEvent(userId, trackId, eventType, positionMs, { deviceType });
   } catch (error) {
     // Log error but don't fail the request - Kafka is non-blocking
-    logger.error({ error: error.message, userId, trackId, eventType }, 'Failed to publish to Kafka');
+    logger.error({ error: (error as Error).message, userId, trackId, eventType }, 'Failed to publish to Kafka');
   }
 
   return { recorded: true };
 }
 
 // Get recently played tracks
-export async function getRecentlyPlayed(userId, { limit = 50 }) {
+export async function getRecentlyPlayed(userId: string, { limit = 50 }: { limit?: number }) {
   const result = await pool.query(
     `SELECT DISTINCT ON (t.id)
             t.*,
@@ -111,28 +112,28 @@ export async function getRecentlyPlayed(userId, { limit = 50 }) {
   );
 
   // Re-sort by played_at and limit
-  const sorted = result.rows.sort((a, b) =>
-    new Date(b.played_at) - new Date(a.played_at)
+  const sorted = result.rows.sort((a: { played_at: string | Date }, b: { played_at: string | Date }) =>
+    new Date(b.played_at).getTime() - new Date(a.played_at).getTime()
   ).slice(0, limit);
 
   return sorted;
 }
 
 // Store and retrieve playback state (for cross-device sync)
-export async function savePlaybackState(userId, state) {
+export async function savePlaybackState(userId: string, state: PlaybackState) {
   const key = `playback_state:${userId}`;
   await redisClient.setEx(key, 86400, JSON.stringify(state)); // 24 hour expiry
   return { saved: true };
 }
 
-export async function getPlaybackState(userId) {
+export async function getPlaybackState(userId: string) {
   const key = `playback_state:${userId}`;
   const state = await redisClient.get(key);
   return state ? JSON.parse(state) : null;
 }
 
 // Get play count statistics
-export async function getTrackStats(trackId) {
+export async function getTrackStats(trackId: string) {
   const result = await pool.query(
     `SELECT
        stream_count,

@@ -5,7 +5,6 @@
  * Shows featured video with backdrop image, title, description, and action buttons.
  * Includes gradient overlays for text readability.
  */
-import React from 'react';
 import { Link } from '@tanstack/react-router';
 import { Play, Info } from 'lucide-react';
 import type { Video } from '../types';
@@ -83,6 +82,7 @@ export function HeroBanner({ video }: HeroBannerProps) {
             <Link
               to="/watch/$videoId"
               params={{ videoId: video.id }}
+              search={{ episodeId: undefined }}
               className="flex items-center gap-2 bg-white text-black px-6 py-2 rounded font-semibold hover:bg-white/80 transition-colors"
             >
               <Play size={20} fill="black" />

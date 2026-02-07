@@ -3,6 +3,7 @@ import recommendationService from '../services/recommendationService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { recommendationLatency } from '../shared/metrics.js';
+import { logger } from '../shared/logger.js';
 import type { AuthenticatedRequest } from '../types.js';
 
 const router = Router();
@@ -26,7 +27,7 @@ router.get('/for-you', requireAuth, rateLimiters.recommendations, async (req, re
 
     res.json({ tracks });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Get recommendations error');
     res.status(500).json({ error: 'Internal server error' });
@@ -49,7 +50,7 @@ router.get('/discover-weekly', requireAuth, rateLimiters.recommendations, async 
       tracks,
     });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Get discover weekly error');
     res.status(500).json({ error: 'Internal server error' });
@@ -74,7 +75,7 @@ router.get('/popular', async (req: Request, res: Response): Promise<void> => {
 router.get('/similar/:trackId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { limit = '20' } = req.query as RecommendationsQuery;
-    const tracks = await recommendationService.getSimilarTracks(req.params.trackId, {
+    const tracks = await recommendationService.getSimilarTracks(req.params.trackId as string, {
       limit: parseInt(limit),
     });
     res.json({ tracks });
@@ -88,7 +89,7 @@ router.get('/similar/:trackId', async (req: Request, res: Response): Promise<voi
 router.get('/radio/artist/:artistId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { limit = '50' } = req.query as RecommendationsQuery;
-    const tracks = await recommendationService.getArtistRadio(req.params.artistId, {
+    const tracks = await recommendationService.getArtistRadio(req.params.artistId as string, {
       limit: parseInt(limit),
     });
     res.json({ tracks });

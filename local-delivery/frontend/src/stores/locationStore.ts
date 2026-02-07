@@ -74,7 +74,7 @@ export const useLocationStore = create<LocationState>((set, get) => ({
   getCurrentLocation: async () => {
     set({ isLoading: true, error: null });
 
-    return new Promise<Location>((resolve, reject) => {
+    return new Promise<Location>((resolve, _reject) => {
       if (!navigator.geolocation) {
         set({
           location: DEFAULT_LOCATION,

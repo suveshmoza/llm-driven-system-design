@@ -93,7 +93,6 @@ export class OTTransformer {
           o2 = ops2[i2];
         }
       } else if (isDelete(o1) && isDelete(o2)) {
-        const minLen = Math.min(o1.delete, o2.delete);
 
         if (o1.delete > o2.delete) {
           ops1[i1] = { delete: o1.delete - o2.delete };
@@ -222,7 +221,6 @@ export class OTTransformer {
           o2 = ops2[i2];
         }
       } else if (isInsert(o1) && isDelete(o2)) {
-        const minLen = Math.min(o1.insert.length, o2.delete);
 
         if (o1.insert.length > o2.delete) {
           ops1[i1] = { insert: o1.insert.slice(o2.delete), attributes: o1.attributes };

@@ -12,20 +12,15 @@ export function DiffViewer({ diff }: DiffViewerProps) {
           <tbody>
             {lines.map((line, index) => {
               let className = 'diff-line diff-context';
-              let prefix = ' ';
 
               if (line.startsWith('+++') || line.startsWith('---')) {
                 className = 'diff-line diff-header';
-                prefix = '';
               } else if (line.startsWith('@@')) {
                 className = 'diff-line diff-header';
-                prefix = '';
               } else if (line.startsWith('+')) {
                 className = 'diff-line diff-add';
-                prefix = '+';
               } else if (line.startsWith('-')) {
                 className = 'diff-line diff-remove';
-                prefix = '-';
               }
 
               return (

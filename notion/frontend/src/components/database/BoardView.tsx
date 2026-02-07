@@ -3,10 +3,8 @@
  * Groups rows by a select property and displays them as cards in columns.
  */
 
-import { useState } from 'react';
-import type { DatabaseRow, PropertySchema, PropertyOption } from '@/types';
+import type { DatabaseRow, PropertySchema } from '@/types';
 import { Plus } from 'lucide-react';
-import PropertyCell from './PropertyCell';
 
 /**
  * Props for the BoardView component.
@@ -72,15 +70,6 @@ export default function BoardView({
       groupedRows['none'].push(row);
     }
   });
-
-  const handleMoveToColumn = (rowId: string, optionId: string) => {
-    onUpdateRow(rowId, { [groupBy]: optionId === 'none' ? null : optionId });
-  };
-
-  const getOptionColor = (optionId: string) => {
-    const option = options.find((o) => o.id === optionId);
-    return option?.color || 'gray';
-  };
 
   return (
     <div className="database-board">
@@ -216,7 +205,7 @@ interface BoardCardProps {
 /**
  * BoardCard renders a single card representing a database row.
  */
-function BoardCard({ row, titlePropertyId, schema, onUpdate, onDelete }: BoardCardProps) {
+function BoardCard({ row, titlePropertyId, schema, onUpdate: _onUpdate, onDelete: _onDelete }: BoardCardProps) {
   const title = row.properties[titlePropertyId] as string || 'Untitled';
 
   // Get other visible properties (excluding title and status which is shown in column)

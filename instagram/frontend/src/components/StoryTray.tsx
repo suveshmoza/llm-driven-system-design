@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
 import type { StoryUser, Story } from '../types';
 import { Avatar } from './Avatar';
-import { Modal } from './Modal';
 import { storiesApi } from '../services/api';
 import { formatTimeAgo } from '../utils/format';
 

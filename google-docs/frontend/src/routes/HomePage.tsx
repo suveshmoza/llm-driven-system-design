@@ -1,12 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../stores/authStore';
 import { useDocumentStore } from '../stores/documentStore';
 import Header from '../components/Header';
 import DocumentList from '../components/DocumentList';
 
 export default function HomePage() {
-  const { user } = useAuthStore();
   const { documents, fetchDocuments, createDocument, isLoading } = useDocumentStore();
   const navigate = useNavigate();
 

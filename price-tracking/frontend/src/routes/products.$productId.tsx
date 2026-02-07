@@ -10,7 +10,7 @@ import { useProductStore } from '../stores/productStore';
 import { useEffect, useState } from 'react';
 import { getDailyPrices } from '../services/products';
 import { PriceChart } from '../components/PriceChart';
-import { DailyPrice, Product } from '../types';
+import { DailyPrice } from '../types';
 import { formatDistanceToNow, format } from 'date-fns';
 
 /**

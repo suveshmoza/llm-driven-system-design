@@ -46,7 +46,7 @@ interface EnvelopeState {
   clearError: () => void;
 }
 
-export const useEnvelopeStore = create<EnvelopeState>((set, get) => ({
+export const useEnvelopeStore = create<EnvelopeState>((set, _get) => ({
   envelopes: [],
   currentEnvelope: null,
   documents: [],

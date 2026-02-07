@@ -1,5 +1,6 @@
 import { Kafka, logLevel, Producer, Consumer } from 'kafkajs';
 import { logger } from './logger.js';
+import type { PlaybackEventType, KafkaPlaybackMessage } from '../types.js';
 
 const PLAYBACK_EVENTS_TOPIC = 'playback-events';
 
@@ -82,7 +83,7 @@ export async function disconnectProducer() {
  * @param {number} position - Position in milliseconds
  * @param {object} metadata - Additional event metadata
  */
-export async function publishPlaybackEvent(userId, trackId, eventType, position = 0, metadata = {}) {
+export async function publishPlaybackEvent(userId: string, trackId: string, eventType: PlaybackEventType, position = 0, metadata: Record<string, unknown> = {}) {
   if (!producer || !producerReady) {
     logger.warn('Kafka producer not ready, initializing...');
     await initProducer();
@@ -98,7 +99,7 @@ export async function publishPlaybackEvent(userId, trackId, eventType, position 
   };
 
   try {
-    await producer.send({
+    await producer!.send({
       topic: PLAYBACK_EVENTS_TOPIC,
       messages: [
         {
@@ -114,7 +115,7 @@ export async function publishPlaybackEvent(userId, trackId, eventType, position 
 
     logger.debug({ userId, trackId, eventType }, 'Published playback event to Kafka');
   } catch (error) {
-    logger.error({ error: error.message, userId, trackId, eventType }, 'Failed to publish playback event');
+    logger.error({ error: (error as Error).message, userId, trackId, eventType }, 'Failed to publish playback event');
     throw error;
   }
 }
@@ -124,7 +125,7 @@ export async function publishPlaybackEvent(userId, trackId, eventType, position 
  * @param {function} handler - Async function to handle each event
  * @param {string} groupId - Consumer group ID (default: 'analytics-worker')
  */
-export async function consumePlaybackEvents(handler, groupId = 'analytics-worker') {
+export async function consumePlaybackEvents(handler: (event: KafkaPlaybackMessage) => Promise<void>, groupId = 'analytics-worker') {
   consumer = kafka.consumer({
     groupId,
     sessionTimeout: 30000,
@@ -142,7 +143,7 @@ export async function consumePlaybackEvents(handler, groupId = 'analytics-worker
   await consumer.run({
     eachMessage: async ({ topic, partition, message }) => {
       try {
-        const event = JSON.parse(message.value.toString());
+        const event = JSON.parse(message.value!.toString());
         await handler(event);
       } catch (error) {
         logger.error(

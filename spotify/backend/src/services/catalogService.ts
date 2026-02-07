@@ -1,6 +1,6 @@
 import { pool } from '../db.js';
 import { redisClient } from '../db.js';
-import { _getPublicUrl, _COVERS_BUCKET } from '../storage.js';
+import { getPublicUrl as _getPublicUrl, COVERS_BUCKET as _COVERS_BUCKET } from '../storage.js';
 
 const CACHE_TTL = 300; // 5 minutes
 
@@ -53,7 +53,7 @@ export async function getArtists({ limit = 20, offset = 0, search = '' }) {
 }
 
 // Get artist by ID with albums
-export async function getArtistById(artistId) {
+export async function getArtistById(artistId: string) {
   const cacheKey = `artist:${artistId}`;
 
   const cached = await redisClient.get(cacheKey);
@@ -103,7 +103,7 @@ export async function getArtistById(artistId) {
 }
 
 // Get all albums with pagination
-export async function getAlbums({ limit = 20, offset = 0, search = '', artistId = null }) {
+export async function getAlbums({ limit = 20, offset = 0, search = '', artistId = null }: { limit?: number; offset?: number; search?: string; artistId?: string | null }) {
   let query = `
     SELECT a.*, ar.name as artist_name
     FROM albums a
@@ -149,7 +149,7 @@ export async function getAlbums({ limit = 20, offset = 0, search = '', artistId 
 }
 
 // Get album by ID with tracks
-export async function getAlbumById(albumId) {
+export async function getAlbumById(albumId: string) {
   const cacheKey = `album:${albumId}`;
 
   const cached = await redisClient.get(cacheKey);
@@ -192,7 +192,7 @@ export async function getAlbumById(albumId) {
 }
 
 // Get track by ID
-export async function getTrackById(trackId) {
+export async function getTrackById(trackId: string) {
   const result = await pool.query(
     `SELECT t.*,
             a.title as album_title, a.cover_url as album_cover_url, a.id as album_id,
@@ -208,7 +208,7 @@ export async function getTrackById(trackId) {
 }
 
 // Get tracks by IDs
-export async function getTracksByIds(trackIds) {
+export async function getTracksByIds(trackIds: string[]) {
   if (!trackIds || trackIds.length === 0) return [];
 
   const result = await pool.query(
@@ -226,8 +226,8 @@ export async function getTracksByIds(trackIds) {
 }
 
 // Search across all content
-export async function search(query, { limit = 20, types = ['artists', 'albums', 'tracks'] }) {
-  const results = {};
+export async function search(query: string, { limit = 20, types = ['artists', 'albums', 'tracks'] }: { limit?: number; types?: string[] }) {
+  const results: { artists?: unknown[]; albums?: unknown[]; tracks?: unknown[] } = {};
   const searchTerm = `%${query}%`;
 
   if (types.includes('artists')) {

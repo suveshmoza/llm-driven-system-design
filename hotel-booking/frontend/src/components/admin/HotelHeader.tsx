@@ -35,7 +35,7 @@ export function HotelHeader({ hotel }: HotelHeaderProps) {
         <div className="flex-1">
           <div className="flex justify-between items-start">
             <HotelInfo hotel={hotel} />
-            <Link to={`/hotels/${hotel.id}`} className="btn-secondary text-sm">
+            <Link to="/hotels/$hotelId" params={{ hotelId: hotel.id }} className="btn-secondary text-sm">
               View Public Page
             </Link>
           </div>

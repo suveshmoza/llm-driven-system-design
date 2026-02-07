@@ -9,7 +9,6 @@ import { useEffect, useCallback } from 'react';
 import { StoryList, TopicBadges } from '../components';
 import { feedApi } from '../services/api';
 import { useFeedStore } from '../stores';
-import type { Topic } from '../types';
 import { RefreshCw, Zap } from 'lucide-react';
 
 /**

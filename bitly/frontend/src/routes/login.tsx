@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { AuthForms } from '../components/AuthForms';
 import { useAuthStore } from '../stores/authStore';
 

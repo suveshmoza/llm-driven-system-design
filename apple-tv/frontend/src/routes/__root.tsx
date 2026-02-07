@@ -1,6 +1,5 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { Header } from '../components';
 import { useAuthStore } from '../stores/authStore';
 
 /**

@@ -1,9 +1,9 @@
-import { createFileRoute, Link, useParams } from '@tanstack/react-router';
+import { createFileRoute, useParams } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { LabelBadge } from '../components/IssueCard';
-import { CircleDot, CheckCircle, MessageSquare, Tag, User } from 'lucide-react';
+import { CircleDot, CheckCircle, Tag, User } from 'lucide-react';
 import type { Issue as IssueType } from '../types';
 
 export const Route = createFileRoute('/$owner/$repo/issues/$number')({

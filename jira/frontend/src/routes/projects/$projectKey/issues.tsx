@@ -3,8 +3,7 @@ import { useEffect, useState } from 'react';
 import { useProjectStore, useIssueStore, useUIStore } from '../../../stores';
 import { IssueDetail } from '../../../components/IssueDetail';
 import { Button, Spinner, IssueTypeIcon, PriorityIcon, Avatar, Input, Select } from '../../../components/ui';
-import type { IssueWithDetails, IssueType } from '../../../types';
-import * as api from '../../../services/api';
+import type { IssueWithDetails } from '../../../types';
 
 export const Route = createFileRoute('/projects/$projectKey/issues')({
   component: IssuesPage,
@@ -22,10 +21,7 @@ function IssuesPage() {
 
   useEffect(() => {
     if (currentProject) {
-      fetchProjectIssues(currentProject.id, {
-        statusId: statusFilter ? parseInt(statusFilter, 10) : undefined,
-        issueType: typeFilter as IssueType | undefined,
-      });
+      fetchProjectIssues(currentProject.id);
     }
   }, [currentProject, statusFilter, typeFilter, fetchProjectIssues]);
 

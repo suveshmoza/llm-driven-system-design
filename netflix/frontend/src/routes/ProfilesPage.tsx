@@ -3,14 +3,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { Plus, Edit2 } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 
-const AVATAR_OPTIONS = [
-  '/avatars/avatar1.png',
-  '/avatars/avatar2.png',
-  '/avatars/avatar3.png',
-  '/avatars/avatar4.png',
-  '/avatars/avatar-kids.png',
-];
-
 const AVATAR_COLORS = ['#E50914', '#1D9BF0', '#8B5CF6', '#22C55E', '#F59E0B'];
 
 export function ProfilesPage() {

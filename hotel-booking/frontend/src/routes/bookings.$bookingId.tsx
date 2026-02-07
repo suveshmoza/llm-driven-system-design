@@ -148,7 +148,8 @@ function BookingDetailPage() {
               />
               <div>
                 <Link
-                  to={`/hotels/${booking.hotelId}`}
+                  to="/hotels/$hotelId"
+                  params={{ hotelId: booking.hotelId }}
                   className="text-lg font-medium text-gray-900 hover:text-primary-600"
                 >
                   {booking.hotelName}

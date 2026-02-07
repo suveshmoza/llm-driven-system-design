@@ -1,11 +1,11 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
-import { RootLayout } from '../components/RootLayout';
-import { HomePage } from '../components/HomePage';
-import { BrowsePage } from '../components/BrowsePage';
-import { CategoryPage } from '../components/CategoryPage';
-import { ChannelPage } from '../components/ChannelPage';
-import { FollowingPage } from '../components/FollowingPage';
-import { DashboardPage } from '../components/DashboardPage';
+import { RootLayout } from './components/RootLayout';
+import { HomePage } from './components/HomePage';
+import { BrowsePage } from './components/BrowsePage';
+import { CategoryPage } from './components/CategoryPage';
+import { ChannelPage } from './components/ChannelPage';
+import { FollowingPage } from './components/FollowingPage';
+import { DashboardPage } from './components/DashboardPage';
 
 const rootRoute = createRootRoute({
   component: RootLayout,

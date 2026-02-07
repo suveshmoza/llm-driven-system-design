@@ -161,7 +161,8 @@ function HostReservationsPage() {
 
                     {booking.status === 'confirmed' && (
                       <Link
-                        to={`/booking/${booking.id}`}
+                        to="/booking/$id"
+                        params={{ id: String(booking.id) }}
                         className="text-sm text-airbnb font-medium hover:underline"
                       >
                         View details

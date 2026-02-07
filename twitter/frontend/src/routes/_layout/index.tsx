@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { ComposeTweet } from '../../components/ComposeTweet';
 import { Timeline } from '../../components/Timeline';
@@ -12,7 +12,6 @@ export const Route = createFileRoute('/_layout/')({
 function HomePage() {
   const { user } = useAuthStore();
   const { tweets, isLoading, error, nextCursor, fetchHomeTimeline, fetchExploreTimeline, loadMore } = useTimelineStore();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {

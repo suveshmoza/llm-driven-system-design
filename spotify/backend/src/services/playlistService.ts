@@ -1,7 +1,8 @@
 import { pool } from '../db.js';
+import type { PlaylistUpdate } from '../types.js';
 
 // Create a new playlist
-export async function createPlaylist(userId, { name, description = '', isPublic = true }) {
+export async function createPlaylist(userId: string, { name, description = '', isPublic = true }: { name: string; description?: string; isPublic?: boolean }) {
   const result = await pool.query(
     `INSERT INTO playlists (owner_id, name, description, is_public)
      VALUES ($1, $2, $3, $4)
@@ -13,7 +14,7 @@ export async function createPlaylist(userId, { name, description = '', isPublic 
 }
 
 // Get user's playlists
-export async function getUserPlaylists(userId, { limit = 50, offset = 0 }) {
+export async function getUserPlaylists(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT p.*,
             u.username as owner_username,
@@ -40,7 +41,7 @@ export async function getUserPlaylists(userId, { limit = 50, offset = 0 }) {
 }
 
 // Get playlist by ID with tracks
-export async function getPlaylistById(playlistId, userId = null) {
+export async function getPlaylistById(playlistId: string, userId: string | null = null) {
   const playlistResult = await pool.query(
     `SELECT p.*, u.username as owner_username
      FROM playlists p
@@ -85,7 +86,7 @@ export async function getPlaylistById(playlistId, userId = null) {
 }
 
 // Update playlist
-export async function updatePlaylist(playlistId, userId, updates) {
+export async function updatePlaylist(playlistId: string, userId: string, updates: PlaylistUpdate) {
   // Verify ownership
   const ownerCheck = await pool.query(
     'SELECT owner_id FROM playlists WHERE id = $1',
@@ -120,7 +121,7 @@ export async function updatePlaylist(playlistId, userId, updates) {
 }
 
 // Delete playlist
-export async function deletePlaylist(playlistId, userId) {
+export async function deletePlaylist(playlistId: string, userId: string) {
   const ownerCheck = await pool.query(
     'SELECT owner_id FROM playlists WHERE id = $1',
     [playlistId]
@@ -135,7 +136,7 @@ export async function deletePlaylist(playlistId, userId) {
 }
 
 // Add track to playlist
-export async function addTrackToPlaylist(playlistId, trackId, userId) {
+export async function addTrackToPlaylist(playlistId: string, trackId: string, userId: string) {
   // Check authorization (owner or collaborative)
   const playlistCheck = await pool.query(
     'SELECT owner_id, is_collaborative FROM playlists WHERE id = $1',
@@ -176,7 +177,7 @@ export async function addTrackToPlaylist(playlistId, trackId, userId) {
 }
 
 // Remove track from playlist
-export async function removeTrackFromPlaylist(playlistId, trackId, userId) {
+export async function removeTrackFromPlaylist(playlistId: string, trackId: string, userId: string) {
   const playlistCheck = await pool.query(
     'SELECT owner_id, is_collaborative FROM playlists WHERE id = $1',
     [playlistId]
@@ -227,7 +228,7 @@ export async function removeTrackFromPlaylist(playlistId, trackId, userId) {
 }
 
 // Reorder tracks in playlist
-export async function reorderPlaylistTracks(playlistId, userId, { trackId, newPosition }) {
+export async function reorderPlaylistTracks(playlistId: string, userId: string, { trackId, newPosition }: { trackId: string; newPosition: number }) {
   const playlistCheck = await pool.query(
     'SELECT owner_id, is_collaborative FROM playlists WHERE id = $1',
     [playlistId]

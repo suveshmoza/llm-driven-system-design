@@ -30,7 +30,7 @@ interface UrlState {
  * URL store hook.
  * Manages the list of user's URLs and provides actions for creating and deleting.
  */
-export const useUrlStore = create<UrlState>()((set, get) => ({
+export const useUrlStore = create<UrlState>()((set) => ({
   urls: [],
   total: 0,
   isLoading: false,

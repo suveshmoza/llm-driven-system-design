@@ -5,7 +5,7 @@ import Sidebar from '@/components/sidebar/Sidebar';
 
 function IndexPage() {
   const { isAuthenticated } = useAuthStore();
-  const { workspaces, currentWorkspace, fetchWorkspaces } = useWorkspaceStore();
+  const { currentWorkspace, fetchWorkspaces } = useWorkspaceStore();
   const { pages, fetchPages } = usePageStore();
 
   useEffect(() => {
@@ -71,7 +71,7 @@ function IndexPage() {
 }
 
 export const Route = createFileRoute('/')({
-  beforeLoad: ({ context }) => {
+  beforeLoad: ({ context: _context }) => {
     const isAuthenticated = useAuthStore.getState().isAuthenticated;
     if (!isAuthenticated) {
       throw redirect({ to: '/login' });

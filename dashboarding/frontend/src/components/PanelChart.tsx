@@ -22,7 +22,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { format } from 'date-fns';
-import type { Panel, QueryResult, PanelOptions, Threshold } from '../types';
+import type { Panel, QueryResult } from '../types';
 import { getPanelData } from '../services/api';
 import { TIME_RANGE_OPTIONS, TimeRange } from '../types';
 
@@ -49,38 +49,6 @@ const COLORS = [
   '#FFBB28',
   '#FF8042',
 ];
-
-/**
- * Determines the display color based on value and threshold configuration.
- *
- * @param value - The metric value to evaluate
- * @param thresholds - Optional array of threshold/color pairs
- * @returns CSS color string for the value
- */
-function getThresholdColor(value: number, thresholds?: Threshold[]): string {
-  if (!thresholds || thresholds.length === 0) return '#82ca9d';
-
-  const sorted = [...thresholds].sort((a, b) => b.value - a.value);
-  for (const threshold of sorted) {
-    if (value >= threshold.value) {
-      return threshold.color;
-    }
-  }
-  return '#82ca9d';
-}
-
-/**
- * Formats a numeric value with decimals and optional unit.
- *
- * @param value - The numeric value to format
- * @param options - Panel options containing decimals and unit
- * @returns Formatted string representation
- */
-function formatValue(value: number, options?: PanelOptions): string {
-  const decimals = options?.decimals ?? 2;
-  const formatted = value.toFixed(decimals);
-  return options?.unit ? `${formatted}${options.unit}` : formatted;
-}
 
 /**
  * Renders a time-series chart (line, area, or bar) for a dashboard panel.

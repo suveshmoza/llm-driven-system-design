@@ -1,8 +1,7 @@
-import { createFileRoute, Link, Outlet, Navigate, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Outlet, Navigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { useAuthStore, useProjectStore, useUIStore } from '../stores';
+import { useAuthStore, useProjectStore } from '../stores';
 import { Layout } from '../components/Layout';
-import { Button, Spinner, EmptyState } from '../components/ui';
 
 export const Route = createFileRoute('/projects')({
   component: ProjectsLayout,
@@ -10,7 +9,7 @@ export const Route = createFileRoute('/projects')({
 
 function ProjectsLayout() {
   const { isAuthenticated } = useAuthStore();
-  const { projects, isLoading, fetchProjects } = useProjectStore();
+  const { fetchProjects } = useProjectStore();
 
   useEffect(() => {
     if (isAuthenticated) {

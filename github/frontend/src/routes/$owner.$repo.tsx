@@ -104,11 +104,11 @@ function RepoPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-2">
           <Book className="w-5 h-5 text-github-muted" />
-          <Link to={`/${owner}`} className="text-github-accent hover:underline text-xl">
+          <Link to={"/" as "/"} className="text-github-accent hover:underline text-xl">
             {owner}
           </Link>
           <span className="text-github-muted text-xl">/</span>
-          <Link to={`/${owner}/${repo}`} className="text-github-accent hover:underline text-xl font-semibold">
+          <Link to="/$owner/$repo" params={{ owner, repo: repo }} className="text-github-accent hover:underline text-xl font-semibold">
             {repo}
           </Link>
           {repoData.is_private && (
@@ -144,28 +144,32 @@ function RepoPage() {
       {/* Tabs */}
       <nav className="flex items-center space-x-4 border-b border-github-border mb-6">
         <Link
-          to={`/${owner}/${repo}`}
+          to="/$owner/$repo"
+          params={{ owner, repo: repo }}
           className="flex items-center space-x-1 px-3 py-2 border-b-2 border-github-accent text-white"
         >
           <Code className="w-4 h-4" />
           <span>Code</span>
         </Link>
         <Link
-          to={`/${owner}/${repo}/issues`}
+          to="/$owner/$repo/issues"
+          params={{ owner, repo: repo }}
           className="flex items-center space-x-1 px-3 py-2 text-github-muted hover:text-white"
         >
           <CircleDot className="w-4 h-4" />
           <span>Issues</span>
         </Link>
         <Link
-          to={`/${owner}/${repo}/pulls`}
+          to="/$owner/$repo/pulls"
+          params={{ owner, repo: repo }}
           className="flex items-center space-x-1 px-3 py-2 text-github-muted hover:text-white"
         >
           <GitPullRequest className="w-4 h-4" />
           <span>Pull requests</span>
         </Link>
         <Link
-          to={`/${owner}/${repo}/discussions`}
+          to="/$owner/$repo/discussions"
+          params={{ owner, repo: repo }}
           className="flex items-center space-x-1 px-3 py-2 text-github-muted hover:text-white"
         >
           <MessageSquare className="w-4 h-4" />
@@ -173,7 +177,8 @@ function RepoPage() {
         </Link>
         {user && user.username === owner && (
           <Link
-            to={`/${owner}/${repo}/settings`}
+            to={"/$owner/$repo" as "/"}
+            params={{ owner, repo: repo }}
             className="flex items-center space-x-1 px-3 py-2 text-github-muted hover:text-white"
           >
             <Settings className="w-4 h-4" />
@@ -215,7 +220,8 @@ function RepoPage() {
           </div>
           <div className="flex items-center space-x-4 text-github-muted">
             <Link
-              to={`/${owner}/${repo}/commit/${lastCommit.sha}`}
+              to={"/$owner/$repo" as "/"}
+              params={{ owner, repo: repo }}
               className="hover:text-github-accent font-mono"
             >
               {lastCommit.sha.slice(0, 7)}

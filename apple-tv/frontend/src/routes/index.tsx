@@ -18,7 +18,7 @@ import type { RecommendationSection } from '../types';
  * - Featured content carousel
  */
 function HomePage() {
-  const { user, currentProfile } = useAuthStore();
+  const { currentProfile } = useAuthStore();
   const { featured, continueWatching, fetchFeatured, fetchContinueWatching } = useContentStore();
   const [recommendations, setRecommendations] = useState<RecommendationSection[]>([]);
   const [isLoading, setIsLoading] = useState(true);

@@ -1,11 +1,12 @@
 import { pool } from '../db.js';
 import bcrypt from 'bcrypt';
 import { v4 as _uuidv4 } from 'uuid';
+import type { UserProfileUpdate } from '../types.js';
 
 const SALT_ROUNDS = 10;
 
 // Register a new user
-export async function register({ email, password, username, displayName }) {
+export async function register({ email, password, username, displayName }: { email: string; password: string; username: string; displayName?: string }) {
   // Check if user already exists
   const existingUser = await pool.query(
     'SELECT id FROM users WHERE email = $1',
@@ -29,7 +30,7 @@ export async function register({ email, password, username, displayName }) {
 }
 
 // Login user
-export async function login({ email, password }) {
+export async function login({ email, password }: { email: string; password: string }) {
   const result = await pool.query(
     'SELECT * FROM users WHERE email = $1',
     [email]
@@ -52,7 +53,7 @@ export async function login({ email, password }) {
 }
 
 // Get user by ID
-export async function getUserById(userId) {
+export async function getUserById(userId: string) {
   const result = await pool.query(
     `SELECT id, email, username, display_name, avatar_url, is_premium, role, created_at
      FROM users WHERE id = $1`,
@@ -63,7 +64,7 @@ export async function getUserById(userId) {
 }
 
 // Update user profile
-export async function updateProfile(userId, updates) {
+export async function updateProfile(userId: string, updates: UserProfileUpdate) {
   const allowedFields = ['display_name', 'avatar_url'];
   const updateEntries = Object.entries(updates).filter(([key]) =>
     allowedFields.includes(key)

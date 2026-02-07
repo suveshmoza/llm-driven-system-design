@@ -33,7 +33,7 @@ interface AuthStore extends AuthState {
  * The store persists session state via httpOnly cookies managed by the
  * backend, but maintains client-side state for UI rendering and route guards.
  */
-export const useAuthStore = create<AuthStore>((set, get) => ({
+export const useAuthStore = create<AuthStore>((set, _get) => ({
   user: null,
   deviceId: null,
   token: null,

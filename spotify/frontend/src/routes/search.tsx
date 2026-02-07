@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useState, useEffect, useCallback } from 'react';
 import { catalogApi } from '../services/api';
 import type { SearchResults, Track } from '../types';
-import { AlbumCard, TrackList } from '../components/TrackList';
+import { AlbumCard } from '../components/TrackList';
 import { usePlayerStore } from '../stores/playerStore';
 
 export const Route = createFileRoute('/search')({

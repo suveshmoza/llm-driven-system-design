@@ -88,7 +88,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   fetchRateLimitUsage: async () => {
     try {
       const response = await api.getRateLimitUsage();
-      set({ rateLimitUsage: response.usage as RateLimitUsage });
+      set({ rateLimitUsage: response.usage as unknown as RateLimitUsage });
     } catch (error) {
       console.error('Failed to fetch rate limit usage:', error);
     }

@@ -30,7 +30,6 @@ export function BrowsePage() {
   const heroVideo = homepageRows.find((r) => r.rowType === 'trending')?.items[0];
 
   // Separate continue watching from other rows
-  const continueWatchingRow = homepageRows.find((r) => r.rowType === 'continue_watching');
   const otherRows = homepageRows.filter((r) => r.rowType !== 'continue_watching');
 
   if (isLoading && homepageRows.length === 0) {

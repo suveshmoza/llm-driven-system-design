@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { api } from '@/services/api';
-import { useAuthStore } from '@/stores/authStore';
 import { OrderCard } from '@/components/OrderCard';
 import { PageLoading } from '@/components/LoadingSpinner';
 import type { OrderWithDetails } from '@/types';
@@ -13,7 +12,6 @@ export const Route = createFileRoute('/orders/')({
 function OrdersPage() {
   const [orders, setOrders] = useState<OrderWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user } = useAuthStore();
 
   useEffect(() => {
     loadOrders();

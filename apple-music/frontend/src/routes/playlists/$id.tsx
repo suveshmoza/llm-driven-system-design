@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Play, Shuffle, MoreHorizontal, Trash2, Edit2, Clock } from 'lucide-react';
 import { playlistApi } from '../../services/api';
-import { Playlist, Track } from '../../types';
+import { Playlist } from '../../types';
 import { TrackRow } from '../../components/MusicCards';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -169,7 +169,7 @@ function PlaylistPage() {
                 {showMenu && (
                   <div className="absolute left-0 top-full mt-2 w-48 bg-apple-card border border-apple-border rounded-lg shadow-xl z-10">
                     <Link
-                      to="/playlists/$id/edit"
+                      to="/playlists/$id"
                       params={{ id: playlist.id }}
                       className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition"
                       onClick={() => setShowMenu(false)}

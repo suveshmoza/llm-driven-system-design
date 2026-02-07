@@ -115,7 +115,8 @@ export function ChannelPage() {
               <h2 className="text-white mb-1">{channel.title}</h2>
               {channel.category && (
                 <Link
-                  to={`/category/${channel.category.slug}`}
+                  to="/category/$slug"
+                  params={{ slug: channel.category.slug }}
                   className="text-twitch-400 hover:underline text-sm"
                 >
                   {channel.category.name}

@@ -13,7 +13,6 @@ import {
   Search,
   Settings,
   LogOut,
-  File,
   Database,
   MoreHorizontal,
   Trash2,

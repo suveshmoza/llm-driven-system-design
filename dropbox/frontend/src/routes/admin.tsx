@@ -40,7 +40,7 @@ function AdminDashboard() {
     if (!authLoading && !user) {
       navigate({ to: '/login' });
     } else if (user && user.role !== 'admin') {
-      navigate({ to: '/' });
+      navigate({ to: '/', search: { folder: undefined } });
     }
   }, [authLoading, user, navigate]);
 

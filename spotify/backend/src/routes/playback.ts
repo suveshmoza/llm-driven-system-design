@@ -3,7 +3,8 @@ import playbackService from '../services/playbackService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { playbackEventsTotal, streamCountsTotal, activeStreams } from '../shared/metrics.js';
-import type { AuthenticatedRequest, PlaybackEventType, PlaybackState, _isPlaybackEventType } from '../types.js';
+import { logger } from '../shared/logger.js';
+import type { AuthenticatedRequest, PlaybackEventType, PlaybackState } from '../types.js';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ router.get('/stream/:trackId', rateLimiters.playback, async (req, res: Response)
   const authReq = req as AuthenticatedRequest;
   try {
     const streamInfo = await playbackService.getStreamUrl(
-      req.params.trackId,
+      req.params.trackId as string,
       authReq.session.userId!
     );
     res.json(streamInfo);
@@ -92,7 +93,7 @@ router.post('/event', async (req, res: Response): Promise<void> => {
 
     res.json(result);
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Record playback event error');
     res.status(500).json({ error: 'Internal server error' });
@@ -152,7 +153,7 @@ router.get('/state', async (req, res: Response): Promise<void> => {
 // Get track statistics
 router.get('/stats/:trackId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const stats = await playbackService.getTrackStats(req.params.trackId);
+    const stats = await playbackService.getTrackStats(req.params.trackId as string);
     res.json(stats);
   } catch (error) {
     console.error('Get track stats error:', error);

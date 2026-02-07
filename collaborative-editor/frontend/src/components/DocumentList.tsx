@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Document, User } from '../types';
+import type { Document } from '../types';
 import { api } from '../services/api';
 
 /**

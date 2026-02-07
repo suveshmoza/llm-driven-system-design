@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { feedApi } from '@/services/api';
 import { Video } from '@/types';
@@ -8,7 +8,6 @@ export const Route = createFileRoute('/discover')({
 });
 
 function DiscoverPage() {
-  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Video[]>([]);
   const [isSearching, setIsSearching] = useState(false);

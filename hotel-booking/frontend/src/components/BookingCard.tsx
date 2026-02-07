@@ -53,7 +53,8 @@ export function BookingCard({ booking, showActions = true, onCancel, onConfirm }
           <div className="flex justify-between items-start mb-2">
             <div>
               <Link
-                to={`/hotels/${booking.hotelId}`}
+                to="/hotels/$hotelId"
+                params={{ hotelId: booking.hotelId }}
                 className="text-lg font-semibold text-gray-900 hover:text-primary-600"
               >
                 {booking.hotelName}
@@ -90,7 +91,7 @@ export function BookingCard({ booking, showActions = true, onCancel, onConfirm }
 
           {showActions && (
             <div className="flex space-x-3">
-              <Link to={`/bookings/${booking.id}`} className="btn-secondary text-sm">
+              <Link to="/bookings/$bookingId" params={{ bookingId: booking.id }} className="btn-secondary text-sm">
                 View Details
               </Link>
               {booking.status === 'reserved' && onConfirm && (

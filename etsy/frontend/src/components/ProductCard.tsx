@@ -9,7 +9,7 @@ export function ProductCard({ product }: ProductCardProps) {
   const imageUrl = product.images?.[0] || 'https://via.placeholder.com/400x400?text=No+Image';
 
   return (
-    <Link to={`/product/${product.id}`} className="group">
+    <Link to="/product/$productId" params={{ productId: String(product.id) }} className="group">
       <div className="card hover:shadow-md transition-shadow">
         <div className="aspect-square overflow-hidden">
           <img

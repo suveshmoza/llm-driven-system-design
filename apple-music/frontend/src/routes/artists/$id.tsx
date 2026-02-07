@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Play, Plus, Check, Shuffle } from 'lucide-react';
-import { catalogApi, libraryApi, radioApi } from '../../services/api';
+import { catalogApi, libraryApi } from '../../services/api';
 import { Artist, Album, Track } from '../../types';
 import { AlbumCard, TrackRow } from '../../components/MusicCards';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -65,17 +65,6 @@ function ArtistPage() {
       }
     } catch (error) {
       console.error('Failed to update library:', error);
-    }
-  };
-
-  const handleCreateRadio = async () => {
-    if (!user || !artist) return;
-
-    try {
-      await radioApi.createPersonalStation('artist', artist.id);
-      // Could navigate to radio page or show notification
-    } catch (error) {
-      console.error('Failed to create radio:', error);
     }
   };
 

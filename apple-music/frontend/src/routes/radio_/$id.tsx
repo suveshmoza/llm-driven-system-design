@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Play, Shuffle } from 'lucide-react';
 import { radioApi } from '../../services/api';
-import { RadioStation, Track } from '../../types';
+import { RadioStation } from '../../types';
 import { TrackRow } from '../../components/MusicCards';
 import { usePlayerStore } from '../../stores/playerStore';
 

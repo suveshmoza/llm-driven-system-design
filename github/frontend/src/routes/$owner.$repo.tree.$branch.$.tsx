@@ -56,7 +56,7 @@ function TreePage() {
         <Link to={`/${owner}/${repo}`} className="text-github-accent hover:underline">
           {repo}
         </Link>
-        {pathParts.map((part, index) => (
+        {pathParts.map((part: string, index: number) => (
           <span key={index} className="flex items-center">
             <ChevronRight className="w-4 h-4 text-github-muted" />
             {index === pathParts.length - 1 ? (

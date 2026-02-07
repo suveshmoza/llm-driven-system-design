@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { libraryApi, playlistApi } from '../services/api';
-import type { Track, Album, Artist, Playlist } from '../types';
+import type { Album, Artist, Playlist } from '../types';
 import { AlbumCard } from '../components/TrackList';
 import { useAuthStore } from '../stores/authStore';
 

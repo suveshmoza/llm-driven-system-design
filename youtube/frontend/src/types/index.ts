@@ -217,6 +217,8 @@ export interface UploadProgress {
   totalChunks: number;
   /** Upload progress percentage (0-100) */
   progress: number;
+  /** Current upload phase */
+  phase?: 'uploading' | 'processing';
 }
 
 /**

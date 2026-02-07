@@ -33,7 +33,9 @@ export function requestLogger(
   res: Response,
   next: NextFunction
 ): void {
-  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  const requestId = Array.isArray(req.headers['x-request-id'])
+    ? req.headers['x-request-id'][0]
+    : req.headers['x-request-id'] || crypto.randomUUID();
   const startTime = Date.now();
 
   // Attach child logger and requestId to request
@@ -70,11 +72,11 @@ export function requestLogger(
     };
 
     if (res.statusCode >= 500) {
-      req.log.error(logData, 'request completed with server error');
+      req.log?.error(logData, 'request completed with server error');
     } else if (res.statusCode >= 400) {
-      req.log.warn(logData, 'request completed with client error');
+      req.log?.warn(logData, 'request completed with client error');
     } else {
-      req.log.info(logData, 'request completed');
+      req.log?.info(logData, 'request completed');
     }
   });
 

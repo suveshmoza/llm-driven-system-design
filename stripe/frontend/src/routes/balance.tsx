@@ -12,7 +12,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { getBalance, getBalanceSummary, listBalanceTransactions } from '@/services/api';
 import { formatCurrency, formatDate } from '@/utils';
-import { StatusBadge } from '@/components';
 import type { Balance, BalanceSummary, BalanceTransaction } from '@/types';
 
 /**

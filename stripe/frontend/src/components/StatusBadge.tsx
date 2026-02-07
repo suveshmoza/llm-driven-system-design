@@ -8,7 +8,6 @@
  * @module components/StatusBadge
  */
 
-import type { PaymentIntentStatus } from '@/types';
 import { getStatusColor } from '@/utils';
 
 /**

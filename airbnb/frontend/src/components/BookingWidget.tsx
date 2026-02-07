@@ -4,8 +4,8 @@ import { listingsAPI, bookingsAPI } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from '@tanstack/react-router';
 import { Calendar } from './Calendar';
-import { formatCurrency, getNights } from '../utils/helpers';
-import { format, addDays, parseISO } from 'date-fns';
+import { formatCurrency } from '../utils/helpers';
+import { format, addDays } from 'date-fns';
 
 interface BookingWidgetProps {
   listing: Listing;

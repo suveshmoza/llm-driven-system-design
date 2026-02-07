@@ -16,7 +16,7 @@ interface DashboardState {
   setRefreshInterval: (interval: number) => void;
 }
 
-export const useDashboardStore = create<DashboardState>((set, get) => ({
+export const useDashboardStore = create<DashboardState>((set, _get) => ({
   data: null,
   lbStatus: null,
   loading: false,

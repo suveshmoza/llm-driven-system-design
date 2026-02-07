@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import catalogService from '../services/catalogService.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { searchOperationsTotal } from '../shared/metrics.js';
+import { logger } from '../shared/logger.js';
 import type { AuthenticatedRequest } from '../types.js';
 
 const router = Router();
@@ -34,7 +35,7 @@ router.get('/artists', async (req: Request, res: Response): Promise<void> => {
 // Get artist by ID
 router.get('/artists/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const artist = await catalogService.getArtistById(req.params.id);
+    const artist = await catalogService.getArtistById(req.params.id as string);
     if (!artist) {
       res.status(404).json({ error: 'Artist not found' });
       return;
@@ -54,7 +55,7 @@ router.get('/albums', async (req: Request, res: Response): Promise<void> => {
       limit: parseInt(limit),
       offset: parseInt(offset),
       search,
-      artistId,
+      artistId: artistId ?? null,
     });
     res.json(result);
   } catch (error) {
@@ -66,7 +67,7 @@ router.get('/albums', async (req: Request, res: Response): Promise<void> => {
 // Get album by ID
 router.get('/albums/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const album = await catalogService.getAlbumById(req.params.id);
+    const album = await catalogService.getAlbumById(req.params.id as string);
     if (!album) {
       res.status(404).json({ error: 'Album not found' });
       return;
@@ -81,7 +82,7 @@ router.get('/albums/:id', async (req: Request, res: Response): Promise<void> => 
 // Get track by ID
 router.get('/tracks/:id', async (req: Request, res: Response): Promise<void> => {
   try {
-    const track = await catalogService.getTrackById(req.params.id);
+    const track = await catalogService.getTrackById(req.params.id as string);
     if (!track) {
       res.status(404).json({ error: 'Track not found' });
       return;
@@ -141,7 +142,7 @@ router.get('/search', rateLimiters.search, async (req, res: Response): Promise<v
 
     res.json(results);
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Search error');
     res.status(500).json({ error: 'Internal server error' });

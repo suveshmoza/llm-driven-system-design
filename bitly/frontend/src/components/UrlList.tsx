@@ -4,8 +4,8 @@
  * Displays the user's shortened URLs with management actions.
  * Includes analytics modal and delete confirmation.
  */
-import React, { useEffect, useState } from 'react';
-import { Url, UrlAnalytics } from '../types';
+import { useEffect, useState } from 'react';
+import { UrlAnalytics } from '../types';
 import { useUrlStore } from '../stores/urlStore';
 import { api } from '../services/api';
 

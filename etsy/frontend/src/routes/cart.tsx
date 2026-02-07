@@ -53,7 +53,8 @@ function CartPage() {
           {cart.shops.map((shop) => (
             <div key={shop.shopId} className="card p-6">
               <Link
-                to={`/shop/${shop.shopSlug}`}
+                to="/shop/$shopSlug"
+                params={{ shopSlug: shop.shopSlug }}
                 className="font-semibold text-gray-900 hover:text-primary-600 mb-4 block"
               >
                 {shop.shopName}
@@ -62,7 +63,7 @@ function CartPage() {
               <div className="space-y-4">
                 {shop.items.map((item) => (
                   <div key={item.id} className="flex gap-4 py-4 border-b border-gray-100 last:border-0">
-                    <Link to={`/product/${item.productId}`}>
+                    <Link to="/product/$productId" params={{ productId: String(item.productId) }}>
                       <img
                         src={item.images?.[0] || 'https://via.placeholder.com/100x100?text=No+Image'}
                         alt={item.title}
@@ -72,7 +73,8 @@ function CartPage() {
 
                     <div className="flex-1">
                       <Link
-                        to={`/product/${item.productId}`}
+                        to="/product/$productId"
+                        params={{ productId: String(item.productId) }}
                         className="font-medium text-gray-900 hover:text-primary-600"
                       >
                         {item.title}

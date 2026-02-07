@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { AvailabilityBlock } from '../types';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, parseISO, addMonths, isBefore, startOfDay } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isWithinInterval, parseISO, addMonths, isBefore, startOfDay } from 'date-fns';
 
 interface CalendarProps {
   availabilityBlocks?: AvailabilityBlock[];
@@ -120,8 +120,6 @@ export function Calendar({
             (selectedCheckIn && isSameDay(date, selectedCheckIn)) ||
             (selectedCheckOut && isSameDay(date, selectedCheckOut));
           const inRange = isDateInRange(date);
-          const isCheckIn = selectedCheckIn && isSameDay(date, selectedCheckIn);
-          const isCheckOut = selectedCheckOut && isSameDay(date, selectedCheckOut);
 
           return (
             <button

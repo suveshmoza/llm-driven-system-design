@@ -6,7 +6,7 @@
  * or login/registration forms for unauthenticated visitors.
  */
 
-import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { LoginForm } from '../components/LoginForm';

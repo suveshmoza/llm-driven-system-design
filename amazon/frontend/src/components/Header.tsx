@@ -137,11 +137,11 @@ export function Header() {
       {/* Categories Nav */}
       <nav className="bg-slate-800 px-4 py-2">
         <div className="max-w-7xl mx-auto flex gap-6 text-sm">
-          <Link to="/category/electronics" className="hover:text-amber-400">Electronics</Link>
-          <Link to="/category/computers" className="hover:text-amber-400">Computers</Link>
-          <Link to="/category/books" className="hover:text-amber-400">Books</Link>
-          <Link to="/category/clothing" className="hover:text-amber-400">Clothing</Link>
-          <Link to="/category/home-kitchen" className="hover:text-amber-400">Home & Kitchen</Link>
+          <Link to="/category/$slug" params={{ slug: "electronics" }} className="hover:text-amber-400">Electronics</Link>
+          <Link to="/category/$slug" params={{ slug: "computers" }} className="hover:text-amber-400">Computers</Link>
+          <Link to="/category/$slug" params={{ slug: "books" }} className="hover:text-amber-400">Books</Link>
+          <Link to="/category/$slug" params={{ slug: "clothing" }} className="hover:text-amber-400">Clothing</Link>
+          <Link to="/category/$slug" params={{ slug: "home-kitchen" }} className="hover:text-amber-400">Home & Kitchen</Link>
         </div>
       </nav>
     </header>

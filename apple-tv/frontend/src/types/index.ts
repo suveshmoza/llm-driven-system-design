@@ -76,6 +76,8 @@ export interface Content {
   view_count: number;
   /** Available video quality variants */
   variants?: EncodedVariant[];
+  /** HDR format (e.g., "Dolby Vision", "HDR10") */
+  hdr_format?: string;
   /** Available audio tracks */
   audioTracks?: AudioTrack[];
   /** Available subtitles/captions */

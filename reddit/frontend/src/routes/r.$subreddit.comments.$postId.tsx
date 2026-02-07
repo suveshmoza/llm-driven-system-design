@@ -176,7 +176,7 @@ function PostPage() {
               key={s}
               to="/r/$subreddit/comments/$postId"
               params={{ subreddit, postId }}
-              search={{ sort: s }}
+              search={{ sort: s } as Record<string, unknown>}
               className={`px-2 py-1 rounded capitalize ${
                 (sort || 'best') === s ? 'bg-gray-200' : 'hover:bg-gray-100'
               }`}

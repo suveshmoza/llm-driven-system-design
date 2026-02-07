@@ -19,7 +19,7 @@ import type { WSMessage, Message } from '../types';
  */
 export function useWebSocket(userId: string | undefined, workspaceId: string | undefined) {
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number>();
+  const reconnectTimeoutRef = useRef<number>(undefined);
   const { addMessage, updateMessage, deleteMessage, addReaction, removeReaction, setTypingUsers } =
     useMessageStore();
   const { updatePresence } = usePresenceStore();

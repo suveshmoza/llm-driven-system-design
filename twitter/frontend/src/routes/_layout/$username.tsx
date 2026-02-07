@@ -138,11 +138,11 @@ function ProfilePage() {
           )}
 
           <div className="flex items-center gap-5 mt-3 text-[15px]">
-            <Link to={`/${username}/following`} className="hover:underline">
+            <Link to="/$username" params={{ username: `${username}/following` }} className="hover:underline">
               <span className="font-bold text-twitter-dark">{formatNumber(profile.followingCount)}</span>{' '}
               <span className="text-twitter-gray">Following</span>
             </Link>
-            <Link to={`/${username}/followers`} className="hover:underline">
+            <Link to="/$username" params={{ username: `${username}/followers` }} className="hover:underline">
               <span className="font-bold text-twitter-dark">{formatNumber(profile.followerCount)}</span>{' '}
               <span className="text-twitter-gray">Followers</span>
             </Link>

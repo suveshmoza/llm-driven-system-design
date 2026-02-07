@@ -4,7 +4,7 @@
  */
 
 import { Link } from '@tanstack/react-router';
-import { Search, User, LogOut, Settings } from 'lucide-react';
+import { Search, LogOut, Settings } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 
 /**

@@ -66,7 +66,8 @@ function HomePage() {
             {categories.map((category) => (
               <Link
                 key={category.id}
-                to={`/category/${category.slug}`}
+                to="/category/$categorySlug"
+                params={{ categorySlug: category.slug }}
                 className="group text-center"
               >
                 <div className="bg-gray-100 rounded-full p-4 mb-2 group-hover:bg-primary-100 transition-colors">

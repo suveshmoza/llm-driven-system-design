@@ -5,7 +5,7 @@ import { getMe, logout as logoutApi } from '../services/api'
 import { CalendarIcon, UserIcon } from '../components/icons'
 
 function RootLayout() {
-  const { user, isLoading, setUser, setLoading, logout } = useAuthStore()
+  const { user, isLoading, setUser, logout } = useAuthStore()
   const navigate = useNavigate()
 
   useEffect(() => {

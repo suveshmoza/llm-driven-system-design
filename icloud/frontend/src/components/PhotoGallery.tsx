@@ -115,8 +115,8 @@ export const PhotoGallery: React.FC = () => {
           onNext={() =>
             setViewingPhotoIndex((i) => Math.min(photos.length - 1, (i || 0) + 1))
           }
-          hasPrev={viewingPhotoIndex > 0}
-          hasNext={viewingPhotoIndex < photos.length - 1}
+          hasPrev={viewingPhotoIndex !== null && viewingPhotoIndex > 0}
+          hasNext={viewingPhotoIndex !== null && viewingPhotoIndex < photos.length - 1}
         />
       )}
 

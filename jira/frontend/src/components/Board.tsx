@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import type { IssueWithDetails, Status, Workflow } from '../types';
 import { IssueTypeIcon, PriorityIcon, Avatar, Spinner, EmptyState } from './ui';
 import * as api from '../services/api';
-import { useIssueStore, useUIStore } from '../stores';
+import { useIssueStore } from '../stores';
 
 interface BoardProps {
   issues: IssueWithDetails[];

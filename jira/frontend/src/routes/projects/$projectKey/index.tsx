@@ -7,5 +7,5 @@ export const Route = createFileRoute('/projects/$projectKey/')({
 function ProjectIndexPage() {
   const { projectKey } = Route.useParams();
   // Redirect to board by default
-  return <Navigate to={`/projects/${projectKey}/board`} />;
+  return <Navigate to="/projects/$projectKey/board" params={{ projectKey }} />;
 }

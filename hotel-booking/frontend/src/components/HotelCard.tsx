@@ -35,7 +35,9 @@ export function HotelCard({ hotel, checkIn, checkOut }: HotelCardProps) {
 
   return (
     <Link
-      to={`/hotels/${hotel.id}${queryString ? `?${queryString}` : ''}`}
+      to="/hotels/$hotelId"
+      params={{ hotelId: hotel.id }}
+      search={queryString ? Object.fromEntries(searchParams) : undefined}
       className="card group hover:shadow-lg transition-shadow duration-300"
     >
       <div className="relative h-48 overflow-hidden">

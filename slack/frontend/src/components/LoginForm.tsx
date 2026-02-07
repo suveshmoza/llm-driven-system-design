@@ -3,7 +3,7 @@
  * Handles user authentication with email/password and provides demo credentials.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { authApi, workspaceApi } from '../services/api';
 import { useAuthStore, useWorkspaceStore } from '../stores';

@@ -17,7 +17,7 @@ function ArtistPage() {
   const [artist, setArtist] = useState<Artist | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
-  const { playTrack, playQueue, currentTrack, isPlaying, togglePlay } = usePlayerStore();
+  const { playTrack: _playTrack, playQueue, currentTrack, isPlaying, togglePlay } = usePlayerStore();
 
   useEffect(() => {
     const fetchArtist = async () => {

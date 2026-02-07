@@ -33,7 +33,7 @@ interface AuthState {
  * Global authentication store.
  * Use with: const { user, isAuthenticated, login } = useAuthStore();
  */
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set, _get) => ({
   user: null,
   isLoading: true,
   isAuthenticated: false,

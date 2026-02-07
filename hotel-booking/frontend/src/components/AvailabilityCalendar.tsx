@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isBefore, parseISO, isSameDay } from 'date-fns';
+import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isBefore, parseISO } from 'date-fns';
 import type { AvailabilityDay } from '@/types';
 import { formatCurrency } from '@/utils';
 import { api } from '@/services/api';

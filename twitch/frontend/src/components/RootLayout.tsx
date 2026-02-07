@@ -97,7 +97,8 @@ export function RootLayout() {
                   </div>
                   <div className="p-2">
                     <Link
-                      to={`/${user.username}`}
+                      to="/$channelName"
+                      params={{ channelName: user.username }}
                       className="block px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded"
                     >
                       Channel

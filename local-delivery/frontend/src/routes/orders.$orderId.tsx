@@ -332,7 +332,7 @@ function getStatusSteps(order: OrderWithDetails) {
 
   const currentIndex = statusOrder.indexOf(order.status);
 
-  return steps.map((step, index) => ({
+  return steps.map((step, _index) => ({
     ...step,
     completed: statusOrder.indexOf(step.status) < currentIndex,
     current: step.status === order.status,

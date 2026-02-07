@@ -121,7 +121,7 @@ interface DriverState {
 export const useDriverStore = create<DriverState>((set, get) => {
   // Set up WebSocket handlers for real-time ride offers
   wsService.on('ride_offer', (msg) => {
-    const offer = msg as RideOffer;
+    const offer = msg as unknown as RideOffer;
     set({
       rideOffer: offer,
       offerExpiresAt: Date.now() + offer.expiresIn * 1000,

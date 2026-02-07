@@ -101,7 +101,8 @@ export function FollowingPage() {
                 {offlineChannels.map((channel) => (
                   <Link
                     key={channel.id}
-                    to={`/${channel.name}`}
+                    to="/$channelName"
+                    params={{ channelName: channel.name }}
                     className="flex items-center gap-3 p-2 rounded hover:bg-surface-light"
                   >
                     <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-white font-bold">

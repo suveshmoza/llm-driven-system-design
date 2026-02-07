@@ -132,7 +132,7 @@ export function AdminDashboard() {
   const handleStartTraining = async (config: TrainingConfig) => {
     try {
       setTrainingInProgress(true)
-      await startTraining(config)
+      await startTraining(config as unknown as Record<string, unknown>)
       // Refresh data after starting training
       setTimeout(loadData, 2000)
     } catch (err) {

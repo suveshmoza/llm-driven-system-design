@@ -4,7 +4,7 @@
  * and operation broadcasting with automatic reconnection logic.
  */
 
-import type { Presence, WSMessage, Operation } from '@/types';
+import type { WSMessage, Operation } from '@/types';
 
 /** Handler function for incoming WebSocket messages */
 type MessageHandler = (message: WSMessage) => void;

@@ -4,7 +4,6 @@ import { useAuthStore } from '../stores/authStore';
 import { feedApi, connectionsApi } from '../services/api';
 import type { Post, PYMKCandidate } from '../types';
 import { PostCard } from '../components/PostCard';
-import { ConnectionCard } from '../components/ConnectionCard';
 import { Link } from '@tanstack/react-router';
 import { Image, Calendar, FileText } from 'lucide-react';
 

@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useAuthStore, useStoreStore } from '../stores/auth';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';

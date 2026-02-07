@@ -5,7 +5,7 @@ import { contentApi, watchlistApi, watchProgressApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { Content, Episode, WatchProgress } from '../types';
 import { formatDurationHuman, formatYear } from '../utils';
-import { Play, Plus, Check, Star } from 'lucide-react';
+import { Play, Plus, Check } from 'lucide-react';
 
 /**
  * Content detail page showing full information about a movie or series.

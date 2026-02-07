@@ -36,7 +36,8 @@ export function DashboardHotelCard({ hotel }: DashboardHotelCardProps) {
           <HotelDetails hotel={hotel} />
         </div>
         <Link
-          to={`/admin/hotels/${hotel.id}`}
+          to="/admin/hotels/$hotelId"
+          params={{ hotelId: hotel.id }}
           className="btn-secondary text-sm"
         >
           Manage Hotel

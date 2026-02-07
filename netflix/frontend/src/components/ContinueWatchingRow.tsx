@@ -5,7 +5,6 @@
  * Shows larger thumbnails with episode info and progress bars.
  * Links directly to resume playback at the saved position.
  */
-import React from 'react';
 import { Link } from '@tanstack/react-router';
 import { Play } from 'lucide-react';
 import type { ContinueWatchingItem } from '../types';
@@ -37,7 +36,7 @@ export function ContinueWatchingRow({ items }: ContinueWatchingRowProps) {
               key={`${videoId}-${episodeId || ''}`}
               to="/watch/$videoId"
               params={{ videoId }}
-              search={episodeId ? { episodeId } : undefined}
+              search={episodeId ? { episodeId } : { episodeId: undefined }}
               className="relative flex-shrink-0 w-[280px] md:w-[320px] group"
             >
               {/* Thumbnail */}

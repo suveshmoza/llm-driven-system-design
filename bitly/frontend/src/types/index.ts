@@ -17,6 +17,7 @@ export interface Url {
   expires_at: string | null;
   click_count: number;
   is_custom: boolean;
+  is_active?: boolean;
 }
 
 /**

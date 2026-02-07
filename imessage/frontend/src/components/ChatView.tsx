@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import type { Conversation, Message, TypingUser } from '@/types';
+import type { Conversation, Message } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
 import { MessageBubble } from './MessageBubble';
@@ -26,7 +26,7 @@ export function ChatView({ conversation }: ChatViewProps) {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const user = useAuthStore((state) => state.user);
   const messages = useChatStore((state) => state.messages.get(conversation.id) || []);

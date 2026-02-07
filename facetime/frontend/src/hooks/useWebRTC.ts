@@ -31,7 +31,6 @@ export function useWebRTC() {
     localStream,
     setLocalStream,
     setRemoteStream,
-    currentUser,
   } = useStore();
 
   // Initialize ICE servers

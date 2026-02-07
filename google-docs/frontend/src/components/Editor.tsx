@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -39,22 +39,12 @@ export default function Editor({ document, presence, readOnly = false }: Props) 
         class: 'prose prose-sm sm:prose max-w-none p-12 min-h-full focus:outline-none',
       },
     },
-    onUpdate: ({ editor, transaction }) => {
+    onUpdate: ({ transaction }) => {
       if (transaction.docChanged && wsService.isConnected()) {
         // In a full implementation, we would:
         // 1. Calculate the operation from the transaction steps
         // 2. Send the operation via WebSocket
         // For this demo, we send a simplified version
-
-        // Get the current document state
-        const json = editor.getJSON();
-
-        // Send a placeholder operation - in production this would be proper OT
-        const operations = [{
-          type: 'insert' as const,
-          position: 0,
-          text: JSON.stringify(json),
-        }];
 
         // Note: Real OT would calculate actual insert/delete operations
         // from the ProseMirror transaction steps

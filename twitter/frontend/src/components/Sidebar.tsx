@@ -45,7 +45,8 @@ export function Sidebar() {
           {user && (
             <>
               <Link
-                to={`/${user.username}`}
+                to="/$username"
+                params={{ username: user.username }}
                 className="flex items-center gap-5 p-3 hover:bg-twitter-dark/10 rounded-full text-xl transition-colors text-twitter-dark"
                 activeProps={{ className: 'font-bold' }}
               >

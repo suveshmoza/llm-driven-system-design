@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import api from '../services/api';
-import type { Product, Shop, Category } from '../types';
+import type { Product, Category } from '../types';
 import { ProductCard } from '../components/ProductCard';
 
 export const Route = createFileRoute('/category/$categorySlug')({

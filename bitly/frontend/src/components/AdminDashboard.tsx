@@ -5,7 +5,7 @@
  * Includes tabs for statistics, URL management, user management, and key pool.
  */
 import React, { useEffect, useState } from 'react';
-import { SystemStats, GlobalAnalytics, KeyPoolStats, Url, User } from '../types';
+import { SystemStats, KeyPoolStats, Url, User } from '../types';
 import { api } from '../services/api';
 
 /**
@@ -250,7 +250,7 @@ function UrlsSection() {
                   </td>
                   <td className="py-2">
                     <button
-                      onClick={() => handleToggleActive(url.short_code, url.is_active)}
+                      onClick={() => handleToggleActive(url.short_code, url.is_active ?? true)}
                       className="text-sm text-primary-600 hover:underline"
                     >
                       {url.is_active ? 'Deactivate' : 'Reactivate'}

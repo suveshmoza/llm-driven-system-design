@@ -13,7 +13,7 @@ export function VideoPlayer({ channel }: VideoPlayerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const hideControlsTimeout = useRef<number>();
+  const hideControlsTimeout = useRef<number>(undefined);
 
   useEffect(() => {
     // For demo, we don't have actual HLS streams

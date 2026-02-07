@@ -168,37 +168,43 @@ export function Header() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8 py-3 overflow-x-auto">
             <Link
-              to="/category/jewelry-accessories"
+              to="/category/$categorySlug"
+              params={{ categorySlug: "jewelry-accessories" }}
               className="text-sm text-gray-600 hover:text-primary-600 whitespace-nowrap"
             >
               Jewelry & Accessories
             </Link>
             <Link
-              to="/category/clothing-shoes"
+              to="/category/$categorySlug"
+              params={{ categorySlug: "clothing-shoes" }}
               className="text-sm text-gray-600 hover:text-primary-600 whitespace-nowrap"
             >
               Clothing & Shoes
             </Link>
             <Link
-              to="/category/home-living"
+              to="/category/$categorySlug"
+              params={{ categorySlug: "home-living" }}
               className="text-sm text-gray-600 hover:text-primary-600 whitespace-nowrap"
             >
               Home & Living
             </Link>
             <Link
-              to="/category/art-collectibles"
+              to="/category/$categorySlug"
+              params={{ categorySlug: "art-collectibles" }}
               className="text-sm text-gray-600 hover:text-primary-600 whitespace-nowrap"
             >
               Art & Collectibles
             </Link>
             <Link
-              to="/category/vintage"
+              to="/category/$categorySlug"
+              params={{ categorySlug: "vintage" }}
               className="text-sm text-gray-600 hover:text-primary-600 whitespace-nowrap"
             >
               Vintage
             </Link>
             <Link
-              to="/category/weddings"
+              to="/category/$categorySlug"
+              params={{ categorySlug: "weddings" }}
               className="text-sm text-gray-600 hover:text-primary-600 whitespace-nowrap"
             >
               Weddings

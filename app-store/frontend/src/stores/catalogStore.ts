@@ -59,7 +59,7 @@ interface CatalogState {
  * Zustand store for catalog state.
  * Manages app browsing, search, and detail views.
  */
-export const useCatalogStore = create<CatalogState>((set, get) => ({
+export const useCatalogStore = create<CatalogState>((set) => ({
   categories: [],
   apps: [],
   currentApp: null,

@@ -58,7 +58,8 @@ export function TrendingSidebar() {
         {trends.map((trend, index) => (
           <Link
             key={trend.hashtag}
-            to={`/hashtag/${trend.hashtag}`}
+            to="/hashtag/$tag"
+            params={{ tag: trend.hashtag }}
             className="block px-4 py-3 hover:bg-twitter-dark/5 transition-colors"
           >
             <div className="flex items-start justify-between">

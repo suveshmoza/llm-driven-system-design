@@ -4,6 +4,7 @@ import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { idempotencyMiddleware, playlistTrackIdempotencyKey } from '../shared/idempotency.js';
 import { playlistOperationsTotal } from '../shared/metrics.js';
+import { logger } from '../shared/logger.js';
 import type { AuthenticatedRequest, PlaylistCreate, ReorderRequest } from '../types.js';
 
 const router = Router();
@@ -73,7 +74,7 @@ router.get('/:id', optionalAuth, async (req, res: Response): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   try {
     const playlist = await playlistService.getPlaylistById(
-      req.params.id,
+      req.params.id as string,
       authReq.session?.userId || null
     );
 
@@ -94,7 +95,7 @@ router.patch('/:id', requireAuth, async (req, res: Response): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   try {
     const playlist = await playlistService.updatePlaylist(
-      req.params.id,
+      req.params.id as string,
       authReq.session.userId!,
       req.body
     );
@@ -114,7 +115,7 @@ router.patch('/:id', requireAuth, async (req, res: Response): Promise<void> => {
 router.delete('/:id', requireAuth, async (req, res: Response): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   try {
-    await playlistService.deletePlaylist(req.params.id, authReq.session.userId!);
+    await playlistService.deletePlaylist(req.params.id as string, authReq.session.userId!);
     res.json({ deleted: true });
   } catch (error) {
     console.error('Delete playlist error:', error);
@@ -144,7 +145,7 @@ router.post(
       }
 
       const result = await playlistService.addTrackToPlaylist(
-        req.params.id,
+        req.params.id as string,
         trackId,
         authReq.session.userId!
       );
@@ -153,7 +154,7 @@ router.post(
 
       res.json(result);
     } catch (error) {
-      const log = authReq.log || console;
+      const log = authReq.log || logger;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       log.error({ error: errorMessage, playlistId: req.params.id }, 'Add track to playlist error');
       if (errorMessage.includes('Not authorized')) {
@@ -175,8 +176,8 @@ router.delete(
     const authReq = req as AuthenticatedRequest;
     try {
       const result = await playlistService.removeTrackFromPlaylist(
-        req.params.id,
-        req.params.trackId,
+        req.params.id as string,
+        req.params.trackId as string,
         authReq.session.userId!
       );
 
@@ -184,7 +185,7 @@ router.delete(
 
       res.json(result);
     } catch (error) {
-      const log = authReq.log || console;
+      const log = authReq.log || logger;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       log.error({ error: errorMessage, playlistId: req.params.id }, 'Remove track from playlist error');
       if (errorMessage.includes('Not authorized')) {
@@ -208,7 +209,7 @@ router.put('/:id/tracks/reorder', requireAuth, async (req, res: Response): Promi
     }
 
     const result = await playlistService.reorderPlaylistTracks(
-      req.params.id,
+      req.params.id as string,
       authReq.session.userId!,
       { trackId, newPosition }
     );

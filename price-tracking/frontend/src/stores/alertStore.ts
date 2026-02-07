@@ -35,7 +35,7 @@ interface AlertState {
  * Global alert store.
  * Use with: const { alerts, unreadCount, fetchAlerts } = useAlertStore();
  */
-export const useAlertStore = create<AlertState>((set, get) => ({
+export const useAlertStore = create<AlertState>((set, _get) => ({
   alerts: [],
   unreadCount: 0,
   isLoading: false,

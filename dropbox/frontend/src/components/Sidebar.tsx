@@ -43,6 +43,7 @@ export function Sidebar() {
           <li>
             <Link
               to="/"
+              search={{ folder: undefined }}
               className="flex items-center gap-3 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors [&.active]:bg-blue-50 [&.active]:text-dropbox-blue"
             >
               <HardDrive size={20} />

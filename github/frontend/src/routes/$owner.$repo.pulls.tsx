@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { IssueCard } from '../components/IssueCard';
-import { Plus, Search, GitPullRequest, CheckCircle, GitMerge } from 'lucide-react';
+import { Plus, Search, GitPullRequest, CheckCircle } from 'lucide-react';
 
 export const Route = createFileRoute('/$owner/$repo/pulls')({
   component: PullsPage,
@@ -11,7 +11,7 @@ export const Route = createFileRoute('/$owner/$repo/pulls')({
 
 function PullsPage() {
   const { owner, repo } = useParams({ from: '/$owner/$repo/pulls' });
-  const navigate = useNavigate();
+  const _navigate = useNavigate();
   const { user } = useAuthStore();
   const [pulls, setPulls] = useState<any[]>([]);
   const [total, setTotal] = useState(0);

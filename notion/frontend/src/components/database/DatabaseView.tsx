@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import type { Page, DatabaseView as DBView, DatabaseRow, PropertySchema } from '@/types';
 import { databasesApi } from '@/services/api';
-import { Table, Columns, List, Calendar, Plus, ChevronDown } from 'lucide-react';
+import { Table, Columns, List, Calendar, Plus } from 'lucide-react';
 import TableView from './TableView';
 import BoardView from './BoardView';
 import ListView from './ListView';
@@ -120,8 +120,6 @@ export default function DatabaseView({
       </div>
     );
   }
-
-  const ActiveViewIcon = VIEW_ICONS[activeView?.type || 'table'];
 
   return (
     <div>

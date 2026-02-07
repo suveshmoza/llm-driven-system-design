@@ -4,7 +4,7 @@
  * Implements automatic reconnection with exponential backoff.
  */
 
-import type { WSMessage, PresenceState, Operation, DocumentContent } from '../types';
+import type { WSMessage, Operation } from '../types';
 
 /** Function type for WebSocket message handlers */
 type MessageHandler = (message: WSMessage) => void;

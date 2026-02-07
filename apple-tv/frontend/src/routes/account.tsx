@@ -4,7 +4,7 @@ import { Header } from '../components';
 import { useAuthStore } from '../stores/authStore';
 import { subscriptionApi, watchProgressApi } from '../services/api';
 import type { SubscriptionPlan } from '../types';
-import { Check, CreditCard, History, User, Settings } from 'lucide-react';
+import { Check, CreditCard, History, User } from 'lucide-react';
 
 /**
  * Account settings page with user information and subscription management.

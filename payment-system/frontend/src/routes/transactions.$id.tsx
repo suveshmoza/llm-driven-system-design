@@ -1,9 +1,9 @@
 import { createFileRoute, Navigate, useNavigate } from '@tanstack/react-router';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore } from '../stores/authStore';
 import { useEffect, useState } from 'react';
-import { getPayment, capturePayment, voidPayment, refundPayment } from '../../services/api';
-import type { Transaction } from '../../types';
-import { formatCurrency, formatDate, getStatusColor } from '../../utils/format';
+import { getPayment, capturePayment, voidPayment, refundPayment } from '../services/api';
+import type { Transaction } from '../types';
+import { formatCurrency, formatDate, getStatusColor } from '../utils/format';
 
 function TransactionDetail() {
   const { id } = Route.useParams();

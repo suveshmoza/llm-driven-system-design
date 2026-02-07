@@ -24,7 +24,7 @@ import { Loader2 } from 'lucide-react';
 export const Route = createFileRoute('/')({
   validateSearch: (search: Record<string, unknown>) => {
     return {
-      folder: search.folder as string | undefined,
+      folder: (search.folder as string) || undefined,
     };
   },
   component: FileBrowser,
@@ -90,7 +90,7 @@ function FileBrowser() {
     if (targetFolderId) {
       navigate({ to: '/', search: { folder: targetFolderId } });
     } else {
-      navigate({ to: '/' });
+      navigate({ to: '/', search: { folder: undefined } });
     }
   };
 

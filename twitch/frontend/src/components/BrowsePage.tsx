@@ -88,7 +88,8 @@ export function BrowsePage() {
           {categories.map((category) => (
             <Link
               key={category.slug}
-              to={`/category/${category.slug}`}
+              to="/category/$slug"
+              params={{ slug: category.slug }}
               className="group"
             >
               <div className="aspect-[3/4] bg-surface-light rounded-lg overflow-hidden mb-2 group-hover:ring-2 ring-twitch-500 transition-all">

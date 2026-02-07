@@ -17,7 +17,7 @@ function MerchantPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const { setMerchant: setCartMerchant, items, getSubtotal, getItemCount } = useCartStore();
+  const { setMerchant: setCartMerchant, getSubtotal, getItemCount } = useCartStore();
 
   useEffect(() => {
     loadMerchant();

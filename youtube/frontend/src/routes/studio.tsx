@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Video, PaginatedResponse } from '../types';
 import { api } from '../services/api';
-import { formatViewCount, formatDuration, timeAgo, getPlaceholderThumbnail } from '../utils/format';
+import { timeAgo, getPlaceholderThumbnail } from '../utils/format';
 
 /**
  * Studio page route configuration.

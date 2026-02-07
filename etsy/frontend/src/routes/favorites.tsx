@@ -100,7 +100,8 @@ function FavoritesPage() {
           {favorites.map((favorite) => (
             <div key={favorite.id} className="card group">
               <Link
-                to={activeTab === 'product' ? `/product/${favorite.favoritable_id}` : `/shop/${favorite.slug}`}
+                to={activeTab === 'product' ? "/product/$productId" : "/shop/$shopSlug"}
+                params={activeTab === 'product' ? { productId: String(favorite.favoritable_id) } : { shopSlug: favorite.slug || '' }}
               >
                 <div className="aspect-square overflow-hidden">
                   <img
@@ -112,7 +113,8 @@ function FavoritesPage() {
               </Link>
               <div className="p-4">
                 <Link
-                  to={activeTab === 'product' ? `/product/${favorite.favoritable_id}` : `/shop/${favorite.slug}`}
+                  to={activeTab === 'product' ? "/product/$productId" : "/shop/$shopSlug"}
+                  params={activeTab === 'product' ? { productId: String(favorite.favoritable_id) } : { shopSlug: favorite.slug || '' }}
                 >
                   <h3 className="font-medium text-gray-900 group-hover:text-primary-600">
                     {favorite.name}

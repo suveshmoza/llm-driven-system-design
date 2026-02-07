@@ -19,7 +19,7 @@ export function ThreadPanel() {
   const [newReply, setNewReply] = useState('');
   const repliesEndRef = useRef<HTMLDivElement>(null);
 
-  const { user } = useAuthStore();
+  const { user: _user } = useAuthStore();
   const { activeThread, addThreadReply } = useMessageStore();
   const { setThreadPanelOpen } = useUIStore();
 

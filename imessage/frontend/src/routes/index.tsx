@@ -1,4 +1,4 @@
-import { createFileRoute, Navigate } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useChatStore } from '@/stores/chatStore';

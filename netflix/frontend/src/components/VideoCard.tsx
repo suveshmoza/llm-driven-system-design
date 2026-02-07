@@ -93,6 +93,7 @@ export function VideoCard({ video, showProgress, progressPercent = 0 }: VideoCar
                 <Link
                   to="/watch/$videoId"
                   params={{ videoId: video.id }}
+                  search={{ episodeId: undefined }}
                   className="w-8 h-8 rounded-full bg-white flex items-center justify-center hover:bg-white/80"
                   onClick={(e) => e.stopPropagation()}
                 >

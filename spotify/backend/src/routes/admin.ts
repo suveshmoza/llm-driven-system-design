@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import { requireAdmin, Roles, clearRoleCache } from '../middleware/auth.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { auditLog, AuditActions, queryAuditLogs } from '../shared/audit.js';
+import { logger } from '../shared/logger.js';
 import type { AuthenticatedRequest, User, PlatformStats } from '../types.js';
 
 const router = Router();
@@ -69,7 +70,7 @@ router.get('/users', async (req, res: Response): Promise<void> => {
       offset: parseInt(offset),
     });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin get users error');
     res.status(500).json({ error: 'Internal server error' });
@@ -93,7 +94,7 @@ router.get('/users/:id', async (req, res: Response): Promise<void> => {
 
     res.json(result.rows[0] as User);
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin get user error');
     res.status(500).json({ error: 'Internal server error' });
@@ -145,7 +146,7 @@ router.patch('/users/:id/role', async (req, res: Response): Promise<void> => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin update role error');
     res.status(500).json({ error: 'Internal server error' });
@@ -185,7 +186,7 @@ router.post('/users/:id/ban', async (req, res: Response): Promise<void> => {
 
     res.json({ success: true, userId: req.params.id });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin ban user error');
     res.status(500).json({ error: 'Internal server error' });
@@ -223,7 +224,7 @@ router.post('/users/:id/unban', async (req, res: Response): Promise<void> => {
 
     res.json({ success: true, userId: req.params.id });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin unban user error');
     res.status(500).json({ error: 'Internal server error' });
@@ -260,7 +261,7 @@ router.get('/audit-logs', async (req, res: Response): Promise<void> => {
 
     res.json(result);
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin get audit logs error');
     res.status(500).json({ error: 'Internal server error' });
@@ -287,7 +288,7 @@ router.get('/stats', async (req, res: Response): Promise<void> => {
 
     res.json(stats);
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Admin get stats error');
     res.status(500).json({ error: 'Internal server error' });

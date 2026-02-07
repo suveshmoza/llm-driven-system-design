@@ -33,6 +33,7 @@ export interface WebSocketMessage {
   type: string;
   callId?: string;
   userId?: string;
+  deviceId?: string;
   data?: unknown;
   timestamp?: number;
 }

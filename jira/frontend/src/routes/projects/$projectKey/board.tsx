@@ -5,7 +5,6 @@ import { KanbanBoard } from '../../../components/Board';
 import { IssueDetail } from '../../../components/IssueDetail';
 import { Button, Spinner, Select } from '../../../components/ui';
 import type { IssueWithDetails } from '../../../types';
-import * as api from '../../../services/api';
 
 export const Route = createFileRoute('/projects/$projectKey/board')({
   component: BoardPage,

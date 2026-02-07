@@ -3,7 +3,7 @@ import { Track, Album, Artist } from '../types';
 import { usePlayerStore } from '../stores/playerStore';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { libraryApi, playlistApi } from '../services/api';
+import { libraryApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 
 interface TrackRowProps {

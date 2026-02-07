@@ -8,7 +8,6 @@ import { create } from 'zustand';
 import type { Block, Operation, Presence, RichText, BlockType } from '@/types';
 import { blocksApi, pagesApi } from '@/services/api';
 import { wsService } from '@/services/websocket';
-import { v4 as uuidv4 } from './uuid';
 
 /**
  * Editor state interface.

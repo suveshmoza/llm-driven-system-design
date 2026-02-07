@@ -1,4 +1,4 @@
-import type { Message, WebSocketMessage } from '@/types';
+import type { WebSocketMessage } from '@/types';
 
 /**
  * Callback function type for handling incoming WebSocket messages.

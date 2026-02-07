@@ -87,7 +87,8 @@ function TripsPage() {
           {bookings.map((booking) => (
             <Link
               key={booking.id}
-              to={`/booking/${booking.id}`}
+              to="/booking/$id"
+              params={{ id: String(booking.id) }}
               className="flex gap-6 p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow"
             >
               <div className="w-48 h-32 rounded-lg overflow-hidden shrink-0">

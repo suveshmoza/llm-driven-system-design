@@ -23,7 +23,7 @@ import type { Document } from './types';
 function App() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
-  const { connect, disconnect, connected } = useEditorStore();
+  const { connect, disconnect } = useEditorStore();
 
   // Connect to document when selected
   useEffect(() => {

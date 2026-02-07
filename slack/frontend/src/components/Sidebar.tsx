@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuthStore, useWorkspaceStore, useChannelStore, useUIStore } from '../stores';
 import { channelApi, authApi } from '../services/api';
-import type { Channel, DMChannel } from '../types';
+import type { DMChannel } from '../types';
 
 /**
  * Props for the Sidebar component.
@@ -31,9 +31,9 @@ export function Sidebar({ currentChannelId }: SidebarProps) {
   const [error, setError] = useState('');
 
   const { user, setUser } = useAuthStore();
-  const { currentWorkspace, workspaces } = useWorkspaceStore();
+  const { currentWorkspace, workspaces: _workspaces } = useWorkspaceStore();
   const { channels, dms, setChannels } = useChannelStore();
-  const { isSearchOpen, setSearchOpen, setSearchQuery } = useUIStore();
+  const { isSearchOpen: _isSearchOpen, setSearchOpen, setSearchQuery } = useUIStore();
   const navigate = useNavigate();
 
   const handleCreateChannel = async (e: React.FormEvent) => {

@@ -138,7 +138,8 @@ function ProductPage() {
         {/* Details */}
         <div>
           <Link
-            to={`/shop/${product.shop_slug}`}
+            to="/shop/$shopSlug"
+            params={{ shopSlug: product.shop_slug || '' }}
             className="text-sm text-primary-600 hover:text-primary-700 mb-2 block"
           >
             {product.shop_name}
@@ -262,7 +263,7 @@ function ProductPage() {
                 {product.tags.map((tag) => (
                   <Link
                     key={tag}
-                    to={`/search?q=${encodeURIComponent(tag)}`}
+                    to="/search"
                     className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm hover:bg-gray-200"
                   >
                     {tag}

@@ -44,7 +44,7 @@ function Register() {
 
     try {
       await register(email, password, name);
-      navigate({ to: '/' });
+      navigate({ to: '/', search: { folder: undefined } });
     } catch {
       // Error is handled by store
     }

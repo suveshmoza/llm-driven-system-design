@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { listingsAPI, reviewsAPI } from '../services/api';
 import { Listing, Review } from '../types';
 import { BookingWidget } from '../components/BookingWidget';
-import { formatCurrency, formatRating, getAmenityLabel, getRoomTypeLabel, formatDate } from '../utils/helpers';
+import { formatRating, getAmenityLabel, getRoomTypeLabel, formatDate } from '../utils/helpers';
 
 export const Route = createFileRoute('/listing/$id')({
   component: ListingDetailPage,

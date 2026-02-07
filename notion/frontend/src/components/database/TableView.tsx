@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import type { DatabaseRow, PropertySchema } from '@/types';
-import { Plus, Trash2, MoreHorizontal } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import PropertyCell from './PropertyCell';
 
 /**

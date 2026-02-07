@@ -52,7 +52,7 @@ export function Tweet({ tweet, showActions = true }: TweetProps) {
       )}
 
       <div className="flex gap-3 px-4 py-3">
-        <Link to={`/${displayTweet.author.username}`} className="flex-shrink-0">
+        <Link to="/$username" params={{ username: displayTweet.author.username }} className="flex-shrink-0">
           <div className="w-12 h-12 rounded-full bg-twitter-blue flex items-center justify-center text-white font-bold text-lg hover:opacity-90 transition-opacity">
             {displayTweet.author.displayName.charAt(0).toUpperCase()}
           </div>
@@ -61,13 +61,15 @@ export function Tweet({ tweet, showActions = true }: TweetProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-wrap">
             <Link
-              to={`/${displayTweet.author.username}`}
+              to="/$username"
+              params={{ username: displayTweet.author.username }}
               className="font-bold text-twitter-dark hover:underline text-[15px]"
             >
               {displayTweet.author.displayName}
             </Link>
             <Link
-              to={`/${displayTweet.author.username}`}
+              to="/$username"
+              params={{ username: displayTweet.author.username }}
               className="text-twitter-gray text-[15px]"
             >
               @{displayTweet.author.username}

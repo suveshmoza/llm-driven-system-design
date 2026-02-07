@@ -131,12 +131,6 @@ interface SpreadsheetState {
   moveActiveCell: (direction: 'up' | 'down' | 'left' | 'right') => void;
 }
 
-/** Default column width in pixels */
-const DEFAULT_COLUMN_WIDTH = 100;
-
-/** Default row height in pixels */
-const DEFAULT_ROW_HEIGHT = 32;
-
 /**
  * Main Zustand store for spreadsheet state.
  * Provides reactive state updates and actions for the spreadsheet UI.

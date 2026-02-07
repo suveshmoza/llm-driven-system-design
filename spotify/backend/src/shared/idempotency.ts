@@ -1,6 +1,8 @@
 import { redisClient } from '../db.js';
 import logger from './logger.js';
 import { idempotencyDeduplicationsTotal } from './metrics.js';
+import type { Request, Response, NextFunction } from 'express';
+import type { AuthenticatedRequest } from '../types.js';
 
 /**
  * Idempotency handling for playlist modifications.
@@ -20,7 +22,7 @@ const DEFAULT_TTL_SECONDS = 300; // 5 minutes
  * @param {number} ttlSeconds - TTL for the idempotency record
  * @returns {Promise<{isDuplicate: boolean, cachedResult: any}>}
  */
-export async function checkIdempotency(key, operation, ttlSeconds = DEFAULT_TTL_SECONDS) {
+export async function checkIdempotency(key: string, operation: string, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const fullKey = `idempotency:${key}`;
 
   try {
@@ -68,7 +70,7 @@ export async function checkIdempotency(key, operation, ttlSeconds = DEFAULT_TTL_
  * @param {any} result - Result to cache
  * @param {number} ttlSeconds - TTL for the result
  */
-export async function storeIdempotencyResult(key, result, ttlSeconds = DEFAULT_TTL_SECONDS) {
+export async function storeIdempotencyResult(key: string, result: unknown, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const fullKey = `idempotency:${key}`;
 
   try {
@@ -89,13 +91,14 @@ export async function storeIdempotencyResult(key, result, ttlSeconds = DEFAULT_T
  * @param {string} operation - Operation name for logging/metrics
  * @param {Function} keyGenerator - Optional custom key generator function
  */
-export function idempotencyMiddleware(operation, keyGenerator = null) {
-  return async (req, res, next) => {
+export function idempotencyMiddleware(operation: string, keyGenerator: ((req: AuthenticatedRequest) => string) | null = null) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest;
     // Get idempotency key from header or generate from request
     let idempotencyKey = req.headers['x-idempotency-key'];
 
     if (!idempotencyKey && keyGenerator) {
-      idempotencyKey = keyGenerator(req);
+      idempotencyKey = keyGenerator(authReq);
     }
 
     if (!idempotencyKey) {
@@ -104,7 +107,7 @@ export function idempotencyMiddleware(operation, keyGenerator = null) {
     }
 
     // Include user ID in key to prevent cross-user conflicts
-    const fullKey = `${operation}:${req.session?.userId || 'anon'}:${idempotencyKey}`;
+    const fullKey = `${operation}:${authReq.session?.userId || 'anon'}:${idempotencyKey}`;
 
     const { isDuplicate, cachedResult } = await checkIdempotency(fullKey, operation);
 
@@ -121,18 +124,18 @@ export function idempotencyMiddleware(operation, keyGenerator = null) {
     }
 
     // Store key and operation info on request for later result storage
-    req.idempotencyKey = fullKey;
-    req.idempotencyOperation = operation;
+    authReq.idempotencyKey = fullKey;
+    authReq.idempotencyOperation = operation;
 
     // Wrap res.json to capture result
     const originalJson = res.json.bind(res);
-    res.json = async (body) => {
+    res.json = ((body: unknown) => {
       // Store result for future duplicate requests
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        await storeIdempotencyResult(fullKey, body);
+        storeIdempotencyResult(fullKey, body);
       }
       return originalJson(body);
-    };
+    }) as Response['json'];
 
     next();
   };
@@ -142,7 +145,7 @@ export function idempotencyMiddleware(operation, keyGenerator = null) {
  * Generate idempotency key for playlist track operations.
  * Uses playlist ID, track ID, and operation type.
  */
-export function playlistTrackIdempotencyKey(req) {
+export function playlistTrackIdempotencyKey(req: AuthenticatedRequest): string {
   const playlistId = req.params.id;
   const trackId = req.body?.trackId || req.params.trackId;
   const operation = req.method;

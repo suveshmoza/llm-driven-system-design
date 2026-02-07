@@ -31,7 +31,7 @@ interface ProductState {
  * Global product store.
  * Use with: const { products, fetchProducts, addProduct } = useProductStore();
  */
-export const useProductStore = create<ProductState>((set, get) => ({
+export const useProductStore = create<ProductState>((set, _get) => ({
   products: [],
   isLoading: false,
   error: null,

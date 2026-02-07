@@ -26,7 +26,7 @@ const exploreItems = [
   { icon: 'news', label: 'News', path: '/news' },
 ];
 
-const icons: Record<string, JSX.Element> = {
+const icons: Record<string, React.ReactNode> = {
   home: (
     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
       <path d="M12 4.33l7 6.12V20h-4v-6H9v6H5v-9.55l7-6.12M12 3L4 10v11h6v-6h4v6h6V10l-8-7z"/>

@@ -32,7 +32,7 @@ function CreateShopPage() {
     setIsLoading(true);
 
     try {
-      const response = await api.post<{ shop: Shop }>('/shops', formData);
+      await api.post<{ shop: Shop }>('/shops', formData);
       await checkAuth(); // Refresh user data to include new shop
       navigate({ to: '/seller/dashboard' });
     } catch (err) {

@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand';
-import type { Dashboard, TimeRange, TIME_RANGE_OPTIONS } from '../types';
+import type { Dashboard, TimeRange } from '../types';
 
 /**
  * Dashboard store state and actions interface.

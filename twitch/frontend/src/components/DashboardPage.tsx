@@ -95,7 +95,8 @@ export function DashboardPage() {
             </div>
             <div className="flex gap-4">
               <Link
-                to={`/${user.username}`}
+                to="/$channelName"
+                params={{ channelName: user.username }}
                 className="px-4 py-2 bg-twitch-500 text-white rounded font-semibold hover:bg-twitch-600"
               >
                 View Your Stream
@@ -185,7 +186,8 @@ export function DashboardPage() {
         <h2 className="text-xl font-bold text-white mb-4">Quick Links</h2>
         <div className="grid grid-cols-2 gap-4">
           <Link
-            to={`/${user.username}`}
+            to="/$channelName"
+            params={{ channelName: user.username }}
             className="flex items-center gap-3 p-4 bg-surface-light rounded-lg hover:bg-gray-700 transition-colors"
           >
             <svg className="w-6 h-6 text-twitch-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -124,7 +124,7 @@ export function TextEditor({ readOnly = false }: TextEditorProps) {
 function createOperationFromDiff(
   oldValue: string,
   newValue: string,
-  cursorPos: number
+  _cursorPos: number
 ): TextOperation {
   const op = new TextOperation();
 

@@ -3,6 +3,7 @@ import authService from '../services/authService.js';
 import { rateLimiters } from '../shared/rateLimit.js';
 import { auditLog, AuditActions } from '../shared/audit.js';
 import { authEventsTotal } from '../shared/metrics.js';
+import { logger } from '../shared/logger.js';
 import type { AuthenticatedRequest, UserRegistration, UserLogin } from '../types.js';
 
 const router = Router();
@@ -35,7 +36,7 @@ router.post('/register', async (req, res: Response): Promise<void> => {
 
     res.status(201).json({ user });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Register error');
     authEventsTotal.inc({ event: 'register', success: 'false' });
@@ -67,7 +68,7 @@ router.post('/login', async (req, res: Response): Promise<void> => {
 
     res.json({ user });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const bodyEmail = (req.body as { email?: string }).email;
     log.warn({ error: errorMessage, email: bodyEmail }, 'Login failed');
@@ -132,7 +133,7 @@ router.get('/me', async (req, res: Response): Promise<void> => {
     }
     res.json({ user });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Get user error');
     res.status(500).json({ error: 'Internal server error' });
@@ -166,7 +167,7 @@ router.patch('/me', async (req, res: Response): Promise<void> => {
 
     res.json({ user });
   } catch (error) {
-    const log = authReq.log || console;
+    const log = authReq.log || logger;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     log.error({ error: errorMessage }, 'Update profile error');
     res.status(500).json({ error: 'Internal server error' });

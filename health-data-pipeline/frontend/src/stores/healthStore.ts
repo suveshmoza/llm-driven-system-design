@@ -30,7 +30,7 @@ interface HealthState {
   clearError: () => void;
 }
 
-export const useHealthStore = create<HealthState>((set, get) => ({
+export const useHealthStore = create<HealthState>((set, _get) => ({
   dailySummary: null,
   weeklySummary: null,
   latestMetrics: null,

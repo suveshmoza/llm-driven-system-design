@@ -11,7 +11,7 @@ export const Route = createFileRoute('/profile/$username')({
 function ProfilePage() {
   const { username } = Route.useParams();
   const navigate = useNavigate();
-  const { user: currentUser, logout, updateUser } = useAuthStore();
+  const { user: currentUser, logout, updateUser: _updateUser } = useAuthStore();
 
   const [profile, setProfile] = useState<User | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);

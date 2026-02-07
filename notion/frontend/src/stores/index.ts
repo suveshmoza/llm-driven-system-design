@@ -157,7 +157,7 @@ interface PageState {
  * Page store for managing page hierarchy and navigation.
  * Supports nested pages, CRUD operations, and tree expansion state.
  */
-export const usePageStore = create<PageState>((set, get) => ({
+export const usePageStore = create<PageState>((set, _get) => ({
   pages: [],
   currentPage: null,
   isLoading: false,

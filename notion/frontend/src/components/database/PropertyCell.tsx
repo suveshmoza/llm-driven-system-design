@@ -5,7 +5,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { PropertySchema } from '@/types';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 /**
  * Props for the PropertyCell component.
@@ -172,7 +172,7 @@ export default function PropertyCell({ property, value, onChange }: PropertyCell
           className="w-5 h-5 border border-notion-border rounded flex items-center justify-center"
           onClick={() => onChange(!value)}
         >
-          {value && <Check className="w-4 h-4" />}
+          {!!value && <Check className="w-4 h-4" />}
         </button>
       );
 

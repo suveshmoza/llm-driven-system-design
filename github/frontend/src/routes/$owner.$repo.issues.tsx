@@ -11,7 +11,7 @@ export const Route = createFileRoute('/$owner/$repo/issues')({
 
 function IssuesPage() {
   const { owner, repo } = useParams({ from: '/$owner/$repo/issues' });
-  const navigate = useNavigate();
+  const _navigate = useNavigate();
   const { user } = useAuthStore();
   const [issues, setIssues] = useState<any[]>([]);
   const [total, setTotal] = useState(0);

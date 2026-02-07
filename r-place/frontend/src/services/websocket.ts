@@ -6,7 +6,7 @@
  * - Event-based message handling
  * - Connection state tracking
  */
-import type { PixelEvent, WebSocketMessage } from '../types';
+import type { WebSocketMessage } from '../types';
 
 /** Handler function type for processing WebSocket messages. */
 type MessageHandler = (message: WebSocketMessage) => void;

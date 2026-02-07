@@ -30,7 +30,7 @@ function Login() {
 
     try {
       await login(email, password);
-      navigate({ to: '/' });
+      navigate({ to: '/', search: { folder: undefined } });
     } catch {
       // Error is handled by store
     }

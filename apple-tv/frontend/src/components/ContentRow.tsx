@@ -70,7 +70,7 @@ export function ContentRow({ title, items, showProgress }: ContentRowProps) {
       >
         {items.map((item) => (
           <ContentCard
-            key={item.id}
+            key={'id' in item ? item.id : item.content_id}
             content={item as Content}
             size="medium"
             showProgress={showProgress}

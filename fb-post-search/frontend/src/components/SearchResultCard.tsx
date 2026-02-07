@@ -50,11 +50,11 @@ export function SearchResultCard({ result, onHashtagClick }: SearchResultCardPro
   const getVisibilityIcon = () => {
     switch (result.visibility) {
       case 'public':
-        return <Globe className="w-4 h-4 text-gray-400" title="Public" />;
+        return <span title="Public"><Globe className="w-4 h-4 text-gray-400" /></span>;
       case 'friends':
-        return <Users className="w-4 h-4 text-gray-400" title="Friends" />;
+        return <span title="Friends"><Users className="w-4 h-4 text-gray-400" /></span>;
       case 'private':
-        return <Lock className="w-4 h-4 text-gray-400" title="Private" />;
+        return <span title="Private"><Lock className="w-4 h-4 text-gray-400" /></span>;
       default:
         return <Users className="w-4 h-4 text-gray-400" />;
     }

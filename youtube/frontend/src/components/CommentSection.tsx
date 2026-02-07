@@ -73,7 +73,7 @@ export default function CommentSection({ videoId, commentCount }: CommentSection
 
     setIsSubmitting(true);
     try {
-      const response = await api.post<Comment>(`/videos/${videoId}/comments`, {
+      await api.post<Comment>(`/videos/${videoId}/comments`, {
         text: replyText.trim(),
         parentId,
       });

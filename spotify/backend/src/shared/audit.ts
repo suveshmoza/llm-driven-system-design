@@ -1,5 +1,6 @@
 import { pool } from '../db.js';
 import logger from './logger.js';
+import type { AuthenticatedRequest, AuditLogFilters } from '../types.js';
 
 /**
  * Audit logging for sensitive operations.
@@ -74,11 +75,11 @@ export const AuditActions = {
  * @param {boolean} success - Whether the action succeeded
  */
 export async function auditLog(
-  req,
-  action,
-  resourceType,
-  resourceId,
-  details = {},
+  req: AuthenticatedRequest | null,
+  action: string,
+  resourceType: string,
+  resourceId: string | null,
+  details: Record<string, unknown> = {},
   success = true
 ) {
   const log = req?.log || logger;
@@ -127,7 +128,7 @@ export async function auditLog(
     // Don't fail the request if audit logging fails
     log.error(
       {
-        error: error.message,
+        error: (error as Error).message,
         action,
         resourceType,
         resourceId,
@@ -153,9 +154,9 @@ export async function queryAuditLogs({
   success = null,
   limit = 100,
   offset = 0,
-}) {
-  const conditions = [];
-  const params = [];
+}: AuditLogFilters) {
+  const conditions: string[] = [];
+  const params: (string | Date | boolean | number)[] = [];
   let paramIndex = 1;
 
   if (actorId) {

@@ -58,7 +58,7 @@ export function RepoCard({ repo, showOwner = true }: RepoCardProps) {
       <div className="mt-3 flex items-center space-x-4 text-xs text-github-muted">
         {repo.language && (
           <span className="flex items-center space-x-1">
-            <Circle className="w-3 h-3" style={{ fill: languageColor, color: languageColor }} />
+            <Circle className="w-3 h-3" style={{ fill: languageColor || undefined, color: languageColor || undefined }} />
             <span>{repo.language}</span>
           </span>
         )}

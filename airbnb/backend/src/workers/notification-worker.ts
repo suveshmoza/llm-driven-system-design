@@ -4,7 +4,7 @@
  */
 import { initQueue, startConsumer, QUEUES, closeQueue } from '../shared/queue.js';
 import { createModuleLogger } from '../shared/logger.js';
-import { pool } from '../db.js';
+import pool from '../db.js';
 
 const log = createModuleLogger('notification-worker');
 

@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
 import { SearchInput } from './AdminTabs';
 import type { User } from '../../types';
@@ -103,13 +102,12 @@ function UserRow({ user, onUpdateRole }: UserRowProps) {
       </td>
       <td className="px-6 py-4 text-gray-600">{user.review_count}</td>
       <td className="px-6 py-4">
-        <Link
-          to="/users/$id"
-          params={{ id: user.id }}
+        <a
+          href={`/profile?userId=${user.id}`}
           className="text-yelp-blue hover:underline"
         >
           View
-        </Link>
+        </a>
       </td>
     </tr>
   );

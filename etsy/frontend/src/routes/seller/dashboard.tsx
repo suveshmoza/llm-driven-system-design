@@ -98,7 +98,7 @@ function SellerDashboard() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-display font-bold text-gray-900">{shop.name}</h1>
-          <Link to={`/shop/${shop.slug}`} className="text-primary-600 hover:text-primary-700 text-sm">
+          <Link to="/shop/$shopSlug" params={{ shopSlug: shop.slug }} className="text-primary-600 hover:text-primary-700 text-sm">
             View public shop page
           </Link>
         </div>
@@ -377,7 +377,8 @@ function SellerDashboard() {
                       <td className="px-6 py-4 text-sm text-gray-500">{product.view_count}</td>
                       <td className="px-6 py-4 text-sm">
                         <Link
-                          to={`/seller/products/${product.id}/edit`}
+                          to="/product/$productId"
+                          params={{ productId: String(product.id) }}
                           className="text-primary-600 hover:text-primary-700"
                         >
                           Edit

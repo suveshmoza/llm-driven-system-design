@@ -4,11 +4,11 @@
  * and block CRUD operations.
  */
 
-import { useRef, useCallback, useEffect } from 'react';
-import type { Block, Page, BlockType, RichText } from '@/types';
+import type React from 'react';
+import type { Block, BlockType, RichText, Page } from '@/types';
 import { useEditorStore } from '@/stores/editor';
 import BlockComponent from '@/components/blocks/BlockComponent';
-import { Plus, GripVertical } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 /**
  * Props for the BlockEditor component.

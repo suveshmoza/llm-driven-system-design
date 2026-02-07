@@ -8,7 +8,7 @@ export const Route = createFileRoute('/')({
 });
 
 function HomePage() {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
 
   if (!isAuthenticated) {
     return <LoginPage />;

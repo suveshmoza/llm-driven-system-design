@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FileItem, SyncStatus, Conflict } from '../types';
+import type { FileItem, Conflict } from '../types';
 import { api } from '../services/api';
 import { wsService, isFileEvent } from '../services/websocket';
 

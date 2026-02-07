@@ -1,7 +1,8 @@
 import { pool } from '../db.js';
+import type { LibraryItemType } from '../types.js';
 
 // Save item to library (like a track, album, artist, or follow a playlist)
-export async function saveToLibrary(userId, itemType, itemId) {
+export async function saveToLibrary(userId: string, itemType: LibraryItemType, itemId: string) {
   await pool.query(
     `INSERT INTO user_library (user_id, item_type, item_id)
      VALUES ($1, $2, $3)
@@ -12,7 +13,7 @@ export async function saveToLibrary(userId, itemType, itemId) {
 }
 
 // Remove item from library
-export async function removeFromLibrary(userId, itemType, itemId) {
+export async function removeFromLibrary(userId: string, itemType: LibraryItemType, itemId: string) {
   await pool.query(
     `DELETE FROM user_library
      WHERE user_id = $1 AND item_type = $2 AND item_id = $3`,
@@ -22,7 +23,7 @@ export async function removeFromLibrary(userId, itemType, itemId) {
 }
 
 // Check if item is in library
-export async function isInLibrary(userId, itemType, itemId) {
+export async function isInLibrary(userId: string, itemType: LibraryItemType, itemId: string) {
   const result = await pool.query(
     `SELECT 1 FROM user_library
      WHERE user_id = $1 AND item_type = $2 AND item_id = $3`,
@@ -32,7 +33,7 @@ export async function isInLibrary(userId, itemType, itemId) {
 }
 
 // Check multiple items at once
-export async function checkMultipleInLibrary(userId, itemType, itemIds) {
+export async function checkMultipleInLibrary(userId: string, itemType: LibraryItemType, itemIds: string[]) {
   if (!itemIds || itemIds.length === 0) return {};
 
   const result = await pool.query(
@@ -41,7 +42,7 @@ export async function checkMultipleInLibrary(userId, itemType, itemIds) {
     [userId, itemType, itemIds]
   );
 
-  const savedMap = {};
+  const savedMap: Record<string, boolean> = {};
   for (const id of itemIds) {
     savedMap[id] = result.rows.some(row => row.item_id === id);
   }
@@ -49,7 +50,7 @@ export async function checkMultipleInLibrary(userId, itemType, itemIds) {
 }
 
 // Get liked songs
-export async function getLikedSongs(userId, { limit = 50, offset = 0 }) {
+export async function getLikedSongs(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT t.*,
             a.title as album_title, a.cover_url as album_cover_url,
@@ -80,7 +81,7 @@ export async function getLikedSongs(userId, { limit = 50, offset = 0 }) {
 }
 
 // Get saved albums
-export async function getSavedAlbums(userId, { limit = 50, offset = 0 }) {
+export async function getSavedAlbums(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT a.*, ar.name as artist_name, ul.saved_at
      FROM user_library ul
@@ -107,7 +108,7 @@ export async function getSavedAlbums(userId, { limit = 50, offset = 0 }) {
 }
 
 // Get followed artists
-export async function getFollowedArtists(userId, { limit = 50, offset = 0 }) {
+export async function getFollowedArtists(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT ar.*, ul.saved_at as followed_at
      FROM user_library ul
@@ -133,7 +134,7 @@ export async function getFollowedArtists(userId, { limit = 50, offset = 0 }) {
 }
 
 // Get followed/saved playlists
-export async function getSavedPlaylists(userId, { limit = 50, offset = 0 }) {
+export async function getSavedPlaylists(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT p.*, u.username as owner_username, ul.saved_at
      FROM user_library ul

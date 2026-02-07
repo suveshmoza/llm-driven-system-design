@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "composite": true,
+    "emitDeclarationOnly": true,
     "target": "ES2022",
     "lib": ["ES2023"],
     "module": "ESNext",
@@ -8,11 +10,11 @@
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
   "include": ["vite.config.ts"]
 }

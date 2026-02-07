@@ -7,17 +7,16 @@ import { wsService } from '@/services/websocket';
 import Sidebar from '@/components/sidebar/Sidebar';
 import BlockEditor from '@/components/editor/BlockEditor';
 import DatabaseView from '@/components/database/DatabaseView';
-import type { Page, Block, DatabaseView as DBView, Presence, WSMessage } from '@/types';
+import type { Page, DatabaseView as DBView, Presence, WSMessage } from '@/types';
 
 function PageView() {
   const { pageId } = Route.useParams();
   const navigate = useNavigate();
   const { currentWorkspace, fetchWorkspaces } = useWorkspaceStore();
-  const { pages, fetchPages, setCurrentPage } = usePageStore();
+  const { fetchPages, setCurrentPage } = usePageStore();
   const {
     blocks,
     presence,
-    loadBlocks,
     setBlocks,
     applyRemoteOperation,
     setPresence,

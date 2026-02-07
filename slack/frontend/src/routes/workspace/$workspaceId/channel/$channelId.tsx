@@ -1,10 +1,10 @@
 import { createFileRoute, useParams } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { channelApi } from '../../../services/api';
-import { useChannelStore } from '../../../stores';
-import { useWebSocket } from '../../../hooks/useWebSocket';
-import { useAuthStore, useWorkspaceStore } from '../../../stores';
-import { MessageList } from '../../../components';
+import { channelApi } from '../../../../services/api';
+import { useChannelStore } from '../../../../stores';
+import { useWebSocket } from '../../../../hooks/useWebSocket';
+import { useAuthStore } from '../../../../stores';
+import { MessageList } from '../../../../components';
 
 export const Route = createFileRoute('/workspace/$workspaceId/channel/$channelId')({
   component: ChannelView,

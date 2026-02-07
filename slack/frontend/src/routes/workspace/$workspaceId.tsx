@@ -1,5 +1,4 @@
 import { createFileRoute, Outlet, redirect, useParams } from '@tanstack/react-router';
-import { useEffect } from 'react';
 import { authApi, workspaceApi, channelApi, dmApi } from '../../services/api';
 import { useAuthStore, useWorkspaceStore, useChannelStore, useUIStore } from '../../stores';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -43,7 +42,7 @@ export const Route = createFileRoute('/workspace/$workspaceId')({
 function WorkspaceLayout() {
   const { workspaceId } = useParams({ from: '/workspace/$workspaceId' });
   const { user } = useAuthStore();
-  const { currentWorkspace } = useWorkspaceStore();
+  const { currentWorkspace: _currentWorkspace } = useWorkspaceStore();
   const { isThreadPanelOpen } = useUIStore();
 
   // Setup WebSocket connection

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { MapPin, DollarSign } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { StarRating } from './StarRating';
 import type { Business } from '../types';
 

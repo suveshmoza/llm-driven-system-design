@@ -26,22 +26,6 @@ function CategoriesPage() {
     }
   }, [categories.length, fetchCategories]);
 
-  const getCategoryIcon = (icon: string | null): string => {
-    const icons: Record<string, string> = {
-      gamepad: 'gamepad',
-      briefcase: 'briefcase',
-      users: 'users',
-      camera: 'camera',
-      film: 'film',
-      book: 'book',
-      heart: 'heart',
-      'dollar-sign': 'dollar-sign',
-      tool: 'tool',
-      map: 'map',
-    };
-    return icons[icon || ''] || 'grid';
-  };
-
   const getEmoji = (icon: string | null): string => {
     const emojis: Record<string, string> = {
       gamepad: '🎮',

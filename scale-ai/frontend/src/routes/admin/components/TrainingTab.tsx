@@ -397,8 +397,8 @@ function JobCard({ job, onCancel }: JobCardProps) {
             </div>
             {job.config && (
               <div className="result-config">
-                {job.config.epochs && <span>Epochs: {job.config.epochs as number}</span>}
-                {job.config.batch_size && <span>Batch: {job.config.batch_size as number}</span>}
+                {job.config.epochs ? <span>Epochs: {String(job.config.epochs)}</span> : null}
+                {job.config.batch_size ? <span>Batch: {String(job.config.batch_size)}</span> : null}
               </div>
             )}
             {job.started_at && job.completed_at && (

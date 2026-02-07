@@ -4,7 +4,7 @@ import { redisClient } from '../db.js';
 const CACHE_TTL = 3600; // 1 hour for recommendations
 
 // Get personalized recommendations based on listening history
-export async function getRecommendations(userId, { limit = 30 }) {
+export async function getRecommendations(userId: string, { limit = 30 }: { limit?: number }) {
   const cacheKey = `recommendations:${userId}`;
 
   // Try cache
@@ -115,7 +115,7 @@ export async function getPopularTracks({ limit = 30 }) {
 }
 
 // Get similar tracks to a given track
-export async function getSimilarTracks(trackId, { limit = 20 }) {
+export async function getSimilarTracks(trackId: string, { limit = 20 }: { limit?: number }) {
   // Get the track's artist
   const trackResult = await pool.query(
     `SELECT ar.id as artist_id
@@ -155,7 +155,7 @@ export async function getSimilarTracks(trackId, { limit = 20 }) {
 }
 
 // Get artist radio (tracks from similar artists)
-export async function getArtistRadio(artistId, { limit = 50 }) {
+export async function getArtistRadio(artistId: string, { limit = 50 }: { limit?: number }) {
   // Get artist's top tracks
   const artistTracksResult = await pool.query(
     `SELECT t.*,
@@ -199,7 +199,7 @@ export async function getArtistRadio(artistId, { limit = 50 }) {
 }
 
 // Get Discover Weekly-style playlist
-export async function getDiscoverWeekly(userId) {
+export async function getDiscoverWeekly(userId: string) {
   const cacheKey = `discover_weekly:${userId}`;
 
   const cached = await redisClient.get(cacheKey);
@@ -230,7 +230,7 @@ export async function getDiscoverWeekly(userId) {
 }
 
 // Helper to shuffle array
-function shuffleArray(array) {
+function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

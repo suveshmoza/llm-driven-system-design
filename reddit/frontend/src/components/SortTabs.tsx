@@ -19,7 +19,8 @@ export function SortTabs({ currentSort, baseUrl }: SortTabsProps) {
       {sorts.map((sort) => (
         <Link
           key={sort.value}
-          to={`${baseUrl}?sort=${sort.value}`}
+          to={baseUrl as '/'}
+          search={{ sort: sort.value }}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
             currentSort === sort.value
               ? 'bg-gray-200 text-gray-900'

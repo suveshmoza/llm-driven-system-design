@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Play, Plus, Check, Clock, Calendar } from 'lucide-react';
 import { catalogApi, libraryApi } from '../../services/api';
-import { Album, Track } from '../../types';
+import { Album } from '../../types';
 import { TrackRow } from '../../components/MusicCards';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAuthStore } from '../../stores/authStore';

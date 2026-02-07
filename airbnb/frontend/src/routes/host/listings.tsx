@@ -120,19 +120,22 @@ function HostListingsPage() {
 
                 <div className="flex gap-3 mt-4">
                   <Link
-                    to={`/host/listings/${listing.id}/edit`}
+                    to="/listing/$id"
+                    params={{ id: String(listing.id) }}
                     className="text-sm text-gray-600 hover:text-gray-900"
                   >
                     Edit
                   </Link>
                   <Link
-                    to={`/host/listings/${listing.id}/calendar`}
+                    to="/listing/$id"
+                    params={{ id: String(listing.id) }}
                     className="text-sm text-gray-600 hover:text-gray-900"
                   >
                     Calendar
                   </Link>
                   <Link
-                    to={`/listing/${listing.id}`}
+                    to="/listing/$id"
+                    params={{ id: String(listing.id) }}
                     className="text-sm text-gray-600 hover:text-gray-900"
                   >
                     View
