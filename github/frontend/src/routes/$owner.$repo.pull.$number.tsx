@@ -215,7 +215,7 @@ function PullRequestPage() {
                       </p>
                     </div>
                     <Link
-                      to={`/${owner}/${repo}/commit/${commit.sha}`}
+                      to={`/${owner}/${repo}/commit/${commit.sha}` as "/"}
                       className="font-mono text-sm text-github-accent hover:underline"
                     >
                       {commit.sha.slice(0, 7)}

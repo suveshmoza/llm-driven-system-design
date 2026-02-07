@@ -33,7 +33,8 @@ export function RepoCard({ repo, showOwner = true }: RepoCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center space-x-2">
             <Link
-              to={`/${repo.owner_name}/${repo.name}`}
+              to="/$owner/$repo"
+              params={{ owner: repo.owner_name, repo: repo.name }}
               className="text-github-accent font-semibold hover:underline truncate"
             >
               {showOwner && <span className="text-github-muted font-normal">{repo.owner_name}/</span>}
@@ -64,7 +65,7 @@ export function RepoCard({ repo, showOwner = true }: RepoCardProps) {
         )}
         {repo.stars_count > 0 && (
           <Link
-            to={`/${repo.owner_name}/${repo.name}/stargazers`}
+            to={`/${repo.owner_name}/${repo.name}/stargazers` as "/"}
             className="flex items-center space-x-1 hover:text-github-accent"
           >
             <Star className="w-3 h-3" />
@@ -73,7 +74,7 @@ export function RepoCard({ repo, showOwner = true }: RepoCardProps) {
         )}
         {repo.forks_count > 0 && (
           <Link
-            to={`/${repo.owner_name}/${repo.name}/forks`}
+            to={`/${repo.owner_name}/${repo.name}/forks` as "/"}
             className="flex items-center space-x-1 hover:text-github-accent"
           >
             <GitFork className="w-3 h-3" />

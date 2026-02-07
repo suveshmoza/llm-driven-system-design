@@ -121,11 +121,11 @@ function Profile() {
                 <div className="text-2xl font-bold">{profile.activityCount || 0}</div>
                 <div className="text-sm text-strava-gray-500">Activities</div>
               </div>
-              <Link to={`/profile/${id}/followers`} className="hover:opacity-80">
+              <Link to="/profile/$id/followers" params={{ id }} className="hover:opacity-80">
                 <div className="text-2xl font-bold">{profile.followerCount || 0}</div>
                 <div className="text-sm text-strava-gray-500">Followers</div>
               </Link>
-              <Link to={`/profile/${id}/following`} className="hover:opacity-80">
+              <Link to="/profile/$id/following" params={{ id }} className="hover:opacity-80">
                 <div className="text-2xl font-bold">{profile.followingCount || 0}</div>
                 <div className="text-sm text-strava-gray-500">Following</div>
               </Link>

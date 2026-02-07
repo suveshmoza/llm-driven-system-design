@@ -9,7 +9,8 @@ interface SegmentCardProps {
 export function SegmentCard({ segment }: SegmentCardProps) {
   return (
     <Link
-      to={`/segment/${segment.id}`}
+      to="/segment/$id"
+      params={{ id: segment.id }}
       className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-4"
     >
       <div className="flex items-start justify-between">

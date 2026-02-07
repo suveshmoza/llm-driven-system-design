@@ -45,7 +45,8 @@ function Following() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
         <Link
-          to={`/profile/${id}`}
+          to="/profile/$id"
+          params={{ id }}
           className="text-strava-gray-600 hover:text-strava-gray-800"
         >
           ← Back to Profile
@@ -63,7 +64,8 @@ function Following() {
           {following.map((user) => (
             <Link
               key={user.id}
-              to={`/profile/${user.id}`}
+              to="/profile/$id"
+              params={{ id: user.id }}
               className="flex items-center p-4 hover:bg-strava-gray-50"
             >
               <div className="w-12 h-12 bg-strava-gray-200 rounded-full flex items-center justify-center text-lg font-bold">

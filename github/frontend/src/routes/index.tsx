@@ -55,7 +55,7 @@ function LandingView({ repos, loading }: { repos: Repository[]; loading: boolean
             Sign up for GitHub
           </Link>
           <Link
-            to="/explore"
+            to={"/" as "/"}
             className="px-8 py-3 border border-github-border text-github-text font-semibold rounded-md hover:border-github-muted"
           >
             Explore repositories
@@ -133,7 +133,8 @@ function DashboardView({ repos, loading }: { repos: Repository[]; loading: boole
             {userRepos.map((repo) => (
               <Link
                 key={repo.id}
-                to={`/${user?.username}/${repo.name}`}
+                to="/$owner/$repo"
+                params={{ owner: user?.username || '', repo: repo.name }}
                 className="block text-sm text-github-text hover:text-github-accent"
               >
                 {repo.name}

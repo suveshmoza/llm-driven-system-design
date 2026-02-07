@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useParams } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
@@ -11,7 +11,6 @@ export const Route = createFileRoute('/$owner/$repo/issues')({
 
 function IssuesPage() {
   const { owner, repo } = useParams({ from: '/$owner/$repo/issues' });
-  const _navigate = useNavigate();
   const { user } = useAuthStore();
   const [issues, setIssues] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -50,7 +49,7 @@ function IssuesPage() {
         </div>
         {user && (
           <Link
-            to={`/${owner}/${repo}/issues/new`}
+            to={`/${owner}/${repo}/issues/new` as "/"}
             className="flex items-center space-x-1 px-4 py-1.5 bg-github-success text-white text-sm rounded-md hover:bg-green-600"
           >
             <Plus className="w-4 h-4" />
@@ -97,7 +96,7 @@ function IssuesPage() {
           </p>
           {user && (
             <Link
-              to={`/${owner}/${repo}/issues/new`}
+              to={`/${owner}/${repo}/issues/new` as "/"}
               className="inline-flex items-center space-x-1 px-4 py-2 bg-github-success text-white rounded-md hover:bg-green-600"
             >
               <Plus className="w-4 h-4" />

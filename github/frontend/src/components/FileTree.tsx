@@ -23,7 +23,8 @@ export function FileTree({ items, owner, repo, branch, currentPath }: FileTreePr
       {currentPath && (
         <div className="px-4 py-2 bg-github-surface border-b border-github-border flex items-center space-x-1 text-sm">
           <Link
-            to={`/${owner}/${repo}`}
+            to="/$owner/$repo"
+            params={{ owner, repo: repo }}
             className="text-github-accent hover:underline"
           >
             {repo}
@@ -35,7 +36,7 @@ export function FileTree({ items, owner, repo, branch, currentPath }: FileTreePr
                 <span className="text-github-text">{part}</span>
               ) : (
                 <Link
-                  to={`/${owner}/${repo}/tree/${branch}/${arr.slice(0, index + 1).join('/')}`}
+                  to={`/${owner}/${repo}/tree/${branch}/${arr.slice(0, index + 1).join('/')}` as "/"}
                   className="text-github-accent hover:underline"
                 >
                   {part}
@@ -56,11 +57,11 @@ export function FileTree({ items, owner, repo, branch, currentPath }: FileTreePr
             >
               <td className="px-4 py-2">
                 <Link
-                  to={
+                  to={(
                     item.type === 'dir'
                       ? `/${owner}/${repo}/tree/${branch}/${item.path}`
                       : `/${owner}/${repo}/blob/${branch}/${item.path}`
-                  }
+                  ) as "/"}
                   className="flex items-center space-x-2 text-github-text hover:text-github-accent"
                 >
                   {item.type === 'dir' ? (

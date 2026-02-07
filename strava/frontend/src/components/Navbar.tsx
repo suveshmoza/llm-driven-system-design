@@ -61,7 +61,8 @@ export function Navbar() {
                   My Stats
                 </Link>
                 <Link
-                  to={`/profile/${user?.id}`}
+                  to="/profile/$id"
+                  params={{ id: user?.id || '' }}
                   className="flex items-center px-3 py-2 rounded-md text-sm font-medium hover:bg-strava-gray-700"
                 >
                   <div className="w-8 h-8 bg-strava-orange rounded-full flex items-center justify-center text-white font-bold mr-2">

@@ -67,7 +67,7 @@ export function IssueCard({ issue, owner, repo, type = 'issue' }: IssueCardProps
         <div className="flex-1 min-w-0">
           <div className="flex items-center flex-wrap gap-2">
             <Link
-              to={`/${owner}/${repo}/${basePath}/${issue.number}`}
+              to={`/${owner}/${repo}/${basePath}/${issue.number}` as "/"}
               className="text-github-text font-semibold hover:text-github-accent"
             >
               {issue.title}

@@ -36,7 +36,7 @@ function DiscussionsPage() {
         <h1 className="text-2xl font-bold text-white">Discussions</h1>
         {user && (
           <Link
-            to={`/${owner}/${repo}/discussions/new`}
+            to={`/${owner}/${repo}/discussions/new` as "/"}
             className="flex items-center space-x-1 px-4 py-1.5 bg-github-success text-white text-sm rounded-md hover:bg-green-600"
           >
             <Plus className="w-4 h-4" />
@@ -57,7 +57,7 @@ function DiscussionsPage() {
           </p>
           {user && (
             <Link
-              to={`/${owner}/${repo}/discussions/new`}
+              to={`/${owner}/${repo}/discussions/new` as "/"}
               className="inline-flex items-center space-x-1 px-4 py-2 bg-github-success text-white rounded-md hover:bg-green-600"
             >
               <Plus className="w-4 h-4" />
@@ -70,7 +70,7 @@ function DiscussionsPage() {
           {discussions.map((discussion) => (
             <Link
               key={discussion.id}
-              to={`/${owner}/${repo}/discussions/${discussion.number}`}
+              to={`/${owner}/${repo}/discussions/${discussion.number}` as "/"}
               className="block px-4 py-3 border-b border-github-border last:border-b-0 hover:bg-github-surface/50"
             >
               <div className="flex items-start space-x-3">

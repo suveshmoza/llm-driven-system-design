@@ -13,7 +13,7 @@ export function Header() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      navigate({ to: '/search', search: { q: searchQuery } });
+      navigate({ to: '/search', search: { q: searchQuery, type: '' } });
     }
   };
 
@@ -49,7 +49,7 @@ export function Header() {
 
             {/* Nav Links */}
             <nav className="hidden md:flex items-center space-x-4">
-              <Link to="/explore" className="text-sm text-github-text hover:text-white">
+              <Link to={"/explore" as "/"} className="text-sm text-github-text hover:text-white">
                 Explore
               </Link>
             </nav>
@@ -90,14 +90,14 @@ export function Header() {
                         Signed in as <span className="font-semibold text-github-text">{user.username}</span>
                       </div>
                       <Link
-                        to={`/${user.username}`}
+                        to={`/${user.username}` as "/"}
                         className="block px-4 py-2 text-sm text-github-text hover:bg-github-bg"
                         onClick={() => setUserMenuOpen(false)}
                       >
                         Your profile
                       </Link>
                       <Link
-                        to="/settings"
+                        to={"/settings" as "/"}
                         className="block px-4 py-2 text-sm text-github-text hover:bg-github-bg"
                         onClick={() => setUserMenuOpen(false)}
                       >
@@ -154,7 +154,7 @@ export function Header() {
             </form>
             <nav className="space-y-2">
               <Link
-                to="/explore"
+                to={"/explore" as "/"}
                 className="block text-github-text hover:text-white py-2"
                 onClick={() => setMobileMenuOpen(false)}
               >

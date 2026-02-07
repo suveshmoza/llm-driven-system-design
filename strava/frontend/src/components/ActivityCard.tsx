@@ -39,7 +39,8 @@ export function ActivityCard({ activity, onKudosChange }: ActivityCardProps) {
 
   return (
     <Link
-      to={`/activity/${activity.id}`}
+      to="/activity/$id"
+      params={{ id: activity.id }}
       className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow"
     >
       <div className="p-4">

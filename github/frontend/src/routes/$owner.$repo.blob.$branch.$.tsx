@@ -53,7 +53,7 @@ function BlobPage() {
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Breadcrumb */}
       <div className="flex items-center space-x-1 mb-4 text-sm">
-        <Link to={`/${owner}/${repo}`} className="text-github-accent hover:underline">
+        <Link to="/$owner/$repo" params={{ owner, repo: repo }} className="text-github-accent hover:underline">
           {repo}
         </Link>
         {pathParts.map((part: string, index: number) => (
@@ -66,7 +66,7 @@ function BlobPage() {
               </span>
             ) : (
               <Link
-                to={`/${owner}/${repo}/tree/${branch}/${pathParts.slice(0, index + 1).join('/')}`}
+                to={`/${owner}/${repo}/tree/${branch}/${pathParts.slice(0, index + 1).join('/')}` as "/"}
                 className="text-github-accent hover:underline"
               >
                 {part}

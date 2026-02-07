@@ -108,7 +108,8 @@ function ActivityDetail() {
         <div className="p-6">
           <div className="flex items-center mb-4">
             <Link
-              to={`/profile/${activity.user_id}`}
+              to="/profile/$id"
+              params={{ id: activity.user_id }}
               className="flex items-center hover:opacity-80"
             >
               <div className="w-12 h-12 bg-strava-gray-200 rounded-full flex items-center justify-center text-xl font-bold">
@@ -240,7 +241,8 @@ function ActivityDetail() {
             {activity.segmentEfforts.map((effort) => (
               <Link
                 key={effort.id}
-                to={`/segment/${effort.segment_id}`}
+                to="/segment/$id"
+                params={{ id: effort.segment_id }}
                 className="flex items-center justify-between p-3 bg-strava-gray-50 rounded-lg hover:bg-strava-gray-100"
               >
                 <div>
