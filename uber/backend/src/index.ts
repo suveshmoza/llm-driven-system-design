@@ -1,21 +1,14 @@
-import express, { Express, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import { createServer, Server } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
 import config from './config/index.js';
-import authRoutes from './routes/auth.js';
-import rideRoutes from './routes/rides.js';
-import driverRoutes from './routes/driver.js';
+import { app } from './app.js';
 import matchingService from './services/matching/index.js';
 import authService from './services/authService.js';
 import { connectRabbitMQ, closeRabbitMQ } from './utils/queue.js';
-import { healthRouter } from './utils/health.js';
-import { registry, metricsMiddleware } from './utils/metrics.js';
-import logger, { createLogger, requestLogger } from './utils/logger.js';
+import { createLogger } from './utils/logger.js';
 
 const appLogger = createLogger('app');
-const app: Express = express();
 const server: Server = createServer(app);
 const wss: WebSocketServer = new WebSocketServer({ server });
 
@@ -26,37 +19,6 @@ interface WSMessage {
   lat?: number;
   lng?: number;
 }
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Request logging with pino
-app.use(requestLogger);
-
-// Prometheus metrics middleware
-app.use(metricsMiddleware);
-
-// Health check endpoints (includes /health, /health/live, /health/ready)
-healthRouter(app);
-
-// Prometheus metrics endpoint
-app.get('/metrics', async (_req: Request, res: Response): Promise<void> => {
-  try {
-    res.set('Content-Type', registry.contentType);
-    const metrics = await registry.metrics();
-    res.end(metrics);
-  } catch (error) {
-    const err = error as Error;
-    appLogger.error({ error: err.message }, 'Failed to collect metrics');
-    res.status(500).end();
-  }
-});
-
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/rides', rideRoutes);
-app.use('/api/driver', driverRoutes);
 
 // WebSocket connection handling
 wss.on('connection', async (ws: WebSocket, req: IncomingMessage): Promise<void> => {
@@ -118,17 +80,6 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage): Promise<void> 
 
   // Send initial connection acknowledgment
   ws.send(JSON.stringify({ type: 'connected', timestamp: Date.now() }));
-});
-
-// Error handling middleware
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction): void => {
-  appLogger.error({ error: err.message, stack: err.stack }, 'Unhandled server error');
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-// 404 handler
-app.use((_req: Request, res: Response): void => {
-  res.status(404).json({ error: 'Not found' });
 });
 
 // Graceful shutdown
