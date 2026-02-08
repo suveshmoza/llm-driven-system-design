@@ -547,7 +547,7 @@ describe('Uber Backend API', () => {
 
       const mockEstimates = [
         {
-          vehicleType: 'economy',
+          vehicleType: 'economy' as const,
           totalFareCents: 1500,
           distanceKm: 5,
           durationMinutes: 12,
