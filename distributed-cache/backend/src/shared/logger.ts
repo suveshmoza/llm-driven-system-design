@@ -10,7 +10,8 @@
  */
 
 import pino from 'pino';
-import pinoHttp from 'pino-http';
+import { pinoHttp } from 'pino-http';
+import type { IncomingMessage, ServerResponse } from 'http';
 
 // Environment configuration
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
@@ -42,7 +43,7 @@ const baseLogger = pino({
   },
   timestamp: pino.stdTimeFunctions.isoTime,
   formatters: {
-    level: (label) => ({ level: label }),
+    level: (label: string) => ({ level: label }),
   },
   // Redact sensitive fields
   redact: {
@@ -53,27 +54,23 @@ const baseLogger = pino({
 
 /**
  * Create a child logger with additional context
- * @param {object} context - Additional context to include in all logs
- * @returns {pino.Logger}
  */
-export function createLogger(context = {}) {
+export function createLogger(context: Record<string, unknown> = {}): pino.Logger {
   return baseLogger.child(context);
 }
 
 /**
  * Create HTTP request logger middleware for Express
- * @param {object} options - Additional pino-http options
- * @returns {Function} Express middleware
  */
-export function createHttpLogger(options = {}) {
+export function createHttpLogger(options: Record<string, unknown> = {}) {
   return pinoHttp({
     logger: baseLogger,
     // Generate request ID
-    genReqId: (req) => {
-      return req.headers['x-request-id'] || crypto.randomUUID();
+    genReqId: (req: IncomingMessage) => {
+      return (req.headers['x-request-id'] as string) || crypto.randomUUID();
     },
     // Custom log level based on response status
-    customLogLevel: (req, res, err) => {
+    customLogLevel: (_req: IncomingMessage, res: ServerResponse, err: Error | undefined) => {
       if (res.statusCode >= 500 || err) {
         return 'error';
       }
@@ -83,29 +80,29 @@ export function createHttpLogger(options = {}) {
       return 'info';
     },
     // Custom success message
-    customSuccessMessage: (req, res) => {
+    customSuccessMessage: (req: IncomingMessage, res: ServerResponse) => {
       return `${req.method} ${req.url} ${res.statusCode}`;
     },
     // Custom error message
-    customErrorMessage: (req, res, err) => {
+    customErrorMessage: (req: IncomingMessage, res: ServerResponse, err: Error) => {
       return `${req.method} ${req.url} ${res.statusCode} - ${err.message}`;
     },
     // Custom request serializer
     serializers: {
-      req: (req) => ({
+      req: (req: Record<string, unknown>) => ({
         method: req.method,
         url: req.url,
         query: req.query,
         params: req.params,
         remoteAddress: req.remoteAddress,
       }),
-      res: (res) => ({
+      res: (res: Record<string, unknown>) => ({
         statusCode: res.statusCode,
       }),
     },
     // Don't log health checks at info level
     autoLogging: {
-      ignore: (req) => {
+      ignore: (req: IncomingMessage) => {
         return req.url === '/health' || req.url === '/metrics';
       },
     },
@@ -151,64 +148,50 @@ export const circuitBreakerLogger = baseLogger.child({
 
 /**
  * Log a cache hit event
- * @param {string} key
- * @param {number} durationMs
  */
-export function logCacheHit(key, durationMs) {
+export function logCacheHit(key: string, durationMs: number): void {
   cacheLogger.debug({ key, durationMs, hit: true }, 'cache_hit');
 }
 
 /**
  * Log a cache miss event
- * @param {string} key
- * @param {number} durationMs
  */
-export function logCacheMiss(key, durationMs) {
+export function logCacheMiss(key: string, durationMs: number): void {
   cacheLogger.debug({ key, durationMs, hit: false }, 'cache_miss');
 }
 
 /**
  * Log a cache set event
- * @param {string} key
- * @param {number} ttl
- * @param {number} durationMs
  */
-export function logCacheSet(key, ttl, durationMs) {
+export function logCacheSet(key: string, ttl: number, durationMs: number): void {
   cacheLogger.debug({ key, ttl, durationMs }, 'cache_set');
 }
 
 /**
  * Log a cache delete event
- * @param {string} key
  */
-export function logCacheDelete(key) {
+export function logCacheDelete(key: string): void {
   cacheLogger.debug({ key }, 'cache_delete');
 }
 
 /**
  * Log an eviction event
- * @param {string} key
- * @param {string} reason - 'lru' or 'memory'
  */
-export function logEviction(key, reason) {
+export function logEviction(key: string, reason: string): void {
   cacheLogger.info({ key, reason }, 'cache_eviction');
 }
 
 /**
  * Log a TTL expiration event
- * @param {string} key
  */
-export function logExpiration(key) {
+export function logExpiration(key: string): void {
   cacheLogger.debug({ key }, 'cache_expiration');
 }
 
 /**
  * Log node health change
- * @param {string} nodeUrl
- * @param {boolean} healthy
- * @param {string} reason
  */
-export function logNodeHealthChange(nodeUrl, healthy, reason) {
+export function logNodeHealthChange(nodeUrl: string, healthy: boolean, reason: string): void {
   const level = healthy ? 'info' : 'warn';
   clusterLogger[level](
     { nodeUrl, healthy, reason },
@@ -218,45 +201,36 @@ export function logNodeHealthChange(nodeUrl, healthy, reason) {
 
 /**
  * Log node added to cluster
- * @param {string} nodeUrl
  */
-export function logNodeAdded(nodeUrl) {
+export function logNodeAdded(nodeUrl: string): void {
   clusterLogger.info({ nodeUrl }, 'node_added');
 }
 
 /**
  * Log node removed from cluster
- * @param {string} nodeUrl
- * @param {string} reason
  */
-export function logNodeRemoved(nodeUrl, reason) {
+export function logNodeRemoved(nodeUrl: string, reason: string): void {
   clusterLogger.warn({ nodeUrl, reason }, 'node_removed');
 }
 
 /**
  * Log admin authentication failure
- * @param {string} ip
- * @param {string} endpoint
  */
-export function logAdminAuthFailure(ip, endpoint) {
+export function logAdminAuthFailure(ip: string, endpoint: string): void {
   adminLogger.warn({ ip, endpoint }, 'admin_auth_failure');
 }
 
 /**
  * Log admin operation
- * @param {string} operation
- * @param {object} details
  */
-export function logAdminOperation(operation, details) {
+export function logAdminOperation(operation: string, details: Record<string, unknown>): void {
   adminLogger.info({ operation, ...details }, 'admin_operation');
 }
 
 /**
  * Log circuit breaker state change
- * @param {string} targetNode
- * @param {string} state - 'closed', 'open', 'half-open'
  */
-export function logCircuitBreakerStateChange(targetNode, state) {
+export function logCircuitBreakerStateChange(targetNode: string, state: string): void {
   const level = state === 'open' ? 'warn' : 'info';
   circuitBreakerLogger[level](
     { targetNode, state },
@@ -266,11 +240,8 @@ export function logCircuitBreakerStateChange(targetNode, state) {
 
 /**
  * Log snapshot creation
- * @param {string} nodeId
- * @param {number} entries
- * @param {number} durationMs
  */
-export function logSnapshotCreated(nodeId, entries, durationMs) {
+export function logSnapshotCreated(nodeId: string, entries: number, durationMs: number): void {
   persistenceLogger.info(
     { nodeId, entries, durationMs },
     'snapshot_created'
@@ -279,29 +250,22 @@ export function logSnapshotCreated(nodeId, entries, durationMs) {
 
 /**
  * Log snapshot load
- * @param {string} nodeId
- * @param {number} entries
- * @param {number} durationMs
  */
-export function logSnapshotLoaded(nodeId, entries, durationMs) {
+export function logSnapshotLoaded(nodeId: string, entries: number, durationMs: number): void {
   persistenceLogger.info({ nodeId, entries, durationMs }, 'snapshot_loaded');
 }
 
 /**
  * Log rebalance start
- * @param {string} reason
- * @param {number} keysToMove
  */
-export function logRebalanceStart(reason, keysToMove) {
+export function logRebalanceStart(reason: string, keysToMove: number): void {
   rebalanceLogger.info({ reason, keysToMove }, 'rebalance_start');
 }
 
 /**
  * Log rebalance progress
- * @param {number} keysMoved
- * @param {number} totalKeys
  */
-export function logRebalanceProgress(keysMoved, totalKeys) {
+export function logRebalanceProgress(keysMoved: number, totalKeys: number): void {
   rebalanceLogger.info(
     { keysMoved, totalKeys, progress: ((keysMoved / totalKeys) * 100).toFixed(1) + '%' },
     'rebalance_progress'
@@ -310,18 +274,15 @@ export function logRebalanceProgress(keysMoved, totalKeys) {
 
 /**
  * Log rebalance complete
- * @param {number} keysMoved
- * @param {number} durationMs
  */
-export function logRebalanceComplete(keysMoved, durationMs) {
+export function logRebalanceComplete(keysMoved: number, durationMs: number): void {
   rebalanceLogger.info({ keysMoved, durationMs }, 'rebalance_complete');
 }
 
 /**
  * Log hot keys detected
- * @param {Array} hotKeys
  */
-export function logHotKeysDetected(hotKeys) {
+export function logHotKeysDetected(hotKeys: unknown[]): void {
   if (hotKeys.length > 0) {
     cacheLogger.info({ hotKeys: hotKeys.slice(0, 5) }, 'hot_keys_detected');
   }

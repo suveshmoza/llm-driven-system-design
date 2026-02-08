@@ -8,6 +8,7 @@
  * - Audit logging of admin operations
  */
 
+import type { Request, Response, NextFunction } from 'express';
 import { logAdminAuthFailure, adminLogger } from './logger.js';
 
 // Configuration from environment
@@ -15,7 +16,7 @@ const ADMIN_KEY = process.env.ADMIN_KEY || 'dev-admin-key';
 const ADMIN_KEY_HEADER = process.env.ADMIN_KEY_HEADER || 'x-admin-key';
 
 // Rate limiting state
-const rateLimitState = new Map();
+const rateLimitState = new Map<string, { count: number; windowStart: number }>();
 const RATE_LIMIT_WINDOW_MS = parseInt(
   process.env.ADMIN_RATE_LIMIT_WINDOW_MS || '60000',
   10
@@ -27,10 +28,8 @@ const RATE_LIMIT_MAX_REQUESTS = parseInt(
 
 /**
  * Check if an IP is rate limited
- * @param {string} ip
- * @returns {boolean}
  */
-function isRateLimited(ip) {
+function isRateLimited(ip: string): boolean {
   const now = Date.now();
   const state = rateLimitState.get(ip);
 
@@ -71,8 +70,8 @@ setInterval(() => {
  * Middleware to require admin authentication
  * Validates X-Admin-Key header against configured admin key
  */
-export function requireAdminKey(req, res, next) {
-  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+export function requireAdminKey(req: Request, res: Response, next: NextFunction): void {
+  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
   const endpoint = `${req.method} ${req.path}`;
 
   // Check rate limit first
@@ -81,30 +80,33 @@ export function requireAdminKey(req, res, next) {
       { ip: clientIp, endpoint },
       'admin_rate_limit_exceeded'
     );
-    return res.status(429).json({
+    res.status(429).json({
       error: 'Too many admin requests',
       message: `Rate limit exceeded. Max ${RATE_LIMIT_MAX_REQUESTS} requests per ${RATE_LIMIT_WINDOW_MS / 1000} seconds.`,
       retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000),
     });
+    return;
   }
 
-  const providedKey = req.headers[ADMIN_KEY_HEADER.toLowerCase()];
+  const providedKey = req.headers[ADMIN_KEY_HEADER.toLowerCase()] as string | undefined;
 
   if (!providedKey) {
     logAdminAuthFailure(clientIp, endpoint);
-    return res.status(401).json({
+    res.status(401).json({
       error: 'Unauthorized',
       message: `Missing ${ADMIN_KEY_HEADER} header`,
     });
+    return;
   }
 
   // Constant-time comparison to prevent timing attacks
   if (!timingSafeEqual(providedKey, ADMIN_KEY)) {
     logAdminAuthFailure(clientIp, endpoint);
-    return res.status(401).json({
+    res.status(401).json({
       error: 'Unauthorized',
       message: 'Invalid admin key',
     });
+    return;
   }
 
   // Log successful admin access
@@ -118,11 +120,8 @@ export function requireAdminKey(req, res, next) {
 
 /**
  * Constant-time string comparison to prevent timing attacks
- * @param {string} a
- * @param {string} b
- * @returns {boolean}
  */
-function timingSafeEqual(a, b) {
+function timingSafeEqual(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') {
     return false;
   }
@@ -147,8 +146,8 @@ function timingSafeEqual(a, b) {
  * Less strict - just logs the access without requiring auth
  * Can be enabled for debugging/monitoring endpoints
  */
-export function logAdminAccess(req, res, next) {
-  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+export function logAdminAccess(req: Request, _res: Response, next: NextFunction): void {
+  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
   const endpoint = `${req.method} ${req.path}`;
 
   adminLogger.debug({ ip: clientIp, endpoint }, 'admin_endpoint_accessed');

@@ -5,7 +5,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { pool } from './pool.js'
+import pool from './pool.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 

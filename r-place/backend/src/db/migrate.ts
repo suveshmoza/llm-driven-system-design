@@ -4,10 +4,7 @@
  */
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import pg from 'pg'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/rplace',

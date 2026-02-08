@@ -8,8 +8,45 @@
  * - Memory tracking
  */
 
+interface LRUCacheOptions {
+  maxSize?: number;
+  maxMemoryMB?: number;
+  defaultTTL?: number;
+}
+
+interface CacheItem {
+  key: string;
+  value: unknown;
+  size: number;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
+  prev: CacheItem | null;
+  next: CacheItem | null;
+}
+
+interface CacheStats {
+  hits: number;
+  misses: number;
+  sets: number;
+  deletes: number;
+  evictions: number;
+  expirations: number;
+  currentSize: number;
+  currentMemoryBytes: number;
+}
+
 export class LRUCache {
-  constructor(options = {}) {
+  private maxSize: number;
+  private maxMemoryMB: number;
+  private defaultTTL: number;
+  cache: Map<string, CacheItem>;
+  private head: CacheItem;
+  private tail: CacheItem;
+  private stats: CacheStats;
+  private expirationInterval: ReturnType<typeof setInterval>;
+
+  constructor(options: LRUCacheOptions = {}) {
     this.maxSize = options.maxSize || 10000; // Max number of entries
     this.maxMemoryMB = options.maxMemoryMB || 100; // Max memory in MB
     this.defaultTTL = options.defaultTTL || 0; // Default TTL in seconds (0 = no expiration)
@@ -18,8 +55,8 @@ export class LRUCache {
     this.cache = new Map();
 
     // Doubly-linked list for LRU tracking
-    this.head = { key: '__HEAD__' }; // Most recently used
-    this.tail = { key: '__TAIL__' }; // Least recently used
+    this.head = { key: '__HEAD__', value: null, size: 0, expiresAt: 0, createdAt: 0, updatedAt: 0, prev: null, next: null }; // Most recently used
+    this.tail = { key: '__TAIL__', value: null, size: 0, expiresAt: 0, createdAt: 0, updatedAt: 0, prev: null, next: null }; // Least recently used
     this.head.next = this.tail;
     this.tail.prev = this.head;
 
@@ -41,10 +78,8 @@ export class LRUCache {
 
   /**
    * Estimate the size of a value in bytes
-   * @param {*} value
-   * @returns {number}
    */
-  _estimateSize(value) {
+  _estimateSize(value: unknown): number {
     const str = JSON.stringify(value);
     // Rough estimate: 2 bytes per character for UTF-16
     return str.length * 2;
@@ -52,9 +87,8 @@ export class LRUCache {
 
   /**
    * Move a node to the head (most recently used)
-   * @param {object} node
    */
-  _moveToHead(node) {
+  _moveToHead(node: CacheItem): void {
     // Remove from current position
     if (node.prev) {
       node.prev.next = node.next;
@@ -66,31 +100,29 @@ export class LRUCache {
     // Insert at head
     node.next = this.head.next;
     node.prev = this.head;
-    this.head.next.prev = node;
+    this.head.next!.prev = node;
     this.head.next = node;
   }
 
   /**
    * Remove the tail node (least recently used)
-   * @returns {object|null}
    */
-  _removeTail() {
+  _removeTail(): CacheItem | null {
     const node = this.tail.prev;
     if (node === this.head) {
       return null;
     }
 
-    node.prev.next = this.tail;
-    this.tail.prev = node.prev;
+    node!.prev!.next = this.tail;
+    this.tail.prev = node!.prev;
 
     return node;
   }
 
   /**
    * Remove a specific node from the list
-   * @param {object} node
    */
-  _removeNode(node) {
+  _removeNode(node: CacheItem): void {
     if (node.prev) {
       node.prev.next = node.next;
     }
@@ -101,17 +133,15 @@ export class LRUCache {
 
   /**
    * Check if an item is expired
-   * @param {object} item
-   * @returns {boolean}
    */
-  _isExpired(item) {
+  _isExpired(item: CacheItem): boolean {
     return item.expiresAt !== 0 && Date.now() > item.expiresAt;
   }
 
   /**
    * Evict entries until we're under limits
    */
-  _evict() {
+  _evict(): void {
     while (
       (this.cache.size > this.maxSize ||
         this.stats.currentMemoryBytes > this.maxMemoryMB * 1024 * 1024) &&
@@ -132,13 +162,13 @@ export class LRUCache {
   /**
    * Active expiration cycle - samples random keys and expires them
    */
-  _expireCycle() {
+  _expireCycle(): void {
     const keys = Array.from(this.cache.keys());
     if (keys.length === 0) return;
 
     // Sample up to 20 random keys
     const sampleSize = Math.min(20, keys.length);
-    const sampled = [];
+    const sampled: string[] = [];
 
     for (let i = 0; i < sampleSize; i++) {
       const randomIndex = Math.floor(Math.random() * keys.length);
@@ -163,10 +193,8 @@ export class LRUCache {
 
   /**
    * Internal delete without stats update
-   * @param {string} key
-   * @returns {boolean}
    */
-  _deleteInternal(key) {
+  _deleteInternal(key: string): boolean {
     const item = this.cache.get(key);
     if (!item) return false;
 
@@ -180,10 +208,8 @@ export class LRUCache {
 
   /**
    * Get a value from the cache
-   * @param {string} key
-   * @returns {*} value or undefined if not found/expired
    */
-  get(key) {
+  get(key: string): unknown {
     const item = this.cache.get(key);
 
     if (!item) {
@@ -208,12 +234,8 @@ export class LRUCache {
 
   /**
    * Set a value in the cache
-   * @param {string} key
-   * @param {*} value
-   * @param {number} ttl - TTL in seconds (0 = use default, -1 = no expiration)
-   * @returns {boolean}
    */
-  set(key, value, ttl = 0) {
+  set(key: string, value: unknown, ttl = 0): boolean {
     const size = this._estimateSize(value) + key.length * 2;
 
     // Calculate expiration
@@ -237,7 +259,7 @@ export class LRUCache {
       this._moveToHead(existing);
     } else {
       // Create new entry
-      const item = {
+      const item: CacheItem = {
         key,
         value,
         size,
@@ -265,10 +287,8 @@ export class LRUCache {
 
   /**
    * Delete a key from the cache
-   * @param {string} key
-   * @returns {boolean}
    */
-  delete(key) {
+  delete(key: string): boolean {
     const result = this._deleteInternal(key);
     if (result) {
       this.stats.deletes++;
@@ -278,10 +298,8 @@ export class LRUCache {
 
   /**
    * Check if a key exists (without updating LRU order)
-   * @param {string} key
-   * @returns {boolean}
    */
-  has(key) {
+  has(key: string): boolean {
     const item = this.cache.get(key);
     if (!item) return false;
 
@@ -296,10 +314,8 @@ export class LRUCache {
 
   /**
    * Get the TTL remaining for a key in seconds
-   * @param {string} key
-   * @returns {number} -1 if no TTL, -2 if key doesn't exist, otherwise seconds remaining
    */
-  ttl(key) {
+  ttl(key: string): number {
     const item = this.cache.get(key);
     if (!item) return -2;
 
@@ -315,11 +331,8 @@ export class LRUCache {
 
   /**
    * Set TTL on an existing key
-   * @param {string} key
-   * @param {number} ttl - TTL in seconds
-   * @returns {boolean}
    */
-  expire(key, ttl) {
+  expire(key: string, ttl: number): boolean {
     const item = this.cache.get(key);
     if (!item) return false;
 
@@ -334,11 +347,8 @@ export class LRUCache {
 
   /**
    * Increment a numeric value
-   * @param {string} key
-   * @param {number} delta
-   * @returns {number|null}
    */
-  incr(key, delta = 1) {
+  incr(key: string, delta = 1): number | null {
     const value = this.get(key);
 
     if (value === undefined) {
@@ -352,19 +362,19 @@ export class LRUCache {
 
     const newValue = value + delta;
     const item = this.cache.get(key);
-    item.value = newValue;
-    item.size = this._estimateSize(newValue) + key.length * 2;
+    if (item) {
+      item.value = newValue;
+      item.size = this._estimateSize(newValue) + key.length * 2;
+    }
 
     return newValue;
   }
 
   /**
    * Get all keys (optionally matching a pattern)
-   * @param {string} pattern - Glob pattern (simple * matching)
-   * @returns {string[]}
    */
-  keys(pattern = '*') {
-    const allKeys = [];
+  keys(pattern = '*'): string[] {
+    const allKeys: string[] = [];
 
     for (const [key, item] of this.cache) {
       if (!this._isExpired(item)) {
@@ -388,7 +398,7 @@ export class LRUCache {
   /**
    * Clear all entries
    */
-  clear() {
+  clear(): void {
     this.cache.clear();
     this.head.next = this.tail;
     this.tail.prev = this.head;
@@ -398,7 +408,6 @@ export class LRUCache {
 
   /**
    * Get cache statistics
-   * @returns {object}
    */
   getStats() {
     const hitRate =
@@ -418,10 +427,8 @@ export class LRUCache {
 
   /**
    * Get detailed info about a key
-   * @param {string} key
-   * @returns {object|null}
    */
-  getKeyInfo(key) {
+  getKeyInfo(key: string) {
     const item = this.cache.get(key);
     if (!item) return null;
 
@@ -447,7 +454,7 @@ export class LRUCache {
   /**
    * Stop the expiration cycle (for cleanup)
    */
-  destroy() {
+  destroy(): void {
     if (this.expirationInterval) {
       clearInterval(this.expirationInterval);
     }

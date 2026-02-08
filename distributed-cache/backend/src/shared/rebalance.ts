@@ -47,18 +47,14 @@ interface RebalanceOptions {
 
 interface HashRing {
   getAllNodes(): string[];
-  getNode(key: string): string;
+  getNode(key: string): string | null;
   addNode(node: string): void;
   removeNode(node: string): void;
 }
 
 interface NodeRequestResult {
   success: boolean;
-  data?: {
-    keys?: string[];
-    value?: unknown;
-    ttl?: number;
-  };
+  data?: unknown;
 }
 
 interface NodeRequestOptions {
@@ -69,8 +65,14 @@ interface NodeRequestOptions {
 type NodeRequestFn = (
   node: string,
   path: string,
-  options?: NodeRequestOptions
+  options?: NodeRequestOptions | RequestInit
 ) => Promise<NodeRequestResult>;
+
+interface NodeData {
+  keys?: string[];
+  value?: unknown;
+  ttl?: number;
+}
 
 export class RebalanceManager {
   private ring: HashRing;
@@ -97,7 +99,7 @@ export class RebalanceManager {
    * @param {string} newNodeUrl - URL of the newly added node
    * @returns {Promise<object>} Rebalance result
    */
-  async handleNodeAdded(newNodeUrl) {
+  async handleNodeAdded(newNodeUrl: string) {
     if (this.isRebalancing) {
       rebalanceLogger.warn(
         { newNodeUrl },
@@ -126,8 +128,8 @@ export class RebalanceManager {
 
       for (const sourceNode of existingNodes) {
         const keysResult = await this.nodeRequest(sourceNode, '/keys');
-        if (keysResult.success && keysResult.data?.keys) {
-          for (const key of keysResult.data.keys) {
+        if (keysResult.success && (keysResult.data as NodeData)?.keys) {
+          for (const key of (keysResult.data as NodeData).keys!) {
             // Check if this key should now belong to the new node
             const targetNode = this.ring.getNode(key);
             if (targetNode === newNodeUrl) {
@@ -169,6 +171,7 @@ export class RebalanceManager {
             );
 
             if (getResult.success && getResult.data) {
+              const getData = getResult.data as NodeData;
               // Set the key on the new node
               const setResult = await this.nodeRequest(
                 newNodeUrl,
@@ -176,8 +179,8 @@ export class RebalanceManager {
                 {
                   method: 'POST',
                   body: JSON.stringify({
-                    value: getResult.data.value,
-                    ttl: getResult.data.ttl > 0 ? getResult.data.ttl : 0,
+                    value: getData.value,
+                    ttl: (getData.ttl ?? 0) > 0 ? getData.ttl! : 0,
                   }),
                 }
               );
@@ -227,10 +230,10 @@ export class RebalanceManager {
       };
     } catch (error) {
       rebalanceLogger.error(
-        { newNodeUrl, error: error.message },
+        { newNodeUrl, error: (error as Error).message },
         'rebalance_failed'
       );
-      return { success: false, error: error.message };
+      return { success: false, error: (error as Error).message };
     } finally {
       this.isRebalancing = false;
       rebalanceInProgress.labels(newNodeUrl).set(0);
@@ -245,7 +248,7 @@ export class RebalanceManager {
    * @param {string} removedNodeUrl - URL of the node being removed
    * @returns {Promise<object>} Rebalance result
    */
-  async handleNodeRemoved(removedNodeUrl) {
+  async handleNodeRemoved(removedNodeUrl: string) {
     if (this.isRebalancing) {
       rebalanceLogger.warn(
         { removedNodeUrl },
@@ -262,7 +265,7 @@ export class RebalanceManager {
       // Try to get keys from the node being removed
       const keysResult = await this.nodeRequest(removedNodeUrl, '/keys');
 
-      if (!keysResult.success || !keysResult.data?.keys) {
+      if (!keysResult.success || !(keysResult.data as NodeData)?.keys) {
         rebalanceLogger.warn(
           { removedNodeUrl },
           'cannot_get_keys_from_removed_node'
@@ -274,7 +277,7 @@ export class RebalanceManager {
         };
       }
 
-      const keys = keysResult.data.keys;
+      const keys = (keysResult.data as NodeData).keys!;
 
       if (keys.length === 0) {
         return { success: true, keysMoved: 0 };
@@ -315,6 +318,7 @@ export class RebalanceManager {
             );
 
             if (getResult.success && getResult.data) {
+              const getData = getResult.data as NodeData;
               // Set the key on the new node
               const setResult = await this.nodeRequest(
                 targetNode,
@@ -322,8 +326,8 @@ export class RebalanceManager {
                 {
                   method: 'POST',
                   body: JSON.stringify({
-                    value: getResult.data.value,
-                    ttl: getResult.data.ttl > 0 ? getResult.data.ttl : 0,
+                    value: getData.value,
+                    ttl: (getData.ttl ?? 0) > 0 ? getData.ttl! : 0,
                   }),
                 }
               );
@@ -412,10 +416,10 @@ export class RebalanceManager {
 
     for (const sourceNode of existingNodes) {
       const keysResult = await this.nodeRequest(sourceNode, '/keys');
-      if (keysResult.success && keysResult.data?.keys) {
-        totalKeys += keysResult.data.keys.length;
+      if (keysResult.success && (keysResult.data as NodeData)?.keys) {
+        totalKeys += (keysResult.data as NodeData).keys!.length;
 
-        for (const key of keysResult.data.keys) {
+        for (const key of (keysResult.data as NodeData).keys!) {
           // Temporarily add the new node to check key assignment
           this.ring.addNode(newNodeUrl);
           const targetNode = this.ring.getNode(key);

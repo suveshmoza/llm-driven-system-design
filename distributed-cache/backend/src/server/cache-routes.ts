@@ -86,7 +86,7 @@ export function createCacheRoutes(context: ServerContext): Router {
   router.get(
     '/cache/:key',
     measureOperation(nodeId, 'get', async (req: Request, res: Response) => {
-      const { key } = req.params;
+      const key = req.params.key as string;
 
       hotKeyDetector.recordAccess(key);
       const value = cache.get(key);
@@ -120,7 +120,7 @@ export function createCacheRoutes(context: ServerContext): Router {
   router.post(
     '/cache/:key',
     measureOperation(nodeId, 'set', async (req: Request, res: Response) => {
-      const { key } = req.params;
+      const key = req.params.key as string;
       const { value, ttl = 0 } = req.body as SetRequestBody;
 
       if (value === undefined) {
@@ -150,7 +150,7 @@ export function createCacheRoutes(context: ServerContext): Router {
   router.put(
     '/cache/:key',
     measureOperation(nodeId, 'set', async (req: Request, res: Response) => {
-      const { key } = req.params;
+      const key = req.params.key as string;
       const { value, ttl = 0 } = req.body as SetRequestBody;
 
       if (value === undefined) {
@@ -178,7 +178,7 @@ export function createCacheRoutes(context: ServerContext): Router {
   router.delete(
     '/cache/:key',
     measureOperation(nodeId, 'delete', async (req: Request, res: Response) => {
-      const { key } = req.params;
+      const key = req.params.key as string;
       const deleted = cache.delete(key);
 
       if (!deleted) {
@@ -203,7 +203,7 @@ export function createCacheRoutes(context: ServerContext): Router {
    * @returns 200 with {key, exists: boolean}
    */
   router.get('/cache/:key/exists', (req: Request, res: Response) => {
-    const { key } = req.params;
+    const key = req.params.key as string;
     res.json({ key, exists: cache.has(key) });
   });
 
@@ -219,7 +219,7 @@ export function createCacheRoutes(context: ServerContext): Router {
    * @returns 404 if the key does not exist
    */
   router.get('/cache/:key/ttl', (req: Request, res: Response) => {
-    const { key } = req.params;
+    const key = req.params.key as string;
     const ttl = cache.ttl(key);
 
     if (ttl === -2) {
@@ -243,7 +243,7 @@ export function createCacheRoutes(context: ServerContext): Router {
    * @returns 404 if the key does not exist
    */
   router.post('/cache/:key/expire', (req: Request, res: Response) => {
-    const { key } = req.params;
+    const key = req.params.key as string;
     const { ttl } = req.body as ExpireRequestBody;
 
     if (ttl === undefined || typeof ttl !== 'number') {
@@ -273,7 +273,7 @@ export function createCacheRoutes(context: ServerContext): Router {
    * @returns 400 if the stored value is not a number
    */
   router.post('/cache/:key/incr', (req: Request, res: Response) => {
-    const { key } = req.params;
+    const key = req.params.key as string;
     const { delta = 1 } = req.body as IncrRequestBody;
 
     const result = cache.incr(key, delta);
@@ -297,7 +297,7 @@ export function createCacheRoutes(context: ServerContext): Router {
    * @returns 404 if the key does not exist
    */
   router.get('/cache/:key/info', (req: Request, res: Response) => {
-    const { key } = req.params;
+    const key = req.params.key as string;
     const info = cache.getKeyInfo(key);
 
     if (!info) {

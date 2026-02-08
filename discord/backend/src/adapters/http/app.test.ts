@@ -458,8 +458,8 @@ describe('Discord HTTP API', () => {
   describe('GET /api/rooms/:room/history', () => {
     it('should return message history for an existing room', async () => {
       const mockHistory = [
-        { room: 'general', user: 'alice', content: 'Hello!', timestamp: new Date() },
-        { room: 'general', user: 'bob', content: 'Hi!', timestamp: new Date() },
+        { id: 1, roomId: 1, userId: 1, content: 'Hello!', createdAt: new Date(), nickname: 'alice', roomName: 'general' },
+        { id: 2, roomId: 1, userId: 2, content: 'Hi!', createdAt: new Date(), nickname: 'bob', roomName: 'general' },
       ]
       vi.mocked(roomManager.getRoom).mockResolvedValue({
         id: 1,

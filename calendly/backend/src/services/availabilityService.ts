@@ -21,7 +21,7 @@ import {
   findGaps,
   generateSlots,
   type TimeInterval,
-  _utcToLocal,
+  utcToLocal as _utcToLocal,
   formatInTimezone,
 } from '../utils/time.js';
 import { v4 as uuidv4 } from 'uuid';

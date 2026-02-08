@@ -10,6 +10,11 @@
 import crypto from 'crypto';
 
 export class ConsistentHashRing {
+  private ring: Map<number, string>;
+  private sortedHashes: number[];
+  private virtualNodes: number;
+  private nodes: Set<string>;
+
   constructor(virtualNodes = 150) {
     this.ring = new Map(); // hash -> node
     this.sortedHashes = [];
@@ -19,19 +24,16 @@ export class ConsistentHashRing {
 
   /**
    * Hash a string to a 32-bit integer
-   * @param {string} key
-   * @returns {number}
    */
-  _hash(key) {
+  _hash(key: string): number {
     const hash = crypto.createHash('md5').update(key).digest('hex');
     return parseInt(hash.substring(0, 8), 16);
   }
 
   /**
    * Add a node to the ring with virtual nodes
-   * @param {string} nodeId - Unique identifier for the node (e.g., 'node-1' or 'localhost:3001')
    */
-  addNode(nodeId) {
+  addNode(nodeId: string): void {
     if (this.nodes.has(nodeId)) {
       return; // Node already exists
     }
@@ -46,14 +48,13 @@ export class ConsistentHashRing {
     }
 
     // Keep sorted for binary search
-    this.sortedHashes.sort((a, b) => a - b);
+    this.sortedHashes.sort((a: number, b: number) => a - b);
   }
 
   /**
    * Remove a node from the ring
-   * @param {string} nodeId
    */
-  removeNode(nodeId) {
+  removeNode(nodeId: string): void {
     if (!this.nodes.has(nodeId)) {
       return;
     }
@@ -73,10 +74,8 @@ export class ConsistentHashRing {
 
   /**
    * Get the node responsible for a key
-   * @param {string} key
-   * @returns {string|null} nodeId
    */
-  getNode(key) {
+  getNode(key: string): string | null {
     if (this.ring.size === 0) {
       return null;
     }
@@ -101,22 +100,19 @@ export class ConsistentHashRing {
       left = 0;
     }
 
-    return this.ring.get(this.sortedHashes[left]);
+    return this.ring.get(this.sortedHashes[left]) ?? null;
   }
 
   /**
    * Get multiple nodes for replication (returns n distinct nodes)
-   * @param {string} key
-   * @param {number} n - Number of nodes to return
-   * @returns {string[]} Array of node IDs
    */
-  getNodes(key, n = 3) {
+  getNodes(key: string, n = 3): string[] {
     if (this.ring.size === 0) {
       return [];
     }
 
-    const nodes = [];
-    const seen = new Set();
+    const nodes: string[] = [];
+    const seen = new Set<string>();
     const hashVal = this._hash(key);
 
     // Binary search for starting position
@@ -140,7 +136,7 @@ export class ConsistentHashRing {
       }
 
       const nodeId = this.ring.get(this.sortedHashes[idx]);
-      if (!seen.has(nodeId)) {
+      if (nodeId && !seen.has(nodeId)) {
         seen.add(nodeId);
         nodes.push(nodeId);
       }
@@ -153,27 +149,23 @@ export class ConsistentHashRing {
 
   /**
    * Get all nodes in the ring
-   * @returns {string[]}
    */
-  getAllNodes() {
+  getAllNodes(): string[] {
     return Array.from(this.nodes);
   }
 
   /**
    * Get the number of nodes in the ring
-   * @returns {number}
    */
-  getNodeCount() {
+  getNodeCount(): number {
     return this.nodes.size;
   }
 
   /**
    * Get the distribution of keys across nodes (for debugging/monitoring)
-   * @param {string[]} keys - Array of keys to check distribution
-   * @returns {Map<string, number>} Node to key count mapping
    */
-  getDistribution(keys) {
-    const distribution = new Map();
+  getDistribution(keys: string[]): Map<string, number> {
+    const distribution = new Map<string, number>();
 
     for (const nodeId of this.nodes) {
       distribution.set(nodeId, 0);
@@ -182,7 +174,7 @@ export class ConsistentHashRing {
     for (const key of keys) {
       const nodeId = this.getNode(key);
       if (nodeId) {
-        distribution.set(nodeId, distribution.get(nodeId) + 1);
+        distribution.set(nodeId, (distribution.get(nodeId) || 0) + 1);
       }
     }
 

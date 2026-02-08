@@ -317,12 +317,17 @@ export function getContentType() {
   return register.contentType;
 }
 
+interface CacheStatsInput {
+  size?: number;
+  currentMemoryBytes?: number;
+  hits: number;
+  misses: number;
+}
+
 /**
  * Update cache stats metrics from LRU cache stats
- * @param {string} nodeId - Node identifier
- * @param {object} stats - Stats from LRUCache.getStats()
  */
-export function updateCacheStats(nodeId, stats) {
+export function updateCacheStats(nodeId: string, stats: CacheStatsInput): void {
   cacheEntriesCurrent.labels(nodeId).set(stats.size || 0);
   cacheMemoryBytes.labels(nodeId).set(stats.currentMemoryBytes || 0);
 
@@ -334,12 +339,15 @@ export function updateCacheStats(nodeId, stats) {
 
 /**
  * Record a cache operation with timing
- * @param {string} nodeId - Node identifier
- * @param {string} operation - Operation type (get, set, delete)
- * @param {number} durationMs - Duration in milliseconds
  */
-export function recordOperation(nodeId, operation, durationMs) {
+export function recordOperation(nodeId: string, operation: string, durationMs: number): void {
   cacheOperationDuration.labels(nodeId, operation).observe(durationMs);
+}
+
+interface HotKeyDetectorOptions {
+  windowMs?: number;
+  threshold?: number;
+  maxTrackedKeys?: number;
 }
 
 /**
@@ -347,23 +355,30 @@ export function recordOperation(nodeId, operation, durationMs) {
  * Tracks key access patterns to identify hot keys
  */
 export class HotKeyDetector {
-  constructor(nodeId, options = {}) {
+  private nodeId: string;
+  private _windowMs: number;
+  private threshold: number;
+  private maxTrackedKeys: number;
+  private accessCounts: Map<string, number>;
+  private totalAccesses: number;
+  private resetInterval: ReturnType<typeof setInterval>;
+
+  constructor(nodeId: string, options: HotKeyDetectorOptions = {}) {
     this.nodeId = nodeId;
-    this.windowMs = options.windowMs || 60000; // 1 minute window
+    this._windowMs = options.windowMs || 60000; // 1 minute window
     this.threshold = options.threshold || 0.01; // 1% of traffic
     this.maxTrackedKeys = options.maxTrackedKeys || 10000;
     this.accessCounts = new Map();
     this.totalAccesses = 0;
 
     // Periodic reset
-    this.resetInterval = setInterval(() => this.reset(), this.windowMs);
+    this.resetInterval = setInterval(() => this.reset(), this._windowMs);
   }
 
   /**
    * Record a key access
-   * @param {string} key
    */
-  recordAccess(key) {
+  recordAccess(key: string): void {
     const currentCount = this.accessCounts.get(key) || 0;
     this.accessCounts.set(key, currentCount + 1);
     this.totalAccesses++;
@@ -387,13 +402,12 @@ export class HotKeyDetector {
 
   /**
    * Get current hot keys
-   * @returns {Array} Hot keys with access counts and percentages
    */
   getHotKeys() {
     if (this.totalAccesses === 0) return [];
 
     const minCount = this.totalAccesses * this.threshold;
-    const hotKeys = [];
+    const hotKeys: { key: string; accessCount: number; percentage: string }[] = [];
 
     for (const [key, count] of this.accessCounts) {
       if (count >= minCount) {
@@ -411,7 +425,7 @@ export class HotKeyDetector {
   /**
    * Update Prometheus metrics with current hot keys
    */
-  updateMetrics() {
+  updateMetrics(): void {
     // Reset all hot key metrics first
     hotKeyAccesses.reset();
 
@@ -425,7 +439,7 @@ export class HotKeyDetector {
   /**
    * Reset counters (called at end of each window)
    */
-  reset() {
+  reset(): void {
     // Update metrics before reset
     this.updateMetrics();
 
@@ -436,7 +450,7 @@ export class HotKeyDetector {
   /**
    * Clean up
    */
-  destroy() {
+  destroy(): void {
     if (this.resetInterval) {
       clearInterval(this.resetInterval);
     }

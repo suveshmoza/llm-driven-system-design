@@ -21,6 +21,7 @@ import {
   logSnapshotLoaded,
   persistenceLogger,
 } from './logger.js';
+import type { LRUCache } from '../lib/lru-cache.js';
 
 // Configuration from environment
 const PERSISTENCE_ENABLED =
@@ -32,12 +33,29 @@ const SNAPSHOT_INTERVAL_MS = parseInt(
 const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || './data';
 const MAX_SNAPSHOTS = parseInt(process.env.MAX_SNAPSHOTS || '3', 10);
 
+interface PersistenceOptions {
+  enabled?: boolean;
+  snapshotInterval?: number;
+  snapshotDir?: string;
+  maxSnapshots?: number;
+}
+
 /**
  * Persistence Manager class
  * Handles snapshot creation, loading, and cleanup
  */
 export class PersistenceManager {
-  constructor(nodeId, cache, options = {}) {
+  private nodeId: string;
+  private cache: LRUCache;
+  private enabled: boolean;
+  private snapshotInterval: number;
+  private snapshotDir: string;
+  private maxSnapshots: number;
+  private nodeDir: string;
+  private intervalHandle: ReturnType<typeof setInterval> | null;
+  private isSnapshotting: boolean;
+
+  constructor(nodeId: string, cache: LRUCache, options: PersistenceOptions = {}) {
     this.nodeId = nodeId;
     this.cache = cache;
     this.enabled = options.enabled ?? PERSISTENCE_ENABLED;
@@ -68,7 +86,7 @@ export class PersistenceManager {
       );
     } catch (error) {
       persistenceLogger.error(
-        { nodeId: this.nodeId, error: error.message },
+        { nodeId: this.nodeId, error: (error as Error).message },
         'failed_to_create_snapshot_directory'
       );
       throw error;
@@ -86,7 +104,7 @@ export class PersistenceManager {
   /**
    * Start periodic snapshot creation
    */
-  startPeriodicSnapshots() {
+  startPeriodicSnapshots(): void {
     if (!this.enabled) return;
 
     if (this.intervalHandle) {
@@ -98,7 +116,7 @@ export class PersistenceManager {
         await this.createSnapshot();
       } catch (error) {
         persistenceLogger.error(
-          { nodeId: this.nodeId, error: error.message },
+          { nodeId: this.nodeId, error: (error as Error).message },
           'periodic_snapshot_failed'
         );
       }
@@ -113,7 +131,7 @@ export class PersistenceManager {
   /**
    * Stop periodic snapshots
    */
-  stopPeriodicSnapshots() {
+  stopPeriodicSnapshots(): void {
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
@@ -122,7 +140,6 @@ export class PersistenceManager {
 
   /**
    * Create a snapshot of the current cache state
-   * @returns {Promise<object>} Snapshot metadata
    */
   async createSnapshot() {
     if (!this.enabled || this.isSnapshotting) {
@@ -134,7 +151,7 @@ export class PersistenceManager {
 
     try {
       // Get all cache entries
-      const entries = [];
+      const entries: { key: string; value: unknown; expiresAt: number; createdAt: number; updatedAt: number }[] = [];
       const keys = this.cache.keys('*');
 
       for (const key of keys) {
@@ -187,7 +204,7 @@ export class PersistenceManager {
       };
     } catch (error) {
       persistenceLogger.error(
-        { nodeId: this.nodeId, error: error.message },
+        { nodeId: this.nodeId, error: (error as Error).message },
         'snapshot_creation_failed'
       );
       throw error;
@@ -198,7 +215,6 @@ export class PersistenceManager {
 
   /**
    * Load the most recent snapshot
-   * @returns {Promise<object>} Load result
    */
   async loadSnapshot() {
     try {
@@ -241,7 +257,7 @@ export class PersistenceManager {
 
       // Sort by updatedAt descending to load most recent entries first
       const sortedEntries = [...snapshot.entries].sort(
-        (a, b) => b.updatedAt - a.updatedAt
+        (a: { updatedAt: number }, b: { updatedAt: number }) => b.updatedAt - a.updatedAt
       );
 
       for (const entry of sortedEntries) {
@@ -294,7 +310,7 @@ export class PersistenceManager {
         snapshotTimestamp: snapshot.timestamp,
       };
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         persistenceLogger.info(
           { nodeId: this.nodeId },
           'no_snapshot_directory'
@@ -303,17 +319,17 @@ export class PersistenceManager {
       }
 
       persistenceLogger.error(
-        { nodeId: this.nodeId, error: error.message },
+        { nodeId: this.nodeId, error: (error as Error).message },
         'snapshot_load_failed'
       );
-      return { loaded: false, entries: 0, error: error.message };
+      return { loaded: false, entries: 0, error: (error as Error).message };
     }
   }
 
   /**
    * Clean up old snapshots, keeping only the most recent ones
    */
-  async cleanupOldSnapshots() {
+  async cleanupOldSnapshots(): Promise<void> {
     try {
       const files = await fs.readdir(this.nodeDir);
       const snapshotFiles = files
@@ -337,7 +353,7 @@ export class PersistenceManager {
       }
     } catch (error) {
       persistenceLogger.warn(
-        { nodeId: this.nodeId, error: error.message },
+        { nodeId: this.nodeId, error: (error as Error).message },
         'snapshot_cleanup_failed'
       );
     }
@@ -345,7 +361,6 @@ export class PersistenceManager {
 
   /**
    * Force an immediate snapshot
-   * @returns {Promise<object>}
    */
   async forceSnapshot() {
     return this.createSnapshot();
@@ -353,7 +368,6 @@ export class PersistenceManager {
 
   /**
    * Get list of available snapshots
-   * @returns {Promise<Array>}
    */
   async listSnapshots() {
     try {
@@ -363,7 +377,7 @@ export class PersistenceManager {
         .sort()
         .reverse();
 
-      const snapshots = [];
+      const snapshots: { filename: string; timestamp: number; date: string; sizeBytes: number }[] = [];
 
       for (const file of snapshotFiles) {
         const filepath = path.join(this.nodeDir, file);
@@ -383,7 +397,7 @@ export class PersistenceManager {
 
       return snapshots;
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return [];
       }
       throw error;
@@ -393,7 +407,7 @@ export class PersistenceManager {
   /**
    * Clean up and shutdown
    */
-  async shutdown() {
+  async shutdown(): Promise<void> {
     this.stopPeriodicSnapshots();
 
     // Create final snapshot before shutdown
@@ -406,7 +420,7 @@ export class PersistenceManager {
         );
       } catch (error) {
         persistenceLogger.error(
-          { nodeId: this.nodeId, error: error.message },
+          { nodeId: this.nodeId, error: (error as Error).message },
           'shutdown_snapshot_failed'
         );
       }
@@ -416,12 +430,8 @@ export class PersistenceManager {
 
 /**
  * Create a persistence manager for a cache node
- * @param {string} nodeId
- * @param {object} cache - LRU Cache instance
- * @param {object} options
- * @returns {PersistenceManager}
  */
-export function createPersistenceManager(nodeId, cache, options = {}) {
+export function createPersistenceManager(nodeId: string, cache: LRUCache, options: PersistenceOptions = {}): PersistenceManager {
   return new PersistenceManager(nodeId, cache, options);
 }
 

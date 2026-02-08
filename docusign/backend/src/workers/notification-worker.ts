@@ -4,7 +4,7 @@
  */
 import amqp, { Channel, ConsumeMessage } from 'amqplib';
 import logger from '../shared/logger.js';
-import { pool } from '../shared/db.js';
+import { pool } from '../utils/db.js';
 import {
   QUEUES,
   NotificationMessage,
