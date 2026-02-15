@@ -1,0 +1,23 @@
+{
+  "name": "apple-maps",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "apple_maps",
+  "dbUser": "maps",
+  "auth": {
+    "enabled": false
+  },
+  "screens": [
+    {
+      "name": "01-map-view",
+      "path": "/",
+      "waitFor": ".leaflet-container, canvas",
+      "delay": 2000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

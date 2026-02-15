@@ -1,0 +1,45 @@
+{
+  "name": "confluence",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "confluence",
+  "dbUser": "confluence",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input#username",
+    "passwordSelector": "input#password",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main"
+  },
+  "screens": [
+    {
+      "name": "01-login-page",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-dashboard",
+      "path": "/",
+      "waitFor": "main, h1",
+      "delay": 1000
+    },
+    {
+      "name": "03-space-view",
+      "path": "/space/ENG",
+      "waitFor": "main, h1",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

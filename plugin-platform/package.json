@@ -27,14 +27,17 @@
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:reset": "docker-compose down -v && docker-compose up -d",
-    "plugin-cli": "tsx scripts/plugin-cli.ts"
+    "plugin-cli": "tsx scripts/plugin-cli.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
     "concurrently": "^9.0.1",
     "playwright": "^1.57.0",
     "puppeteer": "^24.35.0",
     "tsx": "^4.19.2",
-    "undici": "^7.2.0"
+    "undici": "^7.2.0",
+    "@playwright/test": "^1.49.0"
   },
   "engines": {
     "node": ">=20"

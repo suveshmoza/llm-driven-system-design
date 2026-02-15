@@ -1,0 +1,23 @@
+{
+  "name": "rate-limiter",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "ratelimiter",
+  "dbUser": "postgres",
+  "auth": {
+    "enabled": false
+  },
+  "screens": [
+    {
+      "name": "01-dashboard",
+      "path": "/",
+      "waitFor": "header, main",
+      "delay": 1500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

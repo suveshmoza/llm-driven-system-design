@@ -1,0 +1,69 @@
+{
+  "name": "salesforce",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "salesforce",
+  "dbUser": "salesforce",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[name='username']",
+    "passwordSelector": "input[name='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "nav, aside"
+  },
+  "screens": [
+    {
+      "name": "01-login-page",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-dashboard",
+      "path": "/",
+      "waitFor": "h1",
+      "delay": 1000
+    },
+    {
+      "name": "03-leads",
+      "path": "/leads",
+      "waitFor": "main, h1",
+      "delay": 1000
+    },
+    {
+      "name": "04-accounts",
+      "path": "/accounts",
+      "waitFor": "main, h1",
+      "delay": 1000
+    },
+    {
+      "name": "05-contacts",
+      "path": "/contacts",
+      "waitFor": "main, h1",
+      "delay": 1000
+    },
+    {
+      "name": "06-opportunities",
+      "path": "/opportunities",
+      "waitFor": "main, h1",
+      "delay": 1000
+    },
+    {
+      "name": "07-reports",
+      "path": "/reports",
+      "waitFor": "main, h1",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

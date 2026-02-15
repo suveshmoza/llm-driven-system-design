@@ -1,0 +1,39 @@
+{
+  "name": "supabase-dashboard",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "supabase_meta",
+  "dbUser": "supabase",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[type='text']",
+    "passwordSelector": "input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "header, main"
+  },
+  "screens": [
+    {
+      "name": "01-login-page",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-projects",
+      "path": "/",
+      "waitFor": "main, h2",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

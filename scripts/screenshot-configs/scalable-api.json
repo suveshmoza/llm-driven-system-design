@@ -1,0 +1,39 @@
+{
+  "name": "scalable-api",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "scalable_api",
+  "dbUser": "postgres",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/",
+    "credentials": {
+      "email": "admin@example.com",
+      "password": "admin123"
+    },
+    "usernameSelector": "input[name='email'], input#email",
+    "passwordSelector": "input[name='password'], input#password",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "header, main"
+  },
+  "screens": [
+    {
+      "name": "01-login-page",
+      "path": "/",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-dashboard",
+      "path": "/",
+      "waitFor": "header, main",
+      "delay": 1500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "paypal",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "paypal",
+  "dbUser": "paypal",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[name='username']",
+    "passwordSelector": "input[name='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "header, nav"
+  },
+  "screens": [
+    {
+      "name": "01-login-page",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-dashboard",
+      "path": "/",
+      "waitFor": "h1",
+      "delay": 1000
+    },
+    {
+      "name": "03-send-money",
+      "path": "/send",
+      "waitFor": "main, form",
+      "delay": 1000
+    },
+    {
+      "name": "04-request-money",
+      "path": "/request",
+      "waitFor": "main, form",
+      "delay": 1000
+    },
+    {
+      "name": "05-activity",
+      "path": "/activity",
+      "waitFor": "main, h1",
+      "delay": 1000
+    },
+    {
+      "name": "06-payment-methods",
+      "path": "/payment-methods",
+      "waitFor": "main, h1",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}
