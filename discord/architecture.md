@@ -325,7 +325,7 @@ class HistoryBuffer {
 
 ---
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -1444,7 +1444,7 @@ RouterProvider
 
 ---
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics to Track
 
@@ -2046,7 +2046,7 @@ watch -n 1 'lsof -i :9001 | wc -l'  # Connection count
 
 ---
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Summary Table
 

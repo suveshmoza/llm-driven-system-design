@@ -917,7 +917,7 @@ Replication lag: < 100ms acceptable for this use case (eventual consistency for 
 - [ ] Multi-language support with translation API
 - [ ] Real-time bidding for featured placements
 
-## Observability
+## Observability Dashboard
 
 ### Grafana Dashboard Panels
 

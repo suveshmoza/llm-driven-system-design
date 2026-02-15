@@ -89,7 +89,7 @@ An API rate limiting service to prevent abuse, implementing multiple algorithms 
 4. **Metrics Collector** - Tracks performance and usage metrics
 5. **Configuration Service** - Loads rules from PostgreSQL (future)
 
-## Data Model
+## Database Schema
 
 ### Redis Keys Structure
 
@@ -206,7 +206,7 @@ When Redis is unavailable, requests are allowed to pass (fail-open) because:
 2. **Pipelining**: Batch Redis operations where possible
 3. **Connection Pooling**: Reuse Redis connections
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Trade-off 1: Centralized vs. Local Rate Limiting
 
@@ -220,7 +220,7 @@ When Redis is unavailable, requests are allowed to pass (fail-open) because:
 **Trade-off**: ~1-2% error tolerance acceptable for most use cases
 **Alternative**: Sliding log for exact counting (10x more memory)
 
-## Monitoring and Observability
+## Observability
 
 ### Key Metrics
 

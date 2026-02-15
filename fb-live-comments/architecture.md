@@ -171,7 +171,7 @@ These estimates are for a learning project running on a single developer machine
 9. Broadcast viewer_count update to all stream viewers
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -467,7 +467,7 @@ For local development, console logging with timestamps is sufficient. Production
 2. **2-3 instances + Redis Pub/Sub**: 3,000 connections, horizontal scaling validated
 3. **Production**: Add load balancer, Redis cluster, read replicas
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### WebSocket vs. Server-Sent Events (SSE)
 - **Chosen**: WebSocket for bidirectional communication

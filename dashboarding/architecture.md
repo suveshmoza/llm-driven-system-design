@@ -120,7 +120,7 @@ A metrics monitoring and visualization system similar to Datadog or Grafana for 
 6. **API Server** caches result, returns JSON response
 7. **Frontend** renders chart with Recharts
 
-## Data Model
+## Database Schema
 
 ### Database Schema (TimescaleDB)
 
@@ -844,7 +844,7 @@ npm run dev:alerts
 cd frontend && npm run dev  # Port 5173
 ```
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Alternative | Why Not |
 |----------|-------------|---------|

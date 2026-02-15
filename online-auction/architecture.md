@@ -178,7 +178,7 @@ Based on capacity estimates:
    e. Release lock
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -597,7 +597,7 @@ async function checkRateLimit(userId, action) {
 - Image uploads: Max 5 MB, allowed types (JPEG, PNG, WebP)
 - SQL injection: Use parameterized queries exclusively
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics (Prometheus)
 

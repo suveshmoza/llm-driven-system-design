@@ -168,7 +168,7 @@ These numbers are for learning/testing. Production would be 1000x larger.
    Client: Refresh local state, download if needed
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -798,7 +798,7 @@ circuitBreaker.on('open', () => {
 4. **Encryption:** Client-side encryption with user-held keys
 5. **Smart sync:** Prioritize recently accessed files, lazy-load old files
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Considered Alternatives
 
@@ -818,7 +818,7 @@ circuitBreaker.on('open', () => {
 3. **Basic conflict resolution:** No OT/CRDT for real-time collaboration
 4. **Fixed chunk boundaries:** Suboptimal for small edits in large files
 
-## Monitoring and Observability
+## Observability
 
 ### Grafana Dashboards
 

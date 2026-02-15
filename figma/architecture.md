@@ -251,7 +251,7 @@ The PixiJS-based rendering pipeline provides hardware-accelerated graphics:
 | `components/Editor.tsx` | 121 | Workspace layout composing all panels |
 | `services/api.ts` | ~80 | REST API client for files and versions |
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Diagram
 
@@ -764,7 +764,7 @@ Canvas data stored as JSONB in PostgreSQL:
 - Redis pub/sub for presence synchronization
 - Consistent hashing for file assignment
 
-## Monitoring and Observability
+## Observability
 
 - Health check endpoint at `/health`
 - Console logging for connections and operations

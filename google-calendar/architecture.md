@@ -123,7 +123,7 @@ app.use(session({
 }))
 ```
 
-## Data Models
+## Database Schema
 
 ### Database Schema
 

@@ -147,7 +147,7 @@ Alert Worker <- Consume from alert queue
              -> Mark notification as sent
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL + TimescaleDB)
 

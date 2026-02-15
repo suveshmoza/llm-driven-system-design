@@ -94,7 +94,7 @@ A crowdsourced data collection platform for training machine learning models. Us
 └─────────────────┴─────────────────────┴─────────────────────────────────────┘
 ```
 
-## Data Model
+## Database Schema
 
 ### PostgreSQL Schema
 

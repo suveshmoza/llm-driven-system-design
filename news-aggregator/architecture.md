@@ -251,7 +251,7 @@ GET  /api/admin/stats          # System stats (admin)
 
 ---
 
-## Data Model
+## Database Schema
 
 ### PostgreSQL Schema
 
@@ -978,7 +978,7 @@ CREATE TABLE articles_2024_01 PARTITION OF articles
 
 ---
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### SimHash vs Semantic Embeddings
 

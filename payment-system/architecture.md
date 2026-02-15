@@ -95,7 +95,7 @@ A transaction processing and payment platform that handles payment authorization
    - **Fraud Worker**: Async fraud scoring for post-authorization review
    - **Settlement Worker**: Batches transactions for daily settlement files
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -822,7 +822,7 @@ const pool = new Pool({
 // Leave headroom for admin connections and workers
 ```
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Why Chosen |
 |----------|--------|-------------|------------|

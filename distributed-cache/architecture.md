@@ -98,7 +98,7 @@ For a learning/demo environment:
    - Lazy + active TTL expiration
    - Configurable size and memory limits
 
-## Data Model
+## Database Schema
 
 ### Cache Entry Structure
 
@@ -249,7 +249,7 @@ Per-node tuning:
 3. No cluster consensus (split-brain possible)
 4. Memory-only (limited by RAM)
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Trade-off |
 |----------|--------|-------------|-----------|
@@ -259,7 +259,7 @@ Per-node tuning:
 | Routing | Coordinator | Smart client | Simplicity vs latency |
 | Protocol | HTTP/JSON | Redis RESP | Ease of use vs performance |
 
-## Monitoring and Observability
+## Observability
 
 ### Key Metrics
 

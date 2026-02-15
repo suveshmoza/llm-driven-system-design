@@ -177,7 +177,7 @@ Based on the above targets:
 7. Auth middleware validates token on protected routes
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -698,7 +698,7 @@ npm run dev:server3  # Port 3003
 4. **Quote throttling**: Reduce update frequency during low activity periods
 5. **Session caching**: Reduce database reads with Redis session cache
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Real-Time Quotes: WebSocket vs SSE vs Polling
 

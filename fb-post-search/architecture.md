@@ -86,7 +86,7 @@ A privacy-aware search engine for social media posts with real-time indexing, pe
    - Tracks trending searches
    - Caches search suggestions
 
-## Data Model
+## Database Schema
 
 ### PostgreSQL Schema
 
@@ -495,7 +495,7 @@ For production scale, we'd use an event-driven pipeline with Kafka.
 - **Time-based**: Hot/cold tiers (recent posts on faster nodes)
 - **Geographic**: Regional clusters for lower latency
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Trade-off |
 |----------|-----------|
@@ -510,7 +510,7 @@ For production scale, we'd use an event-driven pipeline with Kafka.
 2. **MongoDB vs PostgreSQL**: Chose PG for relational data (friendships) and ACID guarantees
 3. **Memcached vs Redis**: Chose Redis for data structures (sorted sets, pub/sub)
 
-## Monitoring and Observability
+## Observability
 
 **Key Metrics to Track:**
 - Search latency (p50, p95, p99)

@@ -132,7 +132,7 @@ A collaborative real-time pixel art canvas where users can place colored pixels 
 11. Frontend updates local canvas state immediately
 ```
 
-## Data Model
+## Database Schema
 
 ### Redis Data Structures
 
@@ -620,7 +620,7 @@ class CircuitBreaker {
 | Redis Pub/Sub | Fan-out | ~100K msg/sec | Partition by viewport |
 | PostgreSQL | Write throughput | ~10K events/sec | Batch inserts, partitioning |
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Canvas Storage Alternatives
 

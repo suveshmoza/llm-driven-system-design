@@ -152,7 +152,7 @@ For a learning/development environment simulating a small social network:
 7. Return 200 OK
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -645,7 +645,7 @@ Current threshold: 10,000 followers
 | 10,000 (current) | Balanced | Balanced | Good default |
 | 100,000 | Higher | Lower | Use if read latency critical |
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Push vs Pull vs Hybrid
 
@@ -697,7 +697,7 @@ Current threshold: 10,000 followers
 - [ ] Add ML-based ranking service
 - [ ] Multi-region deployment with geo-routing
 
-## Monitoring and Observability
+## Observability
 
 ### Dashboard Panels (Grafana)
 
