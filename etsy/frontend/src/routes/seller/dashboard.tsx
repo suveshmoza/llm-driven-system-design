@@ -21,6 +21,7 @@ export const Route = createFileRoute('/seller/dashboard')({
   component: SellerDashboard,
 });
 
+/** Seller dashboard with shop statistics, recent orders, and product management links. */
 function SellerDashboard() {
   const { user, isAuthenticated } = useAuthStore();
   const [stats, setStats] = useState<ShopStats | null>(null);

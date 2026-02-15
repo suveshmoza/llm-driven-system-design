@@ -17,6 +17,7 @@ interface AuthState {
   togglePlugin: (pluginId: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
 }
 
+/** Authentication and plugin management state with install/uninstall/toggle operations. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({

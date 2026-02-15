@@ -7,6 +7,7 @@ import { AlbumCard, TrackRow } from '../../components/MusicCards';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAuthStore } from '../../stores/authStore';
 
+/** Route definition for the artist profile page with top tracks and albums. */
 export const Route = createFileRoute('/artists/$id')({
   component: ArtistPage,
 });

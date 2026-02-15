@@ -9,6 +9,7 @@ const CANDLE_INTERVAL = 60000; // 1 minute
 let lastCandleTime = new Date();
 lastCandleTime.setSeconds(0, 0);
 
+/** Simulates price ticks for all symbols and publishes updates to Kafka. */
 async function broadcastPrices(): Promise<void> {
   const symbols = marketService.getAllSymbols();
 
@@ -35,6 +36,7 @@ async function broadcastPrices(): Promise<void> {
   }
 }
 
+/** Stores completed 1-minute candles to the database if a new minute has started. */
 async function storeCandlesIfNeeded(): Promise<void> {
   const now = new Date();
   now.setSeconds(0, 0);

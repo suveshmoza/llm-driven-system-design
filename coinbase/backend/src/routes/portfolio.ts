@@ -6,6 +6,7 @@ import { marketService } from '../services/marketService.js';
 const router = Router();
 
 // GET /api/v1/portfolio - Get portfolio summary
+/** GET /api/v1/portfolio - Returns portfolio holdings with USD values and allocation percentages. */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
@@ -70,6 +71,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/v1/portfolio/history - Get portfolio snapshots
+/** GET /api/v1/portfolio/history - Returns historical portfolio value snapshots. */
 router.get('/history', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;

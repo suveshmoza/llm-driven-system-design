@@ -6,6 +6,7 @@ import { marketService } from '../services/marketService.js';
 const router = Router();
 
 // GET /api/v1/wallets - Get all wallet balances
+/** GET /api/v1/wallets - Returns all wallet balances with USD valuations. */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
@@ -36,6 +37,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/wallets/deposit - Simulate deposit
+/** POST /api/v1/wallets/deposit - Simulates a currency deposit into the user's wallet. */
 router.post('/deposit', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;

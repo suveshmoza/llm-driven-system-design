@@ -49,7 +49,7 @@ interface AvgRatingRow {
   review_count?: string;
 }
 
-// Get reviews for a product
+/** GET /api/reviews/product/:productId - Returns paginated reviews for a product with average rating. */
 router.get('/product/:productId', async (req: Request<{ productId: string }>, res: Response) => {
   try {
     const { productId } = req.params;
@@ -86,7 +86,7 @@ router.get('/product/:productId', async (req: Request<{ productId: string }>, re
   }
 });
 
-// Get reviews for a shop
+/** GET /api/reviews/shop/:shopId - Returns paginated reviews for all products in a shop. */
 router.get('/shop/:shopId', async (req: Request<{ shopId: string }>, res: Response) => {
   try {
     const { shopId } = req.params;
@@ -124,7 +124,7 @@ router.get('/shop/:shopId', async (req: Request<{ shopId: string }>, res: Respon
   }
 });
 
-// Create review (after purchase)
+/** POST /api/reviews - Creates a review for a purchased product, updating product and shop ratings. */
 router.post('/', isAuthenticated, async (req: Request<object, object, ReviewBody>, res: Response) => {
   try {
     const { orderId, productId, rating, comment, images } = req.body;
@@ -202,7 +202,7 @@ router.post('/', isAuthenticated, async (req: Request<object, object, ReviewBody
   }
 });
 
-// Update review
+/** PUT /api/reviews/:id - Updates an existing review's rating and comment. */
 router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, ReviewUpdateBody>, res: Response) => {
   try {
     const { id } = req.params;
@@ -252,7 +252,7 @@ router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, 
   }
 });
 
-// Delete review
+/** DELETE /api/reviews/:id - Deletes a review owned by the authenticated user. */
 router.delete('/:id', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;

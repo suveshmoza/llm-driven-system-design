@@ -37,6 +37,7 @@ function IndexPage() {
   );
 }
 
+/** Route definition for the markets overview page with price ticker and asset list. */
 export const Route = createFileRoute('/')({
   component: IndexPage,
 });

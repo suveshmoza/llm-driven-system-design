@@ -23,6 +23,7 @@ function RootComponent() {
   );
 }
 
+/** Root route definition for the application shell with header and WebSocket connection. */
 export const Route = createRootRoute({
   component: RootComponent,
 });

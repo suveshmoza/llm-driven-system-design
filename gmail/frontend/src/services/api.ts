@@ -1,5 +1,6 @@
 const API_BASE = '/api/v1';
 
+/** Sends an authenticated fetch request to the Gmail backend API with credential forwarding. */
 async function fetchApi<T>(
   path: string,
   options: RequestInit = {}

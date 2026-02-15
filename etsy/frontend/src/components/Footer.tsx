@@ -1,3 +1,4 @@
+/** Renders the site-wide footer with navigation links, about info, and copyright. */
 export function Footer() {
   return (
     <footer className="bg-secondary-900 text-white mt-auto">

@@ -7,6 +7,7 @@ import { TrackRow } from '../../components/MusicCards';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAuthStore } from '../../stores/authStore';
 
+/** Route definition for the album detail page with track listing. */
 export const Route = createFileRoute('/albums/$id')({
   component: AlbumPage,
 });

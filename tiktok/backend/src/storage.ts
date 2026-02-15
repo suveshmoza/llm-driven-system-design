@@ -40,6 +40,7 @@ export const uploadFile = async (
   return `${endpoint}/${bucket}/${key}`;
 };
 
+/** Generates a presigned URL for direct client uploads to S3-compatible storage. */
 export const getPresignedUploadUrl = async (
   bucket: string,
   key: string,
@@ -55,6 +56,7 @@ export const getPresignedUploadUrl = async (
   return getSignedUrl(s3Client, command, { expiresIn });
 };
 
+/** Generates a presigned URL for secure file downloads from S3-compatible storage. */
 export const getPresignedDownloadUrl = async (
   bucket: string,
   key: string,
@@ -68,6 +70,7 @@ export const getPresignedDownloadUrl = async (
   return getSignedUrl(s3Client, command, { expiresIn });
 };
 
+/** Deletes a file from S3-compatible storage by bucket and key. */
 export const deleteFile = async (
   bucket: string,
   key: string
@@ -80,6 +83,7 @@ export const deleteFile = async (
   return s3Client.send(command);
 };
 
+/** Constructs a public URL for accessing a stored object. */
 export const getPublicUrl = (bucket: string, key: string): string => {
   return `${endpoint}/${bucket}/${key}`;
 };

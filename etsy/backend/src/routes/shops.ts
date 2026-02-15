@@ -95,7 +95,7 @@ interface UpdateShopBody {
   returnPolicy?: string;
 }
 
-// Get all shops (with pagination)
+/** GET /api/shops - Returns paginated shops sorted by rating or creation date. */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { limit = '20', offset = '0' } = req.query as { limit?: string; offset?: string };
@@ -123,7 +123,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get shop by slug (with caching)
+/** GET /api/shops/slug/:slug - Returns a shop by its URL-friendly slug with Redis caching. */
 router.get('/slug/:slug', async (req: Request<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
@@ -151,7 +151,7 @@ router.get('/slug/:slug', async (req: Request<{ slug: string }>, res: Response) 
   }
 });
 
-// Get shop by ID (with caching)
+/** GET /api/shops/:id - Returns a shop by its numeric ID with Redis caching. */
 router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -180,7 +180,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
   }
 });
 
-// Get shop products (with caching)
+/** GET /api/shops/:id/products - Returns paginated products for a shop with sorting and caching. */
 router.get('/:id/products', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -228,7 +228,7 @@ router.get('/:id/products', async (req: Request<{ id: string }>, res: Response) 
   }
 });
 
-// Create shop (requires auth)
+/** POST /api/shops - Creates a new shop for the authenticated user with a unique slug. */
 router.post('/', isAuthenticated, async (req: Request<object, object, CreateShopBody>, res: Response) => {
   try {
     const { name, description, location, shippingPolicy, returnPolicy } = req.body;
@@ -280,7 +280,7 @@ router.post('/', isAuthenticated, async (req: Request<object, object, CreateShop
   }
 });
 
-// Update shop (requires auth and ownership)
+/** PUT /api/shops/:id - Updates shop details for the authenticated owner. */
 router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, UpdateShopBody>, res: Response) => {
   try {
     const { id } = req.params;
@@ -341,7 +341,7 @@ router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, 
   }
 });
 
-// Get shop orders (for seller dashboard)
+/** GET /api/shops/:id/orders - Returns orders for a shop owned by the authenticated seller. */
 router.get('/:id/orders', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -388,7 +388,7 @@ router.get('/:id/orders', isAuthenticated, async (req: Request<{ id: string }>, 
   }
 });
 
-// Get shop stats (for seller dashboard)
+/** GET /api/shops/:id/stats - Returns sales and revenue statistics for the seller dashboard. */
 router.get('/:id/stats', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;

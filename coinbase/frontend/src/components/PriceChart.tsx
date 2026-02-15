@@ -7,6 +7,7 @@ interface PriceChartProps {
   symbol: string;
 }
 
+/** Renders a TradingView lightweight candlestick chart with responsive resizing. */
 export function PriceChart({ candles, symbol: _symbol }: PriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);

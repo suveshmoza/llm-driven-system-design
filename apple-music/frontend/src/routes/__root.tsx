@@ -5,6 +5,7 @@ import { Player } from '../components/Player';
 import { useAuthStore } from '../stores/authStore';
 import { playlistApi } from '../services/api';
 
+/** Root route definition for the application shell. */
 export const Route = createRootRoute({
   component: RootLayout,
 });

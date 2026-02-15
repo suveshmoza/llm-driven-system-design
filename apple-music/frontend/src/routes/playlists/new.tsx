@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { playlistApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 
+/** Route definition for the new playlist creation page. */
 export const Route = createFileRoute('/playlists/new')({
   component: NewPlaylist,
 });

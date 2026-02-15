@@ -1,5 +1,11 @@
 const API_BASE = '/api/v1';
 
+/**
+ * Performs an authenticated API request with JSON content type and credentials.
+ * @param url - API endpoint path (appended to /api/v1).
+ * @param options - Fetch request options.
+ * @returns Parsed JSON response.
+ */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
     ...options,
@@ -19,6 +25,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // Auth
+/** Authentication API methods for login, registration, logout, and session check. */
 export const authApi = {
   login: (username: string, password: string) =>
     request<{ user: import('../types').User }>('/auth/login', {
@@ -38,6 +45,7 @@ export const authApi = {
 };
 
 // Markets
+/** Markets API methods for trading pairs, prices, order books, candles, and trades. */
 export const marketsApi = {
   getPairs: () =>
     request<{ pairs: import('../types').TradingPair[] }>('/markets/pairs'),
@@ -76,6 +84,7 @@ export const marketsApi = {
 };
 
 // Orders
+/** Orders API methods for placing, cancelling, and listing orders. */
 export const ordersApi = {
   placeOrder: (data: {
     tradingPairId: string;
@@ -103,6 +112,7 @@ export const ordersApi = {
 };
 
 // Portfolio
+/** Portfolio API methods for holdings summary and historical snapshots. */
 export const portfolioApi = {
   getPortfolio: () =>
     request<{
@@ -121,6 +131,7 @@ export const portfolioApi = {
 };
 
 // Wallets
+/** Wallets API methods for balance retrieval and deposit simulation. */
 export const walletsApi = {
   getWallets: () =>
     request<{
@@ -135,6 +146,7 @@ export const walletsApi = {
 };
 
 // Transactions
+/** Transactions API methods for retrieving trade and deposit history. */
 export const transactionsApi = {
   getTransactions: (type?: string, limit?: number, offset?: number) =>
     request<{
@@ -154,6 +166,7 @@ export const transactionsApi = {
 };
 
 // Health
+/** Health check API for service availability verification. */
 export const healthApi = {
   check: () => request<{ status: string; timestamp: string; uptime: number }>('/health'),
 };

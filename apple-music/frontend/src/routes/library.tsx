@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { Album, Artist, Track, LibraryCounts } from '../types';
 import { AlbumCard, ArtistCard, TrackRow } from '../components/MusicCards';
 
+/** Route definition for the user's music library with tab navigation. */
 export const Route = createFileRoute('/library')({
   component: Library,
 });

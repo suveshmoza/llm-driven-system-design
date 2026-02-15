@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Route definition for the account registration page. */
 export const Route = createFileRoute('/register')({
   component: Register,
 });

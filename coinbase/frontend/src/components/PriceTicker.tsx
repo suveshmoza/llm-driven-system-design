@@ -1,6 +1,7 @@
 import { useMarketStore } from '../stores/marketStore';
 import { formatPrice, formatPercent, getPriceColorClass } from '../utils/format';
 
+/** Renders a horizontal scrolling ticker strip with top trading pair prices and changes. */
 export function PriceTicker() {
   const pairs = useMarketStore((s) => s.pairs);
 

@@ -21,7 +21,7 @@ interface FavoriteRow {
   created_at: Date;
 }
 
-// Get user's favorites
+/** GET /api/favorites - Returns the user's favorited products and shops with optional type filter. */
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { type } = req.query as { type?: string }; // 'product' or 'shop'
@@ -68,7 +68,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-// Add to favorites
+/** POST /api/favorites - Adds a product or shop to the user's favorites. */
 router.post('/', isAuthenticated, async (req: Request<object, object, FavoriteBody>, res: Response) => {
   try {
     const { type, id } = req.body;
@@ -111,7 +111,7 @@ router.post('/', isAuthenticated, async (req: Request<object, object, FavoriteBo
   }
 });
 
-// Remove from favorites
+/** DELETE /api/favorites/:type/:id - Removes a product or shop from the user's favorites. */
 router.delete('/:type/:id', isAuthenticated, async (req: Request<{ type: string; id: string }>, res: Response) => {
   try {
     const { type, id } = req.params;
@@ -140,7 +140,7 @@ router.delete('/:type/:id', isAuthenticated, async (req: Request<{ type: string;
   }
 });
 
-// Check if item is favorited
+/** GET /api/favorites/check/:type/:id - Checks whether a product or shop is in the user's favorites. */
 router.get('/check/:type/:id', isAuthenticated, async (req: Request<{ type: string; id: string }>, res: Response) => {
   try {
     const { type, id } = req.params;
@@ -157,4 +157,5 @@ router.get('/check/:type/:id', isAuthenticated, async (req: Request<{ type: stri
   }
 });
 
+/** Express router for favorites management including add, remove, list, and check operations. */
 export default router;

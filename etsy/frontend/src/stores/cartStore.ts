@@ -12,6 +12,7 @@ interface CartState {
   clearCart: () => Promise<void>;
 }
 
+/** Shopping cart state store managing multi-seller cart items, quantities, and checkout operations. */
 export const useCartStore = create<CartState>((set, get) => ({
   cart: null,
   isLoading: false,

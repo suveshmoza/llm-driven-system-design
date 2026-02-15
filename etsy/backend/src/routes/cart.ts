@@ -62,7 +62,7 @@ interface ShopGroup {
   shippingTotal: number;
 }
 
-// Get user's cart (grouped by shop)
+/** GET /api/cart - Returns the user's cart items grouped by shop with pricing summary. */
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const result = await db.query<CartItemRow>(
@@ -127,7 +127,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-// Add item to cart
+/** POST /api/cart/items - Adds a product to the cart with stock validation and 15-min reservation for unique items. */
 router.post('/items', isAuthenticated, async (req: Request<object, object, CartItemBody>, res: Response) => {
   try {
     const { productId, quantity = 1 } = req.body;
@@ -198,7 +198,7 @@ router.post('/items', isAuthenticated, async (req: Request<object, object, CartI
   }
 });
 
-// Update cart item quantity
+/** PUT /api/cart/items/:itemId - Updates the quantity of a cart item with stock validation. */
 router.put('/items/:itemId', isAuthenticated, async (req: Request<{ itemId: string }, object, UpdateCartItemBody>, res: Response) => {
   try {
     const { itemId } = req.params;
@@ -244,7 +244,7 @@ router.put('/items/:itemId', isAuthenticated, async (req: Request<{ itemId: stri
   }
 });
 
-// Remove item from cart
+/** DELETE /api/cart/items/:itemId - Removes a specific item from the user's cart. */
 router.delete('/items/:itemId', isAuthenticated, async (req: Request<{ itemId: string }>, res: Response) => {
   try {
     const { itemId } = req.params;
@@ -268,7 +268,7 @@ router.delete('/items/:itemId', isAuthenticated, async (req: Request<{ itemId: s
   }
 });
 
-// Clear cart
+/** DELETE /api/cart - Removes all items from the user's cart. */
 router.delete('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const result = await db.query<{ id: number }>(
@@ -288,4 +288,5 @@ router.delete('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
+/** Express router for shopping cart operations including add, update, remove, and clear. */
 export default router;

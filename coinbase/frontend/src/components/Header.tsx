@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the top navigation header with logo, nav links, and auth controls. */
 export function Header() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);

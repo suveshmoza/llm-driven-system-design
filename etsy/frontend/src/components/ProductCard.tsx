@@ -5,6 +5,7 @@ interface ProductCardProps {
   product: Product;
 }
 
+/** Renders a product card with image, title, price, shop name, and shipping info. */
 export function ProductCard({ product }: ProductCardProps) {
   const imageUrl = product.images?.[0] || 'https://via.placeholder.com/400x400?text=No+Image';
 

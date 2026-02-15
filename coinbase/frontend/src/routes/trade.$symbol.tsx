@@ -145,6 +145,7 @@ function TradePage() {
   );
 }
 
+/** Route definition for the trading page with chart, order book, and trade form. */
 export const Route = createFileRoute('/trade/$symbol')({
   component: TradePage,
 });

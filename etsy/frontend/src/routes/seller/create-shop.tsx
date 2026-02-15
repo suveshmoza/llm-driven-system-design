@@ -8,6 +8,7 @@ export const Route = createFileRoute('/seller/create-shop')({
   component: CreateShopPage,
 });
 
+/** Shop creation form for sellers with name, description, location, and policy fields. */
 function CreateShopPage() {
   const { isAuthenticated, checkAuth } = useAuthStore();
   const navigate = useNavigate();

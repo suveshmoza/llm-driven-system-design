@@ -165,7 +165,7 @@ async function fallbackSearch(query: string | undefined, filters: SearchFilters 
   };
 }
 
-// Search products (Elasticsearch with circuit breaker)
+/** GET /api/products/search - Searches products via Elasticsearch with fuzzy matching, filters, and circuit breaker fallback. */
 router.get('/search', async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
@@ -219,7 +219,7 @@ router.get('/search', async (req: Request, res: Response) => {
   }
 });
 
-// Get all products (with pagination and filters)
+/** GET /api/products - Returns paginated products with optional category, price, and attribute filters. */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { categoryId, priceMin, priceMax, isVintage, isHandmade, sort = 'newest', limit = '20', offset = '0' } = req.query as {
@@ -292,7 +292,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get trending products (with caching)
+/** GET /api/products/trending - Returns trending products based on view count with Redis caching. */
 router.get('/trending', async (req: Request, res: Response) => {
   try {
     const { limit = '12' } = req.query as { limit?: string };
@@ -324,7 +324,7 @@ router.get('/trending', async (req: Request, res: Response) => {
   }
 });
 
-// Get product by ID (with caching)
+/** GET /api/products/:id - Returns a single product with shop info, reviews, and similar products. */
 router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -385,7 +385,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
   }
 });
 
-// Create product (requires auth and shop ownership)
+/** POST /api/products - Creates a new product listing and indexes it in Elasticsearch. */
 router.post('/', isAuthenticated, async (req: Request<object, object, CreateProductBody>, res: Response) => {
   try {
     const {
@@ -467,7 +467,7 @@ router.post('/', isAuthenticated, async (req: Request<object, object, CreateProd
   }
 });
 
-// Update product (requires auth and shop ownership)
+/** PUT /api/products/:id - Updates a product listing and re-indexes it in Elasticsearch. */
 router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, UpdateProductBody>, res: Response) => {
   try {
     const { id } = req.params;
@@ -574,7 +574,7 @@ router.put('/:id', isAuthenticated, async (req: Request<{ id: string }, object, 
   }
 });
 
-// Delete product (requires auth and shop ownership)
+/** DELETE /api/products/:id - Soft-deletes a product by deactivating it and removing from search index. */
 router.delete('/:id', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -610,7 +610,7 @@ router.delete('/:id', isAuthenticated, async (req: Request<{ id: string }>, res:
   }
 });
 
-// Upload product images
+/** POST /api/products/upload - Uploads up to 5 product images via multer with size and type validation. */
 router.post('/upload', isAuthenticated, upload.array('images', 5), async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[] | undefined;

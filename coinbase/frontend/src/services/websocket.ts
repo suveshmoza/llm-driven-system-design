@@ -3,6 +3,7 @@ import type { PriceData } from '../types';
 type MessageHandler = (data: Record<string, unknown>) => void;
 type PriceHandler = (prices: Record<string, PriceData>) => void;
 
+/** WebSocket client with auto-reconnect, channel subscriptions, and price update handlers. */
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private messageHandlers: Map<string, MessageHandler[]> = new Map();
@@ -149,4 +150,5 @@ class WebSocketClient {
   }
 }
 
+/** Singleton WebSocket client instance for the application. */
 export const wsClient = new WebSocketClient();

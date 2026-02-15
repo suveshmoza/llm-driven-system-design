@@ -29,6 +29,7 @@ export const Route = createFileRoute('/search')({
   },
 });
 
+/** Search results page with product grid, filters, and sorting powered by Elasticsearch. */
 function SearchPage() {
   const search = Route.useSearch();
   const [products, setProducts] = useState<Product[]>([]);

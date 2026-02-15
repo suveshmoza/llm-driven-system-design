@@ -5,6 +5,7 @@ interface AssetListProps {
   pairs: TradingPair[];
 }
 
+/** Renders a table of trading pairs with price, change, volume, and sparkline columns. */
 export function AssetList({ pairs }: AssetListProps) {
   return (
     <div className="bg-cb-card rounded-xl border border-cb-border overflow-hidden">

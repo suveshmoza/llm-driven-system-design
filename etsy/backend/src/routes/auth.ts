@@ -33,7 +33,7 @@ interface ShopRow {
   slug?: string;
 }
 
-// Register
+/** POST /api/auth/register - Creates a new user account with hashed password and session. */
 router.post('/register', async (req: Request<object, object, RegisterBody>, res: Response) => {
   try {
     const { email, password, username, fullName } = req.body;
@@ -86,7 +86,7 @@ router.post('/register', async (req: Request<object, object, RegisterBody>, res:
   }
 });
 
-// Login
+/** POST /api/auth/login - Authenticates user with email and password, creates session with shop IDs. */
 router.post('/login', async (req: Request<object, object, LoginBody>, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -137,7 +137,7 @@ router.post('/login', async (req: Request<object, object, LoginBody>, res: Respo
   }
 });
 
-// Logout
+/** POST /api/auth/logout - Destroys the current session and clears the session cookie. */
 router.post('/logout', (req: Request, res: Response) => {
   req.session.destroy((err) => {
     if (err) {
@@ -148,7 +148,7 @@ router.post('/logout', (req: Request, res: Response) => {
   });
 });
 
-// Get current user
+/** GET /api/auth/me - Returns the currently authenticated user's profile with their shops. */
 router.get('/me', async (req: Request, res: Response) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -187,4 +187,5 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 });
 
+/** Express router for authentication endpoints including registration, login, logout, and profile. */
 export default router;

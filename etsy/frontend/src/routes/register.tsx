@@ -6,6 +6,7 @@ export const Route = createFileRoute('/register')({
   component: RegisterPage,
 });
 
+/** Registration page with username, email, and password form for new account creation. */
 function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

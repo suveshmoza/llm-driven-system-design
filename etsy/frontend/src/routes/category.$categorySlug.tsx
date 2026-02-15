@@ -8,6 +8,7 @@ export const Route = createFileRoute('/category/$categorySlug')({
   component: CategoryPage,
 });
 
+/** Category browsing page with product grid, sorting options, and pagination. */
 function CategoryPage() {
   const { categorySlug } = Route.useParams();
   const [category, setCategory] = useState<Category | null>(null);

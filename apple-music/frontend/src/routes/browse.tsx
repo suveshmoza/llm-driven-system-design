@@ -5,6 +5,7 @@ import { catalogApi, recommendationsApi } from '../services/api';
 import { Album, Artist, Track, BrowseSection } from '../types';
 import { AlbumCard, ArtistCard, TrackRow } from '../components/MusicCards';
 
+/** Route definition for the Browse page with search and content sections. */
 export const Route = createFileRoute('/browse')({
   component: Browse,
 });

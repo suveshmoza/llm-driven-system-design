@@ -1,5 +1,6 @@
 const API_BASE = '/api';
 
+/** API client for the GitHub clone with session-based authentication and CRUD methods. */
 class ApiClient {
   private sessionId: string | null = null;
 

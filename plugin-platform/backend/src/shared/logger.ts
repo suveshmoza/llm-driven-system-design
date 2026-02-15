@@ -1,5 +1,6 @@
 import pino from 'pino';
 
+/** Structured JSON logger with environment-appropriate formatting. */
 export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   transport:

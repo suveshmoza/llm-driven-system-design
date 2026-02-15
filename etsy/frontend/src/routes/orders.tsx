@@ -8,6 +8,7 @@ export const Route = createFileRoute('/orders')({
   component: OrdersPage,
 });
 
+/** Order history page showing the user's past orders with status and item details. */
 function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);

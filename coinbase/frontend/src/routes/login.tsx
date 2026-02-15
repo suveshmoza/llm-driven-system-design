@@ -94,6 +94,7 @@ function LoginPage() {
   );
 }
 
+/** Route definition for the sign-in page. */
 export const Route = createFileRoute('/login')({
   component: LoginPage,
 });

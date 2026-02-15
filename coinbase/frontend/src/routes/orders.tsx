@@ -41,6 +41,7 @@ function OrdersPage() {
   );
 }
 
+/** Route definition for the orders history page with cancel support. */
 export const Route = createFileRoute('/orders')({
   component: OrdersPage,
 });

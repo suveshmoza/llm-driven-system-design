@@ -4,6 +4,7 @@ import { radioApi } from '../services/api';
 import { RadioStation } from '../types';
 import { RadioStationCard } from '../components/MusicCards';
 
+/** Route definition for the radio stations listing page. */
 export const Route = createFileRoute('/radio')({
   component: Radio,
 });

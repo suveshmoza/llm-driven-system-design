@@ -12,6 +12,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+/** Authentication state store managing user session, login, registration, and logout. */
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,

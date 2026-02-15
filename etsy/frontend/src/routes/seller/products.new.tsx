@@ -8,6 +8,7 @@ export const Route = createFileRoute('/seller/products/new')({
   component: NewProductPage,
 });
 
+/** New product listing form with title, description, pricing, category, and image upload. */
 function NewProductPage() {
   const { user, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();

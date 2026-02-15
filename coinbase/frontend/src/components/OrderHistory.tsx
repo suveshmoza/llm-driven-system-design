@@ -6,6 +6,7 @@ interface OrderHistoryProps {
   onCancel: (orderId: string) => Promise<void>;
 }
 
+/** Renders a table of user orders with status badges, fill details, and cancel actions. */
 export function OrderHistory({ orders, onCancel }: OrderHistoryProps) {
   if (orders.length === 0) {
     return (

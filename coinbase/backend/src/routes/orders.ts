@@ -6,6 +6,7 @@ import * as orderService from '../services/orderService.js';
 const router = Router();
 
 // POST /api/v1/orders - Place a new order
+/** POST /api/v1/orders - Places a market or limit order with idempotency support. */
 router.post('/', requireAuth, orderLimiter, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
@@ -46,6 +47,7 @@ router.post('/', requireAuth, orderLimiter, async (req: Request, res: Response) 
 });
 
 // DELETE /api/v1/orders/:id - Cancel an order
+/** DELETE /api/v1/orders/:id - Cancels an open order and releases reserved funds. */
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
@@ -66,6 +68,7 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/v1/orders - Get user orders
+/** GET /api/v1/orders - Returns the user's order history with optional status filter. */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;

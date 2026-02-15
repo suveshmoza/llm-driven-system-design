@@ -6,6 +6,7 @@ interface PortfolioSummaryProps {
   holdings: PortfolioHolding[];
 }
 
+/** Renders the portfolio overview with total value, allocation bar chart, and holdings breakdown. */
 export function PortfolioSummary({ totalValueUsd, holdings }: PortfolioSummaryProps) {
   const nonZeroHoldings = holdings.filter((h) => parseFloat(h.valueUsd) > 0);
 

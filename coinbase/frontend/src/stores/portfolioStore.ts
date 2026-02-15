@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { portfolioApi, ordersApi, walletsApi } from '../services/api';
 import type { Order, PortfolioHolding } from '../types';
 
+/** Portfolio state with holdings, orders, wallet balances, and trading actions. */
 interface PortfolioState {
   totalValueUsd: string;
   holdings: PortfolioHolding[];

@@ -17,6 +17,7 @@ interface AdminStats {
   topTracksToday: { id: string; title: string; artist_name: string; plays: number }[];
 }
 
+/** Route definition for the admin dashboard page. */
 export const Route = createFileRoute('/admin')({
   component: AdminDashboard,
 });

@@ -4,6 +4,7 @@ import { logger } from '../services/logger.js';
 
 const SNAPSHOT_INTERVAL = 60000; // 60 seconds
 
+/** Takes a snapshot of all user portfolio values and stores them in the database. */
 async function takePortfolioSnapshots(): Promise<void> {
   try {
     // Get all users with non-zero balances

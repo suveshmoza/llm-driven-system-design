@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { useState } from 'react';
 
+/** Renders the site header with search bar, navigation links, cart badge, and auth controls. */
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const { cart } = useCartStore();

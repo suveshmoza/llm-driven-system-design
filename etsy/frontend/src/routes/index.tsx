@@ -8,6 +8,7 @@ export const Route = createFileRoute('/')({
   component: HomePage,
 });
 
+/** Homepage displaying trending products, category browsing grid, and featured items. */
 function HomePage() {
   const [trendingProducts, setTrendingProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { authApi } from '../services/api';
 import type { User } from '../types';
 
+/** Authentication state with login, registration, logout, and session validation. */
 interface AuthState {
   user: User | null;
   isLoading: boolean;

@@ -10,6 +10,7 @@ export const Route = createFileRoute('/product/$productId')({
   component: ProductPage,
 });
 
+/** Product detail page with images, description, add-to-cart, reviews, and similar products. */
 function ProductPage() {
   const { productId } = Route.useParams();
   const [product, setProduct] = useState<Product | null>(null);

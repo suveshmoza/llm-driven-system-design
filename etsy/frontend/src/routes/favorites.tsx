@@ -8,6 +8,7 @@ export const Route = createFileRoute('/favorites')({
   component: FavoritesPage,
 });
 
+/** Favorites page displaying the user's saved products and shops with remove functionality. */
 function FavoritesPage() {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [isLoading, setIsLoading] = useState(true);

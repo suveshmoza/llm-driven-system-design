@@ -9,6 +9,7 @@ declare module 'express-session' {
   }
 }
 
+/** Middleware that requires a valid session with userId before proceeding. */
 export function isAuthenticated(req: Request, res: Response, next: NextFunction): Response | void {
   if (req.session && req.session.userId) {
     return next();
@@ -16,6 +17,7 @@ export function isAuthenticated(req: Request, res: Response, next: NextFunction)
   return res.status(401).json({ error: 'Authentication required' });
 }
 
+/** Middleware that requires the authenticated user to have admin role. */
 export function isAdmin(req: Request, res: Response, next: NextFunction): Response | void {
   if (req.session && req.session.role === 'admin') {
     return next();
@@ -23,6 +25,7 @@ export function isAdmin(req: Request, res: Response, next: NextFunction): Respon
   return res.status(403).json({ error: 'Admin access required' });
 }
 
+/** Middleware that verifies the authenticated user owns the shop being accessed. Must follow isAuthenticated. */
 export function isShopOwner(req: Request, res: Response, next: NextFunction): Response | void {
   // This middleware checks if user owns the shop they're trying to access
   // It should be used after isAuthenticated

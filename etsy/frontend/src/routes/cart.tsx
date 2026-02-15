@@ -6,6 +6,7 @@ export const Route = createFileRoute('/cart')({
   component: CartPage,
 });
 
+/** Shopping cart page displaying items grouped by shop with quantity controls and order summary. */
 function CartPage() {
   const { cart, isLoading, updateQuantity, removeItem } = useCartStore();
   const { isAuthenticated } = useAuthStore();

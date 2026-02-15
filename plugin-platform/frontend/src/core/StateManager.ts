@@ -72,5 +72,5 @@ export class StateManager {
   }
 }
 
-// Singleton instance
+/** Singleton state manager instance shared across all plugins. */
 export const stateManager = new StateManager();

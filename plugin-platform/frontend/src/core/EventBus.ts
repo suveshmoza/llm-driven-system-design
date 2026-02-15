@@ -53,5 +53,5 @@ export class EventBus {
   }
 }
 
-// Singleton instance
+/** Singleton event bus instance shared across all plugins. */
 export const eventBus = new EventBus();

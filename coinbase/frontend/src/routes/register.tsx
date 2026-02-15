@@ -119,6 +119,7 @@ function RegisterPage() {
   );
 }
 
+/** Route definition for the account registration page. */
 export const Route = createFileRoute('/register')({
   component: RegisterPage,
 });

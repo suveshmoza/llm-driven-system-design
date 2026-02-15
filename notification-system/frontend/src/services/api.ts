@@ -1,5 +1,6 @@
 const API_BASE = '/api/v1';
 
+/** API client for the notification system with token-based authentication and request helpers. */
 class ApiClient {
   private token: string | null = null;
 

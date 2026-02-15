@@ -8,7 +8,7 @@ const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || 'minioadmin';
 const MINIO_USE_SSL = process.env.MINIO_USE_SSL === 'true';
 const PLUGIN_BUCKET = process.env.PLUGIN_BUCKET || 'plugins';
 
-// Create MinIO client
+/** MinIO client for plugin bundle and source map storage. */
 export const minioClient = new Client({
   endPoint: MINIO_ENDPOINT,
   port: MINIO_PORT,
@@ -17,7 +17,7 @@ export const minioClient = new Client({
   secretKey: MINIO_SECRET_KEY,
 });
 
-// Ensure bucket exists
+/** Creates the plugin storage bucket if it does not already exist. */
 export async function ensureBucket(): Promise<void> {
   try {
     const exists = await minioClient.bucketExists(PLUGIN_BUCKET);
@@ -30,7 +30,7 @@ export async function ensureBucket(): Promise<void> {
   }
 }
 
-// Upload plugin bundle
+/** Uploads a compiled plugin JavaScript bundle to MinIO and returns the public URL. */
 export async function uploadPluginBundle(
   pluginId: string,
   version: string,
@@ -51,7 +51,7 @@ export async function uploadPluginBundle(
   return `${baseUrl}://${MINIO_ENDPOINT}:${MINIO_PORT}/${PLUGIN_BUCKET}/${objectName}`;
 }
 
-// Upload plugin source map (for debugging)
+/** Uploads a plugin source map for debugging and returns the public URL. */
 export async function uploadPluginSourceMap(
   pluginId: string,
   version: string,
@@ -71,13 +71,13 @@ export async function uploadPluginSourceMap(
   return `${baseUrl}://${MINIO_ENDPOINT}:${MINIO_PORT}/${PLUGIN_BUCKET}/${objectName}`;
 }
 
-// Get plugin bundle URL
+/** Constructs the public URL for a plugin bundle given its ID and version. */
 export function getPluginBundleUrl(pluginId: string, version: string): string {
   const baseUrl = MINIO_USE_SSL ? 'https' : 'http';
   return `${baseUrl}://${MINIO_ENDPOINT}:${MINIO_PORT}/${PLUGIN_BUCKET}/${pluginId}/${version}/bundle.js`;
 }
 
-// Delete plugin version files
+/** Deletes the bundle and source map files for a specific plugin version. */
 export async function deletePluginVersion(pluginId: string, version: string): Promise<void> {
   const objectsToDelete = [
     `${pluginId}/${version}/bundle.js`,
@@ -93,7 +93,7 @@ export async function deletePluginVersion(pluginId: string, version: string): Pr
   }
 }
 
-// Delete all plugin files
+/** Deletes all stored files (all versions) for a plugin. */
 export async function deletePluginFiles(pluginId: string): Promise<void> {
   const stream = minioClient.listObjects(PLUGIN_BUCKET, `${pluginId}/`, true);
   const objects: string[] = [];

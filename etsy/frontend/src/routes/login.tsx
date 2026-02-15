@@ -6,6 +6,7 @@ export const Route = createFileRoute('/login')({
   component: LoginPage,
 });
 
+/** Login page with email and password form, redirecting to home on success. */
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

@@ -12,6 +12,7 @@ interface WalletBalancesProps {
   wallets: WalletBalance[];
 }
 
+/** Renders a list of wallet balances with currency icons, amounts, and USD values. */
 export function WalletBalances({ wallets }: WalletBalancesProps) {
   const nonZeroWallets = wallets.filter((w) => parseFloat(w.balance) > 0);
 

@@ -124,7 +124,7 @@ paymentCircuitBreaker.init(
   }
 );
 
-// Get user's orders (as buyer)
+/** GET /api/orders - Returns the authenticated user's orders with optional status filter and pagination. */
 router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   try {
     const { status, limit = '20', offset = '0' } = req.query as { status?: string; limit?: string; offset?: string };
@@ -163,7 +163,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-// Get single order
+/** GET /api/orders/:id - Returns a single order with items, accessible by buyer or shop owner. */
 router.get('/:id', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -206,7 +206,7 @@ router.get('/:id', isAuthenticated, async (req: Request<{ id: string }>, res: Re
   }
 });
 
-// Create order (checkout) with idempotency
+/** POST /api/orders/checkout - Creates orders from cart items grouped by shop with payment processing and idempotency. */
 router.post(
   '/checkout',
   isAuthenticated,
@@ -407,7 +407,7 @@ router.post(
   }
 );
 
-// Update order status (seller only)
+/** PUT /api/orders/:id/status - Updates order status and tracking number (seller only). */
 router.put('/:id/status', isAuthenticated, async (req: Request<{ id: string }, object, UpdateOrderStatusBody>, res: Response) => {
   try {
     const { id } = req.params;
@@ -458,7 +458,7 @@ router.put('/:id/status', isAuthenticated, async (req: Request<{ id: string }, o
   }
 });
 
-// Cancel order (buyer only, if still pending)
+/** POST /api/orders/:id/cancel - Cancels a pending order, restoring product quantities and shop sales count. */
 router.post('/:id/cancel', isAuthenticated, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -538,4 +538,5 @@ router.post('/:id/cancel', isAuthenticated, async (req: Request<{ id: string }>,
   }
 });
 
+/** Express router for order management including checkout, status updates, and cancellation. */
 export default router;

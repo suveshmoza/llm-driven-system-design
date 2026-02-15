@@ -9,6 +9,7 @@ export const Route = createFileRoute('/checkout')({
   component: CheckoutPage,
 });
 
+/** Checkout page with shipping address form and order placement for multi-seller cart. */
 function CheckoutPage() {
   const { cart, clearCart } = useCartStore();
   const { isAuthenticated } = useAuthStore();

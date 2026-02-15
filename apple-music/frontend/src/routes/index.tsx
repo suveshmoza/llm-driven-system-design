@@ -5,6 +5,7 @@ import { BrowseSection } from '../types';
 import { AlbumCard, ArtistCard, TrackRow, RadioStationCard } from '../components/MusicCards';
 import { useAuthStore } from '../stores/authStore';
 
+/** Route definition for the Listen Now / home page. */
 export const Route = createFileRoute('/')({
   component: ListenNow,
 });

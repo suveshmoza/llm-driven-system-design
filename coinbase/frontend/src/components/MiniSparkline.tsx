@@ -5,6 +5,7 @@ interface MiniSparklineProps {
   height: number;
 }
 
+/** Renders a compact SVG sparkline chart for inline price trend visualization. */
 export function MiniSparkline({ data, color, width, height }: MiniSparklineProps) {
   if (data.length < 2) return null;
 

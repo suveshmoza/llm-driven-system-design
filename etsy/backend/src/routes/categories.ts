@@ -23,7 +23,7 @@ interface CountRow {
   count: string;
 }
 
-// Get all categories
+/** GET /api/categories - Returns all product categories sorted alphabetically. */
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const result = await db.query<CategoryRow>(
@@ -36,7 +36,7 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// Get category by slug
+/** GET /api/categories/slug/:slug - Returns a single category by its URL-friendly slug. */
 router.get('/slug/:slug', async (req: Request<{ slug: string }>, res: Response) => {
   try {
     const { slug } = req.params;
@@ -57,7 +57,7 @@ router.get('/slug/:slug', async (req: Request<{ slug: string }>, res: Response) 
   }
 });
 
-// Get products in category
+/** GET /api/categories/:id/products - Returns paginated products in a category with sorting options. */
 router.get('/:id/products', async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -107,4 +107,5 @@ router.get('/:id/products', async (req: Request<{ id: string }>, res: Response) 
   }
 });
 
+/** Express router for category browsing and product listing by category. */
 export default router;

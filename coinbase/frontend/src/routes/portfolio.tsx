@@ -63,6 +63,7 @@ function PortfolioPage() {
   );
 }
 
+/** Route definition for the portfolio page with holdings and wallet balances. */
 export const Route = createFileRoute('/portfolio')({
   component: PortfolioPage,
 });

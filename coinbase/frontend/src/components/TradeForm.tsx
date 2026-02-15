@@ -8,6 +8,7 @@ interface TradeFormProps {
   currentPrice: number;
 }
 
+/** Renders the buy/sell trade form with market/limit toggle, quantity input, and order summary. */
 export function TradeForm({ pair, currentPrice }: TradeFormProps) {
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [orderType, setOrderType] = useState<'market' | 'limit'>('market');

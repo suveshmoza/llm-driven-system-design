@@ -25,6 +25,7 @@ async function request<T>(
   return response.json();
 }
 
+/** HTTP client with typed methods for GET, POST, PUT, DELETE, and multipart form uploads. */
 export const api = {
   get: <T>(endpoint: string) => request<T>(endpoint),
 

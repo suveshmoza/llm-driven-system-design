@@ -5,6 +5,7 @@ import { Footer } from '../components/Footer';
 import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 
+/** Root layout component providing header, footer, auth initialization, and content outlet. */
 function RootComponent() {
   const { checkAuth, isAuthenticated } = useAuthStore();
   const { fetchCart } = useCartStore();

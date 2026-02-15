@@ -12,7 +12,10 @@
     "generate-tests": "node scripts/generate-smoke-tests.mjs",
     "generate-tests:all": "node scripts/generate-smoke-tests.mjs",
     "test:smoke": "node scripts/run-smoke-tests.mjs",
-    "test:smoke:all": "node scripts/run-smoke-tests.mjs --all"
+    "test:smoke:all": "node scripts/run-smoke-tests.mjs --all",
+    "triage": "node scripts/triage-projects.mjs",
+    "triage:all": "node scripts/triage-projects.mjs --all",
+    "triage:report": "node scripts/triage-projects.mjs --report"
   },
   "devDependencies": {
     "playwright": "^1.49.0",

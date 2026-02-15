@@ -9,6 +9,7 @@ export const Route = createFileRoute('/shop/$shopSlug')({
   component: ShopPage,
 });
 
+/** Shop storefront page displaying shop info, products, ratings, and favorite toggle. */
 function ShopPage() {
   const { shopSlug } = Route.useParams();
   const [shop, setShop] = useState<Shop | null>(null);

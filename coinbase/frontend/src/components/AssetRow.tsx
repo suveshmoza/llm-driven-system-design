@@ -7,6 +7,7 @@ interface AssetRowProps {
   index: number;
 }
 
+/** Renders a single trading pair row with price, 24h change, volume, mini chart, and trade link. */
 export function AssetRow({ pair, index }: AssetRowProps) {
   const changeColor = getPriceColorClass(pair.changePercent24h);
   const sparklineColor = pair.changePercent24h >= 0 ? '#00C087' : '#FF3B30';

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { marketsApi } from '../services/api';
 import type { TradingPair, Candle, PriceData } from '../types';
 
+/** Real-time market data state with WebSocket price streaming and order book updates. */
 interface OrderBookData {
   bids: { price: number; quantity: number; orderCount: number }[];
   asks: { price: number; quantity: number; orderCount: number }[];

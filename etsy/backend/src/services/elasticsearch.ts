@@ -104,6 +104,7 @@ export interface SearchResult {
   fallback?: boolean;
 }
 
+/** Creates the products index with custom analyzer, synonym filters, and field mappings if it does not exist. */
 export async function initializeIndex(): Promise<void> {
   try {
     const indexExists = await esClient.indices.exists({ index: 'products' });
@@ -119,6 +120,7 @@ export async function initializeIndex(): Promise<void> {
   }
 }
 
+/** Indexes or updates a product document in the Elasticsearch products index. */
 export async function indexProduct(product: Product): Promise<void> {
   try {
     await esClient.index({
@@ -151,6 +153,7 @@ export async function indexProduct(product: Product): Promise<void> {
   }
 }
 
+/** Removes a product document from the Elasticsearch index by product ID. */
 export async function deleteProductFromIndex(productId: number): Promise<void> {
   try {
     await esClient.delete({
@@ -162,6 +165,7 @@ export async function deleteProductFromIndex(productId: number): Promise<void> {
   }
 }
 
+/** Searches products using fuzzy multi-match queries with optional price, category, and attribute filters. */
 export async function searchProducts(query: string | undefined, filters: SearchFilters = {}): Promise<SearchResult> {
   const must: object[] = [];
   const filter: object[] = [];
@@ -314,6 +318,7 @@ export async function searchProducts(query: string | undefined, filters: SearchF
   }
 }
 
+/** Finds similar products using Elasticsearch more_like_this query on title, description, and tags. */
 export async function getSimilarProducts(productId: number, limit: number = 6): Promise<Product[]> {
   try {
     const result = await esClient.search({

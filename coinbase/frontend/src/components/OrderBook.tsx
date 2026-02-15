@@ -14,6 +14,7 @@ interface OrderBookProps {
   pricePrecision: number;
 }
 
+/** Renders a real-time order book with bid/ask depth bars and spread indicator. */
 export function OrderBook({ bids, asks, spread, pricePrecision }: OrderBookProps) {
   // Calculate max quantity for bar width
   const maxQuantity = useMemo(() => {

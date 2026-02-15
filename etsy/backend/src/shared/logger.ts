@@ -30,7 +30,7 @@ const logger: Logger = pino({
       : undefined,
 });
 
-// HTTP request logger middleware
+/** HTTP request logging middleware using pino-http with custom serializers and log levels. */
 export const httpLogger: HttpLogger = pinoHttp({
   logger,
   // Don't log health checks
@@ -71,7 +71,7 @@ export const httpLogger: HttpLogger = pinoHttp({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }) as any;
 
-// Create child loggers for specific contexts
+/** Creates a child logger with the specified context name for module-specific logging. */
 export function createLogger(context: string): Logger {
   return logger.child({ context });
 }

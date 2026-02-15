@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Route definition for the user settings page. */
 export const Route = createFileRoute('/settings')({
   component: Settings,
 });

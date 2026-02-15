@@ -2,6 +2,7 @@ import RedisClient from 'ioredis';
 import config from '../config.js';
 
 const Redis = RedisClient.default || RedisClient;
+/** Redis client instance for session storage, caching, and idempotency key tracking. */
 const redis = new Redis(config.redis.url);
 
 redis.on('error', (err: Error) => {

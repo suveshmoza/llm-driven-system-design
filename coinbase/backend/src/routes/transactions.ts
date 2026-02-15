@@ -5,6 +5,7 @@ import { pool } from '../services/db.js';
 const router = Router();
 
 // GET /api/v1/transactions - Get transaction history
+/** GET /api/v1/transactions - Returns paginated transaction history with optional type filter. */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
