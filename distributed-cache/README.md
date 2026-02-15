@@ -374,7 +374,7 @@ distributed-cache/
 │   └── Dockerfile
 ├── docker-compose.yml
 ├── architecture.md
-├── system-design-answer.md
+├── system-design-answer-fullstack.md
 └── README.md
 ```
 

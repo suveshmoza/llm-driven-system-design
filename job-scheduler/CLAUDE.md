@@ -17,7 +17,7 @@ This document tracks the development journey of implementing a distributed task 
 *Completed*
 
 **Decisions made:**
-- Used system-design-answer.md as the architecture blueprint
+- Used system-design-answer-fullstack.md as the architecture blueprint
 - Chose PostgreSQL for job storage (ACID compliance, relational model)
 - Chose Redis for queues and distributed locking (speed, atomic operations)
 - Designed for horizontal worker scaling

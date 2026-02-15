@@ -40,8 +40,9 @@ Each project folder typically contains:
 <project>/
 ├── README.md                  # Setup instructions and implementation guide
 ├── architecture.md            # System design documentation and trade-offs
-├── system-design-answer.md    # Interview-style answer (45-minute format)
-├── system-design-answer-*.md  # Variant answers (frontend/backend/fullstack focus)
+├── system-design-answer-frontend.md   # Frontend-focused interview answer
+├── system-design-answer-backend.md    # Backend-focused interview answer
+├── system-design-answer-fullstack.md  # Full-stack interview answer
 ├── CLAUDE.md                  # LLM collaboration notes and iteration history
 ├── frontend/                  # React + TypeScript frontend (when applicable)
 ├── backend/                   # Node.js + Express backend (when applicable)
@@ -51,7 +52,7 @@ Each project folder typically contains:
 
 **Documentation file purposes:**
 - `architecture.md`: Deep technical documentation with diagrams, schemas, and implementation details
-- `system-design-answer*.md`: Concise 45-minute interview answers using ASCII diagrams (no code blocks), trade-off tables, and first-person rationale. Variants: `-frontend`, `-backend`, `-fullstack`
+- `system-design-answer-{frontend,backend,fullstack}.md`: Concise 45-minute interview answers using ASCII diagrams (no code blocks), trade-off tables, and first-person rationale. Each variant is tailored to a specific interview focus.
 - `CLAUDE.md`: Captures iteration history and the "why" behind key decisions
 
 ### Writing System Design Answers

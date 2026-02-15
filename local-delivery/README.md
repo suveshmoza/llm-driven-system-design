@@ -249,7 +249,7 @@ local-delivery/
 ## Architecture
 
 See [architecture.md](./architecture.md) for detailed system design.
-See [system-design-answer.md](./system-design-answer.md) for interview-style design discussion.
+See [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for interview-style design discussion.
 
 ## Development Notes
 

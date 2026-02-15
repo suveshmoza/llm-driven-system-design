@@ -205,7 +205,7 @@ npm run type-check
 ## Architecture
 
 See [architecture.md](./architecture.md) for high-level design.
-See [system-design-answer.md](./system-design-answer.md) for detailed system design documentation.
+See [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for detailed system design documentation.
 
 ## Development Notes
 

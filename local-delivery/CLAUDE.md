@@ -19,7 +19,7 @@ This document tracks the development journey of implementing a last-mile deliver
 **Accomplishments:**
 - Defined functional requirements (order placement, driver matching, real-time tracking, ratings)
 - Established non-functional requirements (latency, scale, availability)
-- Created detailed system design in system-design-answer.md
+- Created detailed system design in system-design-answer-fullstack.md
 - Designed database schema with PostgreSQL and Redis
 
 ### Phase 2: Initial Implementation

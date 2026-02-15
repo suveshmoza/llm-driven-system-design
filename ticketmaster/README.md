@@ -240,7 +240,7 @@ npm run type-check   # TypeScript type checking
 
 See [architecture.md](./architecture.md) for detailed system design documentation.
 
-See [system-design-answer.md](./system-design-answer.md) for interview-style system design walkthrough.
+See [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for interview-style system design walkthrough.
 
 ## Key Design Decisions
 

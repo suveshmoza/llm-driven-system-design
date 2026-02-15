@@ -20,7 +20,7 @@ This document tracks the development journey of implementing a hotel reservation
 *Completed*
 
 **Completed:**
-- Defined functional requirements based on system-design-answer.md
+- Defined functional requirements based on system-design-answer-fullstack.md
 - Identified core features: hotel listings, search, booking, availability, admin dashboard
 - Chose technology stack: PostgreSQL, Redis, Elasticsearch, Node.js, React
 

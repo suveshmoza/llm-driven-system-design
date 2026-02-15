@@ -19,7 +19,7 @@ This document tracks the development journey of implementing an event ticketing 
 **What was done:**
 - Defined core functional requirements (event browsing, seat selection, ticket purchase, inventory management)
 - Identified non-functional requirements (handle traffic spikes, no overselling, fairness, low latency)
-- Created detailed system design documentation in `system-design-answer.md`
+- Created detailed system design documentation in `system-design-answer-fullstack.md`
 - Designed database schema with events, venues, seats, orders
 - Planned distributed locking strategy with Redis
 

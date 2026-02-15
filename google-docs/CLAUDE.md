@@ -138,7 +138,7 @@ This document tracks the development journey of implementing a real-time collabo
 - [Operational Transformation FAQ](https://www3.ntu.edu.sg/home/czsun/projects/otfaq/)
 - [TipTap Documentation](https://tiptap.dev/docs)
 - [ProseMirror Guide](https://prosemirror.net/docs/guide/)
-- [Google Docs System Design](./system-design-answer.md)
+- [Google Docs System Design](./system-design-answer-fullstack.md)
 
 ## Next Steps
 

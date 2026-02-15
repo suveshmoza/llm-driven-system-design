@@ -130,7 +130,7 @@ Messages are persisted to DB with 'sent' status. On user connect, we query for p
 
 ## Resources and References
 
-- [WhatsApp System Design - system-design-answer.md](./system-design-answer.md)
+- [WhatsApp System Design - system-design-answer-fullstack.md](./system-design-answer-fullstack.md)
 - [WebSocket API - MDN](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket)
 - [Redis Pub/Sub](https://redis.io/topics/pubsub)
 - [ws - Node.js WebSocket library](https://github.com/websockets/ws)

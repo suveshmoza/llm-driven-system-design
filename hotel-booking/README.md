@@ -236,7 +236,7 @@ Bookings start in "reserved" status with a 15-minute hold. A background job expi
 ## Architecture
 
 See [architecture.md](./architecture.md) for detailed system design documentation.
-See [system-design-answer.md](./system-design-answer.md) for the complete design interview answer.
+See [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for the complete design interview answer.
 
 ## Development Notes
 

@@ -19,7 +19,7 @@ This document tracks the development journey of implementing a content aggregati
 **Outcomes:**
 - Defined functional requirements: crawling, deduplication, categorization, personalization, search
 - Chose technology stack: Node.js/Express, React/TypeScript, PostgreSQL, Redis, Elasticsearch
-- Created detailed system design document (system-design-answer.md)
+- Created detailed system design document (system-design-answer-fullstack.md)
 
 ### Phase 2: Initial Implementation
 *In Progress*

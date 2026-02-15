@@ -33,7 +33,7 @@ The application consists of:
 - **Database**: PostgreSQL for persistence
 - **Cache/Pub-Sub**: Redis for presence updates and real-time coordination
 
-See [architecture.md](./architecture.md) and [system-design-answer.md](./system-design-answer.md) for detailed system design documentation.
+See [architecture.md](./architecture.md) and [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for detailed system design documentation.
 
 ## Prerequisites
 
@@ -185,7 +185,7 @@ figma/
 │   └── vite.config.ts
 ├── docker-compose.yml
 ├── architecture.md
-├── system-design-answer.md
+├── system-design-answer-fullstack.md
 ├── claude.md
 └── README.md
 ```
@@ -269,7 +269,7 @@ npm run type-check  # TypeScript check
 
 ## References
 
-- [system-design-answer.md](./system-design-answer.md) - Full system design explanation
+- [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) - Full system design explanation
 - [architecture.md](./architecture.md) - Architecture documentation
 - [claude.md](./claude.md) - Development notes and iteration history
 

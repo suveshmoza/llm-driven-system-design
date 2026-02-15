@@ -273,7 +273,7 @@ ai-code-assistant/
 ├── package.json
 ├── tsconfig.json
 ├── architecture.md        # Detailed system design
-├── system-design-answer.md # Interview-style overview
+├── system-design-answer-fullstack.md # Interview-style overview
 └── CLAUDE.md              # Development notes
 ```
 
@@ -368,7 +368,7 @@ this.register(MyTool);
 ## Related Documentation
 
 - [architecture.md](./architecture.md) - Detailed system design and trade-offs
-- [system-design-answer.md](./system-design-answer.md) - Interview-style architecture overview
+- [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) - Interview-style architecture overview
 - [CLAUDE.md](./CLAUDE.md) - Development notes and iteration history
 
 ## Technology Stack

@@ -18,7 +18,7 @@ This document tracks the development journey of implementing a distributed web c
 
 **Completed:**
 - Defined functional requirements (URL discovery, page fetching, content extraction, politeness)
-- Established scale targets based on system-design-answer.md
+- Established scale targets based on system-design-answer-fullstack.md
 - Identified key technical constraints (robots.txt compliance, rate limiting)
 
 ### Phase 2: Initial Implementation

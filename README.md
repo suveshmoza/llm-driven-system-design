@@ -187,7 +187,7 @@ Each project folder contains:
 |------|---------|
 | `README.md` | Implementation guide, setup instructions, and testing details |
 | `architecture.md` | System design documentation, architectural decisions, and trade-offs |
-| `system-design-answer.md` | Interview-style answer (45-minute format) |
+| `system-design-answer-{frontend,backend,fullstack}.md` | Interview-style answers tailored by role (45-minute format) |
 | `claude.md` | LLM collaboration notes and iteration history |
 | Source code | Actual implementation (varies by project) |
 

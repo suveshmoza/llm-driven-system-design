@@ -39,7 +39,7 @@ A full-stack URL shortening service with analytics tracking, custom short codes,
               └─────────┘  └─────────┘  └─────────────┘
 ```
 
-See [architecture.md](./architecture.md) and [system-design-answer.md](./system-design-answer.md) for detailed design documentation.
+See [architecture.md](./architecture.md) and [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for detailed design documentation.
 
 ## Prerequisites
 

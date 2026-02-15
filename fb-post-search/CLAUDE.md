@@ -20,7 +20,7 @@ This document tracks the development journey of implementing a search engine for
 - Defined core vs. nice-to-have features
 - Identified scale requirements (designed for billions of users)
 - Documented key technical constraints
-- Created system design document (system-design-answer.md)
+- Created system design document (system-design-answer-fullstack.md)
 
 ### Phase 2: Initial Implementation
 *In progress*

@@ -143,7 +143,7 @@ fb-post-search/
 │   └── package.json
 ├── docker-compose.yml
 ├── architecture.md
-├── system-design-answer.md
+├── system-design-answer-fullstack.md
 └── CLAUDE.md
 ```
 
@@ -262,7 +262,7 @@ npm run lint         # Run ESLint
 
 ## Architecture
 
-See [architecture.md](./architecture.md) for the system design overview and [system-design-answer.md](./system-design-answer.md) for the complete system design interview answer.
+See [architecture.md](./architecture.md) for the system design overview and [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) for the complete system design interview answer.
 
 ## Development Notes
 

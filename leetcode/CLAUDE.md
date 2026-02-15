@@ -20,7 +20,7 @@ This document tracks the development journey of implementing an online coding pr
 - Defined functional requirements: problem database, code submission, execution, test validation, leaderboards
 - Identified scale targets: support for concurrent users, multiple languages
 - Documented security requirements for sandboxed execution
-- See `system-design-answer.md` for detailed architecture
+- See `system-design-answer-fullstack.md` for detailed architecture
 
 ### Phase 2: Initial Implementation
 *Completed*

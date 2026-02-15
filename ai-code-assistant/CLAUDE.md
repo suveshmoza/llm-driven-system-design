@@ -21,7 +21,7 @@ This document tracks the development journey of implementing evylcode CLI, an AI
 
 **Deliverables:**
 - Detailed architecture document (architecture.md)
-- System design interview answer (system-design-answer.md)
+- System design interview answers (system-design-answer-{frontend,backend,fullstack}.md)
 - Core component specifications
 - Technology stack decisions
 

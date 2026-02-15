@@ -438,7 +438,7 @@ MIT
 ## See Also
 
 - [architecture.md](./architecture.md) - System design documentation
-- [system-design-answer.md](./system-design-answer.md) - Detailed system design interview answer
+- [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) - Detailed system design interview answer
 - [claude.md](./claude.md) - Development notes and iteration history
 
 ## References & Inspiration

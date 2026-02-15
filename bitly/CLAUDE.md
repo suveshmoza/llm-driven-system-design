@@ -17,7 +17,7 @@ This document tracks the development journey of implementing a URL shortening se
 *Completed*
 
 **Outcomes:**
-- Reviewed system-design-answer.md for architectural guidance
+- Reviewed system-design-answer-fullstack.md for architectural guidance
 - Identified core features: URL shortening, custom codes, expiration, analytics
 - Chose pre-generated key pool approach for unique short codes
 - Designed read-heavy caching strategy
@@ -202,7 +202,7 @@ This document tracks the development journey of implementing a URL shortening se
 
 ## Resources and References
 
-- [system-design-answer.md](./system-design-answer.md) - Full system design interview answer
+- [system-design-answer-fullstack.md](./system-design-answer-fullstack.md) - Full system design interview answer
 - [architecture.md](./architecture.md) - High-level architecture template
 - Base62 encoding for short codes
 - Consistent hashing for future sharding

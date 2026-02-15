@@ -20,7 +20,7 @@ This document tracks the development journey of implementing a fitness tracking 
 - Defined core features: activity tracking, GPS visualization, segments, leaderboards, social features
 - Designed database schema with PostgreSQL + PostGIS for geospatial data
 - Chose Redis for leaderboards (sorted sets) and activity feeds (fan-out on write)
-- Documented system architecture in `system-design-answer.md`
+- Documented system architecture in `system-design-answer-fullstack.md`
 
 ### Phase 2: Initial Implementation
 *In progress*
