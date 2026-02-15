@@ -106,65 +106,12 @@ Expected concurrent seat locks: 10,000 during peak
 
 ### Core Tables
 
-```sql
--- Venues with section configuration
-CREATE TABLE venues (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            VARCHAR(255) NOT NULL,
-    address         VARCHAR(500),
-    city            VARCHAR(100),
-    capacity        INTEGER NOT NULL,
-    section_config  JSONB NOT NULL,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-
--- Events linked to venues
-CREATE TABLE events (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name            VARCHAR(255) NOT NULL,
-    venue_id        UUID NOT NULL REFERENCES venues(id),
-    event_date      TIMESTAMP NOT NULL,
-    on_sale_date    TIMESTAMP NOT NULL,
-    status          VARCHAR(20) DEFAULT 'upcoming',
-    high_demand     BOOLEAN DEFAULT FALSE,
-    created_at      TIMESTAMP DEFAULT NOW(),
-    updated_at      TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX idx_events_status ON events(status);
-CREATE INDEX idx_events_on_sale ON events(on_sale_date);
-
--- Seat inventory per event
-CREATE TABLE seats (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    event_id        UUID NOT NULL REFERENCES events(id),
-    section         VARCHAR(50) NOT NULL,
-    row             VARCHAR(10) NOT NULL,
-    seat_number     VARCHAR(10) NOT NULL,
-    price           DECIMAL(10,2) NOT NULL,
-    status          VARCHAR(20) DEFAULT 'available',
-    held_by_session VARCHAR(64),
-    held_until      TIMESTAMP,
-    order_id        UUID,
-    version         INTEGER DEFAULT 1,
-    UNIQUE(event_id, section, row, seat_number)
-);
-CREATE INDEX idx_seats_event_status ON seats(event_id, status);
-CREATE INDEX idx_seats_held_until ON seats(held_until) WHERE status = 'held';
-
--- Orders with idempotency key
-CREATE TABLE orders (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES users(id),
-    event_id        UUID NOT NULL REFERENCES events(id),
-    status          VARCHAR(20) DEFAULT 'pending',
-    total_amount    DECIMAL(10,2) NOT NULL,
-    payment_id      VARCHAR(100),
-    idempotency_key VARCHAR(100) UNIQUE,
-    created_at      TIMESTAMP DEFAULT NOW(),
-    completed_at    TIMESTAMP
-);
-CREATE INDEX idx_orders_idempotency ON orders(idempotency_key);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **venues** | id (UUID PK), name, address, city, capacity, section_config (JSONB), created_at | PK index | Section config stores flexible venue layout |
+| **events** | id (UUID PK), name, venue_id (FK), event_date, on_sale_date, status (default 'upcoming'), high_demand (boolean), created_at, updated_at | idx_events_status, idx_events_on_sale | high_demand flag triggers waiting room |
+| **seats** | id (UUID PK), event_id (FK), section, row, seat_number, price, status (default 'available'), held_by_session, held_until, order_id, version (optimistic locking) | idx_seats_event_status (event_id, status), idx_seats_held_until (partial: WHERE status = 'held'), unique on (event_id, section, row, seat_number) | Version column enables optimistic concurrency control |
+| **orders** | id (UUID PK), user_id (FK), event_id (FK), status (default 'pending'), total_amount, payment_id, idempotency_key (unique), created_at, completed_at | idx_orders_idempotency | Idempotency key prevents duplicate checkout processing |
 
 ### Seat Status State Machine
 
@@ -191,165 +138,39 @@ When 10,000 users try to reserve the same seat simultaneously across multiple AP
 
 ### Phase 1: Redis Distributed Lock
 
-```typescript
-// Redis lock key format: lock:seat:{eventId}:{seatId}
-// Value: unique lock token to prevent releasing other sessions' locks
+The Redis lock uses SET NX EX for atomic lock acquisition with automatic expiry:
 
-async function acquireSeatLocks(
-  eventId: string,
-  seatIds: string[],
-  sessionId: string,
-  holdDuration: number
-): Promise<{ acquired: string[]; lockTokens: Map<string, string> }> {
-  const acquired: string[] = [];
-  const lockTokens = new Map<string, string>();
+1. For each seat, construct a lock key `lock:seat:{eventId}:{seatId}` and generate a unique lock token (UUID)
+2. Attempt SET NX (only set if not exists) with the hold duration as expiry
+3. If the lock is acquired, record the seat ID and its token
+4. **All-or-nothing semantics**: If any seat in the batch fails to lock, release all previously acquired locks and return an empty result. This prevents partial reservations where a user holds some seats but not others.
 
-  for (const seatId of seatIds) {
-    const lockKey = `lock:seat:${eventId}:${seatId}`;
-    const lockToken = crypto.randomUUID();
-
-    // SET NX with expiry - atomic operation
-    const result = await redis.set(lockKey, lockToken, {
-      NX: true,  // Only set if not exists
-      EX: holdDuration,
-    });
-
-    if (result === 'OK') {
-      acquired.push(seatId);
-      lockTokens.set(seatId, lockToken);
-    }
-  }
-
-  // All-or-nothing: release partial locks if not all acquired
-  if (acquired.length !== seatIds.length) {
-    await releaseMultipleLocks(eventId, acquired, lockTokens);
-    return { acquired: [], lockTokens: new Map() };
-  }
-
-  return { acquired, lockTokens };
-}
-```
+The unique lock token is critical - it prevents one session from accidentally releasing another session's lock.
 
 ### Lock Release with Lua Script
 
-```lua
--- Atomic check-and-delete to prevent releasing someone else's lock
-local lockKey = KEYS[1]
-local expectedToken = ARGV[1]
+Lock release uses a Lua script for atomic check-and-delete: it reads the current lock value, compares it against the expected token, and only deletes if they match. This prevents a session from accidentally releasing a lock that was already expired and reacquired by another session. The Lua script executes atomically on the Redis server, eliminating any race condition between the GET and DEL operations.
 
-local currentToken = redis.call('GET', lockKey)
-if currentToken == expectedToken then
-    return redis.call('DEL', lockKey)
-end
-return 0
-```
-
-```typescript
-async function releaseLock(
-  eventId: string,
-  seatId: string,
-  lockToken: string
-): Promise<boolean> {
-  const lockKey = `lock:seat:${eventId}:${seatId}`;
-
-  const result = await redis.eval(
-    RELEASE_LOCK_SCRIPT,
-    1,
-    lockKey,
-    lockToken
-  );
-
-  return result === 1;
-}
-```
+The release function calls this Lua script via EVAL, passing the lock key and expected token. It returns true if the lock was successfully released, false if the token didn't match (meaning another session holds the lock).
 
 ### Phase 2: PostgreSQL Transaction with Row Locking
 
-```typescript
-async function reserveSeatsInDatabase(
-  eventId: string,
-  seatIds: string[],
-  sessionId: string,
-  holdUntil: Date
-): Promise<void> {
-  await pool.query('BEGIN');
+After acquiring Redis locks (the fast path), we persist the reservation in PostgreSQL for durability:
 
-  try {
-    // Lock rows with NOWAIT - fail fast if locked
-    const { rows: seats } = await pool.query(`
-      SELECT id, status, version
-      FROM seats
-      WHERE event_id = $1 AND id = ANY($2)
-      FOR UPDATE NOWAIT
-    `, [eventId, seatIds]);
-
-    // Verify all seats are available
-    for (const seat of seats) {
-      if (seat.status !== 'available') {
-        throw new Error(`Seat ${seat.id} not available`);
-      }
-    }
-
-    // Update status to held
-    await pool.query(`
-      UPDATE seats
-      SET status = 'held',
-          held_by_session = $1,
-          held_until = $2,
-          version = version + 1
-      WHERE id = ANY($3)
-    `, [sessionId, holdUntil, seatIds]);
-
-    await pool.query('COMMIT');
-  } catch (error) {
-    await pool.query('ROLLBACK');
-    throw error;
-  }
-}
-```
+1. **BEGIN transaction**
+2. **SELECT FOR UPDATE NOWAIT** on the seat rows - this acquires exclusive row locks and fails immediately if another transaction holds them (rather than waiting and blocking)
+3. **Verify all seats are still available** - check that every seat's status is 'available'. If any seat has been claimed between the Redis lock and this point, throw an error
+4. **UPDATE seats** - Set status to 'held', record the session ID, set the hold expiry timestamp, and increment the version number for optimistic concurrency
+5. **COMMIT** - If anything fails, ROLLBACK and propagate the error
 
 ### Combined Reservation Flow
 
-```typescript
-async function reserveSeats(
-  eventId: string,
-  seatIds: string[],
-  sessionId: string
-): Promise<ReservationResult> {
-  const HOLD_DURATION = 600; // 10 minutes
+The full reservation combines both phases with rollback handling:
 
-  // Phase 1: Acquire Redis locks
-  const { acquired, lockTokens } = await acquireSeatLocks(
-    eventId,
-    seatIds,
-    sessionId,
-    HOLD_DURATION
-  );
-
-  if (acquired.length === 0) {
-    throw new SeatsUnavailableError('One or more seats already held');
-  }
-
-  try {
-    // Phase 2: Database transaction
-    const holdUntil = new Date(Date.now() + HOLD_DURATION * 1000);
-    await reserveSeatsInDatabase(eventId, seatIds, sessionId, holdUntil);
-
-    // Store lock tokens for later release
-    await storeReservation(sessionId, eventId, seatIds, lockTokens, holdUntil);
-
-    return {
-      seats: seatIds,
-      expiresAt: holdUntil,
-      status: 'held',
-    };
-  } catch (error) {
-    // Rollback: release Redis locks
-    await releaseMultipleLocks(eventId, acquired, lockTokens);
-    throw error;
-  }
-}
-```
+1. **Phase 1** - Acquire Redis locks for all requested seats with a 10-minute hold duration. If any seat fails to lock, return "seats unavailable" immediately (sub-millisecond rejection)
+2. **Phase 2** - Within a try block, persist the hold in PostgreSQL via the database transaction described above. Store the lock tokens and reservation metadata for later checkout or release
+3. **Rollback on failure** - If the database transaction fails for any reason, release all Redis locks to make the seats available again
+4. **Return result** - On success, return the reserved seat IDs, expiration timestamp, and 'held' status
 
 ### Why Two Phases?
 
@@ -366,135 +187,21 @@ async function reserveSeats(
 
 ### Queue Data Structures in Redis
 
-```typescript
-// Redis data structures per event:
-// queue:{eventId}      - ZSET: { sessionId: joinTimestamp }
-// active:{eventId}     - SET: { sessionId, ... }
-// active_session:{eventId}:{sessionId} - String with TTL
+The waiting room uses three Redis data structures per event:
 
-class VirtualWaitingRoom {
-  private readonly MAX_CONCURRENT = 5000;
-  private readonly SHOPPING_WINDOW = 900; // 15 minutes
+- `queue:{eventId}` - Sorted set with session IDs scored by join timestamp (FIFO ordering)
+- `active:{eventId}` - Set of currently admitted session IDs
+- `active_session:{eventId}:{sessionId}` - String key with TTL for shopping window expiry
 
-  async joinQueue(
-    eventId: string,
-    sessionId: string
-  ): Promise<QueuePosition> {
-    const queueKey = `queue:${eventId}`;
+**Join queue**: Check if the session is already queued (ZSCORE). If not, add with current timestamp as score (ZADD). Return the queue position via ZRANK.
 
-    // Check if already in queue
-    const existing = await redis.zscore(queueKey, sessionId);
-    if (existing !== null) {
-      return this.getPosition(eventId, sessionId);
-    }
+**Check position**: First check if the session has an active shopping key (already admitted). If not, check the sorted set rank. Return position, estimated wait time (based on ~500 admissions per minute), and status.
 
-    // Add to queue with current timestamp as score
-    const timestamp = Date.now() / 1000;
-    await redis.zadd(queueKey, timestamp, sessionId);
-
-    const rank = await redis.zrank(queueKey, sessionId);
-    const position = (rank ?? 0) + 1;
-
-    return {
-      position,
-      estimatedWait: this.estimateWait(position),
-      status: 'queued',
-    };
-  }
-
-  async getPosition(
-    eventId: string,
-    sessionId: string
-  ): Promise<QueuePosition> {
-    // Check if already admitted
-    const isActive = await redis.exists(
-      `active_session:${eventId}:${sessionId}`
-    );
-    if (isActive) {
-      return { position: 0, status: 'active' };
-    }
-
-    // Check queue position
-    const rank = await redis.zrank(`queue:${eventId}`, sessionId);
-    if (rank === null) {
-      return { position: -1, status: 'not_in_queue' };
-    }
-
-    const position = rank + 1;
-    return {
-      position,
-      estimatedWait: this.estimateWait(position),
-      status: 'queued',
-    };
-  }
-
-  async admitNextBatch(eventId: string): Promise<number> {
-    const activeKey = `active:${eventId}`;
-    const queueKey = `queue:${eventId}`;
-
-    // Count current active sessions
-    const activeCount = await redis.scard(activeKey);
-    const slotsAvailable = this.MAX_CONCURRENT - activeCount;
-
-    if (slotsAvailable <= 0) return 0;
-
-    // Get next batch from queue (FIFO by timestamp)
-    const nextUsers = await redis.zrange(
-      queueKey,
-      0,
-      slotsAvailable - 1
-    );
-
-    if (nextUsers.length === 0) return 0;
-
-    // Move to active set with pipeline
-    const pipeline = redis.pipeline();
-    for (const sessionId of nextUsers) {
-      pipeline.sadd(activeKey, sessionId);
-      pipeline.setex(
-        `active_session:${eventId}:${sessionId}`,
-        this.SHOPPING_WINDOW,
-        '1'
-      );
-    }
-    pipeline.zrem(queueKey, ...nextUsers);
-    await pipeline.exec();
-
-    return nextUsers.length;
-  }
-
-  private estimateWait(position: number): number {
-    // Assume 500 users admitted per minute on average
-    return Math.ceil(position / 500) * 60;
-  }
-}
-```
+**Admit next batch**: Count current active sessions (SCARD). Calculate available slots up to a maximum of 5,000 concurrent shoppers. Use ZRANGE to get the next batch from the queue head. In a Redis pipeline: add each to the active set (SADD), create a shopping window key with 15-minute TTL (SETEX), and remove them from the queue (ZREM).
 
 ### Queue Admission Worker
 
-```typescript
-// Background worker runs every 5 seconds
-async function queueAdmissionWorker(): Promise<void> {
-  const waitingRoom = new VirtualWaitingRoom();
-
-  while (true) {
-    // Get all high-demand events currently on sale
-    const events = await getActiveHighDemandEvents();
-
-    for (const event of events) {
-      const admitted = await waitingRoom.admitNextBatch(event.id);
-      if (admitted > 0) {
-        logger.info('Admitted users from queue', {
-          eventId: event.id,
-          count: admitted,
-        });
-      }
-    }
-
-    await sleep(5000);
-  }
-}
-```
+A background worker runs every 5 seconds, polling for all high-demand events currently on sale. For each event, it calls the admit-next-batch logic to move queued users into the active shopping pool. Admission counts are logged for monitoring queue drain rates.
 
 ---
 
@@ -502,95 +209,19 @@ async function queueAdmissionWorker(): Promise<void> {
 
 ### Idempotency Key Strategy
 
-```typescript
-// Key format: checkout:{sessionId}:{eventId}:{sortedSeatIds}
-function generateIdempotencyKey(
-  sessionId: string,
-  eventId: string,
-  seatIds: string[]
-): string {
-  const sortedSeats = [...seatIds].sort().join(',');
-  return `checkout:${sessionId}:${eventId}:${sortedSeats}`;
-}
-```
+The idempotency key is deterministically generated from the session ID, event ID, and sorted seat IDs (format: `checkout:{sessionId}:{eventId}:{sortedSeatIds}`). This ensures the same user attempting to buy the same seats for the same event always produces the same key, regardless of retries.
 
 ### Checkout with Idempotency
 
-```typescript
-async function checkout(
-  sessionId: string,
-  userId: string,
-  paymentMethod: PaymentMethod,
-  idempotencyKey: string
-): Promise<Order> {
-  // 1. Check for existing result in Redis (fast path)
-  const cachedResult = await redis.get(`idem:${idempotencyKey}`);
-  if (cachedResult) {
-    return JSON.parse(cachedResult);
-  }
+The checkout flow has five steps with idempotency at each level:
 
-  // 2. Check database for existing order
-  const existingOrder = await pool.query(
-    'SELECT * FROM orders WHERE idempotency_key = $1',
-    [idempotencyKey]
-  );
-  if (existingOrder.rows[0]) {
-    return existingOrder.rows[0];
-  }
+1. **Fast path check** - Look up the idempotency key in Redis (`idem:{key}`). If found, return the cached order immediately
+2. **Database check** - Query for an existing order with the same idempotency_key. If found, return it (handles cases where Redis cache expired but order exists)
+3. **Validate reservation** - Retrieve the reservation for this session and verify it hasn't expired
+4. **Process payment** - Call the payment service through a circuit breaker (see below). If the payment processor is down, fail fast rather than hanging
+5. **Complete order in transaction** - Within a PostgreSQL transaction: insert the order with the idempotency key, update all held seats to 'sold' status (only if still held by this session), commit, cache the result in Redis for 24 hours, and release the Redis seat locks
 
-  // 3. Get reservation
-  const reservation = await getReservation(sessionId);
-  if (!reservation || new Date() > reservation.expiresAt) {
-    throw new ReservationExpiredError();
-  }
-
-  // 4. Process payment with circuit breaker
-  const paymentResult = await paymentCircuitBreaker.execute(async () => {
-    return processPayment(userId, reservation.totalAmount, paymentMethod);
-  });
-
-  // 5. Complete order in transaction
-  const order = await pool.query('BEGIN');
-  try {
-    const { rows: [newOrder] } = await pool.query(`
-      INSERT INTO orders (user_id, event_id, status, total_amount, payment_id, idempotency_key, completed_at)
-      VALUES ($1, $2, 'completed', $3, $4, $5, NOW())
-      RETURNING *
-    `, [userId, reservation.eventId, reservation.totalAmount, paymentResult.id, idempotencyKey]);
-
-    // Update seats to sold
-    await pool.query(`
-      UPDATE seats
-      SET status = 'sold',
-          order_id = $1,
-          held_by_session = NULL,
-          held_until = NULL
-      WHERE id = ANY($2)
-        AND status = 'held'
-        AND held_by_session = $3
-    `, [newOrder.id, reservation.seatIds, sessionId]);
-
-    await pool.query('COMMIT');
-
-    // Cache result in Redis for 24 hours
-    await redis.setex(
-      `idem:${idempotencyKey}`,
-      86400,
-      JSON.stringify(newOrder)
-    );
-
-    // Release Redis locks
-    for (const [seatId, token] of reservation.lockTokens) {
-      await releaseLock(reservation.eventId, seatId, token);
-    }
-
-    return newOrder;
-  } catch (error) {
-    await pool.query('ROLLBACK');
-    throw error;
-  }
-}
-```
+If the transaction fails, it rolls back and the error propagates. The idempotency key ensures retrying the entire flow is safe.
 
 ---
 
@@ -598,91 +229,22 @@ async function checkout(
 
 ### Expired Hold Cleanup Worker
 
-```typescript
-async function cleanupExpiredHolds(): Promise<void> {
-  // Single query to release expired holds and return their data
-  const { rows: expired } = await pool.query(`
-    UPDATE seats
-    SET status = 'available',
-        held_by_session = NULL,
-        held_until = NULL
-    WHERE status = 'held'
-      AND held_until < NOW()
-    RETURNING id, event_id, held_by_session
-  `);
+A background job runs every 60 seconds to release expired seat holds:
 
-  if (expired.length === 0) return;
-
-  // Clean up Redis locks (may already be expired by TTL)
-  for (const seat of expired) {
-    await redis.del(`lock:seat:${seat.event_id}:${seat.id}`);
-  }
-
-  // Invalidate availability cache for affected events
-  const eventIds = [...new Set(expired.map((s) => s.event_id))];
-  for (const eventId of eventIds) {
-    await redis.del(`availability:${eventId}`);
-  }
-
-  logger.info('Cleaned up expired holds', {
-    count: expired.length,
-    eventIds,
-  });
-}
-
-// Run every minute
-setInterval(cleanupExpiredHolds, 60000);
-```
+1. **Single atomic UPDATE** - Update all seats where status is 'held' and held_until is in the past, setting them back to 'available' and clearing the session and expiry fields. The RETURNING clause captures the released seat details.
+2. **Clean up Redis locks** - Delete the corresponding Redis lock keys (which may already be expired by their own TTL)
+3. **Invalidate cache** - Delete the availability cache for each affected event so the next read fetches fresh data
+4. **Log the cleanup** - Record the count and affected event IDs for monitoring
 
 ### Circuit Breaker for Payment Processing
 
-```typescript
-class CircuitBreaker {
-  private failures = 0;
-  private state: 'closed' | 'open' | 'half-open' = 'closed';
-  private openedAt: Date | null = null;
+The circuit breaker protects against payment processor outages using a three-state machine (closed, open, half-open):
 
-  constructor(
-    private readonly failureThreshold = 5,
-    private readonly recoveryTimeout = 30000
-  ) {}
+- **Closed** (normal operation): All requests pass through. After 5 consecutive failures, the breaker opens.
+- **Open** (failing fast): All requests are immediately rejected without contacting the payment processor. After 30 seconds, the breaker transitions to half-open.
+- **Half-open** (testing): A single request is allowed through. On success, the breaker closes. On failure, it reopens.
 
-  async execute<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.state === 'open') {
-      if (Date.now() - this.openedAt!.getTime() > this.recoveryTimeout) {
-        this.state = 'half-open';
-      } else {
-        throw new Error('Circuit breaker is open');
-      }
-    }
-
-    try {
-      const result = await operation();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      throw error;
-    }
-  }
-
-  private onSuccess(): void {
-    this.failures = 0;
-    this.state = 'closed';
-  }
-
-  private onFailure(): void {
-    this.failures++;
-    if (this.failures >= this.failureThreshold) {
-      this.state = 'open';
-      this.openedAt = new Date();
-      logger.error('Circuit breaker opened', {
-        failures: this.failures,
-      });
-    }
-  }
-}
-```
+When the breaker opens, it logs a critical error with the failure count for alerting.
 
 ---
 
@@ -690,34 +252,12 @@ class CircuitBreaker {
 
 ### Dynamic TTL Based on Event Status
 
-```typescript
-async function getSeatAvailability(eventId: string): Promise<SeatMap> {
-  const cacheKey = `availability:${eventId}`;
+Seat availability caching uses dynamic TTLs based on event status:
 
-  // Try cache first
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
-  }
+- **On-sale events**: 5-second TTL (data changes rapidly during active sales)
+- **Non-sale events**: 30-second TTL (availability changes infrequently)
 
-  // Query database
-  const { rows: seats } = await pool.query(`
-    SELECT section, row, seat_number, status, price
-    FROM seats
-    WHERE event_id = $1
-    ORDER BY section, row, seat_number
-  `, [eventId]);
-
-  // Get event status for TTL decision
-  const event = await getEvent(eventId);
-  const ttl = event.status === 'on_sale' ? 5 : 30;
-
-  const seatMap = formatSeatMap(seats);
-  await redis.setex(cacheKey, ttl, JSON.stringify(seatMap));
-
-  return seatMap;
-}
-```
+The read path follows cache-aside: check Redis first, on miss query PostgreSQL for all seats ordered by section/row/number, determine the appropriate TTL from the event status, and cache the formatted seat map.
 
 ### Cache Invalidation Points
 
@@ -735,29 +275,14 @@ async function getSeatAvailability(eventId: string): Promise<SeatMap> {
 
 ### Key Metrics
 
-```typescript
-// Prometheus metrics
-const seatsReservedTotal = new Counter({
-  name: 'seats_reserved_total',
-  labelNames: ['event_id'],
-});
+We track four Prometheus metrics:
 
-const seatLockAttempts = new Counter({
-  name: 'seat_lock_attempts_total',
-  labelNames: ['event_id', 'result'],
-});
-
-const checkoutDuration = new Histogram({
-  name: 'checkout_duration_seconds',
-  labelNames: ['event_id'],
-  buckets: [0.1, 0.25, 0.5, 1, 2, 5],
-});
-
-const queueLength = new Gauge({
-  name: 'queue_length',
-  labelNames: ['event_id'],
-});
-```
+| Metric | Type | Labels | Purpose |
+|--------|------|--------|---------|
+| seats_reserved_total | Counter | event_id | Total seats reserved |
+| seat_lock_attempts_total | Counter | event_id, result (success/failure) | Lock acquisition success rate |
+| checkout_duration_seconds | Histogram (buckets: 100ms to 5s) | event_id | End-to-end checkout latency |
+| queue_length | Gauge | event_id | Current waiting room queue depth |
 
 ### Alerting Thresholds
 

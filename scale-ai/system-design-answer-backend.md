@@ -108,25 +108,7 @@ User Canvas → Collection Service → MinIO (stroke JSON) + PostgreSQL (metadat
 
 **Drawing Data Format** (stored in MinIO):
 
-```json
-{
-  "id": "uuid",
-  "shape": "circle",
-  "canvas": { "width": 400, "height": 400 },
-  "strokes": [
-    {
-      "points": [
-        {"x": 100, "y": 100, "pressure": 0.5, "timestamp": 1234567890},
-        {"x": 102, "y": 101, "pressure": 0.6, "timestamp": 1234567891}
-      ],
-      "color": "#000000",
-      "width": 3
-    }
-  ],
-  "duration_ms": 2500,
-  "device": "mouse"
-}
-```
+Each drawing is a JSON object containing: an ID, the target shape name, canvas dimensions (width and height), an array of strokes (each with a points array containing x, y, pressure, and timestamp values, plus stroke color and width), total drawing duration in milliseconds, and device type (mouse, touch, or stylus).
 
 **Why Stroke Data over Images**:
 1. **Preserves information**: Temporal ordering, pressure, drawing speed
@@ -136,55 +118,16 @@ User Canvas → Collection Service → MinIO (stroke JSON) + PostgreSQL (metadat
 
 **Submission Handler with Reliability**:
 
-```typescript
-// backend/src/collection/routes/drawings.ts
-async function submitDrawing(req: Request, res: Response) {
-  const { shapeId, strokes, metadata } = req.body;
-  const userId = req.session?.userId;
+The drawing submission endpoint follows these steps:
 
-  // 1. Check idempotency key
-  const idempotencyKey = req.headers['x-idempotency-key'] as string;
-  if (idempotencyKey) {
-    const existing = await redis.get(`idem:drawing:${idempotencyKey}`);
-    if (existing) {
-      return res.status(200).json({ id: existing, status: 'duplicate' });
-    }
-  }
-
-  const drawingId = crypto.randomUUID();
-  const storagePath = `drawings/${userId}/${drawingId}.json`;
-
-  // 2. Upload to MinIO with circuit breaker
-  await minioCircuitBreaker.execute(async () => {
-    await storage.putObject(
-      DRAWINGS_BUCKET,
-      storagePath,
-      JSON.stringify({ strokes, metadata, shapeId })
-    );
-  });
-
-  // 3. Insert metadata to PostgreSQL
-  await pool.query(`
-    INSERT INTO drawings (id, user_id, shape_id, stroke_data_path, metadata)
-    VALUES ($1, $2, $3, $4, $5)
-  `, [drawingId, userId, shapeId, storagePath, metadata]);
-
-  // 4. Update user stats (async, eventual consistency OK)
-  await pool.query(`
-    UPDATE users SET total_drawings = total_drawings + 1
-    WHERE id = $1
-  `, [userId]);
-
-  // 5. Mark idempotency key processed
-  if (idempotencyKey) {
-    await redis.setex(`idem:drawing:${idempotencyKey}`, 3600, drawingId);
-  }
-
-  metrics.increment('drawings.submitted', { shape: shapeId });
-
-  res.status(201).json({ id: drawingId });
-}
-```
+1. **Check idempotency** — if an `X-Idempotency-Key` header is present, look it up in Redis. If already processed, return the existing drawing ID with a "duplicate" status.
+2. **Generate drawing ID** — create a UUID and construct the MinIO storage path as `drawings/{userId}/{drawingId}.json`.
+3. **Upload to MinIO** — store the stroke JSON via a circuit breaker wrapper. If MinIO is down, the circuit breaker opens and returns 503 with Retry-After.
+4. **Insert metadata** — write the drawing record to PostgreSQL with the ID, user, shape, storage path, and metadata.
+5. **Update user stats** — increment the user's `total_drawings` counter (eventual consistency is acceptable here).
+6. **Mark idempotency key** — store the drawing ID in Redis with a 1-hour TTL.
+7. **Emit metric** — increment `drawings.submitted` counter with shape label.
+8. **Return 201** with the drawing ID.
 
 **Failure Handling**:
 
@@ -208,145 +151,36 @@ Admin triggers → PostgreSQL (job record) → RabbitMQ → Training Worker → 
 
 **Job Creation with Idempotency**:
 
-```typescript
-// backend/src/admin/routes/training.ts
-async function startTrainingJob(req: Request, res: Response) {
-  const { config } = req.body;
+The training job creation endpoint:
 
-  // Generate idempotency key from config hash
-  const configHash = crypto
-    .createHash('sha256')
-    .update(JSON.stringify(config))
-    .digest('hex');
-
-  // Check for existing pending/running job with same config
-  const existing = await pool.query(`
-    SELECT id, status FROM training_jobs
-    WHERE status IN ('pending', 'queued', 'running')
-      AND config_hash = $1
-      AND created_at > NOW() - INTERVAL '24 hours'
-  `, [configHash]);
-
-  if (existing.rows.length > 0) {
-    return res.status(200).json({
-      jobId: existing.rows[0].id,
-      status: 'already_exists'
-    });
-  }
-
-  // Create job record
-  const result = await pool.query(`
-    INSERT INTO training_jobs (config, config_hash, status, created_by)
-    VALUES ($1, $2, 'pending', $3)
-    RETURNING id
-  `, [config, configHash, req.session.userId]);
-
-  const jobId = result.rows[0].id;
-
-  // Publish to RabbitMQ
-  await rabbitChannel.publish(
-    'training_exchange',
-    'training.new',
-    Buffer.from(JSON.stringify({ jobId, config })),
-    { persistent: true }
-  );
-
-  // Update status to queued
-  await pool.query(`
-    UPDATE training_jobs SET status = 'queued' WHERE id = $1
-  `, [jobId]);
-
-  res.status(201).json({ jobId, status: 'queued' });
-}
-```
+1. **Hash the config** — compute a SHA-256 hash of the training configuration to use as a deduplication key
+2. **Check for duplicates** — query for any pending, queued, or running job with the same config hash created in the last 24 hours. If found, return the existing job ID.
+3. **Create job record** — insert into `training_jobs` with the config JSONB, config hash, and creator user ID
+4. **Publish to RabbitMQ** — send the job ID and config to the `training_exchange` with routing key `training.new`, using persistent message delivery
+5. **Update status to "queued"** — mark the job as queued after successful publish
+6. **Return 201** with the job ID and status
 
 **Training Worker (Python)**:
 
-```python
-# training/worker.py
-import pika
-import json
-import torch
-from minio import Minio
+The Python training worker consumes jobs from RabbitMQ and processes them through these steps:
 
-def process_training_job(job_data):
-    job_id = job_data['jobId']
-    config = job_data['config']
+1. **Update status** to "running" in PostgreSQL
+2. **Fetch drawings** from MinIO based on any config filters (shape type, quality score range, etc.)
+3. **Preprocess** — render stroke data into 128x128 pixel images and extract shape labels
+4. **Create PyTorch dataset** and data loader with batch size 32 and shuffling
+5. **Train CNN model** — a ShapeClassifier with configurable epoch count (default 50), using Adam optimizer and cross-entropy loss. Progress is reported back to PostgreSQL after each epoch.
+6. **Evaluate** — compute accuracy on a validation set
+7. **Save model** — serialize model state dict to a temp file, upload to MinIO at `models/{jobId}/model.pt`
+8. **Create model version record** in PostgreSQL with the job ID, model path, and accuracy
+9. **Update job status** to "completed" with metrics, or "failed" with the error message if an exception occurs
 
-    try:
-        # Update status to running
-        update_job_status(job_id, 'running')
-
-        # 1. Fetch drawings from MinIO
-        drawings = fetch_drawings(config.get('filters', {}))
-        logger.info(f"Fetched {len(drawings)} drawings for job {job_id}")
-
-        # 2. Preprocess: Convert stroke data to images
-        images, labels = [], []
-        for drawing in drawings:
-            img = render_strokes_to_image(drawing['strokes'], size=128)
-            images.append(img)
-            labels.append(drawing['shape_id'])
-
-        # 3. Create PyTorch dataset
-        dataset = DrawingDataset(images, labels)
-        train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-        # 4. Train CNN model
-        model = ShapeClassifier(num_classes=5)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        criterion = nn.CrossEntropyLoss()
-
-        for epoch in range(config.get('epochs', 50)):
-            train_epoch(model, train_loader, optimizer, criterion)
-            update_job_progress(job_id, epoch, config['epochs'])
-
-        # 5. Evaluate and save metrics
-        accuracy = evaluate_model(model, validation_loader)
-
-        # 6. Save model to MinIO
-        model_path = f"models/{job_id}/model.pt"
-        torch.save(model.state_dict(), '/tmp/model.pt')
-        minio_client.fput_object(MODELS_BUCKET, model_path, '/tmp/model.pt')
-
-        # 7. Create model version record
-        create_model_version(job_id, model_path, accuracy)
-
-        update_job_status(job_id, 'completed', metrics={'accuracy': accuracy})
-
-    except Exception as e:
-        logger.error(f"Training job {job_id} failed: {e}")
-        update_job_status(job_id, 'failed', error_message=str(e))
-
-# RabbitMQ consumer
-connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
-channel = connection.channel()
-channel.queue_declare('training_jobs', durable=True)
-channel.basic_consume('training_jobs', on_message_callback=process_message)
-channel.start_consuming()
-```
+The worker connects to RabbitMQ, declares the `training_jobs` queue as durable, and consumes messages with acknowledgment.
 
 **Job Status Tracking**:
 
-```sql
--- Training job states
-CREATE TYPE job_status AS ENUM ('pending', 'queued', 'running', 'completed', 'failed');
-
-CREATE TABLE training_jobs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  status job_status DEFAULT 'pending',
-  config JSONB NOT NULL,
-  config_hash VARCHAR(64) NOT NULL,
-  progress FLOAT DEFAULT 0,
-  metrics JSONB,
-  error_message TEXT,
-  model_path VARCHAR(500),
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  created_by UUID REFERENCES admin_users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **training_jobs** | id (UUID PK), status (enum: pending/queued/running/completed/failed), config (JSONB), config_hash (VARCHAR 64), progress (FLOAT), metrics (JSONB), error_message, model_path, started_at, completed_at, created_by (FK admin_users), created_at | — | Config hash enables deduplication of identical training requests |
 
 ---
 
@@ -354,85 +188,15 @@ CREATE TABLE training_jobs (
 
 **Challenge**: Sub-100ms inference latency with model version management.
 
-```typescript
-// backend/src/inference/index.ts
-class ModelServer {
-  private model: tf.LayersModel | null = null;
-  private modelVersion: string | null = null;
+The model server maintains a single loaded model in memory. At startup (and on model activation), it:
 
-  async loadActiveModel() {
-    const result = await pool.query(`
-      SELECT m.id, m.model_path, m.version
-      FROM models m
-      WHERE m.is_active = TRUE
-    `);
+1. Queries PostgreSQL for the active model (only one can be active, enforced by a unique partial index on `is_active = TRUE`)
+2. Downloads the model file from MinIO to local disk if not already cached
+3. Loads the model into TensorFlow.js for inference
 
-    if (result.rows.length === 0) {
-      throw new Error('No active model found');
-    }
+**Classification flow**: Incoming stroke data is rendered to a 128x128 image tensor (using the same preprocessing as training), fed through the model, and the output probabilities are mapped to shape classes (line, circle, square, triangle, heart). The response includes the predicted shape, confidence score, model version, and inference latency.
 
-    const { model_path, version } = result.rows[0];
-
-    // Download from MinIO if not cached locally
-    const localPath = `/tmp/models/${version}/model.json`;
-    if (!fs.existsSync(localPath)) {
-      await downloadModelFromMinio(model_path, localPath);
-    }
-
-    // Load into TensorFlow.js
-    this.model = await tf.loadLayersModel(`file://${localPath}`);
-    this.modelVersion = version;
-
-    logger.info(`Loaded model version ${version}`);
-  }
-
-  async classify(strokeData: StrokeData): Promise<ClassificationResult> {
-    if (!this.model) {
-      throw new Error('Model not loaded');
-    }
-
-    const startTime = Date.now();
-
-    // 1. Render strokes to image tensor (same as training preprocessing)
-    const imageTensor = renderStrokesToTensor(strokeData, 128, 128);
-
-    // 2. Run inference
-    const predictions = this.model.predict(imageTensor) as tf.Tensor;
-    const probabilities = await predictions.data();
-
-    // 3. Get top prediction
-    const classes = ['line', 'circle', 'square', 'triangle', 'heart'];
-    const maxIndex = probabilities.indexOf(Math.max(...probabilities));
-
-    const latencyMs = Date.now() - startTime;
-    metrics.histogram('inference.latency_ms', latencyMs);
-
-    return {
-      shape: classes[maxIndex],
-      confidence: probabilities[maxIndex],
-      modelVersion: this.modelVersion,
-      latencyMs
-    };
-  }
-}
-
-// Warm up model at startup
-const modelServer = new ModelServer();
-await modelServer.loadActiveModel();
-```
-
-**Model Activation (Atomic)**:
-
-```sql
--- Only one active model at a time
-CREATE UNIQUE INDEX idx_models_active ON models(is_active) WHERE is_active = TRUE;
-
--- Atomic activation
-BEGIN;
-UPDATE models SET is_active = FALSE WHERE is_active = TRUE;
-UPDATE models SET is_active = TRUE WHERE id = $1;
-COMMIT;
-```
+**Model activation** is atomic: within a single transaction, the currently active model is deactivated and the new model is activated. The unique partial index ensures at most one active model at any time.
 
 ---
 
@@ -440,158 +204,35 @@ COMMIT;
 
 **Circuit Breaker Implementation**:
 
-```typescript
-// backend/src/shared/circuitBreaker.ts
-class CircuitBreaker {
-  private state: 'closed' | 'open' | 'half-open' = 'closed';
-  private failures = 0;
-  private lastFailure = 0;
+The circuit breaker tracks three states: closed (normal), open (failing fast), and half-open (testing recovery). It is configured with a failure threshold (default 5), and a reset timeout (default 30 seconds).
 
-  constructor(
-    private name: string,
-    private threshold: number = 5,
-    private resetTimeout: number = 30000
-  ) {}
+- In the **closed** state, operations pass through. If failures accumulate past the threshold, the breaker opens.
+- In the **open** state, all operations are immediately rejected with a `CircuitOpenError`. After the reset timeout elapses, the breaker transitions to half-open.
+- In the **half-open** state, the next operation is attempted. On success, the breaker closes. On failure, it reopens.
 
-  async execute<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.state === 'open') {
-      if (Date.now() - this.lastFailure > this.resetTimeout) {
-        this.state = 'half-open';
-        metrics.gauge(`circuit.${this.name}.state`, 1); // half-open
-      } else {
-        metrics.increment(`circuit.${this.name}.rejected`);
-        throw new CircuitOpenError(this.name);
-      }
-    }
-
-    try {
-      const result = await operation();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      throw error;
-    }
-  }
-
-  private onSuccess() {
-    this.failures = 0;
-    this.state = 'closed';
-    metrics.gauge(`circuit.${this.name}.state`, 0); // closed
-  }
-
-  private onFailure() {
-    this.failures++;
-    this.lastFailure = Date.now();
-
-    if (this.failures >= this.threshold) {
-      this.state = 'open';
-      metrics.gauge(`circuit.${this.name}.state`, 2); // open
-      logger.warn(`Circuit breaker ${this.name} opened`);
-    }
-  }
-}
-
-// Usage
-const minioCircuitBreaker = new CircuitBreaker('minio', 5, 30000);
-const dbCircuitBreaker = new CircuitBreaker('postgres', 3, 15000);
-```
+Each state transition emits a Prometheus gauge metric for monitoring. Separate breaker instances are created per dependency — for example, `minioCircuitBreaker` (threshold 5, 30s reset) and `dbCircuitBreaker` (threshold 3, 15s reset).
 
 **Retry with Exponential Backoff**:
 
-```typescript
-// backend/src/shared/retry.ts
-async function withRetry<T>(
-  operation: () => Promise<T>,
-  options: {
-    maxRetries: number;
-    initialDelayMs: number;
-    maxDelayMs: number;
-    operationName: string;
-  }
-): Promise<T> {
-  let lastError: Error;
+The retry wrapper attempts an operation up to `maxRetries` times. On each failure:
 
-  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error as Error;
+1. Calculate the delay as `initialDelayMs * 2^attempt`, capped at `maxDelayMs`
+2. Add random jitter (up to 10% of the delay) to prevent thundering herd
+3. Log a warning with the operation name, attempt number, and error message
+4. Sleep for the delay plus jitter before retrying
 
-      if (attempt === options.maxRetries) break;
-
-      const delay = Math.min(
-        options.initialDelayMs * Math.pow(2, attempt),
-        options.maxDelayMs
-      );
-
-      // Add jitter to prevent thundering herd
-      const jitter = delay * 0.1 * Math.random();
-
-      logger.warn(`${options.operationName} failed, retrying in ${delay}ms`, {
-        attempt,
-        error: lastError.message
-      });
-
-      await sleep(delay + jitter);
-    }
-  }
-
-  throw lastError!;
-}
-```
+If all attempts fail, the last error is thrown.
 
 ---
 
 ## 5. Database Schema (3 minutes)
 
-```sql
--- Core tables
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id VARCHAR(255) UNIQUE NOT NULL,
-  role VARCHAR(20) DEFAULT 'user',
-  total_drawings INT DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE shapes (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(50) UNIQUE NOT NULL,
-  description TEXT,
-  difficulty INT DEFAULT 1
-);
-
-CREATE TABLE drawings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id),
-  shape_id INT REFERENCES shapes(id),
-  stroke_data_path VARCHAR(500) NOT NULL,
-  metadata JSONB DEFAULT '{}',
-  quality_score FLOAT,
-  is_flagged BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ  -- Soft delete
-);
-
-CREATE TABLE models (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  training_job_id UUID REFERENCES training_jobs(id),
-  version VARCHAR(50) NOT NULL,
-  is_active BOOLEAN DEFAULT FALSE,
-  accuracy FLOAT,
-  model_path VARCHAR(500) NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes
-CREATE INDEX idx_drawings_shape ON drawings(shape_id);
-CREATE INDEX idx_drawings_created ON drawings(created_at DESC);
-CREATE INDEX idx_drawings_quality ON drawings(quality_score)
-  WHERE quality_score IS NOT NULL;
-CREATE UNIQUE INDEX idx_models_active ON models(is_active)
-  WHERE is_active = TRUE;
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), session_id (unique), role (default 'user'), total_drawings (INT), created_at | — | Session-based identity for anonymous drawing game |
+| **shapes** | id (SERIAL PK), name (unique), description, difficulty (INT) | — | Target shapes for the drawing game |
+| **drawings** | id (UUID PK), user_id (FK users), shape_id (FK shapes), stroke_data_path (VARCHAR 500), metadata (JSONB), quality_score (FLOAT), is_flagged, created_at, deleted_at | shape_id; created_at DESC; quality_score WHERE NOT NULL | Soft delete via deleted_at; stroke data stored externally in MinIO |
+| **models** | id (UUID PK), training_job_id (FK training_jobs), version, is_active, accuracy (FLOAT), model_path (VARCHAR 500), created_at | UNIQUE partial index on is_active WHERE TRUE | Ensures exactly one active model at a time |
 
 ---
 

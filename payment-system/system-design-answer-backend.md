@@ -68,103 +68,22 @@ Design the backend infrastructure for a payment processing system that:
 
 ### Core Database Schema
 
-```sql
--- Merchants (payment system customers)
-CREATE TABLE merchants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    api_key_hash VARCHAR(64) NOT NULL,  -- SHA-256 hash
-    webhook_url TEXT,
-    webhook_secret VARCHAR(64),
-    default_currency VARCHAR(3) DEFAULT 'USD',
-    status VARCHAR(20) DEFAULT 'active',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Transactions with idempotency support
-CREATE TABLE transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    merchant_id UUID NOT NULL REFERENCES merchants(id),
-    idempotency_key VARCHAR(255),
-
-    -- Amounts in smallest currency unit (cents)
-    amount BIGINT NOT NULL,
-    currency VARCHAR(3) NOT NULL,
-    captured_amount BIGINT DEFAULT 0,
-    refunded_amount BIGINT DEFAULT 0,
-
-    -- State machine
-    status VARCHAR(20) NOT NULL,  -- pending, authorized, captured, voided, failed, refunded
-    failure_code VARCHAR(50),
-
-    -- External references
-    processor_ref VARCHAR(255),
-
-    -- Fraud scoring
-    fraud_score INTEGER,
-    fraud_flags JSONB DEFAULT '[]',
-
-    -- Optimistic locking
-    version INTEGER DEFAULT 0,
-
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-    UNIQUE(merchant_id, idempotency_key)
-);
-
--- Double-entry ledger
-CREATE TABLE ledger_entries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    transaction_id UUID NOT NULL REFERENCES transactions(id),
-    entry_type VARCHAR(10) NOT NULL,  -- 'debit' or 'credit'
-    account_type VARCHAR(30) NOT NULL,  -- merchant_balance, platform_fee, processor_cost
-    amount BIGINT NOT NULL,
-    currency VARCHAR(3) NOT NULL,
-    balance_after BIGINT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Audit log for PCI compliance
-CREATE TABLE audit_log (
-    id BIGSERIAL PRIMARY KEY,
-    entity_type VARCHAR(50) NOT NULL,
-    entity_id UUID NOT NULL,
-    action VARCHAR(50) NOT NULL,
-    actor_type VARCHAR(20),
-    actor_id VARCHAR(255),
-    changes JSONB,
-    ip_address INET,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **merchants** | id (UUID PK), name, email (unique), api_key_hash (SHA-256), webhook_url, webhook_secret, default_currency, status, created_at | Primary key on id, unique on email | API key stored as hash only; status defaults to 'active' |
+| **transactions** | id (UUID PK), merchant_id (FK→merchants), idempotency_key, amount (BIGINT, smallest currency unit), currency, captured_amount, refunded_amount, status, failure_code, processor_ref, fraud_score, fraud_flags (JSONB), version (optimistic lock), created_at, updated_at | UNIQUE(merchant_id, idempotency_key) | Status values: pending, authorized, captured, voided, failed, refunded. Amount in cents avoids floating-point issues |
+| **ledger_entries** | id (UUID PK), transaction_id (FK→transactions), entry_type (debit/credit), account_type, amount (BIGINT), currency, balance_after, created_at | Primary key on id | Account types: merchant_balance, platform_fee, processor_cost. Every transaction must have balanced entries |
+| **audit_log** | id (BIGSERIAL PK), entity_type, entity_id, action, actor_type, actor_id, changes (JSONB), ip_address (INET), created_at | Primary key on id | PCI compliance requirement; immutable append-only log |
 
 ### Index Strategy
 
-```sql
--- Fast idempotency lookups
-CREATE INDEX idx_transactions_idempotency
-    ON transactions(merchant_id, idempotency_key)
-    WHERE idempotency_key IS NOT NULL;
-
--- Dashboard queries by merchant
-CREATE INDEX idx_transactions_merchant_time
-    ON transactions(merchant_id, created_at DESC);
-
--- Pending transactions for settlement
-CREATE INDEX idx_transactions_status
-    ON transactions(status, created_at)
-    WHERE status IN ('authorized', 'captured');
-
--- Ledger reconciliation queries
-CREATE INDEX idx_ledger_account_time
-    ON ledger_entries(account_type, created_at);
-
--- Audit trail queries
-CREATE INDEX idx_audit_entity
-    ON audit_log(entity_type, entity_id, created_at DESC);
-```
+| Index | Target Column(s) | Purpose |
+|-------|-------------------|---------|
+| idx_transactions_idempotency | transactions(merchant_id, idempotency_key) WHERE idempotency_key IS NOT NULL | Fast idempotency lookups; partial index excludes null keys |
+| idx_transactions_merchant_time | transactions(merchant_id, created_at DESC) | Dashboard queries filtered by merchant |
+| idx_transactions_status | transactions(status, created_at) WHERE status IN ('authorized', 'captured') | Partial index for pending settlement processing |
+| idx_ledger_account_time | ledger_entries(account_type, created_at) | Ledger reconciliation queries by account type |
+| idx_audit_entity | audit_log(entity_type, entity_id, created_at DESC) | Audit trail lookups for specific entities |
 
 ### Why PostgreSQL Over Alternatives?
 
@@ -198,52 +117,15 @@ Without idempotency, retries cause duplicate charges:
 
 ### Idempotency Key Flow
 
-```typescript
-async function processPayment(merchantId: string, idempotencyKey: string, payload: PaymentRequest) {
-    const cacheKey = `idempotency:${merchantId}:${idempotencyKey}`;
+The payment processing function prevents double-charges through a five-step flow:
 
-    // Step 1: Check cache for existing response
-    const cached = await valkey.get(cacheKey);
-    if (cached) {
-        return JSON.parse(cached);  // Return same response
-    }
+1. **Check cache**: Look up `idempotency:{merchantId}:{idempotencyKey}` in Valkey. If a cached response exists, return it immediately (same response the client would have received originally)
+2. **Acquire distributed lock**: Set a lock key in Valkey with NX (only if not exists) and a 30-second TTL. If the lock is already held, another server is processing the same request -- return a 409 Conflict
+3. **Process in database transaction**: Within a single PostgreSQL transaction, insert the transaction record and create balanced ledger entries atomically (debit customer, credit merchant balance, credit platform fee)
+4. **Cache response**: Store the successful response in Valkey with a 24-hour TTL so future retries hit the cache
+5. **Release lock**: Delete the lock key in the finally block to ensure cleanup even on errors
 
-    // Step 2: Acquire distributed lock (prevents race conditions)
-    const lockKey = `lock:${cacheKey}`;
-    const acquired = await valkey.set(lockKey, '1', 'NX', 'EX', 30);
-    if (!acquired) {
-        throw new ConflictError('Request already in progress');
-    }
-
-    try {
-        // Step 3: Process payment in database transaction
-        const result = await db.transaction(async (tx) => {
-            const txn = await tx.insert(transactions).values({
-                merchant_id: merchantId,
-                idempotency_key: idempotencyKey,
-                ...payload
-            }).returning();
-
-            // Create ledger entries atomically
-            await tx.insert(ledgerEntries).values([
-                { transaction_id: txn.id, entry_type: 'debit', account_type: 'customer', amount: payload.amount },
-                { transaction_id: txn.id, entry_type: 'credit', account_type: 'merchant_balance', amount: netAmount },
-                { transaction_id: txn.id, entry_type: 'credit', account_type: 'platform_fee', amount: fee }
-            ]);
-
-            return txn;
-        });
-
-        // Step 4: Cache successful response (24h TTL)
-        await valkey.setex(cacheKey, 86400, JSON.stringify(result));
-
-        return result;
-    } finally {
-        // Step 5: Release lock
-        await valkey.del(lockKey);
-    }
-}
-```
+> "The distributed lock prevents a subtle race: two retries arriving simultaneously could both pass the cache check (empty), then both attempt to insert into PostgreSQL. The UNIQUE constraint on (merchant_id, idempotency_key) would catch the second insert, but by then we may have already called the payment processor. The lock serializes processing for the same idempotency key."
 
 ### Idempotency Design Decisions
 
@@ -274,85 +156,33 @@ Customer Payment of $100:
 
 ### SQL Implementation
 
-```sql
--- Record captured payment with balanced entries
-CREATE OR REPLACE FUNCTION record_payment_capture(
-    p_transaction_id UUID,
-    p_amount BIGINT,
-    p_fee BIGINT
-) RETURNS VOID AS $$
-BEGIN
-    -- Debit customer (money coming in)
-    INSERT INTO ledger_entries (transaction_id, entry_type, account_type, amount)
-    VALUES (p_transaction_id, 'debit', 'accounts_receivable', p_amount);
+A PostgreSQL stored function `record_payment_capture` takes a transaction ID, amount, and fee as parameters. Within a single invocation it inserts three balanced ledger entries:
 
-    -- Credit merchant balance (money owed to merchant)
-    INSERT INTO ledger_entries (transaction_id, entry_type, account_type, amount)
-    VALUES (p_transaction_id, 'credit', 'merchant_balance', p_amount - p_fee);
+1. **Debit** accounts_receivable for the full amount (money coming in from customer)
+2. **Credit** merchant_balance for (amount - fee) (money owed to merchant)
+3. **Credit** platform_fee for the fee amount (our revenue)
 
-    -- Credit platform fee (our revenue)
-    INSERT INTO ledger_entries (transaction_id, entry_type, account_type, amount)
-    VALUES (p_transaction_id, 'credit', 'platform_fee', p_fee);
-END;
-$$ LANGUAGE plpgsql;
-```
+This function is called within the same database transaction as the status update, ensuring that ledger entries and transaction status are always consistent.
 
-### Daily Reconciliation Query
+### Daily Reconciliation
 
-```sql
--- Verify ledger balance (must be zero discrepancy)
-SELECT
-    DATE(created_at) as date,
-    SUM(CASE WHEN entry_type = 'debit' THEN amount ELSE 0 END) as total_debits,
-    SUM(CASE WHEN entry_type = 'credit' THEN amount ELSE 0 END) as total_credits,
-    SUM(CASE WHEN entry_type = 'debit' THEN amount ELSE -amount END) as discrepancy
-FROM ledger_entries
-WHERE created_at >= CURRENT_DATE - INTERVAL '1 day'
-GROUP BY DATE(created_at)
-HAVING SUM(CASE WHEN entry_type = 'debit' THEN amount ELSE -amount END) != 0;
-```
+A reconciliation query groups ledger entries by date and sums debits vs. credits. It uses a HAVING clause to filter for dates where the discrepancy (total debits minus total credits) is non-zero. In a correctly functioning system, this query should return zero rows -- any results indicate a bug that needs immediate investigation.
 
 ## Deep Dive: Fraud Detection Service
 
 ### Real-Time Risk Scoring
 
-```typescript
-interface FraudSignals {
-    velocityScore: number;      // Recent transaction frequency
-    amountScore: number;        // Deviation from typical amounts
-    geoScore: number;           // Distance from usual location
-    deviceScore: number;        // Device fingerprint recognition
-    mlScore: number;            // ML model prediction
-}
+The fraud scoring function evaluates five signals and combines them with weights to produce a score from 0 to 100:
 
-async function calculateFraudScore(transaction: Transaction): Promise<number> {
-    const signals: FraudSignals = {
-        // Velocity: Too many transactions in short time
-        velocityScore: await checkVelocity(transaction.card_fingerprint),
+| Signal | Weight | What It Measures |
+|--------|--------|-----------------|
+| Velocity | 25% | Number of transactions from this card in the past hour |
+| Amount anomaly | 20% | Deviation from the card's typical purchase amounts |
+| Geography | 20% | Distance between the transaction IP and the billing address |
+| Device fingerprint | 15% | Whether the device has been seen before with this card |
+| ML model | 20% | A trained model's prediction based on all available features |
 
-        // Amount: Unusual purchase amount for this card
-        amountScore: checkAmountAnomaly(transaction.amount, transaction.card_fingerprint),
-
-        // Geography: Far from usual purchase location
-        geoScore: await checkGeography(transaction.ip_address, transaction.billing_zip),
-
-        // Device: Never seen this device before
-        deviceScore: await checkDeviceFingerprint(transaction.device_id),
-
-        // ML: Trained model prediction
-        mlScore: await mlModel.predict(transaction)
-    };
-
-    // Weighted combination
-    return Math.min(100,
-        signals.velocityScore * 0.25 +
-        signals.amountScore * 0.20 +
-        signals.geoScore * 0.20 +
-        signals.deviceScore * 0.15 +
-        signals.mlScore * 0.20
-    );
-}
-```
+The final score is `min(100, weighted sum of all signals)`.
 
 ### Decision Thresholds
 
@@ -365,29 +195,14 @@ async function calculateFraudScore(transaction: Transaction): Promise<number> {
 
 ### Velocity Check with Valkey
 
-```typescript
-async function checkVelocity(cardFingerprint: string): Promise<number> {
-    const key = `velocity:${cardFingerprint}`;
-    const now = Date.now();
-    const windowMs = 3600000; // 1 hour
+The velocity check uses a sliding window implemented with a Redis sorted set. For each card fingerprint, the key `velocity:{cardFingerprint}` stores timestamps as scores:
 
-    // Sliding window count
-    const multi = valkey.multi();
-    multi.zremrangebyscore(key, 0, now - windowMs);
-    multi.zadd(key, now, `${now}`);
-    multi.zcard(key);
-    multi.expire(key, 3600);
+1. Remove entries older than 1 hour using ZREMRANGEBYSCORE
+2. Add the current timestamp with ZADD
+3. Count remaining entries with ZCARD
+4. Set a 1-hour TTL with EXPIRE
 
-    const results = await multi.exec();
-    const count = results[2][1];
-
-    // Score based on transaction count
-    if (count > 10) return 50;  // Very high velocity
-    if (count > 5) return 30;   // High velocity
-    if (count > 2) return 15;   // Moderate velocity
-    return 0;                   // Normal
-}
-```
+All four commands execute in a single MULTI/EXEC pipeline. The resulting count maps to a score: >10 transactions/hour = 50 (very high velocity), >5 = 30 (high), >2 = 15 (moderate), otherwise 0 (normal).
 
 ## API Design
 
@@ -415,91 +230,29 @@ GET    /v1/admin/reconciliation  Daily settlement reports
 
 ### Request/Response Example
 
-```http
-POST /v1/payments HTTP/1.1
-Authorization: Bearer sk_live_abc123
-Idempotency-Key: order_12345
-Content-Type: application/json
+A payment creation request is sent as `POST /v1/payments` with Bearer token authentication and an `Idempotency-Key` header. The JSON body contains: amount (in smallest currency unit, e.g., 5000 = $50.00), currency code, payment method ID, capture flag (true for immediate capture), and optional metadata (e.g., order_id).
 
-{
-    "amount": 5000,
-    "currency": "usd",
-    "payment_method_id": "pm_xyz789",
-    "capture": true,
-    "metadata": { "order_id": "12345" }
-}
-```
-
-```json
-{
-    "id": "txn_abc123",
-    "status": "captured",
-    "amount": 5000,
-    "currency": "usd",
-    "captured_amount": 5000,
-    "refunded_amount": 0,
-    "fraud_score": 12,
-    "processor_ref": "ch_stripe_xyz",
-    "created_at": "2025-01-15T10:30:00Z"
-}
-```
+The response returns the transaction object with: id, status (e.g., "captured"), amount, currency, captured and refunded amounts, fraud score, processor reference, and timestamp.
 
 ## Webhook Delivery System
 
 ### Guaranteed Delivery Pattern
 
-```typescript
-const RETRY_DELAYS = [1000, 5000, 30000, 120000, 600000]; // 1s, 5s, 30s, 2min, 10min
+The webhook delivery system uses exponential backoff with 5 retry attempts at delays of 1s, 5s, 30s, 2min, and 10min.
 
-async function deliverWebhook(webhook: Webhook): Promise<void> {
-    const signature = crypto
-        .createHmac('sha256', webhook.merchant.webhook_secret)
-        .update(JSON.stringify(webhook.payload))
-        .digest('hex');
+**Delivery flow:**
 
-    try {
-        const response = await fetch(webhook.merchant.webhook_url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Webhook-ID': webhook.id,
-                'X-Signature': `sha256=${signature}`
-            },
-            body: JSON.stringify(webhook.payload),
-            signal: AbortSignal.timeout(10000)
-        });
+1. Compute an HMAC-SHA256 signature of the payload using the merchant's webhook secret
+2. POST the payload to the merchant's registered webhook URL with headers: Content-Type, X-Webhook-ID, and X-Signature (prefixed with `sha256=`)
+3. Set a 10-second request timeout to prevent hanging connections
+4. If the merchant returns HTTP 2xx, mark the webhook as delivered with a timestamp
+5. If the request fails (network error, non-2xx status, timeout), schedule a retry
 
-        if (response.ok) {
-            await db.update(webhooks)
-                .set({ status: 'delivered', delivered_at: new Date() })
-                .where(eq(webhooks.id, webhook.id));
-        } else {
-            throw new Error(`HTTP ${response.status}`);
-        }
-    } catch (error) {
-        await scheduleRetry(webhook, error);
-    }
-}
+**Retry scheduling:**
 
-async function scheduleRetry(webhook: Webhook, error: Error): Promise<void> {
-    const delay = RETRY_DELAYS[webhook.attempts];
+The retry function checks the current attempt count against the retry delays array. If more retries are available, it increments the attempt counter, records the next retry time and last error message, and re-publishes the webhook to the RabbitMQ delivery queue with the appropriate delay. If all retries are exhausted, the webhook is marked as permanently failed.
 
-    if (delay) {
-        await db.update(webhooks).set({
-            attempts: webhook.attempts + 1,
-            next_retry_at: new Date(Date.now() + delay),
-            last_error: error.message
-        }).where(eq(webhooks.id, webhook.id));
-
-        // Re-queue with delay
-        await rabbitmq.publish('webhook.delivery', webhook, { delay });
-    } else {
-        await db.update(webhooks)
-            .set({ status: 'failed' })
-            .where(eq(webhooks.id, webhook.id));
-    }
-}
-```
+> "The retry delays are chosen to balance timeliness with recovery time. The first retry at 1 second catches transient network blips. The 10-minute final retry gives merchants time to recover from brief outages. Beyond 5 attempts, we stop retrying -- merchants can query the deliveries endpoint to manually replay missed webhooks."
 
 ## Caching Strategy
 
@@ -515,26 +268,7 @@ async function scheduleRetry(webhook: Webhook, error: Error): Promise<void> {
 
 ### Rate Limiting Implementation
 
-```typescript
-async function checkRateLimit(merchantId: string, limit = 100, windowSecs = 60): Promise<void> {
-    const key = `ratelimit:${merchantId}`;
-    const now = Date.now();
-    const windowStart = now - (windowSecs * 1000);
-
-    const count = await valkey
-        .multi()
-        .zremrangebyscore(key, 0, windowStart)
-        .zadd(key, now, `${now}-${Math.random()}`)
-        .zcard(key)
-        .expire(key, windowSecs)
-        .exec()
-        .then(r => r[2][1]);
-
-    if (count > limit) {
-        throw new RateLimitError(`Rate limit exceeded: ${count}/${limit}`);
-    }
-}
-```
+The rate limiter uses a sliding window with Redis sorted sets, checking 100 requests per 60-second window per merchant. It executes four Redis commands in a pipeline: remove entries outside the window, add the current request, count entries, and set TTL. If the count exceeds the limit, a RateLimitError is thrown.
 
 ## Scalability Considerations
 
@@ -550,34 +284,11 @@ async function checkRateLimit(merchantId: string, limit = 100, windowSecs = 60):
 
 ### Database Partitioning
 
-```sql
--- Partition transactions by month for archival and performance
-CREATE TABLE transactions (
-    -- columns as defined above
-) PARTITION BY RANGE (created_at);
-
-CREATE TABLE transactions_2025_01 PARTITION OF transactions
-    FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
-
--- Archive old partitions to cold storage
-ALTER TABLE transactions DETACH PARTITION transactions_2024_01;
--- Export to S3/MinIO in Parquet format for long-term retention
-```
+Transactions are partitioned by month using PostgreSQL's native range partitioning on the created_at column. Each month gets its own partition (e.g., transactions_2025_01 covers January 2025). Old partitions can be detached and exported to cold storage (S3/MinIO in Parquet format) for long-term regulatory retention, while keeping the active table lean for query performance.
 
 ### Connection Pooling
 
-```typescript
-// PgBouncer configuration for high connection count
-const pool = new Pool({
-    max: 20,                          // Per API server
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000
-});
-
-// With 10 API servers: 200 connections
-// PostgreSQL max_connections: 300
-// Reserve 100 for admin, workers, maintenance
-```
+Each API server maintains a pool of 20 PostgreSQL connections with 30-second idle timeout and 5-second connection timeout. With 10 API servers, that's 200 total connections. PostgreSQL's max_connections is set to 300, reserving 100 for admin queries, worker processes, and maintenance tasks.
 
 ## Trade-offs Summary
 

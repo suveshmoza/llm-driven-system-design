@@ -71,682 +71,136 @@ Design Netflix, a video streaming platform serving hundreds of millions of subsc
 
 **DASH Manifest Generation:**
 
-```typescript
-interface PlaybackManifest {
-  videoId: string;
-  title: string;
-  duration: number;
-  resumePosition: number;
-  qualities: QualityTier[];
-  subtitles: SubtitleTrack[];
-  audioTracks: AudioTrack[];
-}
+The manifest generation function produces a playback manifest containing video metadata, available quality tiers, subtitle tracks, and audio tracks. It proceeds through five steps:
 
-interface QualityTier {
-  id: string;
-  resolution: string;     // "3840x2160", "1920x1080"
-  bandwidth: number;      // bits per second
-  codec: string;          // "avc1.640028", "hev1.1.6.L150.90"
-  segmentDuration: number; // seconds per segment
-  baseUrl: string;        // CDN URL template
-}
+1. **Get video metadata**: Query PostgreSQL for the video record, joining with episodes and seasons tables if the content is a series
+2. **Get available encodings**: Query video_encodings filtered by the device's supported codecs and maximum resolution, ordered by bandwidth descending
+3. **Get resume position**: Query Cassandra's viewing_progress table for the profile's last known position on this content
+4. **Generate CDN URLs**: For each encoding, create a signed CDN URL with a 1-hour expiry token. The URL uses a segment template pattern (e.g., `seg-$Number$.m4s`) so the client can request individual segments by index
+5. **Get subtitles and audio**: Fetch subtitle and audio track metadata in parallel
 
-async function generateManifest(
-  videoId: string,
-  profileId: string,
-  deviceCapabilities: DeviceCapabilities
-): Promise<PlaybackManifest> {
-  // 1. Get video metadata
-  const video = await db.query(`
-    SELECT v.*, e.episode_number, s.season_number
-    FROM videos v
-    LEFT JOIN episodes e ON v.id = e.video_id
-    LEFT JOIN seasons s ON e.season_id = s.id
-    WHERE v.id = $1
-  `, [videoId]);
-
-  // 2. Get available encodings filtered by device
-  const encodings = await db.query(`
-    SELECT * FROM video_encodings
-    WHERE video_id = $1
-    AND codec = ANY($2)
-    AND max_resolution <= $3
-    ORDER BY bandwidth DESC
-  `, [videoId, deviceCapabilities.supportedCodecs, deviceCapabilities.maxResolution]);
-
-  // 3. Get resume position from Cassandra
-  const progress = await cassandra.execute(`
-    SELECT position_seconds FROM viewing_progress
-    WHERE profile_id = ? AND content_id = ?
-  `, [profileId, videoId]);
-
-  // 4. Generate CDN URLs with signed tokens
-  const qualities = encodings.rows.map(enc => ({
-    id: enc.id,
-    resolution: enc.resolution,
-    bandwidth: enc.bandwidth,
-    codec: enc.codec,
-    segmentDuration: 4,
-    baseUrl: generateSignedCdnUrl(videoId, enc.id, profileId),
-  }));
-
-  // 5. Get subtitles and audio tracks
-  const [subtitles, audioTracks] = await Promise.all([
-    getSubtitleTracks(videoId),
-    getAudioTracks(videoId),
-  ]);
-
-  return {
-    videoId,
-    title: video.rows[0].title,
-    duration: video.rows[0].duration_seconds,
-    resumePosition: progress.rows[0]?.position_seconds || 0,
-    qualities,
-    subtitles,
-    audioTracks,
-  };
-}
-```
+The manifest includes: videoId, title, duration, resumePosition, an array of quality tiers (each with resolution, bandwidth, codec, segment duration, and base URL), plus subtitle and audio track arrays.
 
 **CDN URL Signing:**
 
-```typescript
-function generateSignedCdnUrl(
-  videoId: string,
-  encodingId: string,
-  profileId: string
-): string {
-  const expiry = Math.floor(Date.now() / 1000) + 3600; // 1 hour
-
-  const payload = {
-    v: videoId,
-    e: encodingId,
-    p: profileId,
-    exp: expiry,
-  };
-
-  const token = jwt.sign(payload, CDN_SECRET, { algorithm: 'HS256' });
-
-  // Template URL - client replaces $Number$ with segment index
-  return `https://cdn.netflix.example/v/${videoId}/${encodingId}/seg-$Number$.m4s?token=${token}`;
-}
-```
+Each CDN URL is signed with an HMAC token containing the video ID, encoding ID, profile ID, and a 1-hour expiry timestamp. The client embeds this token as a query parameter when requesting segments, and the CDN validates it before serving content. This prevents unauthorized access and link sharing.
 
 ### 2. Viewing Progress at Scale
 
 **Cassandra Schema for High-Write Throughput:**
 
-```cql
--- Keyspace with replication
-CREATE KEYSPACE netflix_viewing WITH REPLICATION = {
-  'class': 'NetworkTopologyStrategy',
-  'us-east': 3,
-  'us-west': 3,
-  'eu-west': 3
-};
+| Table | Partition Key | Clustering Columns | Key Columns | Notes |
+|-------|--------------|-------------------|-------------|-------|
+| **viewing_progress** | profile_id | last_watched_at DESC, content_id | content_type, video_id, episode_id, position_seconds, duration_seconds, progress_percent, completed | Keyspace uses NetworkTopologyStrategy with RF=3 across us-east, us-west, eu-west. 90-day TTL. Ordered by last_watched_at DESC for "Continue Watching" queries |
+| **watch_history** | profile_id | watched_at DESC, content_id | content_type, title (denormalized), genres (SET, denormalized for recommendations) | 1-year TTL. Title and genres denormalized to avoid cross-database joins when displaying history |
 
--- Viewing progress (Continue Watching)
-CREATE TABLE viewing_progress (
-  profile_id UUID,
-  content_id UUID,
-  content_type TEXT,           -- 'movie' or 'episode'
-  video_id UUID,
-  episode_id UUID,
-  position_seconds INT,
-  duration_seconds INT,
-  progress_percent FLOAT,
-  completed BOOLEAN,
-  last_watched_at TIMESTAMP,
-  PRIMARY KEY (profile_id, last_watched_at, content_id)
-) WITH CLUSTERING ORDER BY (last_watched_at DESC)
-  AND default_time_to_live = 7776000  -- 90 days TTL
-  AND gc_grace_seconds = 864000;
-
--- Watch history (for recommendations)
-CREATE TABLE watch_history (
-  profile_id UUID,
-  content_id UUID,
-  content_type TEXT,
-  title TEXT,                  -- Denormalized for display
-  genres SET<TEXT>,            -- Denormalized for recommendations
-  watched_at TIMESTAMP,
-  PRIMARY KEY (profile_id, watched_at, content_id)
-) WITH CLUSTERING ORDER BY (watched_at DESC)
-  AND default_time_to_live = 31536000;  -- 1 year TTL
-```
+> "Cassandra is chosen over PostgreSQL for viewing progress because we need to handle 5M writes/second at peak. Each viewer sends a progress update every 10 seconds, and Cassandra's write-optimized LSM tree architecture handles this without the write amplification that would cripple PostgreSQL. The trade-off is we lose cross-table joins -- that's why we denormalize title and genres into watch_history."
 
 **Progress Update Handler:**
 
-```typescript
-interface ProgressUpdate {
-  profileId: string;
-  contentId: string;
-  contentType: 'movie' | 'episode';
-  positionSeconds: number;
-  durationSeconds: number;
-}
+The progress update function performs four operations:
 
-async function updateProgress(update: ProgressUpdate): Promise<void> {
-  const progressPercent = update.positionSeconds / update.durationSeconds;
-  const completed = progressPercent > 0.95;
+1. **Write to Cassandra**: Insert the current position, duration, progress percentage, and completion flag (>95% = completed) into the viewing_progress table
+2. **Invalidate cache**: Delete the Redis key `continue_watching:{profileId}` so the next homepage request fetches fresh data
+3. **Emit analytics event**: Publish a progress_update message to the `viewing-events` Kafka topic, keyed by profileId for partition affinity
+4. **Handle completion**: If the viewer passed the 95% threshold, record the content in watch_history and update genre preference weights for the profile
 
-  // 1. Update viewing progress in Cassandra
-  await cassandra.execute(`
-    INSERT INTO viewing_progress (
-      profile_id, content_id, content_type,
-      position_seconds, duration_seconds, progress_percent,
-      completed, last_watched_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    update.profileId,
-    update.contentId,
-    update.contentType,
-    update.positionSeconds,
-    update.durationSeconds,
-    progressPercent,
-    completed,
-    new Date(),
-  ]);
+**Progress Batching:**
 
-  // 2. Invalidate cached Continue Watching
-  await redis.del(`continue_watching:${update.profileId}`);
-
-  // 3. Emit event for analytics
-  await kafka.send({
-    topic: 'viewing-events',
-    messages: [{
-      key: update.profileId,
-      value: JSON.stringify({
-        type: 'progress_update',
-        ...update,
-        timestamp: Date.now(),
-      }),
-    }],
-  });
-
-  // 4. If completed, record in watch history
-  if (completed) {
-    await recordWatchHistory(update);
-    await updateGenrePreferences(update.profileId, update.contentId);
-  }
-}
-
-// Batch progress updates to reduce write load
-class ProgressBatcher {
-  private buffer: Map<string, ProgressUpdate> = new Map();
-  private flushInterval: NodeJS.Timer;
-
-  constructor(flushIntervalMs: number = 5000) {
-    this.flushInterval = setInterval(() => this.flush(), flushIntervalMs);
-  }
-
-  add(update: ProgressUpdate): void {
-    // Key by profile+content, only keep latest
-    const key = `${update.profileId}:${update.contentId}`;
-    this.buffer.set(key, update);
-  }
-
-  private async flush(): Promise<void> {
-    if (this.buffer.size === 0) return;
-
-    const updates = Array.from(this.buffer.values());
-    this.buffer.clear();
-
-    // Batch insert to Cassandra
-    const batch = updates.map(u => ({
-      query: `INSERT INTO viewing_progress (...) VALUES (?, ?, ...)`,
-      params: [u.profileId, u.contentId, ...],
-    }));
-
-    await cassandra.batch(batch);
-  }
-}
-```
+To reduce Cassandra write load, a ProgressBatcher class buffers updates in memory, keyed by `{profileId}:{contentId}`. Only the latest position for each profile-content pair is kept. A timer flushes the buffer every 5 seconds as a Cassandra batch insert. This reduces write volume by roughly 2x since most viewers generate multiple updates between flushes, and only the final position matters.
 
 ### 3. Continue Watching API
 
 **Efficient Query Pattern:**
 
-```typescript
-async function getContinueWatching(
-  profileId: string,
-  limit: number = 20
-): Promise<ContinueWatchingItem[]> {
-  // 1. Check cache first
-  const cached = await redis.get(`continue_watching:${profileId}`);
-  if (cached) {
-    return JSON.parse(cached);
-  }
+The Continue Watching API builds a personalized list of in-progress content through six steps:
 
-  // 2. Query Cassandra for recent progress
-  const progress = await cassandra.execute(`
-    SELECT content_id, content_type, position_seconds, duration_seconds,
-           progress_percent, last_watched_at
-    FROM viewing_progress
-    WHERE profile_id = ?
-    AND completed = false
-    ORDER BY last_watched_at DESC
-    LIMIT ?
-  `, [profileId, limit * 2]); // Over-fetch for filtering
+1. **Check cache**: Look up `continue_watching:{profileId}` in Redis. If found, return the cached list immediately
+2. **Query Cassandra**: Fetch recent viewing progress for the profile, ordered by last_watched_at descending, over-fetching at 2x the limit to account for filtering
+3. **Filter**: Keep only items where progress is between 5% and 95% (started but not completed)
+4. **Enrich with metadata**: Batch-fetch video metadata (title, poster, episode info) from PostgreSQL using the content IDs from the filtered results
+5. **Build response**: Combine Cassandra progress data with PostgreSQL metadata into response objects containing: contentId, title, episode info (e.g., "S2:E5"), poster URL, progress percentage, resume position, and last watched timestamp
+6. **Cache**: Store the assembled list in Redis with a 5-minute TTL
 
-  // 3. Filter: started watching (>5%) but not completed
-  const filtered = progress.rows.filter(p =>
-    p.progress_percent > 0.05 && p.progress_percent < 0.95
-  );
-
-  // 4. Enrich with metadata from PostgreSQL
-  const contentIds = filtered.map(p => p.content_id);
-  const metadata = await db.query(`
-    SELECT v.id, v.title, v.poster_url, v.backdrop_url, v.type,
-           e.episode_number, s.season_number, s.title as season_title
-    FROM videos v
-    LEFT JOIN episodes e ON v.id = e.video_id
-    LEFT JOIN seasons s ON e.season_id = s.id
-    WHERE v.id = ANY($1)
-  `, [contentIds]);
-
-  const metadataMap = new Map(metadata.rows.map(m => [m.id, m]));
-
-  // 5. Build response
-  const items: ContinueWatchingItem[] = filtered.slice(0, limit).map(p => {
-    const meta = metadataMap.get(p.content_id);
-    return {
-      contentId: p.content_id,
-      title: meta.title,
-      episodeInfo: meta.episode_number
-        ? `S${meta.season_number}:E${meta.episode_number}`
-        : null,
-      posterUrl: meta.poster_url,
-      progressPercent: Math.round(p.progress_percent * 100),
-      resumePosition: p.position_seconds,
-      lastWatchedAt: p.last_watched_at,
-    };
-  });
-
-  // 6. Cache for 5 minutes
-  await redis.setex(
-    `continue_watching:${profileId}`,
-    300,
-    JSON.stringify(items)
-  );
-
-  return items;
-}
-```
+> "We over-fetch from Cassandra (2x limit) because filtering out completed and barely-started content reduces the set. The metadata enrichment is a single PostgreSQL query using ANY($1) rather than N+1 queries -- this keeps the cross-database join efficient."
 
 ### 4. A/B Testing Framework
 
 **Experiment Configuration:**
 
-```typescript
-interface Experiment {
-  id: string;
-  name: string;
-  description: string;
-  status: 'draft' | 'running' | 'paused' | 'completed';
-  allocation: number;         // Percentage of traffic (0-100)
-  variants: Variant[];
-  targetGroups: TargetGroup[];
-  metrics: string[];
-  startDate: Date;
-  endDate: Date;
-}
-
-interface Variant {
-  id: string;
-  name: string;
-  weight: number;             // Weight within experiment
-  config: Record<string, any>;
-}
-
-interface TargetGroup {
-  type: 'country' | 'device' | 'plan' | 'tenure';
-  values: string[];
-  include: boolean;
-}
-```
+Each experiment contains: id, name, description, status (draft/running/paused/completed), traffic allocation percentage (0-100), an array of variants (each with id, name, weight, and config map), targeting groups (by country, device, plan, or tenure), tracked metrics, and start/end dates.
 
 **Consistent Allocation with MurmurHash:**
 
-```typescript
-import murmurhash from 'murmurhash';
+The allocation algorithm ensures each user always sees the same variant for a given experiment, without storing per-user assignments:
 
-function allocateToExperiment(
-  userId: string,
-  experiment: Experiment
-): string | null {
-  // 1. Consistent hash for stable allocation
-  const hash = murmurhash.v3(`${userId}:${experiment.id}`);
-  const bucket = hash % 10000; // 0.01% granularity
+1. **Experiment population check**: Hash `{userId}:{experimentId}` with MurmurHash v3 and take modulo 10,000 (0.01% granularity). If the result exceeds the experiment's allocation percentage x 100, the user is not in the experiment
+2. **Variant assignment**: Hash `{userId}:{experimentId}:variant` separately and map the result to variant weights. Iterate through variants, accumulating weights until the hash falls within a variant's range
 
-  // 2. Check if user is in experiment population
-  const allocationThreshold = experiment.allocation * 100;
-  if (bucket >= allocationThreshold) {
-    return null; // Not in experiment (control)
-  }
+This approach is deterministic -- the same user always gets the same variant, even across different server instances and restarts.
 
-  // 3. Allocate to variant based on weights
-  const variantBucket = murmurhash.v3(`${userId}:${experiment.id}:variant`) % 10000;
-  let cumulativeWeight = 0;
+**Getting all experiments for a user:**
 
-  for (const variant of experiment.variants) {
-    cumulativeWeight += variant.weight * 100;
-    if (variantBucket < cumulativeWeight) {
-      return variant.id;
-    }
-  }
-
-  // Fallback to first variant
-  return experiment.variants[0].id;
-}
-
-// Get all experiment allocations for a user
-async function getUserExperiments(
-  userId: string,
-  context: UserContext
-): Promise<Map<string, string>> {
-  const allocations = new Map<string, string>();
-
-  // Get running experiments
-  const experiments = await db.query(`
-    SELECT * FROM experiments
-    WHERE status = 'running'
-    AND start_date <= NOW()
-    AND (end_date IS NULL OR end_date >= NOW())
-  `);
-
-  for (const exp of experiments.rows) {
-    // Check targeting rules
-    if (!matchesTargeting(exp.target_groups, context)) {
-      continue;
-    }
-
-    const variantId = allocateToExperiment(userId, exp);
-    if (variantId) {
-      allocations.set(exp.id, variantId);
-    }
-  }
-
-  // Cache allocations (stable for experiment duration)
-  await redis.setex(
-    `experiments:${userId}`,
-    3600,
-    JSON.stringify(Object.fromEntries(allocations))
-  );
-
-  return allocations;
-}
-```
+The system queries all running experiments from PostgreSQL, checks targeting rules against the user's context (country, device type, subscription plan, tenure), runs the allocation algorithm for each eligible experiment, and caches the full allocation map in Redis with a 1-hour TTL.
 
 **Using Experiments in Application Code:**
 
-```typescript
-// Feature flag check
-async function getArtworkForVideo(
-  videoId: string,
-  profileId: string
-): Promise<string> {
-  const experiments = await getUserExperiments(profileId, context);
-  const artworkVariant = experiments.get('artwork_personalization_v2');
-
-  if (artworkVariant === 'personalized') {
-    return getPersonalizedArtwork(videoId, profileId);
-  } else if (artworkVariant === 'genre_based') {
-    return getGenreBasedArtwork(videoId, profileId);
-  } else {
-    return getDefaultArtwork(videoId);
-  }
-}
-
-// Row ordering experiment
-async function generateHomepageRows(
-  profileId: string
-): Promise<HomepageRow[]> {
-  const experiments = await getUserExperiments(profileId, context);
-  const rowOrderVariant = experiments.get('homepage_row_order_v3');
-
-  const rows = await fetchAllRows(profileId);
-
-  switch (rowOrderVariant) {
-    case 'continue_first':
-      return prioritizeContinueWatching(rows);
-    case 'trending_first':
-      return prioritizeTrending(rows);
-    case 'personalized':
-      return personalizeRowOrder(rows, profileId);
-    default:
-      return rows; // Control: default ordering
-  }
-}
-```
+Feature flags are consumed by checking the user's experiment allocations against specific experiment names. For example, an artwork experiment might have three variants: "personalized" (returns ML-ranked artwork), "genre_based" (returns genre-themed artwork), or control (returns default artwork). Similarly, homepage row ordering experiments can test different strategies like "continue watching first" vs "trending first" vs "personalized order."
 
 ### 5. Rate Limiting Strategy
 
 **Tiered Rate Limits:**
 
-```typescript
-const RATE_LIMITS = {
-  browse: { limit: 100, windowSeconds: 60 },     // Normal browsing
-  playbackStart: { limit: 30, windowSeconds: 60 }, // Streaming is expensive
-  progressUpdate: { limit: 60, windowSeconds: 60 }, // Frequent updates
-  search: { limit: 50, windowSeconds: 60 },      // Prevent scraping
-  auth: { limit: 5, windowSeconds: 300 },        // Credential stuffing protection
-};
+| Endpoint Category | Limit | Window | Rationale |
+|-------------------|-------|--------|-----------|
+| browse | 100 req | 60s | Normal browsing patterns |
+| playbackStart | 30 req | 60s | Streaming is expensive |
+| progressUpdate | 60 req | 60s | Frequent automated updates |
+| search | 50 req | 60s | Prevent catalog scraping |
+| auth | 5 req | 300s | Credential stuffing protection |
 
-async function checkRateLimit(
-  key: string,
-  limit: number,
-  windowSeconds: number
-): Promise<RateLimitResult> {
-  const now = Date.now();
-  const windowStart = now - windowSeconds * 1000;
+The rate limiter uses a **sliding window** implemented with Redis sorted sets. For each request:
 
-  // Sliding window using Redis sorted set
-  const multi = redis.multi();
-  multi.zremrangebyscore(key, 0, windowStart);   // Remove old entries
-  multi.zadd(key, now, `${now}:${Math.random()}`); // Add current request
-  multi.zcard(key);                               // Count requests
-  multi.expire(key, windowSeconds);               // Set TTL
+1. Remove entries older than the window start from the sorted set
+2. Add the current timestamp as a new entry
+3. Count remaining entries in the set
+4. Set a TTL on the key equal to the window duration
 
-  const [,, count] = await multi.exec();
+If the count exceeds the limit, the request is rejected with HTTP 429 and a Retry-After header. Response headers include X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset on every request.
 
-  return {
-    allowed: count <= limit,
-    remaining: Math.max(0, limit - count),
-    resetAt: new Date(now + windowSeconds * 1000),
-  };
-}
-
-// Middleware
-function rateLimit(category: keyof typeof RATE_LIMITS) {
-  const config = RATE_LIMITS[category];
-
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const key = `ratelimit:${category}:${req.session?.accountId || req.ip}`;
-    const result = await checkRateLimit(key, config.limit, config.windowSeconds);
-
-    res.set({
-      'X-RateLimit-Limit': config.limit,
-      'X-RateLimit-Remaining': result.remaining,
-      'X-RateLimit-Reset': result.resetAt.toISOString(),
-    });
-
-    if (!result.allowed) {
-      return res.status(429).json({
-        error: 'Too many requests',
-        retryAfter: Math.ceil((result.resetAt.getTime() - Date.now()) / 1000),
-      });
-    }
-
-    next();
-  };
-}
-```
+The rate limit key is scoped to `ratelimit:{category}:{accountId}` (or IP for unauthenticated requests), allowing different limits per endpoint category while using the same middleware.
 
 ### 6. Circuit Breaker for External Services
 
 **Implementation with Fallback:**
 
-```typescript
-class CircuitBreaker {
-  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
-  private failures: number[] = [];
-  private lastFailure: number = 0;
+The circuit breaker tracks three states (CLOSED, OPEN, HALF_OPEN), a rolling window of failure timestamps, and the last failure time. Configuration includes failure threshold, recovery timeout, and monitoring window duration.
 
-  constructor(
-    private readonly name: string,
-    private readonly options: CircuitBreakerOptions = {}
-  ) {}
+Execution flow:
 
-  async execute<T>(
-    operation: () => Promise<T>,
-    fallback?: () => T | Promise<T>
-  ): Promise<T> {
-    // Check circuit state
-    if (this.state === 'OPEN') {
-      if (Date.now() - this.lastFailure > (this.options.recoveryTimeout || 30000)) {
-        this.state = 'HALF_OPEN';
-      } else {
-        if (fallback) return fallback();
-        throw new Error(`Circuit breaker ${this.name} is OPEN`);
-      }
-    }
+1. **OPEN state**: If the recovery timeout has elapsed, transition to HALF_OPEN. Otherwise, execute the fallback function (if provided) or throw an error
+2. **CLOSED / HALF_OPEN state**: Execute the operation. On success in HALF_OPEN, transition to CLOSED and clear failures. On failure, record the timestamp. If recent failures (within the monitoring window) exceed the threshold, transition to OPEN
 
-    try {
-      const result = await operation();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      if (fallback) return fallback();
-      throw error;
-    }
-  }
+Each external service gets its own circuit breaker instance with tuned thresholds: personalization (5 failures), recommendations (3 failures, more sensitive), CDN (10 failures, more tolerant).
 
-  private onSuccess(): void {
-    if (this.state === 'HALF_OPEN') {
-      this.state = 'CLOSED';
-      this.failures = [];
-    }
-  }
-
-  private onFailure(): void {
-    this.failures.push(Date.now());
-    this.lastFailure = Date.now();
-
-    const recentFailures = this.failures.filter(
-      t => Date.now() - t < (this.options.monitorWindow || 60000)
-    );
-
-    if (recentFailures.length >= (this.options.failureThreshold || 5)) {
-      this.state = 'OPEN';
-      console.log(`Circuit breaker ${this.name} OPENED`);
-    }
-  }
-}
-
-// Service-specific circuit breakers
-const circuitBreakers = {
-  personalization: new CircuitBreaker('personalization', { failureThreshold: 5 }),
-  recommendations: new CircuitBreaker('recommendations', { failureThreshold: 3 }),
-  cdn: new CircuitBreaker('cdn', { failureThreshold: 10 }),
-};
-
-// Usage with graceful degradation
-async function getHomepageRows(profileId: string): Promise<HomepageRow[]> {
-  return circuitBreakers.personalization.execute(
-    () => personalizationService.getRows(profileId),
-    async () => {
-      // Fallback: Return cached or generic rows
-      const cached = await redis.get(`homepage:${profileId}`);
-      if (cached) return JSON.parse(cached);
-      return getGenericHomepage(); // Trending for all users
-    }
-  );
-}
-```
+**Graceful degradation example**: When the personalization circuit opens, the homepage falls back to cached personalized rows if available, or a generic trending-for-all-users homepage if not. The user sees content either way -- just less personalized during outages.
 
 ### 7. Observability
 
 **Key Metrics:**
 
-```typescript
-import { Counter, Histogram, Gauge } from 'prom-client';
-
-const metrics = {
-  streamingStarts: new Counter({
-    name: 'streaming_starts_total',
-    help: 'Total streaming playback starts',
-    labelNames: ['quality', 'content_type', 'device'],
-  }),
-
-  playbackErrors: new Counter({
-    name: 'streaming_playback_errors_total',
-    help: 'Total playback errors',
-    labelNames: ['error_type', 'content_type'],
-  }),
-
-  manifestLatency: new Histogram({
-    name: 'manifest_generation_seconds',
-    help: 'Time to generate playback manifest',
-    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5],
-  }),
-
-  progressWriteLatency: new Histogram({
-    name: 'progress_write_seconds',
-    help: 'Time to write viewing progress',
-    buckets: [0.01, 0.05, 0.1, 0.25, 0.5],
-  }),
-
-  experimentAllocations: new Counter({
-    name: 'experiment_allocations_total',
-    help: 'Experiment allocations',
-    labelNames: ['experiment_id', 'variant_id'],
-  }),
-
-  circuitBreakerState: new Gauge({
-    name: 'circuit_breaker_state',
-    help: 'Circuit breaker state (0=closed, 1=half_open, 2=open)',
-    labelNames: ['service'],
-  }),
-};
-```
+| Metric | Type | Description |
+|--------|------|-------------|
+| streaming_starts_total | Counter | Total playback starts, labeled by quality, content_type, device |
+| streaming_playback_errors_total | Counter | Playback errors by error_type and content_type |
+| manifest_generation_seconds | Histogram | Time to generate playback manifest (buckets: 50ms to 2.5s) |
+| progress_write_seconds | Histogram | Time to write viewing progress (buckets: 10ms to 500ms) |
+| experiment_allocations_total | Counter | Experiment allocations by experiment_id and variant_id |
+| circuit_breaker_state | Gauge | Circuit breaker state per service (0=closed, 1=half_open, 2=open) |
 
 **Structured Logging:**
 
-```typescript
-interface LogEntry {
-  timestamp: string;
-  level: 'info' | 'warn' | 'error';
-  service: string;
-  requestId: string;
-  profileId?: string;
-  event: string;
-  metadata: Record<string, unknown>;
-}
-
-function log(entry: Omit<LogEntry, 'timestamp'>): void {
-  console.log(JSON.stringify({
-    ...entry,
-    timestamp: new Date().toISOString(),
-  }));
-}
-
-// Usage
-log({
-  level: 'info',
-  service: 'playback',
-  requestId: req.id,
-  profileId: req.session.profileId,
-  event: 'manifest_generated',
-  metadata: {
-    videoId,
-    qualityCount: manifest.qualities.length,
-    latencyMs: Date.now() - startTime,
-  },
-});
-```
+Each log entry is serialized as single-line JSON with: timestamp (ISO 8601), level (info/warn/error), service name, requestId, optional profileId, event name, and a metadata object. For example, a `manifest_generated` event logs the videoId, quality count, and latency in milliseconds. This structured format enables correlation by requestId across services and filtering by event type for monitoring.
 
 ## Trade-offs Summary
 

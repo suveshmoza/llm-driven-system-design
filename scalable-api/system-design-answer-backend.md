@@ -88,76 +88,15 @@ This is an **infrastructure-focused problem** requiring expertise in:
 
 **Solution**: Cache-aside pattern with local L1 and Redis L2 caches.
 
-```javascript
-// backend/shared/services/cache.js
-class CacheService {
-  constructor() {
-    this.localCache = new Map();
-    this.localTTLs = new Map();
-    this.redisClient = createClient({ url: process.env.REDIS_URL });
-    this.defaultTTL = 300; // 5 minutes for L2
-    this.localTTL = 5000;  // 5 seconds for L1
-  }
+The cache service implements a two-level lookup:
 
-  async get(key) {
-    // Level 1: Check local cache first
-    const localValue = this.getLocal(key);
-    if (localValue !== null) {
-      metrics.increment('cache.l1.hit');
-      return localValue;
-    }
+1. **L1 check** — look up the key in a local in-memory Map with 5-second TTL entries. On hit, increment `cache.l1.hit` metric and return immediately.
+2. **L2 check** — on L1 miss, query Redis. On hit, parse the JSON value, populate L1 from the L2 result, increment `cache.l2.hit`, and return.
+3. **Full miss** — increment `cache.miss` and return null.
 
-    // Level 2: Check Redis
-    const redisValue = await this.redisClient.get(key);
-    if (redisValue !== null) {
-      const parsed = JSON.parse(redisValue);
-      // Populate L1 from L2 hit
-      this.setLocal(key, parsed);
-      metrics.increment('cache.l2.hit');
-      return parsed;
-    }
+**Writing**: When setting a cache value, both L1 (local Map with TTL timestamp) and L2 (Redis with configurable TTL, default 5 minutes) are updated simultaneously.
 
-    metrics.increment('cache.miss');
-    return null;
-  }
-
-  async set(key, value, ttlSeconds = this.defaultTTL) {
-    // Set both levels
-    this.setLocal(key, value);
-    await this.redisClient.setEx(
-      key,
-      ttlSeconds,
-      JSON.stringify(value)
-    );
-  }
-
-  async getOrFetch(key, fetchFn, ttlSeconds = this.defaultTTL) {
-    const cached = await this.get(key);
-    if (cached !== null) return cached;
-
-    const fresh = await fetchFn();
-    if (fresh !== null) {
-      await this.set(key, fresh, ttlSeconds);
-    }
-    return fresh;
-  }
-
-  getLocal(key) {
-    const expiry = this.localTTLs.get(key);
-    if (!expiry || Date.now() > expiry) {
-      this.localCache.delete(key);
-      this.localTTLs.delete(key);
-      return null;
-    }
-    return this.localCache.get(key);
-  }
-
-  setLocal(key, value) {
-    this.localCache.set(key, value);
-    this.localTTLs.set(key, Date.now() + this.localTTL);
-  }
-}
-```
+**Get-or-fetch pattern**: A `getOrFetch` helper wraps the two-level lookup with a fallback function. On miss, the fetch function is called, and the result is stored in both cache levels before returning.
 
 **Cache Invalidation Strategies**:
 
@@ -182,99 +121,25 @@ class CacheService {
 
 **Solution**: Sliding window algorithm using Redis sorted sets for atomic operations.
 
-```javascript
-// backend/shared/services/rateLimiter.js
-class RateLimiter {
-  constructor(redisClient) {
-    this.redis = redisClient;
-    this.tiers = {
-      anonymous: { requests: 100, window: 60 },
-      free: { requests: 1000, window: 60 },
-      pro: { requests: 10000, window: 60 },
-      enterprise: { requests: 100000, window: 60 }
-    };
-  }
+The rate limiter defines tier-based limits:
 
-  async checkLimit(identifier, tier = 'anonymous') {
-    const config = this.tiers[tier];
-    const key = `ratelimit:${tier}:${identifier}`;
-    const now = Date.now();
-    const windowStart = now - (config.window * 1000);
+| Tier | Requests/Minute | Window |
+|------|-----------------|--------|
+| Anonymous | 100 | 60s |
+| Free | 1,000 | 60s |
+| Pro | 10,000 | 60s |
+| Enterprise | 100,000 | 60s |
 
-    // Atomic Lua script for sliding window
-    const script = `
-      -- Remove expired entries
-      redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+The core algorithm is implemented as an atomic Lua script on Redis:
 
-      -- Count current requests
-      local count = redis.call('ZCARD', KEYS[1])
+1. Remove expired entries from the sorted set (score < window start timestamp)
+2. Count remaining entries (current request count)
+3. If under the limit, add the current timestamp as both score and member, set an expiry on the key, and return allowed with the updated count
+4. If at or over the limit, return denied
 
-      -- Check if under limit
-      if count < tonumber(ARGV[3]) then
-        -- Add new request
-        redis.call('ZADD', KEYS[1], ARGV[2], ARGV[2])
-        -- Set expiry
-        redis.call('EXPIRE', KEYS[1], ARGV[4])
-        return {1, count + 1, tonumber(ARGV[3]) - count - 1}
-      else
-        return {0, count, 0}
-      end
-    `;
+The middleware extracts the client identifier (API key ID or IP address), determines the tier, calls the rate limiter, and sets standard response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. If denied, it adds `Retry-After` and returns 429.
 
-    const result = await this.redis.eval(script, {
-      keys: [key],
-      arguments: [
-        windowStart.toString(),
-        now.toString(),
-        config.requests.toString(),
-        (config.window + 1).toString()
-      ]
-    });
-
-    return {
-      allowed: result[0] === 1,
-      current: result[1],
-      remaining: result[2],
-      resetAt: now + (config.window * 1000)
-    };
-  }
-}
-```
-
-**Rate Limit Headers**:
-
-```javascript
-// Middleware to add standard rate limit headers
-function rateLimitMiddleware(rateLimiter) {
-  return async (req, res, next) => {
-    const identifier = req.apiKey?.id || req.ip;
-    const tier = req.apiKey?.tier || 'anonymous';
-
-    const result = await rateLimiter.checkLimit(identifier, tier);
-
-    // Standard rate limit headers
-    res.set('X-RateLimit-Limit', result.current + result.remaining);
-    res.set('X-RateLimit-Remaining', result.remaining);
-    res.set('X-RateLimit-Reset', Math.ceil(result.resetAt / 1000));
-
-    if (!result.allowed) {
-      res.set('Retry-After', Math.ceil((result.resetAt - Date.now()) / 1000));
-      return res.status(429).json({
-        error: 'Too Many Requests',
-        retryAfter: Math.ceil((result.resetAt - Date.now()) / 1000)
-      });
-    }
-
-    next();
-  };
-}
-```
-
-**Why Sliding Window over Fixed Window**:
-- Fixed window: Allows 2x burst at window boundaries
-- Sliding window: Smooth distribution, accurate limiting
-- Memory cost: O(requests per window) in sorted set
-- Atomic operations prevent race conditions
+**Why Sliding Window over Fixed Window**: Fixed window allows 2x burst at window boundaries. Sliding window provides smooth distribution and accurate limiting. The trade-off is O(requests per window) memory in the sorted set, but atomic operations prevent race conditions across distributed servers.
 
 ---
 
@@ -284,93 +149,13 @@ function rateLimitMiddleware(rateLimiter) {
 
 **Solution**: Per-dependency circuit breakers with three states.
 
-```javascript
-// backend/shared/services/circuitBreaker.js
-class CircuitBreaker {
-  constructor(name, options = {}) {
-    this.name = name;
-    this.state = 'CLOSED';
-    this.failureCount = 0;
-    this.successCount = 0;
-    this.lastFailureTime = null;
+The circuit breaker tracks failure counts and transitions between states:
 
-    this.options = {
-      failureThreshold: options.failureThreshold || 5,
-      successThreshold: options.successThreshold || 3,
-      timeout: options.timeout || 30000,  // 30 seconds
-      resetTimeout: options.resetTimeout || 60000  // 1 minute
-    };
-  }
+- **CLOSED** (normal operation): Requests pass through. Failures are counted. When failures exceed the threshold (default 5), the breaker opens.
+- **OPEN** (failing fast): All requests are immediately rejected or routed to the fallback. After a reset timeout (default 60 seconds), the breaker moves to half-open.
+- **HALF_OPEN** (recovery testing): Requests pass through tentatively. If enough succeed (default 3), the breaker closes. If any fail, it reopens.
 
-  async execute(operation, fallback = null) {
-    if (this.state === 'OPEN') {
-      if (this.shouldAttemptReset()) {
-        this.state = 'HALF_OPEN';
-      } else {
-        metrics.increment(`circuit.${this.name}.rejected`);
-        return this.handleFallback(fallback);
-      }
-    }
-
-    try {
-      const result = await this.executeWithTimeout(operation);
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      return this.handleFallback(fallback, error);
-    }
-  }
-
-  async executeWithTimeout(operation) {
-    return Promise.race([
-      operation(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout')), this.options.timeout)
-      )
-    ]);
-  }
-
-  onSuccess() {
-    if (this.state === 'HALF_OPEN') {
-      this.successCount++;
-      if (this.successCount >= this.options.successThreshold) {
-        this.state = 'CLOSED';
-        this.failureCount = 0;
-        this.successCount = 0;
-        metrics.increment(`circuit.${this.name}.closed`);
-      }
-    } else {
-      this.failureCount = 0;
-    }
-  }
-
-  onFailure() {
-    this.failureCount++;
-    this.lastFailureTime = Date.now();
-
-    if (this.state === 'HALF_OPEN') {
-      this.state = 'OPEN';
-      this.successCount = 0;
-      metrics.increment(`circuit.${this.name}.opened`);
-    } else if (this.failureCount >= this.options.failureThreshold) {
-      this.state = 'OPEN';
-      metrics.increment(`circuit.${this.name}.opened`);
-    }
-  }
-
-  shouldAttemptReset() {
-    return Date.now() - this.lastFailureTime >= this.options.resetTimeout;
-  }
-
-  handleFallback(fallback, error = null) {
-    if (fallback) {
-      return typeof fallback === 'function' ? fallback(error) : fallback;
-    }
-    throw error || new Error('Circuit breaker open');
-  }
-}
-```
+Each operation has a timeout (default 30 seconds). If the operation exceeds this, it is treated as a failure. The `execute` method accepts an optional fallback function that is invoked when the circuit is open or a failure occurs.
 
 **State Transitions**:
 
@@ -394,150 +179,24 @@ class CircuitBreaker {
 
 **Solution**: Least connections algorithm with active health monitoring.
 
-```javascript
-// backend/load-balancer/src/index.js
-class LoadBalancer {
-  constructor(servers) {
-    this.servers = servers.map(s => ({
-      ...s,
-      healthy: true,
-      connections: 0,
-      weight: s.weight || 1,
-      consecutiveFailures: 0
-    }));
+The load balancer maintains a list of backend servers, each with a health status, active connection count, and weight. The server selection algorithm picks the healthy server with the lowest `connections / weight` ratio, which naturally distributes traffic to less-loaded or higher-capacity servers.
 
-    this.startHealthChecks();
-  }
+**Health checks** run every 10 seconds against each server's `/health/ready` endpoint (5-second timeout). A server is marked unhealthy after 3 consecutive failures and marked healthy again on the next successful check.
 
-  selectServer() {
-    const healthy = this.servers.filter(s => s.healthy);
-    if (healthy.length === 0) {
-      throw new Error('No healthy servers available');
-    }
+**Health check endpoints** follow the Kubernetes convention:
 
-    // Least connections with weights
-    return healthy.reduce((best, server) => {
-      const score = server.connections / server.weight;
-      const bestScore = best.connections / best.weight;
-      return score < bestScore ? server : best;
-    });
-  }
-
-  async healthCheck(server) {
-    try {
-      const response = await fetch(`${server.url}/health/ready`, {
-        timeout: 5000
-      });
-
-      if (response.ok) {
-        server.consecutiveFailures = 0;
-        if (!server.healthy) {
-          server.healthy = true;
-          logger.info(`Server ${server.id} marked healthy`);
-        }
-      } else {
-        this.markUnhealthy(server);
-      }
-    } catch (error) {
-      this.markUnhealthy(server);
-    }
-  }
-
-  markUnhealthy(server) {
-    server.consecutiveFailures++;
-    if (server.consecutiveFailures >= 3) {
-      server.healthy = false;
-      logger.warn(`Server ${server.id} marked unhealthy`);
-    }
-  }
-
-  startHealthChecks() {
-    setInterval(() => {
-      this.servers.forEach(s => this.healthCheck(s));
-    }, 10000); // Every 10 seconds
-  }
-}
-```
-
-**Health Check Endpoints**:
-
-```javascript
-// Liveness: Is the process running?
-app.get('/health/live', (req, res) => {
-  res.json({ status: 'ok' });
-});
-
-// Readiness: Can we serve traffic?
-app.get('/health/ready', async (req, res) => {
-  const checks = {
-    database: await checkDatabase(),
-    redis: await checkRedis(),
-    memory: process.memoryUsage().heapUsed < MAX_HEAP
-  };
-
-  const healthy = Object.values(checks).every(Boolean);
-  res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'ready' : 'not_ready',
-    checks
-  });
-});
-```
+- **Liveness** (`/health/live`): Returns 200 if the process is running. Used to detect deadlocks.
+- **Readiness** (`/health/ready`): Checks database connectivity, Redis connectivity, and memory usage. Returns 200 if all checks pass, 503 otherwise. Used by the load balancer to determine if a server can accept traffic.
 
 ---
 
 ## 5. Database Schema (3 minutes)
 
-```sql
--- API key management
-CREATE TABLE api_keys (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id),
-  key_hash VARCHAR(64) NOT NULL UNIQUE,  -- SHA-256 of key
-  key_prefix VARCHAR(8) NOT NULL,         -- First 8 chars for display
-  tier VARCHAR(20) DEFAULT 'free',
-  scopes TEXT[] DEFAULT '{}',
-  rate_limit_override INTEGER,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  last_used_at TIMESTAMPTZ,
-  expires_at TIMESTAMPTZ
-);
-
--- Partitioned request logs for analytics
-CREATE TABLE request_logs (
-  id BIGSERIAL,
-  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  api_key_id UUID REFERENCES api_keys(id),
-  method VARCHAR(10) NOT NULL,
-  path VARCHAR(255) NOT NULL,
-  status_code INTEGER NOT NULL,
-  response_time_ms INTEGER NOT NULL,
-  request_size INTEGER,
-  response_size INTEGER,
-  ip_address INET,
-  user_agent TEXT,
-  error_message TEXT,
-  server_id VARCHAR(50)
-) PARTITION BY RANGE (timestamp);
-
--- Auto-create monthly partitions
-CREATE TABLE request_logs_2024_01 PARTITION OF request_logs
-  FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
-
--- Rate limit configurations
-CREATE TABLE rate_limit_configs (
-  id SERIAL PRIMARY KEY,
-  tier VARCHAR(20) UNIQUE NOT NULL,
-  requests_per_minute INTEGER NOT NULL,
-  burst_allowance INTEGER DEFAULT 0,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes for common queries
-CREATE INDEX idx_request_logs_timestamp ON request_logs (timestamp DESC);
-CREATE INDEX idx_request_logs_api_key ON request_logs (api_key_id, timestamp DESC);
-CREATE INDEX idx_api_keys_hash ON api_keys (key_hash) WHERE is_active = true;
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **api_keys** | id (UUID PK), user_id (FK users), key_hash (SHA-256, unique), key_prefix (first 8 chars for display), tier (default 'free'), scopes (TEXT array), rate_limit_override, is_active, created_at, last_used_at, expires_at | key_hash WHERE is_active = true (partial index) | Only the hash is stored, never the raw key |
+| **request_logs** | id (BIGSERIAL), timestamp, api_key_id (FK api_keys), method, path, status_code, response_time_ms, request_size, response_size, ip_address, user_agent, error_message, server_id | timestamp DESC; (api_key_id, timestamp DESC) | Partitioned by RANGE on timestamp with monthly partitions for lifecycle management |
+| **rate_limit_configs** | id (SERIAL PK), tier (unique), requests_per_minute, burst_allowance, updated_at | — | Configurable per-tier rate limits |
 
 **Data Lifecycle**:
 

@@ -108,303 +108,52 @@ The key insight is that most cells in a spreadsheet are empty. Storing only non-
 
 ### Connection Management
 
-```typescript
-import { WebSocketServer, WebSocket } from 'ws'
-import { redis, redisSubscriber } from './shared/redis'
-import { pool } from './shared/db'
+The collaboration server maintains two in-memory data structures: a map of connection IDs to client metadata (WebSocket reference, user ID, spreadsheet ID, last ping time), and a map of spreadsheet IDs to sets of connection IDs ("rooms").
 
-interface ClientConnection {
-  ws: WebSocket
-  userId: string
-  spreadsheetId: string
-  lastPing: number
-}
+**Handling a new connection:**
 
-class CollaborationServer {
-  private connections = new Map<string, ClientConnection>()
-  private rooms = new Map<string, Set<string>>() // spreadsheetId -> connectionIds
+1. Generate a connection ID from the user ID and timestamp.
+2. Register the connection in the connections map.
+3. If this is the first connection to a spreadsheet, create a new room and subscribe to the Redis pub/sub channel for that spreadsheet.
+4. Add the connection to the room.
+5. UPSERT the collaborators table to record presence (or refresh last_seen).
+6. Broadcast a USER_JOINED event (with user name and cursor color) to all other clients in the room.
+7. Send the full spreadsheet state (all cells, sheets, collaborators) to the newly connected client.
 
-  async handleConnection(ws: WebSocket, spreadsheetId: string, userId: string) {
-    const connectionId = `${userId}:${Date.now()}`
+**Handling incoming messages:**
 
-    this.connections.set(connectionId, {
-      ws,
-      userId,
-      spreadsheetId,
-      lastPing: Date.now()
-    })
+The server dispatches on message type: CELL_EDIT, CURSOR_MOVE, SELECTION_CHANGE, UNDO, or REDO.
 
-    // Add to room
-    if (!this.rooms.has(spreadsheetId)) {
-      this.rooms.set(spreadsheetId, new Set())
-      // Subscribe to Redis channel for this spreadsheet
-      await redisSubscriber.subscribe(`spreadsheet:${spreadsheetId}`)
-    }
-    this.rooms.get(spreadsheetId)!.add(connectionId)
+**Handling a cell edit:**
 
-    // Update presence in database
-    await pool.query(`
-      INSERT INTO collaborators (spreadsheet_id, user_id, joined_at, last_seen)
-      VALUES ($1, $2, NOW(), NOW())
-      ON CONFLICT (spreadsheet_id, user_id)
-      DO UPDATE SET last_seen = NOW()
-    `, [spreadsheetId, userId])
+1. Check the idempotency cache in Redis using the request ID. If already processed, return the cached response.
+2. If the value starts with "=", compute the formula result using the server-side formula engine.
+3. UPSERT the cell in the database with the raw value and computed value.
+4. Record the edit in edit_history with both forward and inverse data for undo support.
+5. Publish the CELL_UPDATED event to Redis pub/sub for the spreadsheet channel (this reaches all servers).
+6. Store the response in Redis for idempotency (24-hour TTL).
 
-    // Broadcast user joined
-    await this.broadcastToRoom(spreadsheetId, {
-      type: 'USER_JOINED',
-      userId,
-      name: await this.getUserName(userId),
-      color: await this.getUserColor(userId)
-    }, connectionId)
+**Broadcasting to a room:**
 
-    // Send current state to new user
-    const state = await this.getSpreadsheetState(spreadsheetId)
-    ws.send(JSON.stringify({ type: 'STATE_SYNC', ...state }))
-  }
-
-  async handleMessage(connectionId: string, message: any) {
-    const conn = this.connections.get(connectionId)
-    if (!conn) return
-
-    switch (message.type) {
-      case 'CELL_EDIT':
-        await this.handleCellEdit(conn, message)
-        break
-      case 'CURSOR_MOVE':
-        await this.handleCursorMove(conn, message)
-        break
-      case 'SELECTION_CHANGE':
-        await this.handleSelectionChange(conn, message)
-        break
-      case 'UNDO':
-        await this.handleUndo(conn, message)
-        break
-      case 'REDO':
-        await this.handleRedo(conn, message)
-        break
-    }
-  }
-
-  async handleCellEdit(conn: ClientConnection, message: any) {
-    const { sheetId, row, col, value, requestId } = message
-
-    // Check idempotency
-    if (requestId) {
-      const cached = await redis.get(`idempotent:${requestId}`)
-      if (cached) {
-        conn.ws.send(cached)
-        return
-      }
-    }
-
-    // Update database
-    let computedValue = value
-    if (value?.startsWith('=')) {
-      // Formula - compute result
-      computedValue = await this.computeFormula(sheetId, row, col, value)
-    }
-
-    await pool.query(`
-      INSERT INTO cells (sheet_id, row_index, col_index, raw_value, computed_value, updated_by)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (sheet_id, row_index, col_index)
-      DO UPDATE SET
-        raw_value = EXCLUDED.raw_value,
-        computed_value = EXCLUDED.computed_value,
-        updated_by = EXCLUDED.updated_by,
-        updated_at = NOW()
-    `, [sheetId, row, col, value, computedValue, conn.userId])
-
-    // Record in edit history
-    const oldValue = await this.getCellValue(sheetId, row, col)
-    await pool.query(`
-      INSERT INTO edit_history (sheet_id, user_id, operation_type, operation_data, inverse_data)
-      VALUES ($1, $2, 'SET_CELL', $3, $4)
-    `, [
-      sheetId,
-      conn.userId,
-      JSON.stringify({ row, col, newValue: value }),
-      JSON.stringify({ row, col, oldValue })
-    ])
-
-    // Broadcast to all clients via Redis pub/sub
-    const update = {
-      type: 'CELL_UPDATED',
-      sheetId,
-      row,
-      col,
-      value,
-      computedValue,
-      userId: conn.userId
-    }
-
-    await redis.publish(`spreadsheet:${conn.spreadsheetId}`, JSON.stringify(update))
-
-    // Store for idempotency
-    if (requestId) {
-      await redis.set(`idempotent:${requestId}`, JSON.stringify(update), 'EX', 86400)
-    }
-  }
-
-  async broadcastToRoom(spreadsheetId: string, message: any, excludeConnectionId?: string) {
-    const room = this.rooms.get(spreadsheetId)
-    if (!room) return
-
-    const messageStr = JSON.stringify(message)
-    for (const connectionId of room) {
-      if (connectionId === excludeConnectionId) continue
-      const conn = this.connections.get(connectionId)
-      if (conn?.ws.readyState === WebSocket.OPEN) {
-        conn.ws.send(messageStr)
-      }
-    }
-  }
-}
-```
+Iterate all connections in the room, skip the sender (if specified), and send the serialized message to each connection whose WebSocket is in the OPEN state.
 
 ### Multi-Server Synchronization with Redis Pub/Sub
 
-```typescript
-class RedisSubscriptionManager {
-  private subscriber: Redis
+A dedicated Redis subscriber listens for messages on spreadsheet channels (format: `spreadsheet:{id}`). When a message arrives, the manager extracts the spreadsheet ID from the channel name, parses the message, and broadcasts it to all local WebSocket clients in that spreadsheet's room. This ensures that edits made on Server A are immediately visible to clients connected to Server B.
 
-  constructor() {
-    this.subscriber = new Redis(process.env.REDIS_URL)
-    this.subscriber.on('message', this.handleMessage.bind(this))
-  }
-
-  private handleMessage(channel: string, message: string) {
-    // Channel format: spreadsheet:{id}
-    const spreadsheetId = channel.split(':')[1]
-    const data = JSON.parse(message)
-
-    // Broadcast to all local WebSocket clients in this room
-    collaborationServer.broadcastToRoom(spreadsheetId, data)
-  }
-
-  async subscribeToSpreadsheet(spreadsheetId: string) {
-    await this.subscriber.subscribe(`spreadsheet:${spreadsheetId}`)
-  }
-
-  async unsubscribeFromSpreadsheet(spreadsheetId: string) {
-    await this.subscriber.unsubscribe(`spreadsheet:${spreadsheetId}`)
-  }
-}
-```
+The manager subscribes to a channel when the first local client opens a spreadsheet, and unsubscribes when the last local client disconnects.
 
 ## Deep Dive: Caching Strategy (5 minutes)
 
 ### Multi-Layer Cache Architecture
 
-```typescript
-import Redis from 'ioredis'
+The cache operates in three layers:
 
-const redis = new Redis(process.env.REDIS_URL)
+**Layer 1 - Spreadsheet metadata (30-minute TTL):** Check Redis for cached metadata. On miss, query PostgreSQL, cache the result, and return.
 
-class SpreadsheetCache {
-  // Layer 1: Spreadsheet metadata (30 min TTL)
-  async getSpreadsheetMeta(id: string): Promise<SpreadsheetMeta | null> {
-    const cached = await redis.get(`spreadsheet:${id}:meta`)
-    if (cached) return JSON.parse(cached)
+**Layer 2 - Cell data using Redis Hashes (15-minute TTL):** Cell data is stored in Redis hashes keyed by `sheet:{sheetId}:cells`, with individual cells keyed as `{row}:{col}`. On cache miss, load all cells for the sheet from PostgreSQL and populate the Redis hash using a pipeline for efficiency. For cell updates, a write-through strategy is used: the cache and database are updated in parallel. Cache invalidation events are published via Redis pub/sub to other servers.
 
-    const result = await pool.query(
-      'SELECT * FROM spreadsheets WHERE id = $1',
-      [id]
-    )
-    if (result.rows[0]) {
-      await redis.set(
-        `spreadsheet:${id}:meta`,
-        JSON.stringify(result.rows[0]),
-        'EX', 1800
-      )
-      return result.rows[0]
-    }
-    return null
-  }
-
-  // Layer 2: Cell data using Redis Hashes
-  async getCells(sheetId: string): Promise<Map<string, CellData>> {
-    const cells = new Map<string, CellData>()
-
-    // Try cache first
-    const cached = await redis.hgetall(`sheet:${sheetId}:cells`)
-    if (Object.keys(cached).length > 0) {
-      for (const [key, value] of Object.entries(cached)) {
-        cells.set(key, JSON.parse(value))
-      }
-      return cells
-    }
-
-    // Fall back to database
-    const result = await pool.query(
-      'SELECT row_index, col_index, raw_value, computed_value, format FROM cells WHERE sheet_id = $1',
-      [sheetId]
-    )
-
-    const pipeline = redis.pipeline()
-    for (const row of result.rows) {
-      const key = `${row.row_index}:${row.col_index}`
-      const cellData = {
-        rawValue: row.raw_value,
-        computedValue: row.computed_value,
-        format: row.format
-      }
-      cells.set(key, cellData)
-      pipeline.hset(`sheet:${sheetId}:cells`, key, JSON.stringify(cellData))
-    }
-    pipeline.expire(`sheet:${sheetId}:cells`, 900) // 15 min TTL
-    await pipeline.exec()
-
-    return cells
-  }
-
-  // Write-through for cell updates
-  async updateCell(sheetId: string, row: number, col: number, data: CellData) {
-    const key = `${row}:${col}`
-
-    await Promise.all([
-      // Update cache
-      redis.hset(`sheet:${sheetId}:cells`, key, JSON.stringify(data)),
-      // Update database
-      pool.query(`
-        INSERT INTO cells (sheet_id, row_index, col_index, raw_value, computed_value, format)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (sheet_id, row_index, col_index)
-        DO UPDATE SET raw_value = $4, computed_value = $5, format = $6, updated_at = NOW()
-      `, [sheetId, row, col, data.rawValue, data.computedValue, data.format])
-    ])
-
-    // Invalidate on other servers via pub/sub
-    await redis.publish(`invalidate:${sheetId}`, JSON.stringify({ row, col }))
-  }
-
-  // Layer 3: Collaborator presence (5 min TTL)
-  async getCollaborators(spreadsheetId: string): Promise<Collaborator[]> {
-    const cached = await redis.get(`spreadsheet:${spreadsheetId}:collaborators`)
-    if (cached) return JSON.parse(cached)
-
-    const result = await pool.query(`
-      SELECT c.user_id, c.cursor_row, c.cursor_col,
-             c.selection_start_row, c.selection_start_col,
-             c.selection_end_row, c.selection_end_col,
-             u.name, u.color
-      FROM collaborators c
-      JOIN users u ON c.user_id = u.id
-      WHERE c.spreadsheet_id = $1
-        AND c.last_seen > NOW() - INTERVAL '5 minutes'
-    `, [spreadsheetId])
-
-    await redis.set(
-      `spreadsheet:${spreadsheetId}:collaborators`,
-      JSON.stringify(result.rows),
-      'EX', 300
-    )
-
-    return result.rows
-  }
-}
-```
+**Layer 3 - Collaborator presence (5-minute TTL):** Active collaborators for a spreadsheet are cached in Redis. The query joins the collaborators table with users to include cursor positions, selection ranges, names, and colors. Only collaborators seen within the last 5 minutes are included.
 
 ## Deep Dive: Conflict Resolution (5 minutes)
 
@@ -412,191 +161,41 @@ class SpreadsheetCache {
 
 The backend uses a simple but effective last-write-wins strategy at the cell level:
 
-```typescript
-class ConflictResolver {
-  // Server is the source of truth
-  // All edits go through server, which determines final order
-  async handleConcurrentEdits(sheetId: string, edits: CellEdit[]): Promise<CellEdit[]> {
-    // Sort by server receive time
-    edits.sort((a, b) => a.serverTimestamp - b.serverTimestamp)
+All edits are routed through the server, which assigns a server-receive timestamp to determine ordering. When concurrent edits arrive for the same cell, the server sorts them by timestamp and keeps only the most recent value. Each cell is treated as an independent unit, so edits to different cells never conflict.
 
-    const resolvedEdits: CellEdit[] = []
-    const cellVersions = new Map<string, number>()
-
-    for (const edit of edits) {
-      const cellKey = `${edit.row}:${edit.col}`
-      const currentVersion = cellVersions.get(cellKey) || 0
-
-      // Last write wins - accept if newer
-      if (edit.serverTimestamp > currentVersion) {
-        cellVersions.set(cellKey, edit.serverTimestamp)
-        resolvedEdits.push(edit)
-      }
-    }
-
-    return resolvedEdits
-  }
-}
-
-// Why this works for spreadsheets:
-// 1. Each cell is an independent unit
-// 2. Real conflicts (two users editing same cell) are rare
-// 3. Server ordering provides deterministic resolution
-// 4. Much simpler than Operational Transformation (OT) or CRDTs
-```
+> "This works for spreadsheets because: (1) each cell is an independent unit, (2) real conflicts where two users edit the same cell simultaneously are rare, (3) server ordering provides deterministic resolution, and (4) this is much simpler than Operational Transformation or CRDTs."
 
 ### Optimistic Updates with Rollback
 
-```typescript
-// Server-side validation
-async function validateAndApplyEdit(edit: CellEdit): Promise<EditResult> {
-  // Validate cell coordinates
-  if (edit.row < 0 || edit.col < 0) {
-    return { success: false, error: 'Invalid cell coordinates' }
-  }
+Server-side validation runs before applying each edit:
 
-  // Validate value size
-  if (edit.value && edit.value.length > 32768) {
-    return { success: false, error: 'Cell value too large' }
-  }
-
-  // Apply edit
-  const result = await applyEdit(edit)
-
-  if (!result.success) {
-    // Tell client to rollback
-    return {
-      success: false,
-      error: result.error,
-      rollback: { row: edit.row, col: edit.col, originalValue: result.originalValue }
-    }
-  }
-
-  return { success: true, computedValue: result.computedValue }
-}
-```
+1. **Validate cell coordinates** - Reject if row or column index is negative.
+2. **Validate value size** - Reject if the cell value exceeds 32,768 characters.
+3. **Apply the edit** - Attempt to write to the database.
+4. **Handle failure** - If the edit fails, return a rollback instruction to the client containing the original cell value so the client can revert its optimistic update.
 
 ## Deep Dive: Formula Engine Integration (5 minutes)
 
 ### Server-Side Formula Computation
 
-```typescript
-import { HyperFormula } from 'hyperformula'
+The server maintains an in-memory HyperFormula engine instance per active sheet. When a formula is set in a cell:
 
-class ServerFormulaEngine {
-  private engines = new Map<string, HyperFormula>() // sheetId -> engine
+1. **Get or create engine** - If no HyperFormula instance exists for this sheet, create one with an empty sheet.
+2. **Set cell contents** - Pass the formula string to HyperFormula at the specified row and column.
+3. **Get computed value** - Retrieve the calculated result from the engine.
+4. **Get dependents** - Query HyperFormula for all cells that depend on this cell (for cascade recalculation).
 
-  getOrCreateEngine(sheetId: string): HyperFormula {
-    if (!this.engines.has(sheetId)) {
-      const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
-      hf.addSheet('Sheet1')
-      this.engines.set(sheetId, hf)
-    }
-    return this.engines.get(sheetId)!
-  }
+**Bulk recalculation:** When a cell changes, the engine identifies all dependent cells (those with formulas referencing the changed cell). For each dependent, the server retrieves the new computed value and returns the list of cell updates that need to be broadcast to clients.
 
-  async computeFormula(
-    sheetId: string,
-    row: number,
-    col: number,
-    formula: string
-  ): Promise<{ computedValue: any; dependents: Array<{ row: number; col: number }> }> {
-    const hf = this.getOrCreateEngine(sheetId)
-
-    // Set the formula
-    hf.setCellContents({ sheet: 0, row, col }, formula)
-
-    // Get computed value
-    const computedValue = hf.getCellValue({ sheet: 0, row, col })
-
-    // Get dependent cells that need recalculation
-    const dependents = hf.getCellDependents({ sheet: 0, row, col })
-      .map(addr => ({ row: addr.row, col: addr.col }))
-
-    return { computedValue, dependents }
-  }
-
-  // Bulk recalculation when a cell changes
-  async recalculateDependents(
-    sheetId: string,
-    changedCell: { row: number; col: number }
-  ): Promise<CellUpdate[]> {
-    const hf = this.getOrCreateEngine(sheetId)
-
-    // Get all cells that depend on the changed cell
-    const dependents = hf.getCellDependents({
-      sheet: 0,
-      row: changedCell.row,
-      col: changedCell.col
-    })
-
-    const updates: CellUpdate[] = []
-
-    for (const dep of dependents) {
-      const newValue = hf.getCellValue(dep)
-      updates.push({
-        row: dep.row,
-        col: dep.col,
-        computedValue: newValue
-      })
-    }
-
-    return updates
-  }
-
-  // Clean up when spreadsheet is closed
-  destroyEngine(sheetId: string) {
-    const hf = this.engines.get(sheetId)
-    if (hf) {
-      hf.destroy()
-      this.engines.delete(sheetId)
-    }
-  }
-}
-```
+**Cleanup:** When a spreadsheet is closed (no active connections), the HyperFormula instance is destroyed and removed from memory to prevent leaks.
 
 ## Deep Dive: Circuit Breaker for Redis (4 minutes)
 
-```typescript
-import CircuitBreaker from 'opossum'
+Redis pub/sub operations are wrapped in a circuit breaker with a 5-second timeout, 50% error threshold, and 10-second reset timeout (minimum 5 requests before evaluating). The fallback continues operation in single-server mode -- edits still work locally but are not broadcast to other servers.
 
-// Circuit breaker for Redis pub/sub operations
-const redisPubSubBreaker = new CircuitBreaker(
-  async (channel: string, message: string) => {
-    await redis.publish(channel, message)
-  },
-  {
-    timeout: 5000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 10000,
-    volumeThreshold: 5
-  }
-)
+The breaker emits events on state transitions: when it opens, a Prometheus metric is set to indicate Redis pub/sub is unavailable and an error is logged. When it closes, the metric resets and an info log is written.
 
-// Fallback: continue in single-server mode
-redisPubSubBreaker.fallback(() => {
-  logger.warn('Redis pub/sub unavailable, operating in single-server mode')
-  return Promise.resolve()
-})
-
-redisPubSubBreaker.on('open', () => {
-  metrics.circuitBreakerState.set({ name: 'redis_pubsub' }, 2)
-  logger.error('Redis pub/sub circuit breaker OPEN')
-})
-
-redisPubSubBreaker.on('close', () => {
-  metrics.circuitBreakerState.set({ name: 'redis_pubsub' }, 0)
-  logger.info('Redis pub/sub circuit breaker CLOSED')
-})
-
-// Usage in broadcast
-async function broadcastEdit(spreadsheetId: string, update: CellUpdate) {
-  await redisPubSubBreaker.fire(
-    `spreadsheet:${spreadsheetId}`,
-    JSON.stringify(update)
-  )
-}
-```
+For broadcasting edits, the circuit breaker wraps the Redis PUBLISH call, ensuring that Redis failures do not block cell editing on the primary server.
 
 ## Database Indexing and Query Optimization (3 minutes)
 
@@ -613,26 +212,7 @@ async function broadcastEdit(spreadsheetId: string, update: CellUpdate) {
 
 ### Connection Pool Configuration
 
-```typescript
-import { Pool } from 'pg'
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,              // Maximum connections
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-  statement_timeout: 5000  // Kill queries over 5 seconds
-})
-
-// Track pool metrics
-pool.on('acquire', () => {
-  metrics.dbPoolActive.inc()
-})
-
-pool.on('release', () => {
-  metrics.dbPoolActive.dec()
-})
-```
+The PostgreSQL connection pool is configured with a maximum of 20 connections, 30-second idle timeout, 2-second connection timeout, and a 5-second statement timeout to kill runaway queries. Pool metrics (active connections) are tracked via Prometheus counters on acquire and release events.
 
 ## Trade-offs Discussion (3 minutes)
 

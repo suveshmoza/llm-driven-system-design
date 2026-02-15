@@ -196,98 +196,18 @@ Card Network Slow -> All requests queue -> Thread pool exhausted
 
 ### Implementation
 
-```javascript
-class CircuitBreaker {
-  constructor(options = {}) {
-    this.failureThreshold = options.failureThreshold || 5;
-    this.successThreshold = options.successThreshold || 3;
-    this.timeout = options.timeout || 10000;        // 10 second call timeout
-    this.resetTimeout = options.resetTimeout || 30000; // 30 second reset
+The circuit breaker implements a three-state machine: CLOSED (normal), OPEN (failing fast), and HALF_OPEN (testing recovery).
 
-    this.state = 'CLOSED';  // CLOSED -> OPEN -> HALF_OPEN -> CLOSED
-    this.failureCount = 0;
-    this.successCount = 0;
-    this.nextAttempt = null;
-  }
+**State transitions:**
 
-  async execute(operation) {
-    // OPEN state - fail fast
-    if (this.state === 'OPEN') {
-      if (Date.now() < this.nextAttempt) {
-        throw new CircuitBreakerOpenError(
-          `Circuit breaker is open, retry after ${this.nextAttempt - Date.now()}ms`
-        );
-      }
-      // Transition to HALF_OPEN to test
-      this.state = 'HALF_OPEN';
-    }
+- **CLOSED to OPEN**: After 5 consecutive failures, the breaker opens and records the timestamp. All subsequent calls fail immediately without contacting the card network, preventing cascade failures.
+- **OPEN to HALF_OPEN**: After 30 seconds (the reset timeout), the breaker allows a single test request through.
+- **HALF_OPEN to CLOSED**: After 3 consecutive successes in the half-open state, the breaker resets to closed.
+- **HALF_OPEN to OPEN**: Any failure in half-open immediately reopens the breaker.
 
-    try {
-      // Execute with timeout
-      const result = await Promise.race([
-        operation(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Operation timed out')), this.timeout)
-        )
-      ]);
+Each call includes a 10-second timeout using Promise.race - if the card network doesn't respond within 10 seconds, it counts as a failure.
 
-      this.onSuccess();
-      return result;
-
-    } catch (error) {
-      this.onFailure();
-      throw error;
-    }
-  }
-
-  onSuccess() {
-    if (this.state === 'HALF_OPEN') {
-      this.successCount++;
-      if (this.successCount >= this.successThreshold) {
-        this.reset(); // Back to CLOSED
-      }
-    } else {
-      this.failureCount = 0;
-    }
-  }
-
-  onFailure() {
-    this.failureCount++;
-
-    if (this.state === 'HALF_OPEN' || this.failureCount >= this.failureThreshold) {
-      this.state = 'OPEN';
-      this.nextAttempt = Date.now() + this.resetTimeout;
-      this.successCount = 0;
-    }
-  }
-
-  reset() {
-    this.state = 'CLOSED';
-    this.failureCount = 0;
-    this.successCount = 0;
-  }
-}
-
-// Per-network circuit breakers
-const cardNetworkBreakers = {
-  visa: new CircuitBreaker({ failureThreshold: 5, resetTimeout: 30000 }),
-  mastercard: new CircuitBreaker({ failureThreshold: 5, resetTimeout: 30000 }),
-  amex: new CircuitBreaker({ failureThreshold: 5, resetTimeout: 30000 })
-};
-
-async function authorizeCard(paymentMethod, amount, currency) {
-  const network = getCardNetwork(paymentMethod.card_bin);
-  const breaker = cardNetworkBreakers[network];
-
-  return breaker.execute(async () => {
-    return await cardNetworkGateway.authorize({
-      token: paymentMethod.card_token,
-      amount,
-      currency
-    });
-  });
-}
-```
+**Per-network isolation**: We maintain separate circuit breaker instances for each card network (Visa, Mastercard, Amex). This way, if Visa's network is experiencing issues, Mastercard and Amex payments continue processing normally. The card network is determined from the card's BIN (first 6 digits).
 
 ---
 
@@ -295,101 +215,21 @@ async function authorizeCard(paymentMethod, amount, currency) {
 
 ### Guaranteed Delivery with Retry
 
-```javascript
-class WebhookService {
-  constructor(queue, redis) {
-    this.queue = queue;
-    this.redis = redis;
-  }
+The webhook service handles event delivery with guaranteed at-least-once semantics:
 
-  async send(merchantId, eventType, data) {
-    const merchant = await getMerchant(merchantId);
-    if (!merchant.webhook_url) return;
+**Event creation:**
+1. Build the event payload with a unique ID (`evt_{uuid}`), event type, data, timestamp, and API version
+2. Generate an HMAC-SHA256 signature over `{timestamp}.{event_json}` using the merchant's webhook secret
+3. Enqueue the delivery job with 5 retry attempts and exponential backoff (1s, 2s, 4s, 8s, 16s)
+4. Record the delivery attempt in the database for audit tracking
 
-    const event = {
-      id: `evt_${crypto.randomUUID()}`,
-      type: eventType,
-      data,
-      created: Date.now(),
-      api_version: '2024-01-01'
-    };
+**Delivery worker:**
+1. POST the event JSON to the merchant's webhook URL with headers including Content-Type, the Stripe-Signature (format: `t={timestamp},v1={signature}`), and User-Agent
+2. Apply a 30-second timeout using an AbortController
+3. On success (2xx response), update delivery status to "delivered" with timestamp
+4. On failure (non-2xx, timeout, or network error), update the failure status and error message, then re-throw to let the queue handle retry with backoff
 
-    // Generate HMAC signature
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signedPayload = `${timestamp}.${JSON.stringify(event)}`;
-    const signature = crypto
-      .createHmac('sha256', merchant.webhook_secret)
-      .update(signedPayload)
-      .digest('hex');
-
-    // Queue for delivery with exponential backoff
-    await this.queue.add('webhook_delivery', {
-      merchantId,
-      url: merchant.webhook_url,
-      event,
-      signature: `t=${timestamp},v1=${signature}`
-    }, {
-      attempts: 5,
-      backoff: {
-        type: 'exponential',
-        delay: 1000  // 1s, 2s, 4s, 8s, 16s
-      }
-    });
-
-    // Log for audit
-    await db.query(`
-      INSERT INTO webhook_deliveries (event_id, merchant_id, status)
-      VALUES ($1, $2, 'pending')
-    `, [event.id, merchantId]);
-  }
-}
-
-// Webhook delivery worker
-webhookQueue.process('webhook_delivery', async (job) => {
-  const { url, event, signature, merchantId } = job.data;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Stripe-Signature': signature,
-        'User-Agent': 'Stripe/1.0'
-      },
-      body: JSON.stringify(event),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`Webhook failed with status ${response.status}`);
-    }
-
-    // Update delivery status
-    await db.query(`
-      UPDATE webhook_deliveries
-      SET status = 'delivered', delivered_at = NOW()
-      WHERE event_id = $1
-    `, [event.id]);
-
-  } catch (error) {
-    clearTimeout(timeout);
-
-    // Update failure status
-    await db.query(`
-      UPDATE webhook_deliveries
-      SET status = 'failed', last_error = $2, attempts = attempts + 1
-      WHERE event_id = $1
-    `, [event.id, error.message]);
-
-    throw error; // Let BullMQ handle retry
-  }
-});
-```
+This ensures merchants eventually receive every event, even if their endpoint is temporarily unavailable.
 
 ---
 

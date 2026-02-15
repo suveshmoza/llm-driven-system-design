@@ -157,140 +157,27 @@ The order placement flow ensures ACID guarantees with idempotency:
 
 ### Smart Order Routing
 
-```typescript
-class OrderRouter {
-  private brokers: Map<string, BrokerInterface> = new Map([
-    ['citadel', new CitadelBroker()],
-    ['virtu', new VirtuBroker()],
-    ['nasdaq', new NasdaqDirectBroker()]
-  ]);
-  private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+The smart order router maintains connections to multiple broker/venue interfaces (e.g., Citadel, Virtu, NASDAQ Direct), each wrapped in its own circuit breaker (5s timeout, 50% error threshold, 30s reset).
 
-  constructor() {
-    // Initialize circuit breakers for each broker
-    for (const [name, broker] of this.brokers) {
-      this.circuitBreakers.set(name, new CircuitBreaker(broker.execute.bind(broker), {
-        timeout: 5000,
-        errorThresholdPercentage: 50,
-        resetTimeout: 30000
-      }));
-    }
-  }
+**Routing algorithm**:
 
-  async routeOrder(order: Order): Promise<ExecutionResult> {
-    // Get quotes from all healthy venues
-    const quotes = await Promise.allSettled(
-      Array.from(this.brokers.entries()).map(async ([name, broker]) => {
-        const breaker = this.circuitBreakers.get(name)!;
-        if (breaker.opened) return null;
+1. Request quotes from all healthy venues in parallel using `Promise.allSettled`, skipping venues whose circuit breakers are open
+2. Filter to successful responses
+3. Select the best execution price — lowest ask for buys, highest bid for sells
+4. Execute the order through the selected venue's circuit breaker
 
-        const quote = await breaker.fire(() => broker.getQuote(order.symbol));
-        return { name, quote };
-      })
-    );
-
-    // Filter successful quotes
-    const validQuotes = quotes
-      .filter((r): r is PromiseFulfilledResult<{name: string, quote: Quote}> =>
-        r.status === 'fulfilled' && r.value !== null)
-      .map(r => r.value);
-
-    // Select best execution price
-    const best = order.side === 'buy'
-      ? validQuotes.reduce((a, b) => a.quote.ask < b.quote.ask ? a : b)
-      : validQuotes.reduce((a, b) => a.quote.bid > b.quote.bid ? a : b);
-
-    // Execute with selected broker
-    const broker = this.brokers.get(best.name)!;
-    const breaker = this.circuitBreakers.get(best.name)!;
-
-    return breaker.fire(() => broker.execute(order));
-  }
-}
-```
+This ensures best execution while isolating venue failures.
 
 ### Fill Processing with Position Updates
 
-```typescript
-async processFill(fillEvent: FillEvent): Promise<void> {
-  const client = await this.pool.connect();
+Fill processing happens within a single database transaction:
 
-  try {
-    await client.query('BEGIN');
-
-    // Record execution
-    await client.query(
-      `INSERT INTO executions (order_id, quantity, price, exchange, executed_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [fillEvent.orderId, fillEvent.quantity, fillEvent.price,
-       fillEvent.exchange, fillEvent.timestamp]
-    );
-
-    // Update order with optimistic locking
-    const { rows: [order] } = await client.query(
-      `UPDATE orders SET
-         filled_quantity = filled_quantity + $1,
-         avg_fill_price = ((avg_fill_price * filled_quantity) + ($2 * $1)) / (filled_quantity + $1),
-         status = CASE WHEN filled_quantity + $1 >= quantity THEN 'filled' ELSE 'partial' END,
-         filled_at = CASE WHEN filled_quantity + $1 >= quantity THEN NOW() ELSE NULL END,
-         version = version + 1
-       WHERE id = $3 AND version = $4
-       RETURNING *`,
-      [fillEvent.quantity, fillEvent.price, fillEvent.orderId, fillEvent.expectedVersion]
-    );
-
-    if (!order) {
-      throw new OptimisticLockError('Order modified by another process');
-    }
-
-    // Update position (UPSERT)
-    if (order.side === 'buy') {
-      await client.query(
-        `INSERT INTO positions (user_id, symbol, quantity, avg_cost_basis)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, symbol) DO UPDATE SET
-           quantity = positions.quantity + $3,
-           avg_cost_basis = (positions.avg_cost_basis * positions.quantity + $4 * $3)
-                           / (positions.quantity + $3)`,
-        [order.user_id, order.symbol, fillEvent.quantity, fillEvent.price]
-      );
-    } else {
-      await client.query(
-        `UPDATE positions SET
-           quantity = quantity - $1,
-           reserved_quantity = reserved_quantity - $1
-         WHERE user_id = $2 AND symbol = $3`,
-        [fillEvent.quantity, order.user_id, order.symbol]
-      );
-    }
-
-    // Adjust buying power
-    const adjustment = order.side === 'buy'
-      ? order.estimated_cost - (fillEvent.quantity * fillEvent.price) // Refund overestimate
-      : fillEvent.quantity * fillEvent.price; // Credit proceeds
-
-    await client.query(
-      'UPDATE users SET buying_power = buying_power + $1 WHERE id = $2',
-      [adjustment, order.user_id]
-    );
-
-    // Audit log
-    await client.query(
-      `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, status)
-       VALUES ($1, 'ORDER_FILLED', 'order', $2, $3, 'success')`,
-      [order.user_id, order.id, JSON.stringify(fillEvent)]
-    );
-
-    await client.query('COMMIT');
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-```
+1. **Record execution** — insert into executions table with order ID, quantity, price, exchange, and timestamp
+2. **Update order with optimistic locking** — increment filled_quantity, recalculate avg_fill_price as a weighted average, set status to "filled" (if fully filled) or "partial", and increment the version number. The WHERE clause includes the expected version to detect concurrent modifications.
+3. **Update position** — for buys, upsert into positions (insert or update quantity and recalculate average cost basis as a weighted average). For sells, decrement both quantity and reserved_quantity.
+4. **Adjust buying power** — for buys, refund any overestimate (estimated cost minus actual fill cost). For sells, credit the sale proceeds.
+5. **Write audit log** — record the fill event for compliance.
+6. **Commit** — if any step fails (including an optimistic lock conflict), rollback the entire transaction.
 
 ---
 
@@ -298,73 +185,17 @@ async processFill(fillEvent: FillEvent): Promise<void> {
 
 ### Schema with Partitioning Strategy
 
-```sql
--- Orders partitioned by created_at for query performance and archival
-CREATE TABLE orders (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id),
-    symbol VARCHAR(10) NOT NULL,
-    side VARCHAR(4) NOT NULL CHECK (side IN ('buy', 'sell')),
-    order_type VARCHAR(20) NOT NULL,
-    quantity DECIMAL(14,6) NOT NULL,
-    limit_price DECIMAL(14,4),
-    stop_price DECIMAL(14,4),
-    status VARCHAR(20) DEFAULT 'pending',
-    filled_quantity DECIMAL(14,6) DEFAULT 0,
-    avg_fill_price DECIMAL(14,4),
-    time_in_force VARCHAR(10) DEFAULT 'day',
-    submitted_at TIMESTAMP,
-    filled_at TIMESTAMP,
-    version INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW()
-) PARTITION BY RANGE (created_at);
-
--- Create monthly partitions
-CREATE TABLE orders_2024_01 PARTITION OF orders
-    FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
-CREATE TABLE orders_2024_02 PARTITION OF orders
-    FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
-
--- Audit logs with WORM semantics for SEC compliance
-CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
-    action VARCHAR(50) NOT NULL,
-    entity_type VARCHAR(20) NOT NULL,
-    entity_id UUID NOT NULL,
-    details JSONB NOT NULL,
-    ip_address INET,
-    user_agent TEXT,
-    request_id VARCHAR(100),
-    idempotency_key VARCHAR(100),
-    status VARCHAR(20) NOT NULL,
-    error_message TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- Make audit logs append-only
-REVOKE UPDATE, DELETE ON audit_logs FROM PUBLIC;
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **orders** | id (UUID PK), user_id (UUID FK), symbol, side (buy/sell), order_type, quantity (DECIMAL 14,6), limit_price, stop_price, status (default 'pending'), filled_quantity, avg_fill_price, time_in_force (default 'day'), submitted_at, filled_at, version (INT for optimistic locking), created_at | (user_id, status) WHERE status IN pending/submitted/partial; (symbol) WHERE status IN pending/submitted/partial | Partitioned by RANGE on created_at with monthly partitions for query performance and archival |
+| **audit_logs** | id (UUID PK), user_id, action, entity_type, entity_id, details (JSONB), ip_address, user_agent, request_id, idempotency_key, status, error_message, created_at | (user_id, created_at DESC); (entity_type, entity_id) | Append-only (WORM semantics for SEC compliance) — UPDATE and DELETE revoked from PUBLIC |
 
 ### Performance Indexes
 
-```sql
--- Order lookups
-CREATE INDEX idx_orders_user_status ON orders(user_id, status)
-    WHERE status IN ('pending', 'submitted', 'partial');
-CREATE INDEX idx_orders_symbol_pending ON orders(symbol)
-    WHERE status IN ('pending', 'submitted', 'partial');
+Additional indexes for hot paths:
 
--- Portfolio queries
-CREATE INDEX idx_positions_user_id ON positions(user_id);
-
--- Session validation (hot path)
-CREATE INDEX idx_sessions_token ON sessions(token) WHERE expires_at > NOW();
-
--- Audit log queries (for compliance reporting)
-CREATE INDEX idx_audit_user_time ON audit_logs(user_id, created_at DESC);
-CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);
-```
+- **positions(user_id)** — portfolio queries
+- **sessions(token) WHERE expires_at > NOW()** — session validation (partial index for active sessions only)
 
 ---
 
@@ -372,124 +203,33 @@ CREATE INDEX idx_audit_entity ON audit_logs(entity_type, entity_id);
 
 ### Circuit Breaker Implementation
 
-```typescript
-import CircuitBreaker from 'opossum';
+A factory function creates per-dependency circuit breakers with consistent configuration:
 
-function createServiceBreaker<T>(
-  fn: (...args: any[]) => Promise<T>,
-  options: { name: string; fallback?: (...args: any[]) => T }
-): CircuitBreaker {
-  const breaker = new CircuitBreaker(fn, {
-    timeout: 5000,
-    errorThresholdPercentage: 50,
-    volumeThreshold: 10,
-    resetTimeout: 30000,
-    name: options.name
-  });
+- **Timeout**: 5 seconds per operation
+- **Error threshold**: Opens after 50% of requests fail (minimum 10 requests)
+- **Reset timeout**: 30 seconds before attempting half-open recovery
 
-  // Metrics integration
-  breaker.on('success', () => circuitBreakerMetric.set({ name: options.name }, 0));
-  breaker.on('open', () => circuitBreakerMetric.set({ name: options.name }, 1));
-  breaker.on('halfOpen', () => circuitBreakerMetric.set({ name: options.name }, 0.5));
-
-  if (options.fallback) {
-    breaker.fallback(options.fallback);
-  }
-
-  return breaker;
-}
-
-// Usage for market data
-const marketDataBreaker = createServiceBreaker(
-  (symbol: string) => marketDataProvider.getQuote(symbol),
-  {
-    name: 'market-data',
-    fallback: (symbol) => redisCache.get(`quote:${symbol}`) // Stale data fallback
-  }
-);
-```
+Each breaker emits metrics on state transitions (closed = 0, half-open = 0.5, open = 1). An optional fallback function is invoked when the circuit is open — for example, the market data breaker falls back to serving stale quotes from the Redis cache.
 
 ### Graceful Shutdown
 
-```typescript
-async function gracefulShutdown(signal: string): Promise<void> {
-  console.log(`${signal} received. Starting graceful shutdown...`);
+On SIGTERM or SIGINT, the shutdown procedure:
 
-  // Stop accepting new connections
-  server.close();
-  wsServer.close();
-
-  // Stop background workers
-  quoteService.stop();
-  limitOrderMatcher.stop();
-  alertChecker.stop();
-
-  // Wait for in-flight requests (max 30 seconds)
-  await Promise.race([
-    waitForInflightRequests(),
-    new Promise(resolve => setTimeout(resolve, 30000))
-  ]);
-
-  // Close database connections
-  await pool.end();
-  await redis.quit();
-
-  console.log('Graceful shutdown complete');
-  process.exit(0);
-}
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-```
+1. Stop accepting new HTTP and WebSocket connections
+2. Stop all background workers (quote service, limit order matcher, alert checker)
+3. Wait for in-flight requests to complete, with a 30-second maximum timeout
+4. Close database connections and Redis clients
+5. Exit the process
 
 ### End-of-Day Processing
 
-```typescript
-async function endOfDayProcessing(): Promise<void> {
-  const client = await pool.connect();
+A transactional batch job runs after market close:
 
-  try {
-    await client.query('BEGIN');
+1. **Expire unfilled day orders** — set status to "expired" for all pending/submitted/partial orders with `time_in_force = 'day'` created before today
+2. **Release reserved buying power** — calculate the unrealized portion of expired buy orders (estimated cost minus filled value) and credit it back to each user's buying power
+3. **Archive old orders** — copy orders older than 90 days to an `orders_archive` table, then delete them from the active orders table to keep partitions lean
 
-    // Expire unfilled day orders
-    await client.query(`
-      UPDATE orders SET status = 'expired', version = version + 1
-      WHERE status IN ('pending', 'submitted', 'partial')
-        AND time_in_force = 'day'
-        AND DATE(created_at) < CURRENT_DATE
-    `);
-
-    // Release reserved buying power from expired orders
-    await client.query(`
-      UPDATE users u SET buying_power = u.buying_power + expired.reserved
-      FROM (
-        SELECT user_id, SUM(estimated_cost - (filled_quantity * avg_fill_price)) as reserved
-        FROM orders
-        WHERE status = 'expired' AND side = 'buy'
-        GROUP BY user_id
-      ) expired
-      WHERE u.id = expired.user_id
-    `);
-
-    // Archive old orders to cold storage
-    await client.query(`
-      INSERT INTO orders_archive SELECT * FROM orders
-      WHERE created_at < NOW() - INTERVAL '90 days'
-    `);
-    await client.query(`
-      DELETE FROM orders WHERE created_at < NOW() - INTERVAL '90 days'
-    `);
-
-    await client.query('COMMIT');
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-```
+All steps run within a single transaction to ensure consistency.
 
 ---
 
