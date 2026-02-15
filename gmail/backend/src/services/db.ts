@@ -1,0 +1,28 @@
+import pg, { Pool, PoolClient, QueryResult } from 'pg';
+import config from '../config/index.js';
+
+const pool: Pool = new pg.Pool({
+  host: config.database.host,
+  port: config.database.port,
+  database: config.database.database,
+  user: config.database.user,
+  password: config.database.password,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+pool.on('error', (err: Error) => {
+  console.error('Unexpected error on idle database client', err);
+  process.exit(-1);
+});
+
+export const query = <T = unknown>(
+  text: string,
+  params?: unknown[]
+): Promise<QueryResult<T>> => pool.query<T>(text, params);
+
+export const getClient = (): Promise<PoolClient> => pool.connect();
+
+export { pool };
+export default pool;

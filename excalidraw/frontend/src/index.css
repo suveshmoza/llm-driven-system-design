@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Canvas cursor styles */
+.cursor-crosshair {
+  cursor: crosshair;
+}
+
+.cursor-move {
+  cursor: move;
+}
+
+.cursor-grab {
+  cursor: grab;
+}
+
+.cursor-grabbing {
+  cursor: grabbing;
+}
+
+/* Selection handles */
+.selection-handle {
+  @apply absolute w-2 h-2 bg-white border-2 border-selection-blue rounded-sm;
+}
+
+/* Toolbar button active state */
+.toolbar-btn {
+  @apply p-2 rounded-lg transition-colors duration-150 text-toolbar-text hover:bg-toolbar-hover;
+}
+
+.toolbar-btn.active {
+  @apply bg-toolbar-active text-white;
+}
+
+/* Color swatch */
+.color-swatch {
+  @apply w-6 h-6 rounded border border-gray-300 cursor-pointer transition-transform hover:scale-110;
+}
+
+.color-swatch.selected {
+  @apply ring-2 ring-selection-blue ring-offset-1;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}

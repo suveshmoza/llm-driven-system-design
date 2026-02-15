@@ -7,6 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [Repository Overview](#repository-overview)
 - [Quick Start for Any Project](#quick-start-for-any-project)
 - [Project Structure](#project-structure)
+  - [Writing Architecture Documents](#writing-architecture-documents)
+  - [Writing System Design Answers](#writing-system-design-answers)
+  - [Explaining Trade-offs in Depth](#explaining-trade-offs-in-depth)
 - [Common Commands](#common-commands)
 - [Repository Scripts](#repository-scripts)
 - [Technology Stack Defaults](#technology-stack-defaults)
@@ -51,27 +54,111 @@ Each project folder typically contains:
 ```
 
 **Documentation file purposes:**
-- `architecture.md`: Deep technical documentation with diagrams, schemas, and implementation details
+- `architecture.md`: Dual-layer design document — production-scale architecture (the ideal) with diagrams, schemas, and trade-off analysis, plus local implementation notes (the actual) mapping to Docker + Node.js + React
 - `system-design-answer-{frontend,backend,fullstack}.md`: Concise 45-minute interview answers using ASCII diagrams (no code blocks), trade-off tables, and first-person rationale. Each variant is tailored to a specific interview focus.
 - `CLAUDE.md`: Captures iteration history and the "why" behind key decisions
 
+### Writing Architecture Documents
+
+The `architecture.md` files serve a dual purpose: documenting the **production-scale design** (how this system would work at millions of users) and the **local implementation** (what we actually built with Docker + Node.js + Express + React). These two layers should be explicit, not interleaved.
+
+**Recommended section structure:**
+
+| Section | Scope | Purpose |
+|---------|-------|---------|
+| System Overview | Production | One-paragraph description + learning goals |
+| Requirements | Production | Functional requirements + NFR targets at production scale (99.99% uptime, p99 < 50ms) |
+| Capacity Estimation | Both | Optional. Production-scale estimates first; optional "Local Development Scale" subsection for component sizing. ~46% of projects include this |
+| High-Level Architecture | Production | Box diagram showing the ideal architecture (CDN, API Gateway, microservices) |
+| Core Components / Request Flows | Both | Component responsibilities and data flow at production scale, noting local simplifications inline |
+| Database Schema | Both | Full SQL schemas with indexes and constraints — production-ready but run locally |
+| API Design | Both | Endpoint listing with request/response examples |
+| Key Design Decisions | Production | Trade-off analysis for major architectural choices |
+| Consistency and Idempotency | Both | Idempotency keys, retry semantics, exactly-once guarantees |
+| Security / Auth | Both | Authentication, authorization, rate limiting |
+| Observability | Both | Prometheus metrics, structured logging, health checks |
+| Failure Handling | Both | Circuit breakers, retry strategies, graceful degradation |
+| Scalability Considerations | Production | Horizontal scaling path, sharding strategy, read replicas |
+| Trade-offs Summary | Production | Summary table (see format below) |
+| Implementation Notes | **Local** | Maps production design to local Docker + Node.js setup |
+
+**Section naming**: Use the names above. The codebase has inconsistencies — older projects use "Data Model" (use "Database Schema" instead), "Monitoring and Observability" (use "Observability"), and "Trade-offs and Alternatives" (use "Trade-offs Summary"). New projects should use the standardized names above.
+
+**Architecture diagrams**: Show the production-ideal architecture (CDN, API Gateway, separate microservices, message queues). Use Unicode box-drawing characters (`┌ ─ ┐ │ └ ┘ ├ ┤ ┬ ┴ ┼ ▼ ▲ ─▶`), not ASCII `+--+`. About 84% of existing projects use Unicode; the remainder are legacy. Don't put `localhost:3001` in the main architecture diagram — local port mappings belong in the README or Implementation Notes.
+
+**Requirements**: Write non-functional requirements at production scale. This demonstrates system design knowledge. Local-scale numbers (10 concurrent users, <1 RPS) belong in Capacity Estimation under a "Local Development Scale" subsection.
+
+**Code in architecture docs**: Use code blocks to illustrate design patterns and algorithms (idempotency flow, ranking algorithm, caching strategy, ledger entries). Full SQL schemas are appropriate. For implementation patterns (circuit breakers, metrics, structured logging), show the pattern with a brief code snippet and reference the actual file path — don't duplicate large blocks from source code.
+
+**Trade-offs summary table**: Use a consistent 4-column format. Keep entries to one line each. Detailed reasoning belongs in the Key Design Decisions section above it.
+
+```
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| Session storage | Redis + cookie | JWT | Immediate revocation, simpler |
+| Analytics queue | RabbitMQ | Kafka | Easier setup, sufficient for scale |
+```
+
+**Implementation Notes** (final section): This is where the production-to-local mapping lives. Document three things:
+1. **Production-grade patterns actually implemented** — idempotency, circuit breakers (Opossum), Prometheus metrics (prom-client), structured logging (Pino), health checks, rate limiting. Explain *why* each pattern matters at scale, show a brief code snippet, and reference the file path in `src/shared/`.
+2. **What was simplified or substituted** — MinIO for S3, simulated data for real feeds, single PostgreSQL for sharded cluster, session auth for OAuth/JWT.
+3. **What was omitted** — CDN, multi-region, Kubernetes, sharding, ML pipelines.
+
+**Boundary with project CLAUDE.md**: `architecture.md` describes *what* the system is and *why* each design choice was made. The project's `CLAUDE.md` captures *iteration history* — development phases, what was tried, what changed, open questions, and learnings. Don't duplicate design decisions across both files.
+
 ### Writing System Design Answers
 
-The `system-design-answer*.md` files simulate realistic interview answers. Keep them concise (400-600 lines) and focused on architectural thinking rather than implementation details.
+The `system-design-answer-{frontend,backend,fullstack}.md` files simulate a realistic 45–60 minute system design interview. Each file should read as if you are explaining the system out loud — architectural thinking, trade-off reasoning, and decision justification. Not a reference document.
+
+**Target length**: 350–550 lines. A person needs to be able to walk through the entire answer in ~40–50 minutes. Files over 600 lines are too long to cover. Files under 300 are too shallow.
+
+**Three variants**, each with a different emphasis:
+- **`-frontend`**: UI architecture, state management, rendering strategy, client-server interaction, offline/optimistic patterns. Lighter on backend infrastructure.
+- **`-backend`**: Service architecture, data model (described as prose/tables, NOT SQL DDL), API design, scaling, failure handling. Lighter on UI.
+- **`-fullstack`**: Balanced coverage of both, less depth in each. Best for generalist interviews.
+
+#### Absolutely No Code
+
+This is the most frequently violated rule. **~30 backend variant files** currently contain SQL schemas, TypeScript class implementations, JavaScript functions, and other code blocks. This is wrong.
 
 **Do NOT include:**
-- Code blocks (```typescript, ```tsx, ```sql, ```json, etc.)
+- Language-tagged code blocks (` ```typescript `, ` ```sql `, ` ```javascript `, ` ```json `, ` ```tsx `, etc.)
+- `CREATE TABLE` statements — describe schemas as prose tables instead
+- Class/function implementations — describe algorithms as numbered steps or prose
+- Config snippets (nginx, YAML, Prometheus queries)
 - Directory tree structures
-- Detailed class prototypes or interface definitions
-- Line-by-line implementation walkthroughs
+
+**What to use instead:**
+
+Instead of a SQL schema:
+```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| users | id (UUID PK), email (unique), password_hash | email | Partitioned by region at scale |
+| orders | id, user_id (FK), status, total_cents | (user_id, created_at) | Status: pending → confirmed → shipped |
+```
+
+Instead of a TypeScript implementation:
+> "The matching algorithm scores each candidate driver by combining inverse ETA (weighted 0.6) with driver rating (weighted 0.4). We query all available drivers within a 5km radius using Redis GEORADIUS, score them, and offer the ride to the top candidate with a 15-second acceptance timeout. If declined, we move to the next candidate."
+
+Instead of an API implementation:
+```
+POST /api/v1/rides/request    → Creates ride, triggers matching
+GET  /api/v1/rides/:id        → Returns ride status + driver location
+POST /api/v1/rides/:id/cancel → Cancels if status is 'requested' or 'matched'
+```
 
 **DO include:**
-- ASCII box diagrams using: `┌ ─ ┐ │ └ ┘ ├ ┤ ┴ ┬ ┼ ──▶`
+- ASCII box diagrams using Unicode: `┌ ─ ┐ │ └ ┘ ├ ┤ ┴ ┬ ┼ ──▶`
 - Trade-off tables with ✅ Chosen / ❌ Alternative format
 - Emoji section headers (## 🏗️ Architecture, ## 💾 Data Model)
 - Quoted first-person rationale explaining decisions
 - High-level component interactions and data flow
-- Scalability considerations and bottleneck analysis
+- API endpoint tables (method, path, purpose — no request/response JSON bodies)
+- Deep dives (2–3 per answer) on the hardest problems with trade-off analysis
+- Scalability discussion: what breaks first, how to scale it
+
+**Unlabeled code blocks** (bare ` ``` `) are acceptable ONLY for ASCII diagrams and API endpoint listings. Never for actual code.
 
 **Example trade-off table:**
 ```
