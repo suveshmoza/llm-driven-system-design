@@ -345,6 +345,7 @@ function RouteMarkers() {
   );
 }
 
+/** Renders the Leaflet map with traffic overlay, route polylines, POI markers, and incident indicators. */
 export default function MapView() {
   const { center, zoom } = useMapStore();
 

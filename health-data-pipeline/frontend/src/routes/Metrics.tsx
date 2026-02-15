@@ -17,6 +17,7 @@ const METRIC_CONFIG: Record<string, { name: string; color: string; unit: string 
   OXYGEN_SATURATION: { name: 'Blood Oxygen', color: 'cyan', unit: '%' },
 };
 
+/** Metric explorer page with selectable health metric type, time range, and statistics summary. */
 export function Metrics() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();

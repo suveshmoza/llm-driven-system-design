@@ -2,6 +2,7 @@ import { pool } from '../db.js';
 import type { LibraryItemType } from '../types.js';
 
 // Save item to library (like a track, album, artist, or follow a playlist)
+/** Saves an item (track, album, artist, playlist) to the user's library. */
 export async function saveToLibrary(userId: string, itemType: LibraryItemType, itemId: string) {
   await pool.query(
     `INSERT INTO user_library (user_id, item_type, item_id)
@@ -13,6 +14,7 @@ export async function saveToLibrary(userId: string, itemType: LibraryItemType, i
 }
 
 // Remove item from library
+/** Removes an item from the user's library. */
 export async function removeFromLibrary(userId: string, itemType: LibraryItemType, itemId: string) {
   await pool.query(
     `DELETE FROM user_library
@@ -23,6 +25,7 @@ export async function removeFromLibrary(userId: string, itemType: LibraryItemTyp
 }
 
 // Check if item is in library
+/** Checks if a single item is in the user's library. */
 export async function isInLibrary(userId: string, itemType: LibraryItemType, itemId: string) {
   const result = await pool.query(
     `SELECT 1 FROM user_library
@@ -50,6 +53,7 @@ export async function checkMultipleInLibrary(userId: string, itemType: LibraryIt
 }
 
 // Get liked songs
+/** Returns the user's liked songs with track details and pagination. */
 export async function getLikedSongs(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT t.*,

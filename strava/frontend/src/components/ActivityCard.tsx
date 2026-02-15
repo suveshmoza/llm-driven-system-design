@@ -15,6 +15,7 @@ interface ActivityCardProps {
   onKudosChange?: () => void;
 }
 
+/** Renders an activity summary card with distance, duration, pace, and kudos interaction. */
 export function ActivityCard({ activity, onKudosChange }: ActivityCardProps) {
   const [hasKudos, setHasKudos] = useState(activity.hasKudos || false);
   const [kudosCount, setKudosCount] = useState(activity.kudos_count || 0);

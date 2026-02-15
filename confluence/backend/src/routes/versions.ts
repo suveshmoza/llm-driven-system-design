@@ -53,4 +53,5 @@ router.post('/:pageId/restore', requireAuth, async (req: Request, res: Response)
   }
 });
 
+/** Router for page version history, diff computation, and version restoration. */
 export default router;

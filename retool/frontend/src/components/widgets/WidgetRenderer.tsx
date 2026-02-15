@@ -29,6 +29,7 @@ const WIDGET_MAP: Record<
   container: ContainerWidget,
 };
 
+/** Dynamically renders a widget component based on its type from the component registry. */
 export function WidgetRenderer({ component, isEditor }: WidgetRendererProps) {
   const Widget = WIDGET_MAP[component.type];
 

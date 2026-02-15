@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { healthQueryService } from '../services/healthQueryService.js';
 import { insightsService } from '../services/insightsService.js';
 
+/** Health data query router for samples, aggregates, summaries, history, and insights. */
 const router: Router = express.Router();
 
 // All routes require authentication

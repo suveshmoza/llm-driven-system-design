@@ -9,6 +9,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 // Auth API
+/** Auth API client for login, register, logout, and session check. */
 export const authApi = {
   async login(username: string, password: string) {
     const response = await fetch(`${API_BASE}/auth/login`, {
@@ -47,6 +48,7 @@ export const authApi = {
 };
 
 // Users API
+/** Users API client for profiles, follow/unfollow, and user search. */
 export const usersApi = {
   async getUser(username: string) {
     const response = await fetch(`${API_BASE}/users/${username}`, {
@@ -94,6 +96,7 @@ export const usersApi = {
 };
 
 // Tweets API
+/** Tweets API client for CRUD, likes, retweets, and replies. */
 export const tweetsApi = {
   async create(content: string, options?: { replyTo?: string; quoteOf?: string; mediaUrls?: string[] }) {
     const response = await fetch(`${API_BASE}/tweets`, {
@@ -161,6 +164,7 @@ export const tweetsApi = {
 };
 
 // Timeline API
+/** Timeline API client for home, user, explore, and hashtag feeds with cursor pagination. */
 export const timelineApi = {
   async getHome(limit = 50, before?: string) {
     const url = new URL(`${API_BASE}/timeline/home`, window.location.origin);
@@ -208,6 +212,7 @@ export const timelineApi = {
 };
 
 // Trends API
+/** Trends API client for fetching current and all-time trending hashtags. */
 export const trendsApi = {
   async getTrends(limit = 10) {
     const response = await fetch(`${API_BASE}/trends?limit=${limit}`, {

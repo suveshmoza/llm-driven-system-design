@@ -6,6 +6,7 @@ interface SegmentCardProps {
   segment: Segment;
 }
 
+/** Renders a segment preview card with distance, elevation gain, and average grade. */
 export function SegmentCard({ segment }: SegmentCardProps) {
   return (
     <Link

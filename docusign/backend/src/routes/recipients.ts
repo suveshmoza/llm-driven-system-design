@@ -35,7 +35,7 @@ interface RecipientOrderUpdate {
   routingOrder: number;
 }
 
-// Add recipient to envelope
+/** POST /api/v1/recipients/:envelopeId - Adds a recipient (signer/cc/viewer) to a draft envelope. */
 router.post('/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -105,7 +105,7 @@ router.post('/:envelopeId', authenticate, async (req: Request, res: Response): P
   }
 });
 
-// Get recipients for envelope
+/** GET /api/v1/recipients/envelope/:envelopeId - Returns all recipients for an envelope with field completion counts. */
 router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -147,7 +147,7 @@ router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Resp
   }
 });
 
-// Update recipient
+/** PUT /api/v1/recipients/:id - Updates recipient details in a draft envelope. */
 router.put('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -217,7 +217,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response): Promise<vo
   }
 });
 
-// Delete recipient
+/** DELETE /api/v1/recipients/:id - Removes a recipient from a draft envelope. */
 router.delete('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -262,7 +262,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response): Promise
   }
 });
 
-// Reorder recipients
+/** POST /api/v1/recipients/envelope/:envelopeId/reorder - Updates the routing order for recipients in a draft envelope. */
 router.post('/envelope/:envelopeId/reorder', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -315,4 +315,5 @@ router.post('/envelope/:envelopeId/reorder', authenticate, async (req: Request, 
   }
 });
 
+/** Express router for recipient management including add, update, delete, and reorder operations. */
 export default router;

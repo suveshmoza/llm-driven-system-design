@@ -76,4 +76,5 @@ router.post('/:id/review', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+/** Router for page approval workflow: request, review, and list pending approvals. */
 export default router;

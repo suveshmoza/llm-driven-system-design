@@ -7,6 +7,7 @@ interface FormWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a form container widget that groups inputs with a submit action. */
 export function FormWidget({ component, isEditor }: FormWidgetProps) {
   const submitLabel = (component.props.submitLabel as string) || 'Submit';
   const onSubmit = component.props.onSubmit as string;

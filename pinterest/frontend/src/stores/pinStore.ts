@@ -12,6 +12,7 @@ interface PinState {
   clearFeed: () => void;
 }
 
+/** Pin feed state with cursor-based pagination for personalized and discover feeds. */
 export const usePinStore = create<PinState>((set, get) => ({
   feedPins: [],
   feedCursor: null,

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Search, Bell, Plus, Menu, X, GitBranch } from 'lucide-react';
 
+/** Renders the GitHub-style navigation header with search, user menu, and create actions. */
 export function Header() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();

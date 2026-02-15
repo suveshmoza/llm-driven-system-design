@@ -10,6 +10,7 @@ interface CacheCardProps {
   cache?: CacheStats;
 }
 
+/** Displays cache hit/miss statistics with local and Redis breakdown and hit rate visualization. */
 export function CacheCard({ cache }: CacheCardProps) {
   if (!cache) {
     return (

@@ -9,6 +9,7 @@ interface VersionListProps {
   currentVersion: number;
 }
 
+/** Renders a timeline of page versions with restore-to-previous capability. */
 export default function VersionList({ pageId, currentVersion }: VersionListProps) {
   const [versions, setVersions] = useState<PageVersion[]>([]);
   const [loading, setLoading] = useState(true);

@@ -5,6 +5,7 @@ interface PageEditorProps {
   onChange: (html: string) => void;
 }
 
+/** ContentEditable rich text editor with formatting toolbar and macro insertion. */
 export default function PageEditor({ initialContent, onChange }: PageEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
 

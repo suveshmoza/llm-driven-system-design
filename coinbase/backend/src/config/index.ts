@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+/** Application configuration with database, Redis, Kafka, session, and fee settings. */
 export const config = {
   port: parseInt(process.env.PORT || '3001'),
   nodeEnv: process.env.NODE_ENV || 'development',

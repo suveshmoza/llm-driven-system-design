@@ -31,6 +31,7 @@ interface ReviewSummary {
   one_star: string;
 }
 
+/** GET /api/reviews/product/:productId - Returns paginated reviews with rating summary and sorting options. */
 // Get reviews for a product
 router.get('/product/:productId', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -88,6 +89,7 @@ router.get('/product/:productId', async (req: Request, res: Response, next: Next
   }
 });
 
+/** POST /api/reviews - Creates a product review with verified purchase detection. One review per user per product. */
 // Create review
 router.post('/',
   requireAuth,
@@ -155,6 +157,7 @@ router.post('/',
   }
 );
 
+/** PUT /api/reviews/:id - Updates a review's rating, title, or content. Only the review author can update. */
 // Update review
 router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -192,6 +195,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
   }
 });
 
+/** DELETE /api/reviews/:id - Deletes a review. Accessible by the review author or admin. */
 // Delete review
 router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -231,6 +235,7 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response, next: Nex
   }
 });
 
+/** POST /api/reviews/:id/helpful - Increments the helpful count on a review. */
 // Mark review as helpful
 router.post('/:id/helpful', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

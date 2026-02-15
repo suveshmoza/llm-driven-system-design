@@ -8,6 +8,7 @@ const defaultOptions: CircuitBreaker.Options = {
   volumeThreshold: 5,
 };
 
+/** Creates an Opossum circuit breaker with logging for state transitions. */
 export function createCircuitBreaker<T>(
   fn: (...args: unknown[]) => Promise<T>,
   name: string,

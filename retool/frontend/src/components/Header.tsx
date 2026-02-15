@@ -2,6 +2,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 import { useEditorStore } from '../stores/editorStore';
 
+/** Renders the top navigation header with app title and user menu. */
 export function Header() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);

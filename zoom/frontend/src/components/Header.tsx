@@ -1,6 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the top navigation bar with user menu and auth links. */
 export function Header() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();

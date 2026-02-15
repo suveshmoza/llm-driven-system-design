@@ -13,6 +13,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+/** Authentication state with localStorage persistence for login, register, logout, and session check. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

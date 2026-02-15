@@ -13,6 +13,7 @@ export const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+/** Verifies PostgreSQL connectivity by executing a test query. */
 export async function initDatabase(): Promise<void> {
   const client = await pool.connect();
   try {
@@ -22,6 +23,7 @@ export async function initDatabase(): Promise<void> {
   }
 }
 
+/** Executes a parameterized SQL query with slow-query logging. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]

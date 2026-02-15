@@ -27,6 +27,7 @@ let consumer: Consumer | null = null;
 /**
  * Initialize and connect the Kafka producer
  */
+/** Initializes the Kafka producer for publishing playback events. */
 export async function initProducer() {
   if (producer && producerReady) {
     return producer;
@@ -83,6 +84,7 @@ export async function disconnectProducer() {
  * @param {number} position - Position in milliseconds
  * @param {object} metadata - Additional event metadata
  */
+/** Publishes a playback event to the Kafka analytics topic. */
 export async function publishPlaybackEvent(userId: string, trackId: string, eventType: PlaybackEventType, position = 0, metadata: Record<string, unknown> = {}) {
   if (!producer || !producerReady) {
     logger.warn('Kafka producer not ready, initializing...');
@@ -125,6 +127,7 @@ export async function publishPlaybackEvent(userId: string, trackId: string, even
  * @param {function} handler - Async function to handle each event
  * @param {string} groupId - Consumer group ID (default: 'analytics-worker')
  */
+/** Subscribes to Kafka playback events for analytics processing. */
 export async function consumePlaybackEvents(handler: (event: KafkaPlaybackMessage) => Promise<void>, groupId = 'analytics-worker') {
   consumer = kafka.consumer({
     groupId,

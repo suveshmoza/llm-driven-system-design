@@ -14,6 +14,7 @@ const minioClient = new Minio.Client({
 const BUCKET_NAME = config.minio.bucket;
 
 // Ensure bucket exists
+/** Ensures the MinIO bucket exists, creating it if necessary. */
 export const ensureBucket = async (): Promise<void> => {
   try {
     const exists = await minioClient.bucketExists(BUCKET_NAME);
@@ -65,6 +66,7 @@ const uploadBuffer = async (buffer: Buffer, key: string, contentType: string): P
 };
 
 // Get public URL for object
+/** Constructs a public URL for accessing a stored object. */
 export const getPublicUrl = (key: string): string => {
   const protocol = config.minio.useSSL ? 'https' : 'http';
   return `${protocol}://${config.minio.endPoint}:${config.minio.port}/${BUCKET_NAME}/${key}`;
@@ -81,6 +83,7 @@ export interface ProcessedImageResult {
 }
 
 // Process and upload image
+/** Processes an image through Sharp to generate multiple resolutions and uploads them. */
 export const processAndUploadImage = async (
   fileBuffer: Buffer,
   originalName: string,

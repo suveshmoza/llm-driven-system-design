@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 import { useState } from 'react';
 
+/** Renders the sticky top navigation bar with logo, navigation links, and user dropdown menu. */
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const [showMenu, setShowMenu] = useState(false);

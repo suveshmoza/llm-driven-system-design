@@ -31,6 +31,7 @@ const logger: Logger = pino({
 });
 
 // Create child loggers for specific components
+/** Creates a child logger with a component name context for service-specific logging. */
 export const createLogger = (component: string): Logger => {
   return logger.child({ component });
 };
@@ -42,6 +43,7 @@ interface LoggableRequest extends Request {
 }
 
 // Request logging middleware
+/** Express middleware that logs HTTP request method, URL, status code, and response time. */
 export const requestLogger = (req: LoggableRequest, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
   const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
@@ -91,6 +93,7 @@ interface ErrorWithCode extends Error {
 }
 
 // Error logging helper
+/** Logs an error with component context, optional error code, and additional metadata. */
 export const logError = (component: string, error: ErrorWithCode, context: ErrorContext = {}): void => {
   const componentLogger = createLogger(component);
   componentLogger.error(

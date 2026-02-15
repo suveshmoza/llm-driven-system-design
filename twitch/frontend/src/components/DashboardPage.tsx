@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { categoryApi, streamApi } from '../services/api';
 import type { Category } from '../types';
 
+/** Renders the creator dashboard with stream controls, stream key display, and quick links. */
 export function DashboardPage() {
   const { user } = useAuthStore();
   const [categories, setCategories] = useState<Category[]>([]);

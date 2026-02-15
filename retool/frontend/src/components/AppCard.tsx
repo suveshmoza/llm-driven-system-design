@@ -6,6 +6,7 @@ interface AppCardProps {
   onDelete: (id: string) => void;
 }
 
+/** Renders an application card with title, description, and action buttons. */
 export function AppCard({ app, onDelete }: AppCardProps) {
   const navigate = useNavigate();
 

@@ -50,6 +50,7 @@ interface CanvasState {
   clearCanvas: () => void;
 }
 
+/** Canvas state with elements, tool selection, viewport, and collaboration cursors. */
 export const useCanvasStore = create<CanvasState>()((set) => ({
   elements: [],
   selectedElementId: null,

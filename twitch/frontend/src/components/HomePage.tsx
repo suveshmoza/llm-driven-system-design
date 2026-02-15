@@ -4,6 +4,7 @@ import { channelApi, categoryApi } from '../services/api';
 import type { Channel, Category } from '../types';
 import { StreamCard } from './StreamCard';
 
+/** Renders the home page with featured live channels and browseable category grid. */
 export function HomePage() {
   const [liveChannels, setLiveChannels] = useState<Channel[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);

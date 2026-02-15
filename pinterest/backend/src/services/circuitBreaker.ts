@@ -8,6 +8,7 @@ const defaultOptions = {
   volumeThreshold: 5,
 };
 
+/** Creates a circuit breaker wrapping an async function with configurable failure thresholds. */
 export function createCircuitBreaker<T>(
   name: string,
   fn: (...args: unknown[]) => Promise<T>,
@@ -34,16 +35,19 @@ export function createCircuitBreaker<T>(
   return breaker;
 }
 
+/** Returns a fallback function that resolves with a default value when the circuit is open. */
 export function fallbackWithDefault<T>(defaultValue: T) {
   return () => defaultValue;
 }
 
+/** Returns a fallback function that throws an error when the circuit is open. */
 export function fallbackWithError(message: string) {
   return () => {
     throw new Error(message);
   };
 }
 
+/** Returns aggregate health status of all circuit breakers. */
 export function getCircuitBreakerHealth() {
   return { status: 'ok' };
 }

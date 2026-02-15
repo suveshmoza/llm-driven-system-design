@@ -139,6 +139,7 @@ const paymentBreaker = createPaymentCircuitBreaker(processPayment, paymentFallba
 // Routes
 // ============================================================
 
+/** GET /api/orders - Returns the authenticated user's orders with pagination and optional status filter. */
 // Get user's orders
 router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -190,6 +191,7 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
   }
 });
 
+/** GET /api/orders/:id - Returns a single order with items. Accessible by the order owner or admin. */
 // Get single order
 router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -230,6 +232,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
   }
 });
 
+/** POST /api/orders - Creates an order from cart with idempotency protection, inventory locking, and circuit-breaker-protected payment. */
 // Create order (checkout) - WITH IDEMPOTENCY
 router.post('/', requireAuth, async (req: ExtendedRequest, res: Response, next: NextFunction): Promise<void> => {
   const startTime = process.hrtime.bigint();
@@ -427,6 +430,7 @@ router.post('/', requireAuth, async (req: ExtendedRequest, res: Response, next: 
   }
 });
 
+/** POST /api/orders/:id/cancel - Cancels a pending or confirmed order and restores inventory. */
 // Cancel order - WITH AUDIT LOGGING
 router.post('/:id/cancel', requireAuth, async (req: ExtendedRequest, res: Response, next: NextFunction): Promise<void> => {
   const log = req.log || logger;
@@ -497,6 +501,7 @@ router.post('/:id/cancel', requireAuth, async (req: ExtendedRequest, res: Respon
   }
 });
 
+/** PUT /api/orders/:id/status - Updates an order's status with audit logging. Admin only. */
 // Update order status (admin only) - WITH AUDIT LOGGING
 router.put('/:id/status', requireAdmin, async (req: ExtendedRequest, res: Response, next: NextFunction): Promise<void> => {
   const log = req.log || logger;

@@ -2,8 +2,10 @@ import { create } from 'zustand';
 import { Track } from '../types';
 import { streamApi, libraryApi } from '../services/api';
 
+/** Repeat mode for playback queue. */
 export type RepeatMode = 'off' | 'all' | 'one';
 
+/** Audio player state with queue management, playback controls, and streaming integration. */
 interface PlayerState {
   currentTrack: Track | null;
   queue: Track[];

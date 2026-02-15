@@ -1,5 +1,6 @@
 import { useMapStore } from '../stores/mapStore';
 
+/** Renders map layer toggles (traffic, POIs, incidents), geolocation button, and zoom controls. */
 export default function MapControls() {
   const {
     showTraffic,

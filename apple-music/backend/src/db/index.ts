@@ -2,6 +2,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool for the Apple Music database. */
 export const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432', 10),

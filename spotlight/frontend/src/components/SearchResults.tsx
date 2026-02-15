@@ -2,6 +2,7 @@ import { useSpotlightStore } from '../stores/spotlightStore';
 import { SearchResultItem } from './SearchResultItem';
 import { SearchResult } from '../types/search';
 
+/** Renders the categorized search results list with keyboard navigation support. */
 export function SearchResults() {
   const { results, query, selectedIndex, isLoading, error } = useSpotlightStore();
 

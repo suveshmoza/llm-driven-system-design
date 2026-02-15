@@ -18,6 +18,7 @@ interface StorefrontState {
   getCartItemCount: () => number;
 }
 
+/** Storefront state managing store data, product catalog, and shopping cart for a tenant subdomain. */
 export const useStorefrontStore = create<StorefrontState>((set, get) => ({
   store: null,
   products: [],

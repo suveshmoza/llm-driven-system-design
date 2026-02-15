@@ -10,6 +10,7 @@ interface StoryTrayProps {
   onStoryViewed?: (userId: string) => void;
 }
 
+/** Renders a horizontal scrollable story tray with viewer modal on click. */
 export function StoryTray({ users, onStoryViewed }: StoryTrayProps) {
   const [selectedUserIndex, setSelectedUserIndex] = useState<number | null>(null);
   const [stories, setStories] = useState<Story[]>([]);

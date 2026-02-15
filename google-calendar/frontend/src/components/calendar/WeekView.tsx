@@ -9,6 +9,7 @@ interface WeekViewProps {
   onEventClick: (event: CalendarEvent) => void
 }
 
+/** Seven-day time grid view with absolute-positioned event blocks per column. */
 export function WeekView({ currentDate, events, onTimeSlotClick, onEventClick }: WeekViewProps) {
   const days = getWeekDays(currentDate)
   const hours = getHoursOfDay()

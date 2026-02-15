@@ -29,6 +29,7 @@ interface WebSocketMessage {
 // Store active WebSocket connections by user
 const userConnections = new Map<string, Set<ExtendedWebSocket>>();
 
+/** Initializes WebSocket server with token authentication, heartbeat, and file subscription support. */
 export function setupWebSocket(wss: WebSocketServer): void {
   wss.on('connection', async (ws: ExtendedWebSocket, req: IncomingMessage) => {
     console.log('WebSocket connection attempt');

@@ -2,6 +2,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool for the plugin platform database. */
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://plugin_user:plugin_pass@localhost:5432/plugin_platform',
   max: 20,
@@ -13,6 +14,7 @@ pool.on('error', (err) => {
   console.error('Unexpected PostgreSQL error:', err);
 });
 
+/** Executes a parameterized SQL query against the connection pool. */
 export async function query<T extends pg.QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -20,6 +22,7 @@ export async function query<T extends pg.QueryResultRow>(
   return pool.query<T>(text, params);
 }
 
+/** Acquires a client from the pool for multi-statement transactions. */
 export async function getClient(): Promise<pg.PoolClient> {
   return pool.connect();
 }

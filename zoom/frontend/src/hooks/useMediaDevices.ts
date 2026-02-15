@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { MediaDeviceOption } from '../types';
 import { useMediaStore } from '../stores/mediaStore';
 
+/** Manages camera/microphone enumeration, stream acquisition, and mute/video toggles. */
 export function useMediaDevices() {
   const [devices, setDevices] = useState<MediaDeviceOption[]>([]);
   const {

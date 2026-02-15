@@ -4,6 +4,7 @@ const register = new client.Registry();
 
 client.collectDefaultMetrics({ register });
 
+/** Histogram tracking HTTP request duration in seconds by method, route, and status. */
 export const httpRequestDuration = new client.Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
@@ -12,6 +13,7 @@ export const httpRequestDuration = new client.Histogram({
   registers: [register],
 });
 
+/** Counter tracking total HTTP requests by method, route, and status code. */
 export const httpRequestTotal = new client.Counter({
   name: 'http_requests_total',
   help: 'Total number of HTTP requests',
@@ -19,6 +21,7 @@ export const httpRequestTotal = new client.Counter({
   registers: [register],
 });
 
+/** Counter tracking page operations (create, update, delete, move). */
 export const pageOperations = new client.Counter({
   name: 'page_operations_total',
   help: 'Total page operations',
@@ -26,6 +29,7 @@ export const pageOperations = new client.Counter({
   registers: [register],
 });
 
+/** Histogram tracking search query latency in seconds. */
 export const searchLatency = new client.Histogram({
   name: 'search_latency_seconds',
   help: 'Search query latency in seconds',

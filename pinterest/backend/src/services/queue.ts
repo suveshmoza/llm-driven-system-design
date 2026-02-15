@@ -10,6 +10,7 @@ export const QUEUES = {
   IMAGE_PROCESSING_DLQ: 'pinterest-image-processing-dlq',
 };
 
+/** Connects to RabbitMQ and sets up image processing queue with dead letter exchange. */
 export async function initializeQueue(): Promise<void> {
   try {
     connection = await amqplib.connect(config.rabbitmq.url);
@@ -40,6 +41,7 @@ export async function initializeQueue(): Promise<void> {
   }
 }
 
+/** Publishes a persistent image processing job to the RabbitMQ queue. */
 export async function publishImageProcessingJob(data: {
   pinId: string;
   imageKey: string;
@@ -63,14 +65,17 @@ export async function publishImageProcessingJob(data: {
   }
 }
 
+/** Returns the active RabbitMQ channel or null if not initialized. */
 export function getChannel(): Channel | null {
   return channel;
 }
 
+/** Returns whether the RabbitMQ channel is initialized and ready. */
 export function isQueueReady(): boolean {
   return channel !== null;
 }
 
+/** Gracefully closes the RabbitMQ channel and connection. */
 export async function closeQueue(): Promise<void> {
   try {
     if (channel) await channel.close();

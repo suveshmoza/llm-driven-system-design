@@ -1,5 +1,11 @@
 const API_BASE = '/api';
 
+/**
+ * Performs an authenticated API request with JSON content type.
+ * @param endpoint - API endpoint path (appended to /api).
+ * @param options - Fetch request options.
+ * @returns Parsed JSON response.
+ */
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -22,6 +28,7 @@ async function fetchApi<T>(
 }
 
 // Auth
+/** Authentication API methods for login, registration, session, and preferences. */
 export const authApi = {
   login: (email: string, password: string) =>
     fetchApi<{ user: import('../types').User; token: string }>('/auth/login', {
@@ -47,6 +54,7 @@ export const authApi = {
 };
 
 // Catalog
+/** Catalog API methods for browsing tracks, albums, artists, and genres. */
 export const catalogApi = {
   search: (q: string, type?: string) =>
     fetchApi<{
@@ -81,6 +89,7 @@ export const catalogApi = {
 };
 
 // Library
+/** Library API methods for managing saved items, play history, and sync. */
 export const libraryApi = {
   getLibrary: (type?: string) =>
     fetchApi<{
@@ -117,6 +126,7 @@ export const libraryApi = {
 };
 
 // Playlists
+/** Playlist API methods for CRUD operations and track management. */
 export const playlistApi = {
   getPlaylists: () =>
     fetchApi<{ playlists: import('../types').Playlist[] }>('/playlists'),
@@ -153,6 +163,7 @@ export const playlistApi = {
 };
 
 // Streaming
+/** Streaming API methods for audio URL generation, prefetching, and progress tracking. */
 export const streamApi = {
   getStreamUrl: (trackId: string, quality?: string, network?: string) =>
     fetchApi<{ track: import('../types').Track; stream: import('../types').StreamInfo }>(
@@ -176,6 +187,7 @@ export const streamApi = {
 };
 
 // Radio
+/** Radio API methods for station browsing and personal station creation. */
 export const radioApi = {
   getStations: () =>
     fetchApi<{ stations: import('../types').RadioStation[] }>('/radio'),
@@ -194,6 +206,7 @@ export const radioApi = {
 };
 
 // Recommendations
+/** Recommendations API methods for personalized and browse content sections. */
 export const recommendationsApi = {
   getForYou: () =>
     fetchApi<{ sections: import('../types').BrowseSection[] }>('/recommendations/for-you'),

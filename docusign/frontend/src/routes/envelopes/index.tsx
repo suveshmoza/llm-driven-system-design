@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useEnvelopeStore } from '../../stores/envelopeStore'
 
+/** Envelopes list page with status filtering, displaying all user envelopes with quick actions. */
 function EnvelopesListPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuthStore()
   const { envelopes, isLoading, fetchEnvelopes, deleteEnvelope } = useEnvelopeStore()

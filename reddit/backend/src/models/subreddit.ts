@@ -11,6 +11,7 @@ export interface Subreddit {
   creator_username?: string;
 }
 
+/** Creates a new subreddit with a lowercase name. */
 export const createSubreddit = async (
   name: string,
   title: string,
@@ -26,6 +27,7 @@ export const createSubreddit = async (
   return result.rows[0];
 };
 
+/** Finds a subreddit by its case-insensitive name with creator info. */
 export const findSubredditByName = async (name: string): Promise<Subreddit | undefined> => {
   const result = await query<Subreddit>(
     `SELECT s.*, u.username as creator_username
@@ -37,6 +39,7 @@ export const findSubredditByName = async (name: string): Promise<Subreddit | und
   return result.rows[0];
 };
 
+/** Finds a subreddit by its numeric ID with creator info. */
 export const findSubredditById = async (id: number): Promise<Subreddit | undefined> => {
   const result = await query<Subreddit>(
     `SELECT s.*, u.username as creator_username
@@ -48,6 +51,7 @@ export const findSubredditById = async (id: number): Promise<Subreddit | undefin
   return result.rows[0];
 };
 
+/** Lists subreddits ordered by subscriber count with pagination. */
 export const listSubreddits = async (limit: number = 25, offset: number = 0): Promise<Subreddit[]> => {
   const result = await query<Subreddit>(
     `SELECT s.*, u.username as creator_username
@@ -60,6 +64,7 @@ export const listSubreddits = async (limit: number = 25, offset: number = 0): Pr
   return result.rows;
 };
 
+/** Searches subreddits by name, title, or description using ILIKE. */
 export const searchSubreddits = async (searchQuery: string, limit: number = 25): Promise<Subreddit[]> => {
   const result = await query<Subreddit>(
     `SELECT s.*, u.username as creator_username
@@ -73,6 +78,7 @@ export const searchSubreddits = async (searchQuery: string, limit: number = 25):
   return result.rows;
 };
 
+/** Subscribes a user to a subreddit and increments the subscriber count. */
 export const subscribe = async (userId: number, subredditId: number): Promise<void> => {
   await query(
     `INSERT INTO subscriptions (user_id, subreddit_id)
@@ -88,6 +94,7 @@ export const subscribe = async (userId: number, subredditId: number): Promise<vo
   );
 };
 
+/** Unsubscribes a user from a subreddit and decrements the subscriber count. */
 export const unsubscribe = async (userId: number, subredditId: number): Promise<void> => {
   const result = await query(
     `DELETE FROM subscriptions WHERE user_id = $1 AND subreddit_id = $2`,
@@ -102,6 +109,7 @@ export const unsubscribe = async (userId: number, subredditId: number): Promise<
   }
 };
 
+/** Checks whether a user is subscribed to a given subreddit. */
 export const isSubscribed = async (userId: number, subredditId: number): Promise<boolean> => {
   const result = await query(
     `SELECT 1 FROM subscriptions WHERE user_id = $1 AND subreddit_id = $2`,
@@ -110,6 +118,7 @@ export const isSubscribed = async (userId: number, subredditId: number): Promise
   return result.rows.length > 0;
 };
 
+/** Returns all subreddits a user is subscribed to, ordered alphabetically. */
 export const getUserSubscriptions = async (userId: number): Promise<Subreddit[]> => {
   const result = await query<Subreddit>(
     `SELECT s.*

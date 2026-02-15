@@ -1,3 +1,4 @@
+/** Formats a date into a relative time string (e.g., "5m", "2h", "3d", "Jan 15"). */
 export function formatRelativeTime(date: string | Date): string {
   const now = new Date();
   const past = new Date(date);
@@ -28,6 +29,7 @@ export function formatRelativeTime(date: string | Date): string {
   });
 }
 
+/** Formats large numbers with K/M suffixes (e.g., 1500 becomes "1.5K"). */
 export function formatNumber(num: number): string {
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -38,6 +40,7 @@ export function formatNumber(num: number): string {
   return num.toString();
 }
 
+/** Parses hashtags in content into clickable links, returning React nodes. */
 export function parseHashtags(content: string): React.ReactNode[] {
   const parts = content.split(/(#\w+)/g);
   return parts.map((part, index) => {
@@ -57,6 +60,7 @@ export function parseHashtags(content: string): React.ReactNode[] {
   });
 }
 
+/** Parses @mentions in content into clickable profile links, returning React nodes. */
 export function parseMentions(content: string): React.ReactNode[] {
   const parts = content.split(/(@\w+)/g);
   return parts.map((part, index) => {
@@ -76,6 +80,7 @@ export function parseMentions(content: string): React.ReactNode[] {
   });
 }
 
+/** Parses tweet content, converting both #hashtags and @mentions into clickable links. */
 export function parseContent(content: string): React.ReactNode[] {
   // First parse hashtags, then parse mentions within each part
   const hashtagParts = content.split(/(#\w+)/g);

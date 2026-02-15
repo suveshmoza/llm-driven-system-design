@@ -5,6 +5,7 @@ interface BoardCardProps {
   board: Board;
 }
 
+/** Renders a board preview card with cover image grid and pin count. */
 export default function BoardCard({ board }: BoardCardProps) {
   return (
     <Link

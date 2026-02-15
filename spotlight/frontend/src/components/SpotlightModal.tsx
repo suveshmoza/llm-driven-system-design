@@ -4,6 +4,7 @@ import { SearchInput } from './SearchInput';
 import { SearchResults } from './SearchResults';
 import { Suggestions } from './Suggestions';
 
+/** Renders the spotlight search modal overlay with input, results, and suggestions. */
 export function SpotlightModal() {
   const { isOpen, closeSpotlight } = useSpotlightStore();
   const modalRef = useRef<HTMLDivElement>(null);

@@ -4,6 +4,7 @@ import { channelApi, categoryApi } from '../services/api';
 import type { Channel, Category } from '../types';
 import { StreamCard } from './StreamCard';
 
+/** Renders the browse page with tabbed navigation between live channels and categories. */
 export function BrowsePage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);

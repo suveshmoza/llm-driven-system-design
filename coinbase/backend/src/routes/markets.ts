@@ -6,6 +6,7 @@ import { orderBookManager } from '../services/orderBook.js';
 const router = Router();
 
 // GET /api/v1/markets/pairs - Get all trading pairs with prices
+/** GET /api/v1/markets/pairs - Returns active trading pairs with live market data. */
 router.get('/pairs', async (_req: Request, res: Response) => {
   try {
     const result = await pool.query(
@@ -41,6 +42,7 @@ router.get('/pairs', async (_req: Request, res: Response) => {
 });
 
 // GET /api/v1/markets/currencies - Get all currencies
+/** GET /api/v1/markets/currencies - Returns all active currencies. */
 router.get('/currencies', async (_req: Request, res: Response) => {
   try {
     const result = await pool.query(
@@ -56,6 +58,7 @@ router.get('/currencies', async (_req: Request, res: Response) => {
 });
 
 // GET /api/v1/markets/:symbol/price - Get current price
+/** GET /api/v1/markets/:symbol/price - Returns current price and 24h change for a trading pair. */
 router.get('/:symbol/price', (req: Request, res: Response) => {
   const { symbol } = req.params;
   const priceData = marketService.getPriceData(symbol);
@@ -69,6 +72,7 @@ router.get('/:symbol/price', (req: Request, res: Response) => {
 });
 
 // GET /api/v1/markets/:symbol/orderbook - Get order book depth
+/** GET /api/v1/markets/:symbol/orderbook - Returns aggregated bid/ask levels and spread. */
 router.get('/:symbol/orderbook', (req: Request, res: Response) => {
   const { symbol } = req.params;
   const levels = parseInt(req.query.levels as string) || 20;
@@ -88,6 +92,7 @@ router.get('/:symbol/orderbook', (req: Request, res: Response) => {
 });
 
 // GET /api/v1/markets/:symbol/candles - Get candlestick data
+/** GET /api/v1/markets/:symbol/candles - Returns OHLCV candlestick data for charting. */
 router.get('/:symbol/candles', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;
@@ -121,6 +126,7 @@ router.get('/:symbol/candles', async (req: Request, res: Response) => {
 });
 
 // GET /api/v1/markets/:symbol/trades - Get recent trades
+/** GET /api/v1/markets/:symbol/trades - Returns recent executed trades for a trading pair. */
 router.get('/:symbol/trades', async (req: Request, res: Response) => {
   try {
     const { symbol } = req.params;

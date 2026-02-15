@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useMapStore } from '../stores/mapStore';
 import type { Place } from '../types';
 
+/** Renders a debounced search input with autocomplete results for places and addresses. */
 export default function SearchBar() {
   const [inputValue, setInputValue] = useState('');
   const [showResults, setShowResults] = useState(false);

@@ -7,6 +7,7 @@ interface CollaboratorCursorsProps {
   zoom: number;
 }
 
+/** Renders colored cursor pointers for remote collaborators on the canvas. */
 export function CollaboratorCursors({ cursors, scrollX, scrollY, zoom }: CollaboratorCursorsProps) {
   return (
     <>

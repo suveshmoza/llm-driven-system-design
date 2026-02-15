@@ -1,6 +1,7 @@
 import { useMeetingStore } from '../stores/meetingStore';
 import { getInitials } from '../utils/format';
 
+/** Renders the side panel listing all meeting participants with their media status. */
 export function ParticipantList() {
   const { participants } = useMeetingStore();
 

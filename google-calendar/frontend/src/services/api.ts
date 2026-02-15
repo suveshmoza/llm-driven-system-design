@@ -11,6 +11,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 // Auth
+/** Authenticates a user with username and password. */
 export async function login(username: string, password: string): Promise<{ user: User }> {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
@@ -21,6 +22,7 @@ export async function login(username: string, password: string): Promise<{ user:
   return handleResponse(res)
 }
 
+/** Destroys the current session. */
 export async function logout(): Promise<void> {
   await fetch(`${API_BASE}/auth/logout`, {
     method: 'POST',
@@ -28,6 +30,7 @@ export async function logout(): Promise<void> {
   })
 }
 
+/** Retrieves the currently authenticated user. */
 export async function getMe(): Promise<{ user: User }> {
   const res = await fetch(`${API_BASE}/auth/me`, {
     credentials: 'include',
@@ -36,6 +39,7 @@ export async function getMe(): Promise<{ user: User }> {
 }
 
 // Calendars
+/** Fetches all calendars for the authenticated user. */
 export async function getCalendars(): Promise<{ calendars: Calendar[] }> {
   const res = await fetch(`${API_BASE}/calendars`, {
     credentials: 'include',
@@ -43,6 +47,7 @@ export async function getCalendars(): Promise<{ calendars: Calendar[] }> {
   return handleResponse(res)
 }
 
+/** Creates a new calendar with the given name and color. */
 export async function createCalendar(name: string, color: string): Promise<{ calendar: Calendar }> {
   const res = await fetch(`${API_BASE}/calendars`, {
     method: 'POST',
@@ -54,6 +59,7 @@ export async function createCalendar(name: string, color: string): Promise<{ cal
 }
 
 // Events
+/** Fetches events within a date range across all user calendars. */
 export async function getEvents(start: Date, end: Date): Promise<{ events: CalendarEvent[] }> {
   const params = new URLSearchParams({
     start: start.toISOString(),
@@ -65,6 +71,7 @@ export async function getEvents(start: Date, end: Date): Promise<{ events: Calen
   return handleResponse(res)
 }
 
+/** Fetches a single event by ID. */
 export async function getEvent(id: number): Promise<{ event: CalendarEvent }> {
   const res = await fetch(`${API_BASE}/events/${id}`, {
     credentials: 'include',
@@ -72,6 +79,7 @@ export async function getEvent(id: number): Promise<{ event: CalendarEvent }> {
   return handleResponse(res)
 }
 
+/** Creates a new event, returning any scheduling conflicts detected. */
 export async function createEvent(event: {
   calendarId: number
   title: string
@@ -91,6 +99,7 @@ export async function createEvent(event: {
   return handleResponse(res)
 }
 
+/** Updates an existing event, returning any scheduling conflicts detected. */
 export async function updateEvent(
   id: number,
   event: Partial<{
@@ -113,6 +122,7 @@ export async function updateEvent(
   return handleResponse(res)
 }
 
+/** Deletes an event by ID. */
 export async function deleteEvent(id: number): Promise<void> {
   const res = await fetch(`${API_BASE}/events/${id}`, {
     method: 'DELETE',

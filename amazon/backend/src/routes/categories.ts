@@ -23,6 +23,7 @@ interface CategoryWithChildren extends CategoryRow {
   children: CategoryWithChildren[];
 }
 
+/** GET /api/categories - Returns all categories as a tree structure with product counts, using Redis cache. */
 // List categories
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -77,6 +78,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
   }
 });
 
+/** GET /api/categories/:slug - Returns a category with subcategories and breadcrumb navigation path. */
 // Get single category
 router.get('/:slug', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -140,6 +142,7 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction): Pr
   }
 });
 
+/** POST /api/categories - Creates a new category with auto-generated slug. Admin only. */
 // Create category (admin only)
 router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -160,6 +163,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFun
   }
 });
 
+/** PUT /api/categories/:id - Updates an existing category. Admin only. */
 // Update category (admin only)
 router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -189,6 +193,7 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextF
   }
 });
 
+/** DELETE /api/categories/:id - Deletes a category. Admin only. */
 // Delete category (admin only)
 router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

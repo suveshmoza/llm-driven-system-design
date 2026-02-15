@@ -9,6 +9,7 @@ interface HeaderProps {
   onSearchSubmit: (e: React.FormEvent) => void;
 }
 
+/** Top navigation bar with logo, search input, and user menu. */
 export default function Header({ user, onLogout, searchQuery, onSearchChange, onSearchSubmit }: HeaderProps) {
   return (
     <header className="h-14 bg-white border-b border-confluence-border flex items-center px-4 shrink-0">

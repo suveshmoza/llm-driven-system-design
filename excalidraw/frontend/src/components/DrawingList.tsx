@@ -7,6 +7,7 @@ interface DrawingListProps {
   onSelectDrawing: (drawingId: string) => void;
 }
 
+/** Renders a list of user drawings with create, open, and delete actions. */
 export function DrawingList({ onSelectDrawing }: DrawingListProps) {
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [publicDrawings, setPublicDrawings] = useState<Drawing[]>([]);

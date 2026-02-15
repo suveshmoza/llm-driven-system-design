@@ -13,6 +13,7 @@ import portfolioRoutes from './routes/portfolio.js';
 import walletsRoutes from './routes/wallets.js';
 import transactionsRoutes from './routes/transactions.js';
 
+/** Express application instance with session auth, rate limiting, and API routes. */
 export const app = express();
 
 // Middleware

@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { config } from '../config/index.js';
 
+/** Redis client instance for session storage, idempotency keys, and caching. */
 export const redis = new Redis({
   host: config.redis.host,
   port: config.redis.port,

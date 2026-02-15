@@ -8,6 +8,7 @@ interface ApprovalBannerProps {
   pageId: string;
 }
 
+/** Displays pending approval status with approve/reject actions and approval history. */
 export default function ApprovalBanner({ pageId }: ApprovalBannerProps) {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const { user } = useAuthStore();

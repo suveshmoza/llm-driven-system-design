@@ -16,6 +16,7 @@ interface UserRow {
   password_hash?: string;
 }
 
+/** POST /api/auth/register - Registers a new user with email validation and creates a session. */
 // Register
 router.post('/register',
   body('email').isEmail().normalizeEmail(),
@@ -69,6 +70,7 @@ router.post('/register',
   }
 );
 
+/** POST /api/auth/login - Authenticates user with email/password and creates a session. */
 // Login
 router.post('/login',
   body('email').isEmail().normalizeEmail(),
@@ -124,6 +126,7 @@ router.post('/login',
   }
 );
 
+/** POST /api/auth/logout - Destroys the current session. */
 // Logout
 router.post('/logout', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -136,11 +139,13 @@ router.post('/logout', requireAuth, async (req: Request, res: Response, next: Ne
   }
 });
 
+/** GET /api/auth/me - Returns the currently authenticated user. */
 // Get current user
 router.get('/me', requireAuth, (req: Request, res: Response): void => {
   res.json({ user: req.user });
 });
 
+/** PUT /api/auth/profile - Updates the authenticated user's profile name. */
 // Update profile
 router.put('/profile', requireAuth,
   body('name').optional().trim().notEmpty(),

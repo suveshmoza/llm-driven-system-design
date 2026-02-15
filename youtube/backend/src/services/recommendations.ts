@@ -82,6 +82,7 @@ interface SearchOptions {
 /**
  * Get personalized recommendations for a user
  */
+/** Generates personalized video recommendations using collaborative filtering signals. */
 export const getRecommendations = async (
   userId: string | null | undefined,
   limit: number = 20
@@ -274,6 +275,7 @@ const getGenericRecommendations = async (limit: number): Promise<VideoRecommenda
 /**
  * Get trending videos
  */
+/** Returns trending videos ranked by recent view velocity. */
 export const getTrending = async (
   limit: number = 50,
   category: string | null = null
@@ -323,6 +325,7 @@ export const getTrending = async (
 /**
  * Search videos
  */
+/** Searches videos by title, description, and tags with relevance scoring. */
 export const searchVideos = async (
   searchQuery: string,
   options: SearchOptions = {}
@@ -398,6 +401,7 @@ export const searchVideos = async (
 /**
  * Get subscription feed
  */
+/** Returns recent videos from channels the user is subscribed to. */
 export const getSubscriptionFeed = async (
   userId: string,
   page: number = 1,
@@ -458,6 +462,7 @@ export const getSubscriptionFeed = async (
 /**
  * Get watch history
  */
+/** Returns the user's watch history ordered by most recently watched. */
 export const getWatchHistory = async (
   userId: string,
   page: number = 1,

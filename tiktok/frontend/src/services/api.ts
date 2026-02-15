@@ -9,6 +9,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 // Auth API
+/** API client for authentication: register, login, logout, and session check. */
 export const authApi = {
   async register(username: string, email: string, password: string, displayName?: string) {
     const response = await fetch(`${API_BASE}/auth/register`, {
@@ -47,6 +48,7 @@ export const authApi = {
 };
 
 // Users API
+/** API client for user profiles, follow/unfollow, and profile updates. */
 export const usersApi = {
   async getProfile(username: string) {
     const response = await fetch(`${API_BASE}/users/${username}`, {
@@ -99,6 +101,7 @@ export const usersApi = {
 };
 
 // Videos API
+/** API client for video upload, like/unlike, view tracking, and discovery. */
 export const videosApi = {
   async upload(file: File, description: string, hashtags: string[]) {
     const formData = new FormData();
@@ -165,6 +168,7 @@ export const videosApi = {
 };
 
 // Feed API
+/** API client for personalized feed retrieval (FYP, following, trending). */
 export const feedApi = {
   async getFyp(limit = 10, offset = 0) {
     const response = await fetch(
@@ -208,6 +212,7 @@ export const feedApi = {
 };
 
 // Comments API
+/** API client for video comment CRUD operations. */
 export const commentsApi = {
   async getComments(videoId: number, limit = 20, offset = 0) {
     const response = await fetch(

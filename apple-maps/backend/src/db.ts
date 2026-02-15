@@ -2,6 +2,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool configured for the Apple Maps road network and POI database. */
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),

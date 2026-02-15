@@ -156,4 +156,5 @@ router.put(
   }
 );
 
+/** Router for token-based auth: register, login, logout, current user, and profile update. */
 export default router;

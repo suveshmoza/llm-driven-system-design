@@ -21,4 +21,5 @@ redis.on('error', (err: Error) => {
   console.error('Redis connection error:', err);
 });
 
+/** Redis client with lazy connect and exponential retry for sessions and caching. */
 export default redis;

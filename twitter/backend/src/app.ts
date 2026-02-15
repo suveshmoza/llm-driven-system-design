@@ -230,5 +230,6 @@ app.use((req: Request, res: Response) => {
   });
 });
 
+/** Express application with session auth, metrics middleware, and Twitter API routes. */
 export { app };
 export default app;

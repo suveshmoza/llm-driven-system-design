@@ -18,6 +18,7 @@ import templateRoutes from './routes/templates.js';
 import commentRoutes from './routes/comments.js';
 import approvalRoutes from './routes/approvals.js';
 
+/** Express application with session auth, rate limiting, and Prometheus metrics. */
 export const app = express();
 
 // Middleware

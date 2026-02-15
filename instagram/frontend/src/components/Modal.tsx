@@ -7,6 +7,7 @@ interface ModalProps {
   title?: string;
 }
 
+/** Renders a centered modal overlay with optional title and close button. */
 export function Modal({ isOpen, onClose, children, title }: ModalProps) {
   useEffect(() => {
     if (isOpen) {

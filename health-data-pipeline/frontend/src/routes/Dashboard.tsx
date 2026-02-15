@@ -6,6 +6,7 @@ import { MetricCard } from '../components/MetricCard';
 import { HealthChart } from '../components/HealthChart';
 import { InsightCard } from '../components/InsightCard';
 
+/** Main health dashboard showing daily metric cards, historical charts, and AI-generated insights. */
 export function Dashboard() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuthStore();

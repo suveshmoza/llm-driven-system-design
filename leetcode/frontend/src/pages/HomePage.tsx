@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the landing page with hero section, feature highlights, and call-to-action links. */
 export function HomePage() {
   const { isAuthenticated } = useAuthStore();
 

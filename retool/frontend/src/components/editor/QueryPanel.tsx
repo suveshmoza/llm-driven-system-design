@@ -3,6 +3,7 @@ import { useEditorStore } from '../../stores/editorStore';
 import { useDataStore } from '../../stores/dataStore';
 import { DataSourceForm } from '../DataSourceForm';
 
+/** Renders the bottom panel for editing and executing data source queries. */
 export function QueryPanel() {
   const app = useEditorStore((s) => s.app);
   const selectedQueryId = useEditorStore((s) => s.selectedQueryId);

@@ -19,6 +19,7 @@ interface LbStatus {
   servers: ServerInfo[];
 }
 
+/** Displays load balancer status with per-server health, connections, and circuit state. */
 export function LoadBalancerCard() {
   const { lbStatus } = useDashboardStore();
 

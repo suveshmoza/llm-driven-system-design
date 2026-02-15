@@ -16,6 +16,7 @@ const CURSOR_KEY_PREFIX = 'presence:cursors:';
  * Update a user's cursor position in a drawing room.
  * Stored in Redis with a 30-second TTL so stale cursors auto-expire.
  */
+/** Updates a collaborator's cursor position in Redis with a short TTL. */
 export const updateCursor = async (
   drawingId: string,
   userId: string,
@@ -40,6 +41,7 @@ export const updateCursor = async (
  * Get all cursor positions for a drawing room.
  * Returns an array of cursor data, excluding the requesting user.
  */
+/** Returns all active collaborator cursors for a drawing. */
 export const getCursors = async (
   drawingId: string,
   excludeUserId?: string
@@ -70,6 +72,7 @@ export const getCursors = async (
 /**
  * Remove a user's cursor from a drawing room (on disconnect).
  */
+/** Removes a collaborator's cursor when they disconnect. */
 export const removeCursor = async (drawingId: string, userId: string): Promise<void> => {
   const key = `${CURSOR_KEY_PREFIX}${drawingId}`;
 

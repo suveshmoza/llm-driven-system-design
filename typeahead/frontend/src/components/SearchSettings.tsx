@@ -1,5 +1,6 @@
 import { useSearchStore } from '../stores/search-store';
 
+/** Renders search configuration controls for fuzzy matching toggle and max suggestions count. */
 export function SearchSettings() {
   const { fuzzyEnabled, maxSuggestions, toggleFuzzy, setMaxSuggestions } =
     useSearchStore();

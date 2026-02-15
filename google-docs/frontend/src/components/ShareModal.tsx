@@ -7,6 +7,7 @@ interface Props {
   onClose: () => void;
 }
 
+/** Renders a modal for sharing a document with other users by email and permission level. */
 export default function ShareModal({ documentId, onClose }: Props) {
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<PermissionLevel>('edit');

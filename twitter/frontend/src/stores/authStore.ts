@@ -14,6 +14,7 @@ interface AuthStore {
   clearError: () => void;
 }
 
+/** Authentication state with login, register, logout, and session initialization. */
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isLoading: false,

@@ -488,4 +488,5 @@ router.get('/:id/replies', async (req: Request, res: Response, next: NextFunctio
   }
 });
 
+/** Tweets router for CRUD, likes, retweets, and replies with idempotency and fanout. */
 export default router;

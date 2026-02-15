@@ -59,6 +59,7 @@ const wsLogger = createChildLogger({ component: 'websocket' });
  * });
  * ```
  */
+/** Initializes the WebSocket server for real-time spreadsheet collaboration. */
 export function setupWebSocket(server: any) {
   const wss = new WebSocketServer({ server, path: '/ws' });
 

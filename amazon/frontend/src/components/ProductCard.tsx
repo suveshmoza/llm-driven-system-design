@@ -8,6 +8,7 @@ interface ProductCardProps {
   product: Product;
 }
 
+/** Renders a product card with image, rating stars, price, discount badge, stock status, and add-to-cart button. */
 export function ProductCard({ product }: ProductCardProps) {
   const { addToCart } = useCartStore();
   const { user } = useAuthStore();

@@ -27,6 +27,7 @@ interface VideoRow {
 /**
  * Queue a transcoding job via RabbitMQ
  */
+/** Queues a video for transcoding into multiple resolutions. */
 export const queueTranscodingJob = async (
   videoId: string,
   sourceKey: string,
@@ -65,6 +66,7 @@ export const queueTranscodingJob = async (
 /**
  * Get transcoding status
  */
+/** Returns the current transcoding status for a video. */
 export const getTranscodingStatus = async (videoId: string): Promise<TranscodeStatus | TranscodeJob | null> => {
   const cached = await cacheGet<TranscodeJob>(`transcode:${videoId}`);
   if (cached) {
@@ -91,6 +93,7 @@ export const getTranscodingStatus = async (videoId: string): Promise<TranscodeSt
 /**
  * Get queue status for admin dashboard
  */
+/** Returns overall transcoding queue statistics. */
 export const getQueueStatus = async () => {
   const stats = await getQueueStats();
   return {
@@ -115,6 +118,7 @@ setInterval(async () => {
   }
 }, 5000);
 
+/** Returns the number of videos currently in the transcoding queue. */
 export const getQueueLength = (): number => {
   return cachedQueueLength;
 };

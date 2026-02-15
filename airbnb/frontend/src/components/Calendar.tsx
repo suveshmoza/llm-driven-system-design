@@ -11,6 +11,7 @@ interface CalendarProps {
   readOnly?: boolean;
 }
 
+/** Renders an interactive monthly calendar with availability highlighting, date range selection, and blocked date indicators. */
 export function Calendar({
   availabilityBlocks = [],
   selectedCheckIn,

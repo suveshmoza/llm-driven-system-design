@@ -36,6 +36,7 @@ function slugify(title: string): string {
     .trim();
 }
 
+/** Creates a page with initial version, cache invalidation, and search index publish. */
 export async function createPage(
   spaceId: string,
   title: string,
@@ -100,6 +101,7 @@ export async function createPage(
   }
 }
 
+/** Updates a page, creates a new version record, and republishes the search index. */
 export async function updatePage(
   pageId: string,
   title: string,
@@ -165,6 +167,7 @@ export async function updatePage(
   }
 }
 
+/** Deletes a page and removes it from the cache and search index. */
 export async function deletePage(pageId: string): Promise<void> {
   const page = await getPageById(pageId);
   if (!page) throw new Error('Page not found');
@@ -184,6 +187,7 @@ export async function deletePage(pageId: string): Promise<void> {
   logger.info({ pageId }, 'Page deleted');
 }
 
+/** Retrieves a page by ID with Redis caching. */
 export async function getPageById(pageId: string): Promise<Page | null> {
   const cacheKey = `page:${pageId}:data`;
   const cached = await cacheGet<Page>(cacheKey);
@@ -197,6 +201,7 @@ export async function getPageById(pageId: string): Promise<Page | null> {
   return page;
 }
 
+/** Retrieves a page by its URL slug within a space, with Redis caching. */
 export async function getPageBySlug(spaceId: string, slug: string): Promise<Page | null> {
   const cacheKey = `space:${spaceId}:slug:${slug}`;
   const cached = await cacheGet<Page>(cacheKey);
@@ -213,6 +218,7 @@ export async function getPageBySlug(spaceId: string, slug: string): Promise<Page
   return page;
 }
 
+/** Builds the hierarchical page tree for a space using adjacency list traversal. */
 export async function getPageTree(spaceId: string): Promise<PageTreeNode[]> {
   const cacheKey = `space:${spaceId}:tree`;
   const cached = await cacheGet<PageTreeNode[]>(cacheKey);
@@ -252,6 +258,7 @@ function buildTree(pages: Page[]): PageTreeNode[] {
   return roots;
 }
 
+/** Moves a page to a new parent and position, reordering siblings at both locations. */
 export async function movePage(
   pageId: string,
   newParentId: string | null,
@@ -302,6 +309,7 @@ export async function movePage(
   }
 }
 
+/** Retrieves the most recently updated published pages for the dashboard. */
 export async function getRecentPages(limit: number = 10): Promise<Page[]> {
   const result = await pool.query(
     `SELECT p.*, s.key as space_key, s.name as space_name, u.username as author_username
@@ -316,6 +324,7 @@ export async function getRecentPages(limit: number = 10): Promise<Page[]> {
   return result.rows;
 }
 
+/** Retrieves all pages tagged with a given label. */
 export async function getPagesByLabel(label: string): Promise<Page[]> {
   const result = await pool.query(
     `SELECT p.* FROM pages p
@@ -327,6 +336,7 @@ export async function getPagesByLabel(label: string): Promise<Page[]> {
   return result.rows;
 }
 
+/** Adds a label to a page, ignoring duplicates. */
 export async function addLabel(pageId: string, label: string): Promise<void> {
   await pool.query(
     'INSERT INTO page_labels (page_id, label) VALUES ($1, $2) ON CONFLICT DO NOTHING',
@@ -335,11 +345,13 @@ export async function addLabel(pageId: string, label: string): Promise<void> {
   await cacheDelPattern(`page:${pageId}:*`);
 }
 
+/** Removes a label from a page and invalidates the page cache. */
 export async function removeLabel(pageId: string, label: string): Promise<void> {
   await pool.query('DELETE FROM page_labels WHERE page_id = $1 AND label = $2', [pageId, label]);
   await cacheDelPattern(`page:${pageId}:*`);
 }
 
+/** Retrieves all labels for a page, sorted alphabetically. */
 export async function getLabels(pageId: string): Promise<string[]> {
   const result = await pool.query(
     'SELECT label FROM page_labels WHERE page_id = $1 ORDER BY label',
@@ -348,6 +360,7 @@ export async function getLabels(pageId: string): Promise<string[]> {
   return result.rows.map((r: { label: string }) => r.label);
 }
 
+/** Builds ancestor breadcrumb chain using a recursive CTE. */
 export async function getPageBreadcrumbs(pageId: string): Promise<Array<{ id: string; title: string; slug: string }>> {
   const result = await pool.query(
     `WITH RECURSIVE ancestors AS (

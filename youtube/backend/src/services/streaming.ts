@@ -65,6 +65,7 @@ interface WatchProgress {
 }
 
 // Get video streaming info (manifest URLs)
+/** Returns streaming metadata including available resolutions and adaptive bitrate info. */
 export const getStreamingInfo = async (videoId: string): Promise<StreamingInfo | null> => {
   // Check cache first
   const cached = await cacheGet<StreamingInfo>(`stream:${videoId}`);
@@ -134,6 +135,7 @@ export const getStreamingInfo = async (videoId: string): Promise<StreamingInfo |
 };
 
 // Get direct video URL for a specific resolution
+/** Generates a presigned streaming URL for a specific video resolution. */
 export const getVideoUrl = async (
   videoId: string,
   resolution: string = '720p'
@@ -163,6 +165,7 @@ export const getVideoUrl = async (
 };
 
 // Record a video view
+/** Records a video view and updates the total view count. */
 export const recordView = async (
   videoId: string,
   userId: string | null = null,
@@ -186,6 +189,7 @@ export const recordView = async (
 };
 
 // Update watch progress
+/** Saves the user's watch progress position for resume-later functionality. */
 export const updateWatchProgress = async (
   userId: string | null,
   videoId: string,
@@ -214,6 +218,7 @@ export const updateWatchProgress = async (
 };
 
 // Get watch progress for a user
+/** Retrieves the user's last watch position for a video. */
 export const getWatchProgress = async (
   userId: string | null,
   videoId: string
@@ -243,6 +248,7 @@ export const getWatchProgress = async (
 };
 
 // Generate adaptive bitrate selection based on bandwidth
+/** Selects the best resolution based on available bandwidth and user preferences. */
 export const selectResolution = (
   availableResolutions: Resolution[],
   bandwidthKbps: number

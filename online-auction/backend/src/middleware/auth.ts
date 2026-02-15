@@ -3,6 +3,7 @@ import { getSession } from '../redis.js';
 import { query } from '../db.js';
 import type { AuthenticatedRequest, User } from '../types.js';
 
+/** Middleware that validates session token and attaches user to request. */
 export const authenticate = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -39,6 +40,7 @@ export const authenticate = async (
   }
 };
 
+/** Middleware that attaches user to request if session exists, otherwise continues. */
 export const optionalAuth = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -69,6 +71,7 @@ export const optionalAuth = async (
   next();
 };
 
+/** Middleware that rejects non-admin users with 403. */
 export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
   if (!req.user || req.user.role !== 'admin') {
     res.status(403).json({ error: 'Admin access required' });

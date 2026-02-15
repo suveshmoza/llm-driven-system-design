@@ -34,6 +34,7 @@ interface CollaboratorCursorsProps {
  * @param props - Functions to calculate cell positions
  * @returns Cursor and selection overlay elements
  */
+/** Renders colored cursor indicators and selection highlights for remote collaborators. */
 export function CollaboratorCursors({
   getColumnWidth,
   getRowHeight,

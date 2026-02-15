@@ -18,6 +18,7 @@ redis.on('connect', () => {
 });
 
 // Cache keys
+/** Cache key generators for search queries, autocomplete, robots.txt, host fetch timestamps, and PageRank. */
 export const CACHE_KEYS = {
   QUERY_RESULT: (query: string, page: number): string => `search:${query}:${page}`,
   AUTOCOMPLETE: (prefix: string): string => `autocomplete:${prefix}`,
@@ -26,7 +27,7 @@ export const CACHE_KEYS = {
   PAGE_RANK: (urlId: number): string => `pagerank:${urlId}`,
 };
 
-// Cache TTL in seconds
+/** Cache TTL values in seconds for each key type. */
 export const CACHE_TTL = {
   QUERY_RESULT: 300, // 5 minutes
   AUTOCOMPLETE: 600, // 10 minutes

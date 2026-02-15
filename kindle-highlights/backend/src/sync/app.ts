@@ -181,6 +181,7 @@ async function handleHighlightChange(userId: string, sourceDeviceId: string, mes
 /**
  * Push highlight event to all user's devices
  */
+/** Pushes a highlight sync event to all connected WebSocket clients for a user. */
 export async function pushHighlight(userId: string, event: { action: string; highlight: any }): Promise<void> {
   const devices = connections.get(userId)
   if (!devices) return
@@ -279,6 +280,7 @@ async function authenticateConnection(req: http.IncomingMessage): Promise<{ user
 /**
  * Create WebSocket server attached to HTTP server
  */
+/** Creates a WebSocket server for real-time highlight synchronization. */
 export function createSyncServer(server: http.Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/sync' })
 

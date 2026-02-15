@@ -7,6 +7,7 @@ interface PostCardProps {
   post: Post;
 }
 
+/** Renders a post summary card with vote buttons, subreddit link, and comment count. */
 export function PostCard({ post }: PostCardProps) {
   return (
     <div className="flex bg-white rounded border border-gray-200 hover:border-gray-400 transition-colors">

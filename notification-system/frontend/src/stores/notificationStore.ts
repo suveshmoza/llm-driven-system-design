@@ -24,6 +24,7 @@ interface NotificationState {
   clearError: () => void;
 }
 
+/** Notification state managing notification list, preferences, rate limits, and delivery actions. */
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   preferences: null,

@@ -146,4 +146,5 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 });
 
+/** Router for session-based authentication: register, login, logout, and current user. */
 export default router;

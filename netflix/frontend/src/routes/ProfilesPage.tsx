@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 
 const AVATAR_COLORS = ['#E50914', '#1D9BF0', '#8B5CF6', '#22C55E', '#F59E0B'];
 
+/** Renders the profile selection screen with avatar-colored profile cards and edit mode. */
 export function ProfilesPage() {
   const navigate = useNavigate();
   const { profiles, selectProfile, loadProfiles, isAuthenticated } = useAuthStore();

@@ -2,6 +2,7 @@ interface PageViewerProps {
   html: string;
 }
 
+/** Renders wiki page HTML content with prose typography styling. */
 export default function PageViewer({ html }: PageViewerProps) {
   return (
     <div

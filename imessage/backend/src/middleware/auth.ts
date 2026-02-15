@@ -24,6 +24,7 @@ export interface WsAuthResult {
   deviceId: string;
 }
 
+/** Validates bearer token from Authorization header and attaches user/device context to the request. */
 export async function authenticateRequest(
   req: LoggedRequest,
   res: Response,
@@ -68,6 +69,7 @@ export async function authenticateRequest(
   }
 }
 
+/** Validates a WebSocket connection token and returns authenticated user context. */
 export async function authenticateWs(token: string | null): Promise<WsAuthResult | null> {
   if (!token) {
     return null;

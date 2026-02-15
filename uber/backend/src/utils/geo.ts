@@ -1,4 +1,4 @@
-// Haversine formula to calculate distance between two points
+/** Calculates the haversine distance in kilometers between two geographic coordinates. */
 export function calculateDistance(
   lat1: number,
   lng1: number,
@@ -20,17 +20,20 @@ function toRad(deg: number): number {
 }
 
 // Convert km to miles
+/** Converts kilometers to miles. */
 export function kmToMiles(km: number): number {
   return km * 0.621371;
 }
 
 // Convert miles to km
+/** Converts miles to kilometers. */
 export function milesToKm(miles: number): number {
   return miles * 1.60934;
 }
 
 // Estimate travel time based on distance (simple linear model)
 // Assumes average speed of 30 km/h in urban areas
+/** Estimates travel time in minutes based on distance and average speed. */
 export function estimateTravelTime(distanceKm: number, averageSpeedKmh: number = 30): number {
   const hours = distanceKm / averageSpeedKmh;
   return Math.ceil(hours * 60); // Return minutes
@@ -39,6 +42,7 @@ export function estimateTravelTime(distanceKm: number, averageSpeedKmh: number =
 // Generate a simple geohash (precision 6 = ~1.2km x 0.6km)
 const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
 
+/** Encodes latitude/longitude into a geohash string for spatial partitioning of surge zones. */
 export function encodeGeohash(lat: number, lng: number, precision: number = 6): string {
   let minLat = -90,
     maxLat = 90;
@@ -82,6 +86,7 @@ export function encodeGeohash(lat: number, lng: number, precision: number = 6): 
 }
 
 // Get neighboring geohash cells
+/** Returns the 8 neighboring geohash cells for boundary-aware surge lookups. */
 export function getGeohashNeighbors(geohash: string): string[] {
   // Simplified: returns the same geohash
   // In production, would calculate actual neighbors
@@ -89,11 +94,13 @@ export function getGeohashNeighbors(geohash: string): string[] {
 }
 
 // Format currency
+/** Formats a cent amount as a dollar string (e.g., 1250 becomes "$12.50"). */
 export function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
 // Generate random ID
+/** Generates a random hex string for use as entity identifiers. */
 export function generateId(): string {
   return crypto.randomUUID();
 }

@@ -9,6 +9,7 @@ interface VoteButtonsProps {
   vertical?: boolean;
 }
 
+/** Renders upvote/downvote buttons with optimistic score updates. */
 export function VoteButtons({ type, id, score, userVote = 0, vertical = true }: VoteButtonsProps) {
   const [currentVote, setCurrentVote] = useState(userVote);
   const [currentScore, setCurrentScore] = useState(score);

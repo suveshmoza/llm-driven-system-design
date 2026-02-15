@@ -66,6 +66,7 @@ interface CollectOutputResult {
   timedOut: boolean;
 }
 
+/** Executes user code in sandboxed Docker containers with resource limits and circuit breaker protection. */
 class CodeExecutor {
   private tempDir: string;
   private circuitBreaker: CircuitBreaker<[ExecutionOptions], ExecutionResult> | null;

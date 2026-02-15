@@ -1,6 +1,7 @@
 import express, { Request, Response, Router } from 'express';
 import { authService } from '../services/authService.js';
 
+/** Authentication router handling register, login, logout, and session validation. */
 const router: Router = express.Router();
 
 // Register

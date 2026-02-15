@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { StatsResponse } from '../types';
 import { fetchStats } from '../services/api';
 
+/** Displays live system statistics including total views, unique videos, and connected clients. */
 export function StatsPanel() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
 

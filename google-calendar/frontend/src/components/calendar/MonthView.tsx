@@ -13,6 +13,7 @@ interface MonthViewProps {
 const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MAX_VISIBLE_EVENTS = 3
 
+/** Month grid view displaying days in a 7-column layout with event pills. */
 export function MonthView({ currentDate, events, onDayClick, onEventClick }: MonthViewProps) {
   const days = getMonthDays(currentDate)
 

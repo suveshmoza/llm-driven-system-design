@@ -6,6 +6,7 @@ interface SearchTotalHits {
   relation: string;
 }
 
+/** Elasticsearch client for full-text and geo-spatial business search. */
 export const elasticsearch: Client = new Client({
   node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
 });

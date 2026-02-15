@@ -35,7 +35,7 @@ interface FormattedSigner {
   signedAt: string | null;
 }
 
-// Get audit events for envelope
+/** GET /api/v1/audit/envelope/:envelopeId - Returns formatted audit events for an envelope owned by the current user. */
 router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -76,7 +76,7 @@ router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Resp
   }
 });
 
-// Verify audit chain integrity
+/** GET /api/v1/audit/verify/:envelopeId - Verifies the integrity of the hash chain audit trail. */
 router.get('/verify/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -106,7 +106,7 @@ router.get('/verify/:envelopeId', authenticate, async (req: Request, res: Respon
   }
 });
 
-// Get certificate of completion data
+/** GET /api/v1/audit/certificate/:envelopeId - Generates certificate of completion data for completed envelopes. */
 router.get('/certificate/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -143,7 +143,7 @@ router.get('/certificate/:envelopeId', authenticate, async (req: Request, res: R
   }
 });
 
-// Public endpoint to verify document signature (by envelope ID or hash)
+/** GET /api/v1/audit/public/verify - Publicly verifies a document signature by envelope ID or audit event hash. */
 router.get('/public/verify', async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId, hash } = req.query as { envelopeId?: string; hash?: string };
@@ -220,4 +220,5 @@ router.get('/public/verify', async (req: Request, res: Response): Promise<void> 
   }
 });
 
+/** Express router for audit trail endpoints including event history, chain verification, and certificates. */
 export default router;

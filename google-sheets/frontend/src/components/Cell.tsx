@@ -28,6 +28,7 @@ interface CellProps {
  * @param props - Cell position and styling props
  * @returns The cell element with appropriate state (viewing/editing/selected)
  */
+/** Renders a single spreadsheet cell with formula evaluation and inline editing. */
 export const Cell = memo(function Cell({ rowIndex, colIndex, style }: CellProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 

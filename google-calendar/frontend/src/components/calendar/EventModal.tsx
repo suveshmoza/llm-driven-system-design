@@ -27,6 +27,7 @@ const COLORS = [
   '#6B7280', // gray
 ]
 
+/** Modal form for creating or editing events with conflict warnings and color picker. */
 export function EventModal({
   isOpen,
   mode,

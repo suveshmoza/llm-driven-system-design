@@ -13,6 +13,7 @@ export interface Recommendation {
   score?: number;
 }
 
+/** Initializes the Redis client and establishes a connection. */
 export async function initializeRedis(): Promise<RedisClientType> {
   client = createClient({
     url: process.env.REDIS_URL || 'redis://localhost:6379'
@@ -25,6 +26,7 @@ export async function initializeRedis(): Promise<RedisClientType> {
   return client;
 }
 
+/** Returns the initialized Redis client. Throws if not yet initialized. */
 export function getRedis(): RedisClientType {
   if (!client) {
     throw new Error('Redis not initialized');
@@ -32,7 +34,7 @@ export function getRedis(): RedisClientType {
   return client;
 }
 
-// Session helpers
+/** Stores session data in Redis with a configurable TTL (default 24 hours). */
 export async function setSession(
   sessionId: string,
   data: SessionData,
@@ -46,6 +48,7 @@ export async function setSession(
   });
 }
 
+/** Retrieves session data from Redis by session ID. */
 export async function getSession(sessionId: string): Promise<SessionData | null> {
   if (!client) {
     throw new Error('Redis not initialized');
@@ -54,6 +57,7 @@ export async function getSession(sessionId: string): Promise<SessionData | null>
   return data ? JSON.parse(data) : null;
 }
 
+/** Deletes a session from Redis by session ID. */
 export async function deleteSession(sessionId: string): Promise<void> {
   if (!client) {
     throw new Error('Redis not initialized');
@@ -61,7 +65,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await client.del(`session:${sessionId}`);
 }
 
-// Cache helpers
+/** Retrieves a cached value from Redis by key, deserializing from JSON. */
 export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
   if (!client) {
     throw new Error('Redis not initialized');
@@ -70,6 +74,7 @@ export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
   return data ? JSON.parse(data) : null;
 }
 
+/** Stores a value in Redis cache with a configurable TTL (default 1 hour). */
 export async function cacheSet(
   key: string,
   value: unknown,
@@ -83,6 +88,7 @@ export async function cacheSet(
   });
 }
 
+/** Deletes a cached value from Redis by key. */
 export async function cacheDel(key: string): Promise<void> {
   if (!client) {
     throw new Error('Redis not initialized');
@@ -90,7 +96,7 @@ export async function cacheDel(key: string): Promise<void> {
   await client.del(key);
 }
 
-// Recommendations
+/** Retrieves cached product recommendations (co-purchase data) from Redis. */
 export async function getRecommendations(productId: string | number): Promise<Recommendation[] | null> {
   if (!client) {
     throw new Error('Redis not initialized');
@@ -99,6 +105,7 @@ export async function getRecommendations(productId: string | number): Promise<Re
   return data ? JSON.parse(data) : null;
 }
 
+/** Caches product recommendations in Redis with a configurable TTL (default 24 hours). */
 export async function setRecommendations(
   productId: string | number,
   recommendations: Recommendation[],

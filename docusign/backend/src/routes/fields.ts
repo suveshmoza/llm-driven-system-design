@@ -60,7 +60,7 @@ interface BulkField {
   required?: boolean;
 }
 
-// Add field to document
+/** POST /api/v1/fields/:documentId - Adds a signature, initial, date, text, or checkbox field to a document. */
 router.post('/:documentId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { documentId } = req.params;
@@ -170,7 +170,7 @@ router.post('/:documentId', authenticate, async (req: Request, res: Response): P
   }
 });
 
-// Get fields for document
+/** GET /api/v1/fields/document/:documentId - Returns all fields for a document with recipient info. */
 router.get('/document/:documentId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { documentId } = req.params;
@@ -215,7 +215,7 @@ router.get('/document/:documentId', authenticate, async (req: Request, res: Resp
   }
 });
 
-// Update field
+/** PUT /api/v1/fields/:id - Updates field properties such as position, type, or assigned recipient. */
 router.put('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -288,7 +288,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response): Promise<vo
   }
 });
 
-// Delete field
+/** DELETE /api/v1/fields/:id - Removes a field from a draft envelope's document. */
 router.delete('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -334,7 +334,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response): Promise
   }
 });
 
-// Bulk add fields
+/** POST /api/v1/fields/bulk/:documentId - Creates multiple fields on a document in a single request. */
 router.post('/bulk/:documentId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { documentId } = req.params;
@@ -398,4 +398,5 @@ router.post('/bulk/:documentId', authenticate, async (req: Request, res: Respons
   }
 });
 
+/** Express router for document field management including placement, update, delete, and bulk operations. */
 export default router;

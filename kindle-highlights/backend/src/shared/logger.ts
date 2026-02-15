@@ -25,6 +25,7 @@ export const logger = pino({
  * @param service - Service name
  * @returns Child logger
  */
+/** Creates a child logger scoped to a specific service name. */
 export function createLogger(service: string): pino.Logger {
   return logger.child({ service })
 }

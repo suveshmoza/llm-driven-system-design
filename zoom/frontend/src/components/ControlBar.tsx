@@ -7,6 +7,7 @@ interface ControlBarProps {
   onLeave: () => void;
 }
 
+/** Renders the in-meeting control bar with mute, video, screen share, and leave buttons. */
 export function ControlBar({ onLeave }: ControlBarProps) {
   const { user } = useAuthStore();
   const { meeting, participants, toggleChat, toggleParticipantList, toggleBreakout, isChatOpen, isParticipantListOpen } = useMeetingStore();

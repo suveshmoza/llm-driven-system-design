@@ -6,6 +6,7 @@ interface SortTabsProps {
   baseUrl: string;
 }
 
+/** Renders sort-order tabs (hot, new, top, controversial) as navigation links. */
 export function SortTabs({ currentSort, baseUrl }: SortTabsProps) {
   const sorts: { value: SortType; label: string }[] = [
     { value: 'hot', label: 'Hot' },

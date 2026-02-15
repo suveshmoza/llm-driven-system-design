@@ -9,6 +9,7 @@ interface PageTreeItemProps {
   depth: number;
 }
 
+/** Renders a single page tree node with expand/collapse toggle and child recursion. */
 export default function PageTreeItem({ node, spaceKey, depth }: PageTreeItemProps) {
   const [expanded, setExpanded] = useState(depth < 1);
   const hasChildren = node.children && node.children.length > 0;

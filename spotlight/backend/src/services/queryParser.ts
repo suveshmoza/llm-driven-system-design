@@ -120,6 +120,7 @@ export interface SpecialResult {
 }
 
 // Parse query to detect special queries
+/** Parses a raw search query into structured tokens with operators and filters. */
 export function parseQuery(queryString: string): ParsedQuery {
   const query: ParsedQuery = {
     raw: queryString,

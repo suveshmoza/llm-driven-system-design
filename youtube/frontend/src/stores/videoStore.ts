@@ -60,6 +60,7 @@ interface VideoState {
  * source of truth for video listings, search, recommendations, and
  * user interactions like likes and views.
  */
+/** Video browsing state with feed, trending, search, and watch history management. */
 export const useVideoStore = create<VideoState>((set, get) => ({
   videos: [],
   currentVideo: null,

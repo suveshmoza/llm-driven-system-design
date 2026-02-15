@@ -15,6 +15,7 @@ const sizeClasses = {
   xl: 'w-20 h-20',
 };
 
+/** Renders a circular avatar with optional story ring indicator. */
 export function Avatar({
   src,
   alt,

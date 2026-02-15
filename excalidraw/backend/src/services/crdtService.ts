@@ -25,6 +25,7 @@ export interface CrdtElement {
  * For each element_id, keep the version with the highest version number.
  * If versions are equal, use updatedAt timestamp as tie-breaker.
  */
+/** Merges remote CRDT elements with local state using last-write-wins conflict resolution. */
 export const mergeElements = (
   existing: CrdtElement[],
   incoming: CrdtElement[]
@@ -61,6 +62,7 @@ export const mergeElements = (
  * Apply a single operation (add, update, delete, move) to the element list.
  * Returns the updated element list.
  */
+/** Applies a single CRDT operation (add, update, delete) to the element set. */
 export const applyOperation = (
   elements: CrdtElement[],
   operation: {
@@ -126,6 +128,7 @@ export const applyOperation = (
  * Filter out soft-deleted elements for rendering.
  * The full list (including deleted) is kept for CRDT merge purposes.
  */
+/** Filters out deleted elements and returns only visible ones. */
 export const getVisibleElements = (elements: CrdtElement[]): CrdtElement[] => {
   return elements.filter((el) => !el.isDeleted);
 };

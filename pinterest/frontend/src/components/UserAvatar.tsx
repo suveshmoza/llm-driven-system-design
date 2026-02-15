@@ -13,6 +13,7 @@ const sizeMap = {
   xl: 'w-20 h-20 text-2xl',
 };
 
+/** Renders a user avatar with image or fallback initial letter in configurable sizes. */
 export default function UserAvatar({ avatarUrl, username, displayName, size = 'md', className = '' }: UserAvatarProps) {
   const letter = (displayName?.[0] || username[0]).toUpperCase();
 

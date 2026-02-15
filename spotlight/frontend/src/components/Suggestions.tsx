@@ -65,6 +65,7 @@ function SuggestionItem({ suggestion, index, isSelected }: SuggestionItemProps) 
   );
 }
 
+/** Renders search suggestions as clickable chips below the search input. */
 export function Suggestions() {
   const { suggestions, query, selectedIndex } = useSpotlightStore();
 

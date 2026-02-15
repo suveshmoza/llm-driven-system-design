@@ -44,6 +44,7 @@ interface EditorState {
 
 let componentIdCounter = 0;
 
+/** Editor state for the visual app builder with component selection and layout. */
 export const useEditorStore = create<EditorState>((set, get) => ({
   app: null,
   isDirty: false,

@@ -7,6 +7,7 @@ import { RequestsCard } from './RequestsCard';
 import { LoadBalancerCard } from './LoadBalancerCard';
 import { ActionsCard } from './ActionsCard';
 
+/** Renders the admin dashboard with system metrics, cache stats, circuit breakers, and actions. */
 export function Dashboard() {
   const {
     data,

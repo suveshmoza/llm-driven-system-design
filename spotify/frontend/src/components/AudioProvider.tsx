@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
 
+/** Provides the HTML5 audio element and syncs playback state with the player store. */
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const { setAudioRef, setCurrentTime, setDuration, onTrackEnd, volume, isMuted } = usePlayerStore();

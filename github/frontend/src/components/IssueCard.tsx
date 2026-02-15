@@ -6,6 +6,7 @@ interface LabelBadgeProps {
   onClick?: () => void;
 }
 
+/** Renders a colored label badge with optional click handler. */
 export function LabelBadge({ label, onClick }: LabelBadgeProps) {
   const isLight = isLightColor(label.color);
 
@@ -49,6 +50,7 @@ interface IssueCardProps {
   type?: 'issue' | 'pr';
 }
 
+/** Renders an issue or PR card with title, labels, author, and comment count. */
 export function IssueCard({ issue, owner, repo, type = 'issue' }: IssueCardProps) {
   const basePath = type === 'pr' ? 'pull' : 'issues';
 

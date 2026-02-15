@@ -13,6 +13,7 @@ import {
  * Main canvas renderer.
  * Renders all elements to a canvas context with proper viewport transforms.
  */
+/** Renders all drawing elements onto the HTML5 canvas with viewport transformations. */
 export const renderCanvas = (
   ctx: CanvasRenderingContext2D,
   elements: ExcalidrawElement[],
@@ -150,6 +151,7 @@ const drawSelectionBox = (ctx: CanvasRenderingContext2D, element: ExcalidrawElem
 /**
  * Render a preview element (while drawing).
  */
+/** Renders a small preview thumbnail of the drawing for the drawing list. */
 export const renderPreview = (
   ctx: CanvasRenderingContext2D,
   element: ExcalidrawElement,

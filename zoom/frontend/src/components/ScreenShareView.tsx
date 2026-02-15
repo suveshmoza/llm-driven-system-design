@@ -1,3 +1,4 @@
+/** Renders a placeholder screen share view with the presenter's display name. */
 export function ScreenShareView({ displayName }: { displayName: string }) {
   return (
     <div className="w-full h-full bg-zoom-surface rounded-lg flex items-center justify-center relative">

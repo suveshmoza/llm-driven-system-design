@@ -25,6 +25,7 @@ export interface ServiceError extends Error {
   code?: string;
 }
 
+/** Creates a circuit breaker wrapping an async function with Prometheus state tracking. */
 export const createCircuitBreaker = <T extends unknown[], R>(
   name: string,
   fn: (...args: T) => Promise<R>,
@@ -100,6 +101,7 @@ export const createCircuitBreaker = <T extends unknown[], R>(
   return breaker;
 };
 
+/** Returns a fallback function that resolves with a default value when the circuit is open. */
 export const fallbackWithDefault = <T>(defaultValue: T): (() => T) => {
   return (): T => {
     logger.warn({ fallback: 'default_value' }, 'Using fallback default value');
@@ -107,6 +109,7 @@ export const fallbackWithDefault = <T>(defaultValue: T): (() => T) => {
   };
 };
 
+/** Returns a fallback function that throws an error when the circuit is open. */
 export const fallbackWithError = (message: string): (() => never) => {
   return (): never => {
     logger.error({ fallback: 'error' }, `Circuit breaker fallback: ${message}`);

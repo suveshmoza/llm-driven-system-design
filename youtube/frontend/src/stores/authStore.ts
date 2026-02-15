@@ -33,6 +33,7 @@ interface AuthState {
  * remains logged in across page refreshes. Handles login, registration,
  * logout, and session verification against the backend.
  */
+/** Authentication state with login, register, logout, and channel management. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

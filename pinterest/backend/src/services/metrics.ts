@@ -78,6 +78,7 @@ export const authAttempts = new promClient.Counter({
 });
 
 // Middleware to track HTTP metrics
+/** Express middleware that records HTTP request duration and total counts per route. */
 export function metricsMiddleware(
   req: { method: string; route?: { path?: string }; path: string },
   res: { statusCode: number; on: (event: string, cb: () => void) => void },

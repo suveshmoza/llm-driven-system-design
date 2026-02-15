@@ -21,6 +21,7 @@ redis.on('error', (err) => {
   logger.error({ err }, 'Redis error');
 });
 
+/** Retrieves a JSON-parsed value from Redis cache by key. */
 export async function cacheGet<T>(key: string): Promise<T | null> {
   try {
     const value = await redis.get(key);
@@ -34,6 +35,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
+/** Stores a JSON-serialized value in Redis cache with configurable TTL. */
 export async function cacheSet(key: string, value: unknown, ttlSeconds = 60): Promise<void> {
   try {
     await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
@@ -42,6 +44,7 @@ export async function cacheSet(key: string, value: unknown, ttlSeconds = 60): Pr
   }
 }
 
+/** Deletes a key from Redis cache to invalidate stale data. */
 export async function cacheDel(key: string): Promise<void> {
   try {
     await redis.del(key);

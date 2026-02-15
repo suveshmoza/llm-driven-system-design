@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/auth';
 
+/** Renders the authentication form with email/password fields and demo credentials. */
 export function Login() {
   const { login, loading, error } = useAuthStore();
   const [email, setEmail] = useState('admin@example.com');

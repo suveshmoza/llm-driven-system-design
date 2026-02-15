@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useAuthStore } from '../stores/authStore'
 
+/** Registration page with name, email, and password form for new account creation. */
 function RegisterPage() {
   const { register, error, clearError } = useAuthStore()
   const navigate = useNavigate()

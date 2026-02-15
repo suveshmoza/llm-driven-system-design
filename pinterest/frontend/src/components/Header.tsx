@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the top navigation header with search bar, user menu, and create pin link. */
 export default function Header() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();

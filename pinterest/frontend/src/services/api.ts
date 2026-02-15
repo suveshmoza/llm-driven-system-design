@@ -2,6 +2,7 @@ import type { User, Pin, Board, Comment } from '../types';
 
 const BASE_URL = '/api';
 
+/** Sends an authenticated fetch request to the backend API with credential forwarding. */
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${url}`, {
     ...options,
@@ -20,7 +21,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
-// Auth
+/** POST /api/v1/auth/register - Creates a new user account and establishes a session. */
 export async function register(data: {
   username: string;
   email: string;
@@ -33,6 +34,7 @@ export async function register(data: {
   });
 }
 
+/** POST /api/v1/auth/login - Authenticates a user and creates a session. */
 export async function login(data: { username: string; password: string }): Promise<{ user: User }> {
   return request('/v1/auth/login', {
     method: 'POST',
@@ -40,6 +42,7 @@ export async function login(data: { username: string; password: string }): Promi
   });
 }
 
+/** POST /api/v1/auth/logout - Destroys the current session. */
 export async function logout(): Promise<void> {
   await request('/v1/auth/logout', { method: 'POST' });
 }

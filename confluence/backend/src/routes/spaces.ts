@@ -180,4 +180,5 @@ router.post('/:key/members', requireAuth, async (req: Request, res: Response) =>
   }
 });
 
+/** Router for space CRUD, member management, and space listing. */
 export default router;

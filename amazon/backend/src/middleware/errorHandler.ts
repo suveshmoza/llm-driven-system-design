@@ -6,6 +6,7 @@ interface AppError extends Error {
   details?: unknown;
 }
 
+/** Global error handler that maps PostgreSQL error codes and validation errors to appropriate HTTP responses. */
 export const errorHandler: ErrorRequestHandler = (
   err: AppError,
   req: Request,

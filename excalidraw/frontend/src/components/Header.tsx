@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the top header with drawing title, share button, and user menu. */
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
 

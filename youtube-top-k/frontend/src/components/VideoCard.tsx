@@ -36,6 +36,7 @@ function getRankBadgeColor(rank: number): string {
   return 'bg-youtube-gray';
 }
 
+/** Renders a single video entry with rank badge, thumbnail, metadata, and window view count. */
 export function VideoCard({ video, rank }: VideoCardProps) {
   const handleClick = async () => {
     try {

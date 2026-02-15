@@ -8,6 +8,7 @@ interface SearchResultItemProps {
   isSelected: boolean;
 }
 
+/** Renders a single search result with icon, title, and category label. */
 export function SearchResultItem({ result, index, isSelected }: SearchResultItemProps) {
   const { setSelectedIndex, executeResult } = useSpotlightStore();
 

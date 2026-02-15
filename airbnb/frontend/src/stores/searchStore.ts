@@ -17,6 +17,7 @@ interface SearchState {
   getSearchParams: () => SearchParams;
 }
 
+/** Global search state managing location, dates, guest count, and filter parameters for listing search. */
 export const useSearchStore = create<SearchState>((set, get) => ({
   location: '',
   latitude: undefined,

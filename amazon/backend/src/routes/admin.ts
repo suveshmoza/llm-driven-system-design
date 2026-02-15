@@ -54,6 +54,7 @@ interface InventoryRow {
 // All routes require admin
 router.use(requireAdmin);
 
+/** GET /api/admin/stats - Returns dashboard statistics including products, orders, users, revenue, and low stock alerts. */
 // Dashboard stats
 router.get('/stats', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -116,6 +117,7 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction): Pr
   }
 });
 
+/** GET /api/admin/orders - Returns paginated list of all orders with optional status filter. */
 // List all orders
 router.get('/orders', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -157,6 +159,7 @@ router.get('/orders', async (req: Request, res: Response, next: NextFunction): P
   }
 });
 
+/** GET /api/admin/users - Returns paginated list of all users with optional role filter. */
 // List all users
 router.get('/users', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -197,6 +200,7 @@ router.get('/users', async (req: Request, res: Response, next: NextFunction): Pr
   }
 });
 
+/** PUT /api/admin/users/:id/role - Updates a user's role (user, admin, or seller). */
 // Update user role
 router.put('/users/:id/role', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -225,6 +229,7 @@ router.put('/users/:id/role', async (req: Request, res: Response, next: NextFunc
   }
 });
 
+/** POST /api/admin/sync-elasticsearch - Bulk reindexes all active products to Elasticsearch. */
 // Sync products to Elasticsearch
 router.post('/sync-elasticsearch', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -254,6 +259,7 @@ router.post('/sync-elasticsearch', async (req: Request, res: Response, next: Nex
   }
 });
 
+/** GET /api/admin/inventory - Returns inventory report with optional low-stock filtering. */
 // Inventory report
 router.get('/inventory', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

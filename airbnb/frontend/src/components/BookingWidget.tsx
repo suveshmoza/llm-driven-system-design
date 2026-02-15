@@ -11,6 +11,7 @@ interface BookingWidgetProps {
   listing: Listing;
 }
 
+/** Renders the booking sidebar widget with date selection, guest count, pricing breakdown, and reservation button. */
 export function BookingWidget({ listing }: BookingWidgetProps) {
   const { isAuthenticated } = useAuthStore();
   const navigate = useNavigate();

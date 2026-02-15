@@ -2,6 +2,7 @@ import { pool } from '../db.js';
 import type { PlaylistUpdate } from '../types.js';
 
 // Create a new playlist
+/** Creates a new playlist owned by the specified user. */
 export async function createPlaylist(userId: string, { name, description = '', isPublic = true }: { name: string; description?: string; isPublic?: boolean }) {
   const result = await pool.query(
     `INSERT INTO playlists (owner_id, name, description, is_public)
@@ -14,6 +15,7 @@ export async function createPlaylist(userId: string, { name, description = '', i
 }
 
 // Get user's playlists
+/** Returns playlists owned by or saved by a user with track counts. */
 export async function getUserPlaylists(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT p.*,
@@ -41,6 +43,7 @@ export async function getUserPlaylists(userId: string, { limit = 50, offset = 0 
 }
 
 // Get playlist by ID with tracks
+/** Returns a playlist with its tracks, enforcing visibility rules for private playlists. */
 export async function getPlaylistById(playlistId: string, userId: string | null = null) {
   const playlistResult = await pool.query(
     `SELECT p.*, u.username as owner_username

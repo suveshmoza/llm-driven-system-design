@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore'
 import { envelopeApi } from '../services/api'
 import { Envelope } from '../types'
 
+/** Dashboard page displaying envelope status summary cards and recent envelopes list. */
 function DashboardPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuthStore()
   const navigate = useNavigate()

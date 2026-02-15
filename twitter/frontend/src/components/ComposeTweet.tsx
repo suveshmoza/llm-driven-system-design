@@ -9,6 +9,7 @@ interface ComposeTweetProps {
   placeholder?: string;
 }
 
+/** Renders the tweet composition form with character counter and submit button. */
 export function ComposeTweet({ replyTo, onSuccess, placeholder = "What's happening?" }: ComposeTweetProps) {
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

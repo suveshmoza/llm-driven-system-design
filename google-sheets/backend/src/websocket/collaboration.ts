@@ -31,6 +31,7 @@ import { wsMessagesSent } from '../shared/metrics.js';
  * // Broadcasts to other users: { type: 'CURSOR_MOVED', userId, name, color, row: 5, col: 3 }
  * ```
  */
+/** Broadcasts a cursor position change to all other collaborators in the room. */
 export function handleCursorMove(ws: ExtendedWebSocket, payload: CursorMovePayload): void {
   const { row, col } = payload;
 
@@ -68,6 +69,7 @@ export function handleCursorMove(ws: ExtendedWebSocket, payload: CursorMovePaylo
  * // Broadcasts selection highlight to other users
  * ```
  */
+/** Broadcasts a cell selection change to all other collaborators in the room. */
 export function handleSelectionChange(ws: ExtendedWebSocket, payload: SelectionChangePayload): void {
   const { range } = payload;
 
@@ -102,6 +104,7 @@ export function handleSelectionChange(ws: ExtendedWebSocket, payload: SelectionC
  * // Existing users receive: { type: 'USER_JOINED', userId, name, color }
  * ```
  */
+/** Notifies all room participants that a new collaborator has joined. */
 export function broadcastUserJoined(ws: ExtendedWebSocket): void {
   const sentCount = broadcastToRoom(ws.spreadsheetId!, {
     type: 'USER_JOINED',
@@ -135,6 +138,7 @@ export function broadcastUserJoined(ws: ExtendedWebSocket): void {
  * // Remaining users receive: { type: 'USER_LEFT', userId }
  * ```
  */
+/** Notifies all room participants that a collaborator has left. */
 export function broadcastUserLeft(ws: ExtendedWebSocket): void {
   if (!ws.spreadsheetId) return;
 

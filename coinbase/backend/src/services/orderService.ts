@@ -24,6 +24,12 @@ interface OrderResult {
   avgFillPrice: string | null;
 }
 
+/**
+ * Places an order with idempotency protection, balance reservation, and order matching.
+ * @param userId - ID of the user placing the order.
+ * @param params - Order parameters including pair, side, type, quantity, and price.
+ * @returns The created order result with status and fill information.
+ */
 export async function placeOrder(
   userId: string,
   params: PlaceOrderParams
@@ -375,6 +381,12 @@ async function updateOrderFill(
   );
 }
 
+/**
+ * Cancels an open or partially filled order and releases reserved funds.
+ * @param userId - ID of the user requesting cancellation.
+ * @param orderId - ID of the order to cancel.
+ * @returns True if cancelled, false if order not found or not cancellable.
+ */
 export async function cancelOrder(userId: string, orderId: string): Promise<boolean> {
   const client = await pool.connect();
   try {
@@ -433,6 +445,13 @@ export async function cancelOrder(userId: string, orderId: string): Promise<bool
   }
 }
 
+/**
+ * Retrieves a user's orders with optional status filter.
+ * @param userId - ID of the user.
+ * @param status - Optional order status filter.
+ * @param limit - Maximum number of orders to return.
+ * @returns Array of order records.
+ */
 export async function getUserOrders(
   userId: string,
   status?: string,

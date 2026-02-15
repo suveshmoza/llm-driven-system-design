@@ -25,7 +25,7 @@ const logger = pino({
   } : undefined,
 });
 
-// Create child logger with request context
+/** Creates a child logger enriched with request context including request ID, method, path, and IP. */
 export function createRequestLogger(req: Request): Logger {
   return logger.child({
     requestId: req.headers['x-request-id'] || crypto.randomUUID(),
@@ -36,13 +36,13 @@ export function createRequestLogger(req: Request): Logger {
   });
 }
 
-// Audit-specific logger for compliance events
+/** Child logger for audit and compliance events with type and compliance flags. */
 export const auditLogger = logger.child({
   type: 'audit',
   compliance: true,
 });
 
-// Performance logger for timing events
+/** Child logger for performance timing and latency measurement events. */
 export const perfLogger = logger.child({
   type: 'performance',
 });

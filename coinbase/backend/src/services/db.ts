@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { config } from '../config/index.js';
 
+/** PostgreSQL connection pool for the Coinbase exchange database. */
 export const pool = new pg.Pool({
   host: config.db.host,
   port: config.db.port,

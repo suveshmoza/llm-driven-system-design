@@ -42,6 +42,7 @@ interface DeltaChunkResult {
   }[];
 }
 
+/** Handles content-addressed chunking with SHA-256 deduplication and MinIO storage via circuit breakers. */
 export class ChunkService {
   private chunkSize: number;
 

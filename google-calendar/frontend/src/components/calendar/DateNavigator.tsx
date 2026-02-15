@@ -10,6 +10,7 @@ interface DateNavigatorProps {
   onToday: () => void
 }
 
+/** Navigation controls with today button, prev/next arrows, and date label. */
 export function DateNavigator({
   currentDate,
   view,

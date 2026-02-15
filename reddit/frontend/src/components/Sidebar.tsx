@@ -4,6 +4,7 @@ import type { Subreddit } from '../types';
 import api from '../services/api';
 import { formatNumber } from '../utils/format';
 
+/** Renders the right sidebar with popular communities and a create-community CTA. */
 export function Sidebar() {
   const [subreddits, setSubreddits] = useState<Subreddit[]>([]);
 

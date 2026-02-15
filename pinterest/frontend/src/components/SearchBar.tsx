@@ -5,6 +5,7 @@ interface SearchBarProps {
   initialQuery?: string;
 }
 
+/** Renders a search input that navigates to search results on submission. */
 export default function SearchBar({ initialQuery = '' }: SearchBarProps) {
   const [query, setQuery] = useState(initialQuery);
   const navigate = useNavigate();

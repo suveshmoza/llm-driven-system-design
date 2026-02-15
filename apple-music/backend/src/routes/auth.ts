@@ -25,6 +25,7 @@ interface PreferencesBody {
 }
 
 // Register new user
+/** POST /api/auth/register - Creates a new user account and session. */
 router.post('/register', async (req: Request<object, unknown, RegisterBody>, res: Response) => {
   try {
     const { email, username, password, displayName } = req.body;
@@ -109,6 +110,7 @@ router.post('/register', async (req: Request<object, unknown, RegisterBody>, res
 });
 
 // Login
+/** POST /api/auth/login - Authenticates user and creates a session. */
 router.post('/login', async (req: Request<object, unknown, LoginBody>, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -191,6 +193,7 @@ router.post('/login', async (req: Request<object, unknown, LoginBody>, res: Resp
 });
 
 // Logout
+/** POST /api/auth/logout - Destroys the current session and clears the cookie. */
 router.post('/logout', authenticate, async (req: Request, res: Response) => {
   try {
     const token = req.cookies.session_token || req.headers.authorization?.replace('Bearer ', '');
@@ -209,11 +212,13 @@ router.post('/logout', authenticate, async (req: Request, res: Response) => {
 });
 
 // Get current user
+/** GET /api/auth/me - Returns the authenticated user's profile. */
 router.get('/me', authenticate, async (req: Request, res: Response) => {
   res.json({ user: req.user });
 });
 
 // Update user preferences
+/** PATCH /api/auth/preferences - Updates audio quality and display name settings. */
 router.patch('/preferences', authenticate, async (req: Request<object, unknown, PreferencesBody>, res: Response) => {
   try {
     const { preferredQuality, displayName } = req.body;

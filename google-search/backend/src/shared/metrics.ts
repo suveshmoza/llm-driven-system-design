@@ -73,10 +73,12 @@ export const cacheHitRatioGauge = new client.Gauge({
 let cacheHits = 0;
 let cacheMisses = 0;
 
+/** Increments the rolling cache hit counter for ratio calculation. */
 export const recordCacheHit = (): void => {
   cacheHits++;
 };
 
+/** Increments the rolling cache miss counter for ratio calculation. */
 export const recordCacheMiss = (): void => {
   cacheMisses++;
 };
@@ -241,6 +243,7 @@ const httpRequestDuration = new client.Histogram({
   registers: [register],
 });
 
+/** Express middleware that records per-request HTTP duration as a Prometheus histogram. */
 export const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const start = Date.now();
 

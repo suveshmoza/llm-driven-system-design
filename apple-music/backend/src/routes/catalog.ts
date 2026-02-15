@@ -20,6 +20,7 @@ interface PaginationQuery {
 }
 
 // Search catalog
+/** GET /api/catalog/search - Searches tracks, albums, and artists by query string. */
 router.get('/search', optionalAuth, async (req: Request<object, unknown, unknown, SearchQuery>, res: Response) => {
   try {
     const { q, type = 'all', limit = '20', offset = '0' } = req.query;
@@ -78,6 +79,7 @@ router.get('/search', optionalAuth, async (req: Request<object, unknown, unknown
 });
 
 // Get all tracks with pagination
+/** GET /api/catalog/tracks - Returns paginated tracks with Redis caching. */
 router.get('/tracks', optionalAuth, async (req: Request<object, unknown, unknown, PaginationQuery>, res: Response) => {
   try {
     const { limit = '50', offset = '0', sort = 'created_at', order = 'desc' } = req.query;
@@ -122,6 +124,7 @@ router.get('/tracks', optionalAuth, async (req: Request<object, unknown, unknown
 });
 
 // Get single track
+/** GET /api/catalog/tracks/:id - Returns a single track with artist and album details. */
 router.get('/tracks/:id', optionalAuth, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -149,6 +152,7 @@ router.get('/tracks/:id', optionalAuth, async (req: Request<{ id: string }>, res
 });
 
 // Get all albums
+/** GET /api/catalog/albums - Returns paginated albums with Redis caching. */
 router.get('/albums', optionalAuth, async (req: Request<object, unknown, unknown, PaginationQuery>, res: Response) => {
   try {
     const { limit = '50', offset = '0', sort = 'release_date', order = 'desc' } = req.query;
@@ -192,6 +196,7 @@ router.get('/albums', optionalAuth, async (req: Request<object, unknown, unknown
 });
 
 // Get single album with tracks
+/** GET /api/catalog/albums/:id - Returns album details with its track listing. */
 router.get('/albums/:id', optionalAuth, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -229,6 +234,7 @@ router.get('/albums/:id', optionalAuth, async (req: Request<{ id: string }>, res
 });
 
 // Get all artists
+/** GET /api/catalog/artists - Returns paginated artists with Redis caching. */
 router.get('/artists', optionalAuth, async (req: Request<object, unknown, unknown, PaginationQuery>, res: Response) => {
   try {
     const { limit = '50', offset = '0', sort = 'name', order = 'asc' } = req.query;
@@ -270,6 +276,7 @@ router.get('/artists', optionalAuth, async (req: Request<object, unknown, unknow
 });
 
 // Get single artist with albums
+/** GET /api/catalog/artists/:id - Returns artist details with albums and top tracks. */
 router.get('/artists/:id', optionalAuth, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -314,6 +321,7 @@ router.get('/artists/:id', optionalAuth, async (req: Request<{ id: string }>, re
 });
 
 // Get genres
+/** GET /api/catalog/genres - Returns all genres with track counts. */
 router.get('/genres', optionalAuth, async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'genres:all';
@@ -342,6 +350,7 @@ router.get('/genres', optionalAuth, async (_req: Request, res: Response) => {
 });
 
 // Get tracks by genre
+/** GET /api/catalog/genres/:genre/tracks - Returns tracks matching the specified genre. */
 router.get('/genres/:genre/tracks', optionalAuth, async (req: Request<{ genre: string }, unknown, unknown, { limit?: string; offset?: string }>, res: Response) => {
   try {
     const { genre } = req.params;

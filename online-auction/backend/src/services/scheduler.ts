@@ -8,6 +8,7 @@ interface CloseAuctionResult {
 }
 
 // Close an auction and determine winner
+/** Closes an auction, determines the winner, sends notifications, and publishes the result. */
 export const closeAuction = async (auctionId: string): Promise<CloseAuctionResult | undefined> => {
   try {
     console.log(`Closing auction: ${auctionId}`);
@@ -149,6 +150,7 @@ export const closeAuction = async (auctionId: string): Promise<CloseAuctionResul
 };
 
 // Scheduler service that checks for ending auctions
+/** Starts a 1-second polling loop that closes auctions past their end time. */
 export const startScheduler = (): void => {
   console.log('Starting auction scheduler...');
 

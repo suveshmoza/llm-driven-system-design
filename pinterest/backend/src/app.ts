@@ -16,6 +16,7 @@ import feedRoutes from './routes/feed.js';
 import searchRoutes from './routes/search.js';
 import userRoutes from './routes/users.js';
 
+/** Express application configured with session auth, rate limiting, and Pinterest API routes. */
 export const app = express();
 
 // Trust proxy for rate limiting behind reverse proxy

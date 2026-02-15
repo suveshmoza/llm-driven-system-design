@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-// Authentication middleware
+/** Validates Bearer token from Authorization header and attaches user to request. */
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 
@@ -40,7 +40,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   }
 }
 
-// Optional authentication middleware
+/** Attaches user to request if valid Bearer token present, continues without auth otherwise. */
 export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 
@@ -64,7 +64,7 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
   next();
 }
 
-// Role-based authorization middleware
+/** Returns middleware that restricts access to users with one of the specified roles. */
 export function requireRole(
   ...roles: string[]
 ): (req: Request, res: Response, next: NextFunction) => void {
@@ -83,7 +83,7 @@ export function requireRole(
   };
 }
 
-// Hotel admin middleware (must own the hotel or be admin)
+/** Returns middleware that verifies the user owns the hotel or is a system admin. */
 export function requireHotelOwner(
   hotelIdParam: string = 'hotelId'
 ): (req: Request, res: Response, next: NextFunction) => Promise<void> {

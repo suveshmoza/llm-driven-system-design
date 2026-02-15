@@ -13,6 +13,7 @@ interface AuthState {
   becomeHost: () => Promise<void>;
 }
 
+/** Global authentication state managing login, registration, logout, and session validation. */
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,

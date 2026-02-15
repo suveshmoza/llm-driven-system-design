@@ -6,6 +6,7 @@ interface CalendarSidebarProps {
   onCreateEvent: () => void
 }
 
+/** Sidebar with create button, mini calendar, and calendar visibility toggles. */
 export function CalendarSidebar({ onCreateEvent }: CalendarSidebarProps) {
   const {
     currentDate,

@@ -15,6 +15,7 @@ declare module 'express-session' {
   }
 }
 
+/** Middleware that verifies the user has an active session with a valid userId. */
 export const isAuthenticated = (
   req: Request,
   res: Response,
@@ -27,6 +28,7 @@ export const isAuthenticated = (
   res.status(401).json({ error: 'Unauthorized' });
 };
 
+/** Middleware that restricts access to users with admin role. */
 export const isAdmin = (
   req: Request,
   res: Response,
@@ -39,6 +41,7 @@ export const isAdmin = (
   res.status(403).json({ error: 'Forbidden' });
 };
 
+/** Middleware that gates access to users with an active, non-expired subscription. */
 export const hasSubscription = (
   req: Request,
   res: Response,

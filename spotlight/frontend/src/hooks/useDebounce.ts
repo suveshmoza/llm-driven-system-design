@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
+/** Returns a debounced version of the input value that updates after a delay. */
 export function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
@@ -16,6 +17,7 @@ export function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+/** Returns a debounced version of a callback function. */
 export function useDebouncedCallback<T extends (...args: Parameters<T>) => ReturnType<T>>(
   callback: T,
   delay: number

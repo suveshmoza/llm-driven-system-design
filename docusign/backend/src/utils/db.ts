@@ -2,6 +2,7 @@ import pg, { QueryResultRow } from 'pg';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool configured for the DocuSign database. */
 export const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
@@ -13,6 +14,7 @@ export const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+/** Tests the database connection by executing a simple query. */
 export async function initializeDatabase(): Promise<void> {
   const client = await pool.connect();
   try {
@@ -22,6 +24,7 @@ export async function initializeDatabase(): Promise<void> {
   }
 }
 
+/** Executes a parameterized SQL query and logs slow queries exceeding 100ms. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: unknown[] = []
@@ -35,6 +38,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   return result;
 }
 
+/** Acquires a dedicated client from the pool for transaction support. */
 export async function getClient(): Promise<pg.PoolClient> {
   return await pool.connect();
 }

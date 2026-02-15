@@ -2,6 +2,7 @@ import type { LatLng, Place, Route, TrafficData, Incident, RoadSegment } from '.
 
 const API_BASE = '/api';
 
+/** HTTP client for the Apple Maps backend covering routing, search, geocoding, traffic, and map data endpoints. */
 class ApiService {
   private async fetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE}${endpoint}`, {

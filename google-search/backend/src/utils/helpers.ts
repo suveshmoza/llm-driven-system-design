@@ -1,19 +1,19 @@
 import crypto from 'crypto';
 
-// Generate a hash for a URL
+/** Generates a SHA-256 based numeric hash for a URL, used as a deduplication key. */
 export const hashUrl = (url: string): string => {
   const hash = crypto.createHash('sha256').update(url).digest('hex');
   // Convert first 16 hex chars to BigInt for storage
   return BigInt('0x' + hash.substring(0, 16)).toString();
 };
 
-// Generate a hash for content (deduplication)
+/** Generates a SHA-256 based numeric hash for HTML content, used for duplicate detection. */
 export const hashContent = (content: string): string => {
   const hash = crypto.createHash('sha256').update(content).digest('hex');
   return BigInt('0x' + hash.substring(0, 16)).toString();
 };
 
-// Extract domain from URL
+/** Extracts the hostname from a URL string, returning null on parse failure. */
 export const extractDomain = (url: string): string | null => {
   try {
     const parsed = new URL(url);
@@ -23,7 +23,7 @@ export const extractDomain = (url: string): string | null => {
   }
 };
 
-// Normalize URL (remove fragments, trailing slashes, etc.)
+/** Normalizes a URL by removing fragments and trailing slashes for consistent deduplication. */
 export const normalizeUrl = (url: string): string | null => {
   try {
     const parsed = new URL(url);
@@ -40,7 +40,7 @@ export const normalizeUrl = (url: string): string | null => {
   }
 };
 
-// Convert relative URL to absolute
+/** Resolves a relative URL against a base URL, returning null on parse failure. */
 export const toAbsoluteUrl = (relativeUrl: string, baseUrl: string): string | null => {
   try {
     return new URL(relativeUrl, baseUrl).href;
@@ -49,7 +49,7 @@ export const toAbsoluteUrl = (relativeUrl: string, baseUrl: string): string | nu
   }
 };
 
-// Check if URL is valid for crawling
+/** Validates a URL for crawling: must be HTTP(S) and not a binary/media file extension. */
 export const isValidUrl = (url: string): boolean => {
   try {
     const parsed = new URL(url);
@@ -77,7 +77,7 @@ export const isValidUrl = (url: string): boolean => {
   }
 };
 
-// Calculate edit distance between two strings (Levenshtein)
+/** Computes the Levenshtein edit distance between two strings for spell-check suggestions. */
 export const editDistance = (str1: string, str2: string): number => {
   const m = str1.length;
   const n = str2.length;
@@ -103,7 +103,7 @@ export const editDistance = (str1: string, str2: string): number => {
   return dp[m][n];
 };
 
-// Format bytes to human readable
+/** Formats a byte count into a human-readable string (e.g., "1.5 MB"). */
 export const formatBytes = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -112,5 +112,5 @@ export const formatBytes = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-// Sleep utility
+/** Returns a promise that resolves after the specified number of milliseconds. */
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

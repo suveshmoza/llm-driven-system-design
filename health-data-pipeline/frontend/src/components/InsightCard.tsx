@@ -6,6 +6,7 @@ interface InsightCardProps {
   onAcknowledge?: (id: string) => void;
 }
 
+/** Displays a health insight with severity-based styling, type icon, and acknowledge action. */
 export function InsightCard({ insight, onAcknowledge }: InsightCardProps) {
   const severityColors = {
     positive: 'bg-green-50 border-green-200',

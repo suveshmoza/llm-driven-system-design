@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { searchApi } from '@/services/api';
 
+/** Manages debounced autocomplete suggestions with keyboard navigation for the search box. */
 export function useAutocomplete(minChars = 2, debounceMs = 200) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);

@@ -20,6 +20,7 @@ export interface Suggestion {
 }
 
 // Get Siri-style suggestions based on usage patterns
+/** Returns type-ahead search suggestions based on prefix matching and popularity. */
 export async function getSuggestions(context: SuggestionContext = {}): Promise<Suggestion[]> {
   const { hour = new Date().getHours(), dayOfWeek = new Date().getDay() } = context;
   const suggestions: Suggestion[] = [];

@@ -11,6 +11,7 @@ interface CommentThreadProps {
   onReplyAdded: (reply: Comment) => void;
 }
 
+/** Renders a recursive comment thread with collapsible replies and inline reply form. */
 export function CommentThread({ comment, postId, onReplyAdded }: CommentThreadProps) {
   const [isReplying, setIsReplying] = useState(false);
   const [replyContent, setReplyContent] = useState('');

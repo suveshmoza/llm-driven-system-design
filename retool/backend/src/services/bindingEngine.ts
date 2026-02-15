@@ -47,6 +47,7 @@ function resolvePropertyPath(path: string, context: Record<string, unknown>): un
   return current;
 }
 
+/** Resolves template bindings (e.g. {{query1.data}}) against available data contexts. */
 export function resolveBindings(
   text: string,
   context: Record<string, unknown>,

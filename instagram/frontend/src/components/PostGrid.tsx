@@ -7,6 +7,7 @@ interface PostGridProps {
   loading?: boolean;
 }
 
+/** Renders a 3-column grid of post thumbnails with like counts. */
 export function PostGrid({ posts, loading }: PostGridProps) {
   if (loading) {
     return (

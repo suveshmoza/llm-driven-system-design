@@ -21,6 +21,7 @@ interface ChatViewProps {
  * @param props - Component props containing the conversation to display
  * @returns React component for the chat view
  */
+/** Renders the active chat view with message history, typing indicators, and message input. */
 export function ChatView({ conversation }: ChatViewProps) {
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);

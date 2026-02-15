@@ -2,6 +2,7 @@ import type { SearchResponse, AutocompleteResponse, PopularSearchesResponse, Sys
 
 const API_BASE = '/api';
 
+/** Client-side API functions for search queries, autocomplete, popular searches, and related searches. */
 export const searchApi = {
   /**
    * Search for documents
@@ -56,6 +57,7 @@ export const searchApi = {
   },
 };
 
+/** Client-side API functions for admin operations: stats, crawling, indexing, and PageRank. */
 export const adminApi = {
   /**
    * Get system stats

@@ -7,7 +7,7 @@ const logger = createModuleLogger('kafka');
 const KAFKA_BROKERS = process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'];
 const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID || 'leetcode-backend';
 
-// Topic names
+/** Kafka topic names for submission job dispatch and result processing. */
 export const TOPICS = {
   SUBMISSIONS: 'submissions',
   SUBMISSION_RESULTS: 'submission-results',

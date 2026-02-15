@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useCartStore } from '../stores/cartStore';
 import { api } from '../services/api';
 
+/** Renders the top navigation bar with search input, autocomplete suggestions, user menu, and category links. */
 export function Header() {
   const { user, logout } = useAuthStore();
   const { itemCount, fetchCart } = useCartStore();

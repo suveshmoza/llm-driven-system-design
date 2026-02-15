@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../stores/authStore'
 import { useEnvelopeStore } from '../../stores/envelopeStore'
 
+/** New envelope creation form with name and optional message fields. */
 function NewEnvelopePage() {
   const { isAuthenticated, isLoading: authLoading } = useAuthStore()
   const { createEnvelope } = useEnvelopeStore()

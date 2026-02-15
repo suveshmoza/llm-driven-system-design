@@ -6,6 +6,7 @@ interface ListingCardProps {
   listing: Listing;
 }
 
+/** Renders a property listing card with image, location, rating, bedroom count, and nightly price. */
 export function ListingCard({ listing }: ListingCardProps) {
   const imageUrl =
     listing.primary_photo ||

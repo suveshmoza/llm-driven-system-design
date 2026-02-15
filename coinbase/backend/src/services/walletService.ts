@@ -1,5 +1,6 @@
 import { pool } from './db.js';
 
+/** Returns all wallet balances for a user including available (balance minus reserved). */
 export async function getBalances(
   userId: string
 ): Promise<
@@ -18,6 +19,7 @@ export async function getBalances(
   return result.rows;
 }
 
+/** Returns the balance details for a specific currency wallet. */
 export async function getBalance(
   userId: string,
   currencyId: string
@@ -32,6 +34,7 @@ export async function getBalance(
   return result.rows[0] || null;
 }
 
+/** Deposits funds into a user's wallet and records the transaction. */
 export async function deposit(
   userId: string,
   currencyId: string,
@@ -66,6 +69,7 @@ export async function deposit(
   }
 }
 
+/** Reserves balance for a pending order. Returns false if insufficient available funds. */
 export async function reserveBalance(
   userId: string,
   currencyId: string,
@@ -82,6 +86,7 @@ export async function reserveBalance(
   return result.rowCount !== null && result.rowCount > 0;
 }
 
+/** Releases previously reserved balance when an order is cancelled. */
 export async function releaseReserve(
   userId: string,
   currencyId: string,
@@ -95,6 +100,7 @@ export async function releaseReserve(
   );
 }
 
+/** Executes an atomic trade transfer between buyer and seller wallets with fee deduction. */
 export async function executeTradeTransfer(
   buyerUserId: string,
   sellerUserId: string,

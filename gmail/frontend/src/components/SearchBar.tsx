@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { searchApi } from '../services/api';
 import type { SearchResult } from '../types';
 
+/** Renders a search bar with Gmail-style operator support and results dropdown. */
 export function SearchBar() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);

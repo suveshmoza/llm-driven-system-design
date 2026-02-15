@@ -7,6 +7,7 @@ import { authLimiter } from '../services/rateLimiter.js';
 const router = Router();
 
 // POST /api/v1/auth/register
+/** POST /api/v1/auth/register - Creates a new user account with a default USD wallet. */
 router.post('/register', authLimiter, async (req: Request, res: Response) => {
   try {
     const { username, email, password, displayName } = req.body;
@@ -65,6 +66,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/auth/login
+/** POST /api/v1/auth/login - Authenticates user by username/password and creates a session. */
 router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
@@ -106,6 +108,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/auth/logout
+/** POST /api/v1/auth/logout - Destroys the session and clears the session cookie. */
 router.post('/logout', (req: Request, res: Response) => {
   req.session.destroy((err) => {
     if (err) {
@@ -118,6 +121,7 @@ router.post('/logout', (req: Request, res: Response) => {
 });
 
 // GET /api/v1/auth/me
+/** GET /api/v1/auth/me - Returns the authenticated user's profile. */
 router.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const result = await pool.query(

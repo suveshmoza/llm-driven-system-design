@@ -7,6 +7,7 @@ interface PinCardProps {
   onSave?: (pinId: string) => void;
 }
 
+/** Renders a pin card with image, dominant color placeholder, save button, and metadata overlay. */
 export default function PinCard({ pin, onSave }: PinCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);

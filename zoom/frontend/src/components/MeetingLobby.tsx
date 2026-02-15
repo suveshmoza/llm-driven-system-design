@@ -11,6 +11,7 @@ interface MeetingLobbyProps {
   loading?: boolean;
 }
 
+/** Renders the pre-join lobby with camera preview, device selection, and join controls. */
 export function MeetingLobby({
   meetingTitle,
   meetingCode,

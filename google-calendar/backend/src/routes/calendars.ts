@@ -109,4 +109,5 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
+/** Router for calendar CRUD with primary calendar deletion protection. */
 export default router

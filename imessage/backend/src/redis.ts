@@ -37,7 +37,7 @@ redis.on('connect', () => {
 export const pubClient = redis.duplicate();
 export const subClient = redis.duplicate();
 
-// Session helpers
+/** Stores a session token to user data mapping in Redis with configurable expiry. */
 export async function setSession(
   token: string,
   data: SessionData,
@@ -46,16 +46,18 @@ export async function setSession(
   await redis.setex(`session:${token}`, expirySeconds, JSON.stringify(data));
 }
 
+/** Retrieves session data for a token from Redis. */
 export async function getSession(token: string): Promise<SessionData | null> {
   const data = await redis.get(`session:${token}`);
   return data ? JSON.parse(data) : null;
 }
 
+/** Deletes a session token from Redis on logout. */
 export async function deleteSession(token: string): Promise<void> {
   await redis.del(`session:${token}`);
 }
 
-// Presence helpers
+/** Stores user presence (online/offline) status with automatic expiry. */
 export async function setPresence(
   userId: string,
   deviceId: string,
@@ -70,16 +72,18 @@ export async function setPresence(
   await redis.setex(key, 60, data); // 60 seconds TTL, refreshed by heartbeat
 }
 
+/** Retrieves current presence data for a user including status and last seen time. */
 export async function getPresence(userId: string): Promise<PresenceData | null> {
   const data = await redis.get(`presence:${userId}`);
   return data ? JSON.parse(data) : null;
 }
 
+/** Removes a user's presence data from Redis on disconnect. */
 export async function deletePresence(userId: string): Promise<void> {
   await redis.del(`presence:${userId}`);
 }
 
-// Typing indicator helpers
+/** Sets or clears a typing indicator for a user in a conversation with 5-second TTL. */
 export async function setTyping(
   conversationId: string,
   userId: string,
@@ -94,6 +98,7 @@ export async function setTyping(
   }
 }
 
+/** Returns user IDs currently typing in a conversation, filtering out stale indicators. */
 export async function getTypingUsers(conversationId: string): Promise<string[]> {
   const key = `typing:${conversationId}`;
   const typing = await redis.hgetall(key);
@@ -109,7 +114,7 @@ export async function getTypingUsers(conversationId: string): Promise<string[]> 
   return activeTypers;
 }
 
-// Offline message queue
+/** Queues a message for offline delivery to a specific user device with 7-day TTL. */
 export async function queueOfflineMessage(
   userId: string,
   deviceId: string,
@@ -120,6 +125,7 @@ export async function queueOfflineMessage(
   await redis.expire(key, 7 * 24 * 60 * 60); // 7 days TTL
 }
 
+/** Retrieves and clears all queued offline messages for a user device. */
 export async function getOfflineMessages(
   userId: string,
   deviceId: string
@@ -130,7 +136,7 @@ export async function getOfflineMessages(
   return messages.map((msg: string) => JSON.parse(msg) as OfflineMessage);
 }
 
-// WebSocket connection tracking
+/** Registers a WebSocket connection mapping user device to server instance. */
 export async function addConnection(
   userId: string,
   deviceId: string,
@@ -139,10 +145,12 @@ export async function addConnection(
   await redis.hset(`connections:${userId}`, deviceId, serverId);
 }
 
+/** Removes a WebSocket connection record for a user device on disconnect. */
 export async function removeConnection(userId: string, deviceId: string): Promise<void> {
   await redis.hdel(`connections:${userId}`, deviceId);
 }
 
+/** Returns all active WebSocket connections for a user as a device-to-server mapping. */
 export async function getUserConnections(userId: string): Promise<Record<string, string>> {
   return await redis.hgetall(`connections:${userId}`);
 }

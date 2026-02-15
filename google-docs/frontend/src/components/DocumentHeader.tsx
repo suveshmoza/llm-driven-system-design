@@ -14,6 +14,7 @@ interface Props {
   showVersionHistory: boolean;
 }
 
+/** Renders the document header with editable title, share button, presence avatars, and panel toggles. */
 export default function DocumentHeader({
   document,
   presence,

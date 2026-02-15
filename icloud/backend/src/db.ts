@@ -4,7 +4,7 @@ import * as Minio from 'minio';
 
 const { Pool } = pg;
 
-// PostgreSQL connection pool
+/** PostgreSQL connection pool configured for iCloud sync database. */
 export const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432'),
@@ -16,14 +16,14 @@ export const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Redis client - use default export from ioredis
+/** Redis client for session caching, sync state, and pub/sub notifications. */
 export const redis = new Redis.default({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
   maxRetriesPerRequest: 3,
 });
 
-// MinIO client
+/** MinIO S3-compatible object storage client for file chunks and photo derivatives. */
 export const minioClient = new Minio.Client({
   endPoint: process.env.MINIO_ENDPOINT || 'localhost',
   port: parseInt(process.env.MINIO_PORT || '9000'),
@@ -32,7 +32,7 @@ export const minioClient = new Minio.Client({
   secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin123',
 });
 
-// Test connections - dynamically import logger to avoid circular dependencies
+/** Verifies connectivity to PostgreSQL, Redis, and MinIO on startup. */
 export async function testConnections(): Promise<boolean> {
   // Lazy load logger to avoid circular dependency during startup
   const { default: logger } = await import('./shared/logger.js');
@@ -57,7 +57,7 @@ export async function testConnections(): Promise<boolean> {
   }
 }
 
-// Graceful shutdown
+/** Closes PostgreSQL pool and Redis connections for graceful shutdown. */
 export async function closeConnections(): Promise<void> {
   const { default: logger } = await import('./shared/logger.js');
 

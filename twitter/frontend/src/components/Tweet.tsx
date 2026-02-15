@@ -9,6 +9,7 @@ interface TweetProps {
   showActions?: boolean;
 }
 
+/** Renders a single tweet with author info, content, quoted tweet, and like/retweet actions. */
 export function Tweet({ tweet, showActions = true }: TweetProps) {
   const { user } = useAuthStore();
   const { likeTweet, unlikeTweet, retweet, unretweet } = useTimelineStore();

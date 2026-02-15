@@ -8,6 +8,7 @@ interface ChartWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a chart widget with configurable chart type and data bindings. */
 export function ChartWidget({ component }: ChartWidgetProps) {
   const getBindingContext = useDataStore((s) => s.getBindingContext);
   const context = getBindingContext();

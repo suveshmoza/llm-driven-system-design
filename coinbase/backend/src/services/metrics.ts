@@ -1,9 +1,11 @@
 import client from 'prom-client';
 
+/** Prometheus metrics registry for the Coinbase API. */
 const register = new client.Registry();
 
 client.collectDefaultMetrics({ register });
 
+/** HTTP request duration histogram by method, route, and status code. */
 export const httpRequestDuration = new client.Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
@@ -12,6 +14,7 @@ export const httpRequestDuration = new client.Histogram({
   registers: [register],
 });
 
+/** Total orders placed counter by side, type, and status. */
 export const orderCounter = new client.Counter({
   name: 'orders_total',
   help: 'Total number of orders placed',
@@ -19,18 +22,21 @@ export const orderCounter = new client.Counter({
   registers: [register],
 });
 
+/** Total executed trades counter. */
 export const tradeCounter = new client.Counter({
   name: 'trades_total',
   help: 'Total number of trades executed',
   registers: [register],
 });
 
+/** Gauge tracking current number of active WebSocket connections. */
 export const activeWebsocketConnections = new client.Gauge({
   name: 'active_websocket_connections',
   help: 'Number of active WebSocket connections',
   registers: [register],
 });
 
+/** Gauge tracking order book depth by symbol and side. */
 export const orderBookDepth = new client.Gauge({
   name: 'order_book_depth',
   help: 'Number of orders in the order book',

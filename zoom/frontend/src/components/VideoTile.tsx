@@ -12,6 +12,7 @@ interface VideoTileProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
+/** Renders a single participant video tile with name label and status indicators. */
 export function VideoTile({
   displayName,
   isMuted,

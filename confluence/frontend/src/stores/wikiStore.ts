@@ -20,6 +20,7 @@ interface WikiState {
   clearError: () => void;
 }
 
+/** Wiki state managing spaces, pages, page tree, and recent pages. */
 export const useWikiStore = create<WikiState>((set) => ({
   spaces: [],
   currentSpace: null,

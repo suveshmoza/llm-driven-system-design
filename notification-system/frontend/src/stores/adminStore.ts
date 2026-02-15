@@ -37,6 +37,7 @@ interface AdminState {
   clearError: () => void;
 }
 
+/** Admin dashboard state managing stats, campaigns, templates, users, and failed notifications. */
 export const useAdminStore = create<AdminState>((set, get) => ({
   stats: null,
   users: [],

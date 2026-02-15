@@ -6,6 +6,7 @@ import type { UserProfileUpdate } from '../types.js';
 const SALT_ROUNDS = 10;
 
 // Register a new user
+/** Registers a new user with hashed password and returns a session token. */
 export async function register({ email, password, username, displayName }: { email: string; password: string; username: string; displayName?: string }) {
   // Check if user already exists
   const existingUser = await pool.query(
@@ -30,6 +31,7 @@ export async function register({ email, password, username, displayName }: { ema
 }
 
 // Login user
+/** Authenticates a user by email and password, returning a session token. */
 export async function login({ email, password }: { email: string; password: string }) {
   const result = await pool.query(
     'SELECT * FROM users WHERE email = $1',
@@ -53,6 +55,7 @@ export async function login({ email, password }: { email: string; password: stri
 }
 
 // Get user by ID
+/** Retrieves a user profile by ID, excluding the password hash. */
 export async function getUserById(userId: string) {
   const result = await pool.query(
     `SELECT id, email, username, display_name, avatar_url, is_premium, role, created_at
@@ -64,6 +67,7 @@ export async function getUserById(userId: string) {
 }
 
 // Update user profile
+/** Updates a user's display name, avatar, or password. */
 export async function updateProfile(userId: string, updates: UserProfileUpdate) {
   const allowedFields = ['display_name', 'avatar_url'];
   const updateEntries = Object.entries(updates).filter(([key]) =>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { SSEMessage } from '../types';
 import { useTrendingStore } from '../stores/trendingStore';
 
+/** Establishes an SSE connection for real-time trending updates with auto-reconnect. */
 export function useSSE() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const { setTrending, setConnected } = useTrendingStore();

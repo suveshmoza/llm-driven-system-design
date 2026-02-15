@@ -23,6 +23,7 @@ pool.on('connect', () => {
   logger.debug('New database connection established');
 });
 
+/** Executes a parameterized SQL query with duration logging. */
 export async function query(text: string, params?: unknown[]) {
   const start = Date.now();
   const result = await pool.query(text, params);
@@ -31,6 +32,7 @@ export async function query(text: string, params?: unknown[]) {
   return result;
 }
 
+/** Acquires a dedicated client from the connection pool for transaction use. */
 export async function getClient() {
   const client = await pool.connect();
   return client;

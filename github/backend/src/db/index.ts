@@ -21,6 +21,7 @@ pool.on('error', (err: Error) => {
   process.exit(-1);
 });
 
+/** Executes a parameterized SQL query with development-mode duration logging. */
 export const query = async (text: string, params?: unknown[]): Promise<QueryResult> => {
   const start = Date.now();
   const res = await pool.query(text, params);
@@ -31,6 +32,7 @@ export const query = async (text: string, params?: unknown[]): Promise<QueryResu
   return res;
 };
 
+/** Acquires a dedicated client from the connection pool for transaction use. */
 export const getClient = (): Promise<PoolClient> => pool.connect();
 
 export default pool;

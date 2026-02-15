@@ -14,6 +14,7 @@ const DEVICE_TYPES = [
   { value: 'manual_entry', label: 'Manual Entry', icon: 'edit' },
 ];
 
+/** Displays connected devices with sync status and provides a modal to register new devices. */
 export function Devices() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();

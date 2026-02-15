@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 
-// Authentication middleware
+/** Rejects unauthenticated requests by checking for a valid session userId. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.session.userId) {
     res.status(401).json({ error: 'Authentication required' });
@@ -9,6 +9,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
+/** Restricts access to admin users by verifying session role after authentication check. */
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!req.session.userId) {
     res.status(401).json({ error: 'Authentication required' });

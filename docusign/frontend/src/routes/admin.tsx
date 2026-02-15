@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore'
 import { adminApi } from '../services/api'
 import { AdminStats, Envelope, User, EmailNotification } from '../types'
 
+/** Admin dashboard page with tabs for system overview, user management, envelope inspection, and email logs. */
 function AdminPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuthStore()
   const navigate = useNavigate()

@@ -12,6 +12,7 @@ const minioClient = new Minio.Client({
 
 const BUCKET = config.minio.bucket;
 
+/** Creates the MinIO bucket if it does not already exist. */
 export async function ensureBucket(): Promise<void> {
   try {
     const exists = await minioClient.bucketExists(BUCKET);
@@ -24,6 +25,7 @@ export async function ensureBucket(): Promise<void> {
   }
 }
 
+/** Uploads an image buffer to MinIO and returns its public URL. */
 export async function uploadImage(
   objectName: string,
   buffer: Buffer,
@@ -35,6 +37,7 @@ export async function uploadImage(
   return getPublicUrl(objectName);
 }
 
+/** Downloads an object from MinIO and returns it as a Buffer. */
 export async function getObject(objectName: string): Promise<Buffer> {
   const stream = await minioClient.getObject(BUCKET, objectName);
   const chunks: Buffer[] = [];
@@ -45,11 +48,13 @@ export async function getObject(objectName: string): Promise<Buffer> {
   });
 }
 
+/** Constructs a public URL for a MinIO object based on endpoint configuration. */
 export function getPublicUrl(objectName: string): string {
   const protocol = config.minio.useSSL ? 'https' : 'http';
   return `${protocol}://${config.minio.endPoint}:${config.minio.port}/${BUCKET}/${objectName}`;
 }
 
+/** Removes an object from the MinIO bucket. */
 export async function deleteObject(objectName: string): Promise<void> {
   await minioClient.removeObject(BUCKET, objectName);
 }

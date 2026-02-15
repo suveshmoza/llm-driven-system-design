@@ -7,6 +7,7 @@ interface ThreadListItemProps {
   onClick: () => void;
 }
 
+/** Renders a single thread row with sender, subject, snippet, date, and star toggle. */
 export function ThreadListItem({ thread, onClick }: ThreadListItemProps) {
   const { toggleStar, moveToTrash, archiveThread } = useMailStore();
 

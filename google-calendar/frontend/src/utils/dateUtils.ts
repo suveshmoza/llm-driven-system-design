@@ -31,6 +31,7 @@ export {
 }
 
 // Get all days to display in a month view (includes padding days from prev/next month)
+/** Returns all days visible in a month grid, including padding from adjacent months. */
 export function getMonthDays(date: Date): Date[] {
   const monthStart = startOfMonth(date)
   const monthEnd = endOfMonth(date)
@@ -41,6 +42,7 @@ export function getMonthDays(date: Date): Date[] {
 }
 
 // Get all days in a week
+/** Returns all seven days in the week containing the given date. */
 export function getWeekDays(date: Date): Date[] {
   const weekStart = startOfWeek(date)
   const weekEnd = endOfWeek(date)
@@ -49,22 +51,26 @@ export function getWeekDays(date: Date): Date[] {
 }
 
 // Format time for display (e.g., "9:00 AM")
+/** Formats a date or ISO string as a 12-hour time (e.g., "9:00 AM"). */
 export function formatTime(date: Date | string): string {
   const d = typeof date === 'string' ? parseISO(date) : date
   return format(d, 'h:mm a')
 }
 
 // Format date for display (e.g., "Jan 15")
+/** Formats a date as an abbreviated date (e.g., "Jan 15"). */
 export function formatShortDate(date: Date): string {
   return format(date, 'MMM d')
 }
 
 // Get hours array for day/week view (0-23)
+/** Returns an array of hours 0-23 for rendering day/week time grids. */
 export function getHoursOfDay(): number[] {
   return Array.from({ length: 24 }, (_, i) => i)
 }
 
 // Check if an event overlaps with a given day
+/** Checks whether an event's time range overlaps with a given calendar day. */
 export function eventOverlapsDay(
   eventStart: Date | string,
   eventEnd: Date | string,
@@ -82,6 +88,7 @@ export function eventOverlapsDay(
 }
 
 // Calculate event position in day/week view (top and height as percentages)
+/** Calculates CSS top and height percentages for positioning an event in a time grid. */
 export function getEventPosition(
   eventStart: Date | string,
   eventEnd: Date | string,

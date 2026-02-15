@@ -135,6 +135,7 @@ interface PriceOverrideRow {
   price: string;
 }
 
+/** Two-phase hotel search: Elasticsearch for matching, PostgreSQL for real-time availability filtering. */
 class SearchService {
   async searchHotels(params: SearchParams): Promise<SearchResult> {
     const startTime = Date.now();

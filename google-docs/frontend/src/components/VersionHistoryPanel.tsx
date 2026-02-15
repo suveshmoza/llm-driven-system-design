@@ -6,6 +6,7 @@ interface Props {
   onClose: () => void;
 }
 
+/** Renders the version history side panel with snapshot creation and restore functionality. */
 export default function VersionHistoryPanel({ documentId, onClose }: Props) {
   const { versions, fetchVersions, createVersion, restoreVersion } = useDocumentStore();
   const [isCreating, setIsCreating] = useState(false);

@@ -1,3 +1,4 @@
+/** Renders an animated hand-raise indicator icon overlay. */
 export function HandRaiseIndicator() {
   return (
     <div className="absolute top-2 right-2 bg-yellow-500 rounded-full w-8 h-8 flex items-center justify-center animate-bounce">

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the top navigation bar with auth-aware links to problems, progress, and admin pages. */
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
 

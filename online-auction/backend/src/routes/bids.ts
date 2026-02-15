@@ -589,4 +589,5 @@ router.get('/:auctionId', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
+/** Router for bid placement with distributed locking, idempotency, snipe protection, and proxy bidding. */
 export default router;

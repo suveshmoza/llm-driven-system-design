@@ -295,6 +295,7 @@ async function executeSearch(searchParams: SearchParams): Promise<SearchResult> 
   };
 }
 
+/** GET /api/search - Searches listings with PostGIS geo-filtering, availability check, and circuit breaker protection. */
 // Search listings with geographic filter and availability
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   const startTime = process.hrtime.bigint();
@@ -352,6 +353,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
+/** GET /api/search/suggest - Returns location autocomplete suggestions matching the query. */
 // Suggest locations based on search term
 router.get('/suggest', async (req: Request, res: Response) => {
   const { q } = req.query;
@@ -388,6 +390,7 @@ router.get('/suggest', async (req: Request, res: Response) => {
   }
 });
 
+/** GET /api/search/popular-destinations - Returns top 10 destinations ranked by listing count. */
 // Get popular destinations
 router.get('/popular-destinations', async (_req: Request, res: Response) => {
   try {

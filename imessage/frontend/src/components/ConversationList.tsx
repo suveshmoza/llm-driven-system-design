@@ -13,6 +13,7 @@ import type { User } from '@/types';
  *
  * @returns React component for the conversation list sidebar
  */
+/** Renders the sidebar conversation list with search, new conversation creation, and selection handling. */
 export function ConversationList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);

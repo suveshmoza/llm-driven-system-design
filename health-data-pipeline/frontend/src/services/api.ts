@@ -1,5 +1,6 @@
 const API_BASE = '/api/v1';
 
+/** Sends an authenticated API request with JSON body and Bearer token from localStorage. */
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -28,6 +29,7 @@ async function request<T>(
   return response.json();
 }
 
+/** API client organized by domain: auth, devices, health data, and admin operations. */
 export const api = {
   // Auth
   auth: {

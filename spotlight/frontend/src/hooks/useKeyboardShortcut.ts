@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useSpotlightStore } from '../stores/spotlightStore';
 
+/** Registers a keyboard shortcut listener and cleans up on unmount. */
 export function useKeyboardShortcut() {
   const { toggleSpotlight, isOpen, closeSpotlight, selectNext, selectPrevious, results, suggestions, query, selectedIndex, executeResult } = useSpotlightStore();
 

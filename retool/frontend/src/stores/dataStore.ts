@@ -30,6 +30,7 @@ interface DataState {
   getBindingContext: () => Record<string, unknown>;
 }
 
+/** Data state managing query results and data source connections for the app editor. */
 export const useDataStore = create<DataState>((set, get) => ({
   dataSources: [],
   dataSourcesLoading: false,

@@ -1,6 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the left navigation sidebar with links to Home, Explore, Profile, and auth actions. */
 export function Sidebar() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();

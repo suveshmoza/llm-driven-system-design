@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the registration form with email, name, and password fields. */
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');

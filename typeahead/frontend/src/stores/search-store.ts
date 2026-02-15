@@ -67,6 +67,7 @@ const saveRecentSearch = (query: string, existing: string[]): string[] => {
   return updated;
 };
 
+/** Typeahead search state with query suggestions, history tracking, fuzzy matching, and trending phrases. */
 export const useSearchStore = create<SearchState>((set, get) => ({
   userId: getUserId(),
   sessionId: getSessionId(),

@@ -11,6 +11,7 @@ interface PostCardProps {
   onUpdate?: (post: Post) => void;
 }
 
+/** Renders a full post card with image, like/comment actions, and caption. */
 export function PostCard({ post, onUpdate }: PostCardProps) {
   const { isAuthenticated } = useAuthStore();
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);

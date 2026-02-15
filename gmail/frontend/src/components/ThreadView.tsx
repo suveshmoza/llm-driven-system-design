@@ -9,6 +9,7 @@ interface ThreadViewProps {
   onBack: () => void;
 }
 
+/** Renders a thread detail view with message cards, star/archive/trash actions, and reply form. */
 export function ThreadView({ thread, onBack }: ThreadViewProps) {
   const { toggleStar, moveToTrash, archiveThread, fetchThread } = useMailStore();
   const [replyOpen, setReplyOpen] = useState(false);

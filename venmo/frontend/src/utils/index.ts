@@ -1,3 +1,4 @@
+/** Formats a cent amount as a localized USD currency string (e.g., "$12.50"). */
 export function formatCurrency(cents: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -5,6 +6,7 @@ export function formatCurrency(cents: number): string {
   }).format(cents / 100);
 }
 
+/** Formats a date string as a relative time (e.g., "5m ago", "3d ago") or short date. */
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -25,6 +27,7 @@ export function formatDate(dateString: string): string {
   });
 }
 
+/** Extracts up to two uppercase initials from a full name for avatar fallbacks. */
 export function getInitials(name: string): string {
   return name
     .split(' ')
@@ -34,6 +37,7 @@ export function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+/** Joins CSS class names, filtering out falsy values for conditional class application. */
 export function classNames(...classes: (string | boolean | undefined | null)[]): string {
   return classes.filter(Boolean).join(' ');
 }

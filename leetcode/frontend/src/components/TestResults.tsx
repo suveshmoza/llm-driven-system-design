@@ -6,6 +6,7 @@ interface TestResultsProps {
   isLoading?: boolean;
 }
 
+/** Displays test case execution results with pass/fail status, input, expected and actual output. */
 export function TestResults({ results, isLoading }: TestResultsProps) {
   if (isLoading) {
     return (

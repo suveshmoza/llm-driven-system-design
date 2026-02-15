@@ -3,6 +3,7 @@ import { config } from './index.js';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool configured for health data pipeline. */
 export const pool: PgPool = new Pool({
   connectionString: config.database.url,
   max: 20,
@@ -14,12 +15,14 @@ pool.on('error', (err: Error) => {
   console.error('Unexpected database error:', err);
 });
 
+/** Database client interface wrapping pool queries, client access, and transactions. */
 export interface DbClient {
   query: <T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]) => Promise<QueryResult<T>>;
   getClient: () => Promise<PoolClient>;
   transaction: <T>(callback: (client: PoolClient) => Promise<T>) => Promise<T>;
 }
 
+/** Database client with query execution, client checkout, and transaction support. */
 export const db: DbClient = {
   query: <T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<QueryResult<T>> =>
     pool.query<T>(text, params),
@@ -45,6 +48,7 @@ export const db: DbClient = {
   }
 };
 
+/** Tests database connectivity and logs the connection timestamp. */
 export async function initializeDatabase(): Promise<boolean> {
   try {
     const result = await pool.query('SELECT NOW()');

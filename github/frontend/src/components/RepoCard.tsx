@@ -24,6 +24,7 @@ const languageColors: Record<string, string> = {
   shell: '#89e051',
 };
 
+/** Renders a repository card with name, description, language indicator, stars, and forks. */
 export function RepoCard({ repo, showOwner = true }: RepoCardProps) {
   const languageColor = repo.language ? languageColors[repo.language.toLowerCase()] || '#8b949e' : null;
 

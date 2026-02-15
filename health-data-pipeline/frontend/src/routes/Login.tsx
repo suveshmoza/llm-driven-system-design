@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Login form with email/password authentication and error display. */
 export function Login() {
   const navigate = useNavigate();
   const { login, isLoading, error, clearError } = useAuthStore();

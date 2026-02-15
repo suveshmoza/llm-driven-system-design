@@ -5,6 +5,7 @@ interface SearchResultItemProps {
   result: SearchResult;
 }
 
+/** Renders a single search result with title, URL breadcrumb, snippet highlight, and metadata. */
 export function SearchResultItem({ result }: SearchResultItemProps) {
   const displayUrl = result.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
 

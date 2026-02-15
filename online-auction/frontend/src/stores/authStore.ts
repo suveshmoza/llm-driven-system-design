@@ -47,6 +47,7 @@ interface AuthState {
  * }
  * ```
  */
+/** Persisted auth state with login, register, logout, and session validation. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, _get) => ({

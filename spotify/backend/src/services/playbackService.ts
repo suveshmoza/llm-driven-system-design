@@ -6,6 +6,7 @@ import { logger } from '../shared/logger.js';
 import type { PlaybackEventType, PlaybackState } from '../types.js';
 
 // Get stream URL for a track
+/** Returns a presigned streaming URL for a track from MinIO storage. */
 export async function getStreamUrl(trackId: string, _userId: string) {
   // Get track info
   const trackResult = await pool.query(
@@ -45,6 +46,7 @@ export async function getStreamUrl(trackId: string, _userId: string) {
 }
 
 // Record playback event
+/** Records a playback event (play, pause, skip, complete) and publishes to Kafka. */
 export async function recordPlaybackEvent(userId: string, trackId: string, eventType: PlaybackEventType, positionMs: number = 0, deviceType: string = 'web') {
   await pool.query(
     `INSERT INTO playback_events (user_id, track_id, event_type, position_ms, device_type)
@@ -94,6 +96,7 @@ export async function recordPlaybackEvent(userId: string, trackId: string, event
 }
 
 // Get recently played tracks
+/** Returns a user's recently played tracks ordered by last played time. */
 export async function getRecentlyPlayed(userId: string, { limit = 50 }: { limit?: number }) {
   const result = await pool.query(
     `SELECT DISTINCT ON (t.id)
@@ -120,12 +123,14 @@ export async function getRecentlyPlayed(userId: string, { limit = 50 }: { limit?
 }
 
 // Store and retrieve playback state (for cross-device sync)
+/** Persists the current playback state (track, position, shuffle, repeat) to Redis. */
 export async function savePlaybackState(userId: string, state: PlaybackState) {
   const key = `playback_state:${userId}`;
   await redisClient.setEx(key, 86400, JSON.stringify(state)); // 24 hour expiry
   return { saved: true };
 }
 
+/** Retrieves the user's last saved playback state from Redis. */
 export async function getPlaybackState(userId: string) {
   const key = `playback_state:${userId}`;
   const state = await redisClient.get(key);
@@ -133,6 +138,7 @@ export async function getPlaybackState(userId: string) {
 }
 
 // Get play count statistics
+/** Returns play count and unique listener statistics for a track. */
 export async function getTrackStats(trackId: string) {
   const result = await pool.query(
     `SELECT

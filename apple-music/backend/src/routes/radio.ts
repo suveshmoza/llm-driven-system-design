@@ -19,6 +19,7 @@ interface CreatePersonalRadioBody {
 }
 
 // Get all radio stations
+/** GET /api/radio - Returns all active radio stations with Redis caching. */
 router.get('/', optionalAuth, async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'radio:stations';
@@ -48,6 +49,7 @@ router.get('/', optionalAuth, async (_req: Request, res: Response) => {
 });
 
 // Get radio station details with tracks
+/** GET /api/radio/:id - Returns station details and its track listing. */
 router.get('/:id', optionalAuth, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -88,6 +90,7 @@ router.get('/:id', optionalAuth, async (req: Request<{ id: string }>, res: Respo
 });
 
 // Get tracks for a radio station (with shuffle option)
+/** GET /api/radio/:id/tracks - Returns tracks for a station based on its type (curated, genre, artist). */
 router.get('/:id/tracks', optionalAuth, async (req: Request<{ id: string }, unknown, unknown, { shuffle?: string; limit?: string }>, res: Response) => {
   try {
     const { id } = req.params;
@@ -168,6 +171,7 @@ router.get('/:id/tracks', optionalAuth, async (req: Request<{ id: string }, unkn
 });
 
 // Create personal radio station (based on a seed track or artist)
+/** POST /api/radio/personal - Creates a personal radio station seeded by an artist, track, or genre. */
 router.post('/personal', authenticate, async (req: Request<object, unknown, CreatePersonalRadioBody>, res: Response) => {
   try {
     const { seedType, seedId, name } = req.body;
@@ -274,6 +278,7 @@ router.post('/personal', authenticate, async (req: Request<object, unknown, Crea
 });
 
 // Get stations by genre
+/** GET /api/radio/genre/:genre - Returns active radio stations matching the specified genre. */
 router.get('/genre/:genre', optionalAuth, async (req: Request<{ genre: string }>, res: Response) => {
   try {
     const { genre } = req.params;

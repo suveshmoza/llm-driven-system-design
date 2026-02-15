@@ -4,6 +4,7 @@ const { Pool: PgPool } = pg;
 
 let pool: Pool | null = null;
 
+/** Initializes the PostgreSQL connection pool and verifies connectivity. */
 export async function initializeDb(): Promise<Pool> {
   pool = new PgPool({
     connectionString: process.env.DATABASE_URL,
@@ -18,6 +19,7 @@ export async function initializeDb(): Promise<Pool> {
   return pool;
 }
 
+/** Returns the initialized database pool. Throws if not yet initialized. */
 export function getDb(): Pool {
   if (!pool) {
     throw new Error('Database not initialized');
@@ -25,6 +27,7 @@ export function getDb(): Pool {
   return pool;
 }
 
+/** Executes a parameterized SQL query and logs slow queries in development. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -41,6 +44,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   return result;
 }
 
+/** Wraps a callback in a database transaction with automatic BEGIN, COMMIT, and ROLLBACK. */
 export async function transaction<T>(
   callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {

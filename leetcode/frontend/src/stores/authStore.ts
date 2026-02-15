@@ -17,6 +17,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+/** Authentication state with session-based login, registration, and auto-restore on page load. */
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,

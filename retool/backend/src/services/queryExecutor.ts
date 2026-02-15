@@ -84,6 +84,7 @@ function oidToTypeName(oid: number): string {
   return typeMap[oid] || 'text';
 }
 
+/** Executes a data source query with binding resolution and caches the result. */
 export async function executeQuery(
   dataSourceId: string,
   queryText: string,

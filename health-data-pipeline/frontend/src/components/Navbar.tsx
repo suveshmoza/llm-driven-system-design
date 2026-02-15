@@ -1,6 +1,7 @@
 import { Link, useRouter } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Top navigation bar with authenticated navigation links, user display, and logout action. */
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const router = useRouter();

@@ -1,3 +1,4 @@
+/** Formats a date string as a compact relative time (e.g., "5m", "2h", "3d"). */
 export function formatTimeAgo(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -30,6 +31,7 @@ export function formatTimeAgo(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/** Formats a number with K/M suffixes for compact display. */
 export function formatNumber(num: number): string {
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
@@ -40,6 +42,7 @@ export function formatNumber(num: number): string {
   return num.toString();
 }
 
+/** Returns the singular or plural form of a word based on count. */
 export function pluralize(count: number, singular: string, plural?: string): string {
   return count === 1 ? singular : plural || `${singular}s`;
 }

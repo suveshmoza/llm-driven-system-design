@@ -1,5 +1,6 @@
 import { Redis } from 'ioredis';
 
+/** Redis client used for route caching, traffic data, search results, and idempotency keys. */
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),

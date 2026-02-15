@@ -24,6 +24,7 @@ interface SearchResponse {
   took: number;
 }
 
+/** Indexes a page document in Elasticsearch with title, content, and labels. */
 export async function indexPage(pageId: string, spaceId: string): Promise<void> {
   try {
     // Fetch page data from DB
@@ -68,6 +69,7 @@ export async function indexPage(pageId: string, spaceId: string): Promise<void> 
   }
 }
 
+/** Removes a page document from the Elasticsearch index. */
 export async function deletPageIndex(pageId: string): Promise<void> {
   try {
     await esClient.delete({
@@ -80,6 +82,7 @@ export async function deletPageIndex(pageId: string): Promise<void> {
   }
 }
 
+/** Searches pages via Elasticsearch with fuzzy matching, falling back to PostgreSQL ILIKE. */
 export async function searchPages(
   query: string,
   spaceId?: string,

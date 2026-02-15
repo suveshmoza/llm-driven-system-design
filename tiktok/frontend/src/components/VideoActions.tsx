@@ -8,6 +8,7 @@ interface VideoActionsProps {
   video: Video;
 }
 
+/** Renders the vertical action bar with like, comment, share, and follow buttons. */
 export default function VideoActions({ video }: VideoActionsProps) {
   const { likeVideo, unlikeVideo } = useFeedStore();
   const { isAuthenticated } = useAuthStore();

@@ -63,6 +63,7 @@ router.use(authenticate);
 router.use(requireAdmin);
 
 // Dashboard stats
+/** GET /api/admin/stats - Returns dashboard statistics including user counts, plays, and top tracks. */
 router.get('/stats', async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'admin:stats';
@@ -133,6 +134,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
 });
 
 // Get all users
+/** GET /api/admin/users - Returns paginated list of all registered users. */
 router.get('/users', async (req: Request<object, unknown, unknown, { limit?: string; offset?: string }>, res: Response) => {
   try {
     const { limit = '50', offset = '0' } = req.query;
@@ -161,6 +163,7 @@ router.get('/users', async (req: Request<object, unknown, unknown, { limit?: str
 });
 
 // Update user
+/** PATCH /api/admin/users/:id - Updates a user's role or subscription tier. */
 router.patch('/users/:id', async (req: Request<{ id: string }, unknown, UpdateUserBody>, res: Response) => {
   try {
     const { id } = req.params;
@@ -207,6 +210,7 @@ router.patch('/users/:id', async (req: Request<{ id: string }, unknown, UpdateUs
 });
 
 // Add new artist
+/** POST /api/admin/artists - Creates a new artist in the catalog. */
 router.post('/artists', async (req: Request<object, unknown, CreateArtistBody>, res: Response) => {
   try {
     const { name, bio, imageUrl, genres, verified } = req.body;
@@ -234,6 +238,7 @@ router.post('/artists', async (req: Request<object, unknown, CreateArtistBody>, 
 });
 
 // Update artist
+/** PATCH /api/admin/artists/:id - Updates an existing artist's metadata. */
 router.patch('/artists/:id', async (req: Request<{ id: string }, unknown, UpdateArtistBody>, res: Response) => {
   try {
     const { id } = req.params;
@@ -291,6 +296,7 @@ router.patch('/artists/:id', async (req: Request<{ id: string }, unknown, Update
 });
 
 // Add new album
+/** POST /api/admin/albums - Creates a new album linked to an artist. */
 router.post('/albums', async (req: Request<object, unknown, CreateAlbumBody>, res: Response) => {
   try {
     const { title, artistId, releaseDate, albumType, genres, artworkUrl, explicit } = req.body;
@@ -315,6 +321,7 @@ router.post('/albums', async (req: Request<object, unknown, CreateAlbumBody>, re
 });
 
 // Add new track
+/** POST /api/admin/tracks - Creates a new track with genre associations. */
 router.post('/tracks', async (req: Request<object, unknown, CreateTrackBody>, res: Response) => {
   try {
     const { title, artistId, albumId, durationMs, trackNumber, discNumber, explicit, audioFeatures, genres } = req.body;
@@ -351,6 +358,7 @@ router.post('/tracks', async (req: Request<object, unknown, CreateTrackBody>, re
 });
 
 // Create radio station
+/** POST /api/admin/radio-stations - Creates a new radio station with optional initial tracks. */
 router.post('/radio-stations', async (req: Request<object, unknown, CreateRadioStationBody>, res: Response) => {
   try {
     const { name, description, type, seedArtistId, seedGenre, artworkUrl, trackIds } = req.body;
@@ -390,6 +398,7 @@ router.post('/radio-stations', async (req: Request<object, unknown, CreateRadioS
 });
 
 // Clear cache
+/** POST /api/admin/cache/clear - Clears Redis cache by pattern or flushes all keys. */
 router.post('/cache/clear', async (req: Request<object, unknown, { pattern?: string }>, res: Response) => {
   try {
     const { pattern } = req.body;

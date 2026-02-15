@@ -5,6 +5,7 @@ dotenv.config();
 
 let redisClient: Redis | null = null;
 
+/** Creates or returns the singleton Redis client for leaderboards, feeds, and user caching. */
 export function createClient(): Redis {
   if (redisClient) return redisClient;
 
@@ -22,6 +23,7 @@ export function createClient(): Redis {
   return client;
 }
 
+/** Returns the existing Redis client or throws if not yet initialized. */
 export function getClient(): Redis {
   if (!redisClient) {
     return createClient();
@@ -46,6 +48,7 @@ export interface UserRankResult {
 }
 
 // Leaderboard operations
+/** Updates a segment leaderboard in a Redis sorted set with the athlete's best effort time. */
 export async function updateLeaderboard(
   segmentId: string,
   userId: string,
@@ -72,6 +75,7 @@ export async function updateLeaderboard(
   return { isPR: false, rank: null };
 }
 
+/** Retrieves the top entries from a segment leaderboard sorted by fastest time. */
 export async function getLeaderboard(segmentId: string, limit: number = 10): Promise<LeaderboardEntry[]> {
   const client = getClient();
   const lbKey = `leaderboard:${segmentId}`;
@@ -91,6 +95,7 @@ export async function getLeaderboard(segmentId: string, limit: number = 10): Pro
   return leaderboard;
 }
 
+/** Gets a user's rank and time on a specific segment leaderboard. */
 export async function getUserRank(segmentId: string, userId: string): Promise<UserRankResult | null> {
   const client = getClient();
   const lbKey = `leaderboard:${segmentId}`;
@@ -103,6 +108,7 @@ export async function getUserRank(segmentId: string, userId: string): Promise<Us
 }
 
 // Feed operations
+/** Fans out an activity to a follower's feed using a Redis sorted set ordered by timestamp. */
 export async function addToFeed(followerId: string, activityId: string, timestamp: number): Promise<void> {
   const client = getClient();
   const feedKey = `feed:${followerId}`;
@@ -112,6 +118,7 @@ export async function addToFeed(followerId: string, activityId: string, timestam
   await client.zremrangebyrank(feedKey, 0, -1001);
 }
 
+/** Retrieves a paginated activity feed for a user, optionally before a given timestamp. */
 export async function getFeed(userId: string, limit: number = 20, before: number | null = null): Promise<string[]> {
   const client = getClient();
   const feedKey = `feed:${userId}`;
@@ -143,11 +150,13 @@ export interface CachedUserData {
 }
 
 // Session cache
+/** Stores user profile data in Redis with a configurable TTL for fast profile lookups. */
 export async function cacheUser(userId: string, userData: CachedUserData, ttl: number = 1800): Promise<void> {
   const client = getClient();
   await client.setex(`user:${userId}`, ttl, JSON.stringify(userData));
 }
 
+/** Retrieves cached user profile data from Redis. */
 export async function getCachedUser(userId: string): Promise<CachedUserData | null> {
   const client = getClient();
   const data = await client.get(`user:${userId}`);

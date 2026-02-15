@@ -6,6 +6,7 @@ interface Props {
   documents: DocumentListItem[];
 }
 
+/** Renders a grid of document cards with title, last-modified date, and delete action. */
 export default function DocumentList({ documents }: Props) {
   const navigate = useNavigate();
   const { deleteDocument } = useDocumentStore();

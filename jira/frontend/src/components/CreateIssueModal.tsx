@@ -9,6 +9,7 @@ interface CreateIssueModalProps {
   onClose: () => void;
 }
 
+/** Renders a modal form for creating new issues with type, summary, description, and sprint fields. */
 export function CreateIssueModal({ isOpen, onClose }: CreateIssueModalProps) {
   const { currentProject, sprints } = useProjectStore();
   const { fetchProjectIssues } = useIssueStore();

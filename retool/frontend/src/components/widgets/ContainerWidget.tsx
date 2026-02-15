@@ -5,6 +5,7 @@ interface ContainerWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a container widget that groups other widgets visually. */
 export function ContainerWidget({ component }: ContainerWidgetProps) {
   const bgColor = (component.props.backgroundColor as string) || '#FFFFFF';
   const padding = typeof component.props.padding === 'number' ? component.props.padding : 16;

@@ -5,6 +5,7 @@ const { Pool } = pg;
 
 dotenv.config();
 
+/** PostgreSQL connection pool for the Venmo payment system. */
 export const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432'),
@@ -13,7 +14,7 @@ export const pool = new Pool({
   database: process.env.POSTGRES_DB || 'venmo',
 });
 
-// Helper for transactions
+/** Executes a callback within a PostgreSQL transaction with automatic BEGIN/COMMIT/ROLLBACK. */
 export const transaction = async <T>(
   callback: (client: pg.PoolClient) => Promise<T>
 ): Promise<T> => {

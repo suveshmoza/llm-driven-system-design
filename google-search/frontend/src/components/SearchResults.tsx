@@ -7,6 +7,7 @@ interface SearchResultsProps {
   onPageChange: (page: number) => void;
 }
 
+/** Renders a paginated list of search results with result count, duration, and page navigation. */
 export function SearchResults({ results, onPageChange }: SearchResultsProps) {
   if (results.results.length === 0) {
     return (

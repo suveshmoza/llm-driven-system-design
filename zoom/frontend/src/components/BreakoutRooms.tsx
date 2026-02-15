@@ -7,6 +7,7 @@ interface BreakoutRoomsProps {
   onClose: () => void;
 }
 
+/** Renders the host UI for creating, activating, and closing breakout rooms. */
 export function BreakoutRooms({ meetingId: _meetingId, onCreateRooms, onActivate, onClose }: BreakoutRoomsProps) {
   const [roomCount, setRoomCount] = useState(2);
   const [rooms, setRooms] = useState<{ name: string }[]>([]);

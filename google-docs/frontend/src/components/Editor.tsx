@@ -16,6 +16,7 @@ interface Props {
   readOnly?: boolean;
 }
 
+/** Renders the TipTap rich text editor with real-time OT sync, presence indicators, and formatting toolbar. */
 export default function Editor({ document, presence, readOnly = false }: Props) {
   const editor = useEditor({
     extensions: [

@@ -35,6 +35,7 @@ interface FallbackSearchResult {
   limit: number;
 }
 
+/** GET /api/search - Searches products via Elasticsearch with PostgreSQL full-text search fallback. */
 // Search products
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -98,6 +99,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
   }
 });
 
+/** GET /api/search/suggestions - Returns product title autocomplete suggestions using PostgreSQL ILIKE. */
 // Autocomplete suggestions
 router.get('/suggestions', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

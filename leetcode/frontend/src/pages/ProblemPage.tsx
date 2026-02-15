@@ -37,6 +37,7 @@ interface Submission {
 
 type Language = 'python' | 'javascript';
 
+/** Renders the problem workspace with description, code editor, test runner, and submission history. */
 export function ProblemPage() {
   const { slug } = useParams<{ slug: string }>();
   const { isAuthenticated } = useAuthStore();

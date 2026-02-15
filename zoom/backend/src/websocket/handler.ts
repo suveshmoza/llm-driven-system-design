@@ -46,6 +46,7 @@ function send(ws: WebSocket, message: object) {
   }
 }
 
+/** Initializes WebSocket server with meeting signaling, SFU orchestration, and chat handlers. */
 export function setupWebSocket(wss: WebSocketServer) {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     // Parse session info from query params (simplified auth for WebSocket)

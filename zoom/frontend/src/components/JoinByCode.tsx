@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
+/** Renders a form to join a meeting by entering its meeting code. */
 export function JoinByCode() {
   const [code, setCode] = useState('');
   const navigate = useNavigate();

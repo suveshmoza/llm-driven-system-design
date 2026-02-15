@@ -1,6 +1,7 @@
 import { pool } from './db.js';
 import { logger } from './logger.js';
 
+/** Creates multiple named breakout rooms for a meeting. */
 export async function createBreakoutRooms(meetingId: string, rooms: { name: string }[]) {
   const results = [];
   for (const room of rooms) {
@@ -14,6 +15,7 @@ export async function createBreakoutRooms(meetingId: string, rooms: { name: stri
   return results;
 }
 
+/** Assigns a participant to a breakout room, idempotent via ON CONFLICT. */
 export async function assignParticipant(breakoutRoomId: string, participantId: string) {
   const result = await pool.query(
     `INSERT INTO breakout_assignments (breakout_room_id, participant_id)
@@ -25,6 +27,7 @@ export async function assignParticipant(breakoutRoomId: string, participantId: s
   return result.rows[0] || null;
 }
 
+/** Activates all breakout rooms for a meeting. */
 export async function activateBreakoutRooms(meetingId: string) {
   await pool.query(
     `UPDATE breakout_rooms SET is_active = true WHERE meeting_id = $1`,
@@ -33,6 +36,7 @@ export async function activateBreakoutRooms(meetingId: string) {
   logger.info({ meetingId }, 'Breakout rooms activated');
 }
 
+/** Closes breakout rooms and returns all participants to the main room. */
 export async function closeBreakoutRooms(meetingId: string) {
   await pool.query(
     `UPDATE breakout_rooms SET is_active = false WHERE meeting_id = $1`,
@@ -47,6 +51,7 @@ export async function closeBreakoutRooms(meetingId: string) {
   logger.info({ meetingId }, 'Breakout rooms closed, participants returned to main room');
 }
 
+/** Returns all breakout rooms for a meeting with their assigned participants. */
 export async function getBreakoutRooms(meetingId: string) {
   const rooms = await pool.query(
     `SELECT * FROM breakout_rooms WHERE meeting_id = $1 ORDER BY created_at`,
@@ -70,6 +75,7 @@ export async function getBreakoutRooms(meetingId: string) {
   return result;
 }
 
+/** Permanently deletes all breakout rooms for a meeting. */
 export async function deleteBreakoutRooms(meetingId: string) {
   await pool.query(
     `DELETE FROM breakout_rooms WHERE meeting_id = $1`,

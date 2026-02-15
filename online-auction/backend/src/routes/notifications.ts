@@ -109,4 +109,5 @@ router.delete(
   }
 );
 
+/** Router for notification listing, read marking, and deletion. */
 export default router;

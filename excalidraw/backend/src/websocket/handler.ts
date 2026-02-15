@@ -331,6 +331,7 @@ const leaveRoom = (client: ClientInfo): void => {
   client.drawingId = null;
 };
 
+/** Initializes the WebSocket server for real-time drawing collaboration and cursor tracking. */
 export const setupWebSocket = (wss: WebSocketServer): void => {
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
     const clientInfo: ClientInfo = {

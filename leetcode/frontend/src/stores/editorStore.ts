@@ -16,6 +16,7 @@ interface EditorState {
   setIsSubmitting: (isSubmitting: boolean) => void;
 }
 
+/** Code editor state managing language selection, code content, and submission/run loading flags. */
 export const useEditorStore = create<EditorState>((set, get) => ({
   language: 'python',
   code: '',

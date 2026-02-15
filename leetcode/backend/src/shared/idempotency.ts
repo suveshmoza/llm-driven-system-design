@@ -17,7 +17,7 @@ const logger = createModuleLogger('idempotency');
  * If the same submission is made within the TTL window, the existing submission ID is returned.
  */
 
-// TTL for idempotency keys (5 minutes)
+/** TTL for idempotency keys in seconds, preventing duplicate submissions within 5 minutes. */
 export const IDEMPOTENCY_TTL = 300;
 
 // Prefix for Redis keys

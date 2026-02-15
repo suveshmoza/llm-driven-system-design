@@ -79,8 +79,9 @@ interface RecipientRow {
   ip_address: string;
 }
 
+/** Provides tamper-evident audit logging using a SHA-256 hash chain for legal compliance. */
 class AuditService {
-  // Log an event with hash chain integrity
+  /** Logs an event to the audit trail with hash chain integrity linking to the previous event. */
   async log(
     envelopeId: string,
     eventType: string,
@@ -115,7 +116,7 @@ class AuditService {
     return event;
   }
 
-  // Calculate SHA-256 hash for event
+  /** Computes the SHA-256 hash of an audit event payload for tamper detection. */
   calculateHash(event: AuditEvent): string {
     const payload = JSON.stringify({
       id: event.id,
@@ -129,7 +130,7 @@ class AuditService {
     return crypto.createHash('sha256').update(payload).digest('hex');
   }
 
-  // Get the last event for an envelope
+  /** Retrieves the most recent audit event for an envelope to continue the hash chain. */
   async getLastEvent(envelopeId: string): Promise<AuditEventRow | null> {
     const result = await query<AuditEventRow>(
       `SELECT * FROM audit_events
@@ -141,7 +142,7 @@ class AuditService {
     return result.rows[0] || null;
   }
 
-  // Get all events for an envelope
+  /** Returns all audit events for an envelope in chronological order. */
   async getEvents(envelopeId: string): Promise<AuditEventRow[]> {
     const result = await query<AuditEventRow>(
       `SELECT * FROM audit_events
@@ -152,7 +153,7 @@ class AuditService {
     return result.rows;
   }
 
-  // Verify the integrity of the audit chain
+  /** Verifies the entire hash chain for an envelope, detecting any tampered or missing events. */
   async verifyChain(envelopeId: string): Promise<ChainVerificationResult> {
     const events = await this.getEvents(envelopeId);
     let previousHash = '0'.repeat(64);
@@ -196,7 +197,7 @@ class AuditService {
     return { valid: true, eventCount: events.length };
   }
 
-  // Format event details for display
+  /** Converts an audit event into a human-readable description for display. */
   formatEventDetails(event: AuditEventRow): string {
     const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
 
@@ -230,7 +231,7 @@ class AuditService {
     }
   }
 
-  // Generate certificate data for an envelope
+  /** Generates certificate of completion data including signers, events, and chain verification status. */
   async generateCertificateData(envelopeId: string): Promise<CertificateData> {
     const events = await this.getEvents(envelopeId);
     const verification = await this.verifyChain(envelopeId);
@@ -280,4 +281,5 @@ class AuditService {
   }
 }
 
+/** Singleton audit service instance for hash chain audit logging. */
 export const auditService = new AuditService();

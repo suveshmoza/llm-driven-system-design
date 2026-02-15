@@ -17,6 +17,7 @@ const LABEL_COLORS = [
   '#4DD0E1',
 ];
 
+/** Renders the label management UI for creating, editing, and deleting custom labels. */
 export function LabelManager() {
   const { labels, fetchLabels } = useMailStore();
   const [newLabelName, setNewLabelName] = useState('');

@@ -2,14 +2,8 @@ import express, { Request, Response, Router } from 'express';
 import * as db from '../db/index.js';
 import { client as redis } from '../db/redis.js';
 
+/** Content catalog routes for browsing, featured listings, detail views, seasons, and genres. */
 const router: Router = express.Router();
-
-interface ContentRow {
-  id: string;
-  title: string;
-  description: string;
-  duration: number;
-  release_date: Date;
   content_type: string;
   series_id: string | null;
   season_number: number | null;

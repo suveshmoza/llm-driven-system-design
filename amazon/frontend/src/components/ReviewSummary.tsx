@@ -27,6 +27,7 @@ interface ReviewSummaryCardProps {
   summary: ReviewSummary;
 }
 
+/** Renders the aggregate review summary with average rating, total count, and star distribution bars. */
 export function ReviewSummaryCard({ summary }: ReviewSummaryCardProps) {
   const total = parseInt(String(summary.total_reviews));
   const avgRating = parseFloat(summary.average_rating) || 0;

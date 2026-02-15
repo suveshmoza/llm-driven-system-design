@@ -149,6 +149,7 @@ interface RouteRequest extends Request {
   route: { path: string };
 }
 
+/** Express middleware that records HTTP request duration and counts per route. */
 function metricsMiddleware(req: RouteRequest, res: Response, next: NextFunction): void {
   const start = process.hrtime.bigint();
 
@@ -180,62 +181,76 @@ async function getMetrics(req: Request, res: Response): Promise<void> {
 // Metric Helper Functions
 // ===================
 
+/** Increments the chat message counter for a specific channel. */
 function incChatMessage(channelId: string | number): void {
   chatMessagesTotal.inc({ channel_id: String(channelId) });
 }
 
+/** Increments the counter for chat messages dropped by deduplication. */
 function incChatDeduped(): void {
   chatMessagesDedupedTotal.inc();
 }
 
+/** Increments the counter for rate-limited chat messages. */
 function incChatRateLimited(): void {
   chatRateLimitedTotal.inc();
 }
 
+/** Increments active and total WebSocket connection gauges. */
 function incWsConnection(): void {
   wsConnections.inc();
   wsConnectionsTotal.inc();
 }
 
+/** Decrements the active WebSocket connection gauge on disconnect. */
 function decWsConnection(): void {
   wsConnections.dec();
 }
 
+/** Increments the subscription counter by tier. */
 function incSubscription(tier: number): void {
   subscriptionsTotal.inc({ tier: String(tier) });
 }
 
+/** Increments the counter for deduplicated subscription requests. */
 function incSubscriptionDeduped(): void {
   subscriptionsDedupedTotal.inc();
 }
 
+/** Increments active streams gauge and total stream start counter. */
 function incStreamStart(): void {
   streamStartsTotal.inc();
   activeStreams.inc();
 }
 
+/** Decrements active streams gauge and increments total stream end counter. */
 function incStreamEnd(): void {
   streamEndsTotal.inc();
   activeStreams.dec();
 }
 
+/** Sets the total viewer count gauge across all live streams. */
 function setTotalViewers(count: number): void {
   totalViewers.set(count);
 }
 
+/** Sets the active streams gauge to an absolute count. */
 function setActiveStreams(count: number): void {
   activeStreams.set(count);
 }
 
+/** Updates the circuit breaker state gauge (0=closed, 1=half-open, 2=open). */
 function setCircuitBreakerState(name: string, state: 'closed' | 'halfOpen' | 'open'): void {
   const stateValue = { closed: 0, halfOpen: 1, open: 2 }[state] || 0;
   circuitBreakerState.set({ name }, stateValue);
 }
 
+/** Increments the failure counter for a named circuit breaker. */
 function incCircuitBreakerFailure(name: string): void {
   circuitBreakerFailures.inc({ name });
 }
 
+/** Increments the moderation action counter by action type and channel. */
 function incModerationAction(action: string, channelId: string | number): void {
   moderationActionsTotal.inc({ action, channel_id: String(channelId) });
 }

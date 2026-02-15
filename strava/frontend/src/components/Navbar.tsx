@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the top navigation bar with route links, activity upload, and user session controls. */
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
 

@@ -14,6 +14,7 @@ function getGridClasses(count: number): string {
   return 'grid-cols-5 auto-rows-fr overflow-y-auto';
 }
 
+/** Renders a responsive grid of video tiles that adapts layout to participant count. */
 export function VideoGrid() {
   const { user } = useAuthStore();
   const { participants, screenSharingUserId } = useMeetingStore();

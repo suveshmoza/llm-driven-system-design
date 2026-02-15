@@ -16,6 +16,7 @@ pool.on('error', (err: Error) => {
   console.error('Unexpected error on idle PostgreSQL client', err);
 });
 
+/** Executes a parameterized SQL query against the PostgreSQL connection pool. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -23,6 +24,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   return pool.query<T>(text, params);
 }
 
+/** Acquires a dedicated client from the pool for multi-statement transactions. */
 export async function getClient(): Promise<PoolClient> {
   return pool.connect();
 }

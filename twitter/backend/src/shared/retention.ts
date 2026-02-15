@@ -52,6 +52,7 @@ interface RetentionPolicies {
   activityLogs: ActivityLogsPolicy;
 }
 
+/** Data retention policies for tweets, timeline cache, trends, sessions, and activity logs. */
 export const RETENTION_POLICIES: RetentionPolicies = {
   tweets: {
     softDeleteRetentionDays: parseInt(process.env.TWEET_SOFT_DELETE_RETENTION_DAYS || '') || 30,
@@ -100,6 +101,7 @@ interface ArchivalConfig {
   batchSize: number;
 }
 
+/** Archival configuration for exporting old tweets to object storage. */
 export const ARCHIVAL_CONFIG: ArchivalConfig = {
   enabled: process.env.ARCHIVAL_ENABLED === 'true',
   bucket: process.env.ARCHIVE_BUCKET || 'twitter-archives',
@@ -118,6 +120,7 @@ interface CleanupConfig {
   maxDurationSeconds: number;
 }
 
+/** Cleanup job configuration controlling batch size, interval, and timeout. */
 export const CLEANUP_CONFIG: CleanupConfig = {
   intervalHours: parseInt(process.env.CLEANUP_INTERVAL_HOURS || '') || 24,
   batchSize: parseInt(process.env.CLEANUP_BATCH_SIZE || '') || 1000,
@@ -127,6 +130,7 @@ export const CLEANUP_CONFIG: CleanupConfig = {
 /**
  * SQL queries for retention cleanup
  */
+/** SQL queries for retention cleanup of soft-deleted tweets and old hashtag activity. */
 export const CLEANUP_QUERIES = {
   deleteSoftDeletedTweets: `
     WITH deleted_tweets AS (

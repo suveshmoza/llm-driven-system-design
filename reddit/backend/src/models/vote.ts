@@ -27,6 +27,7 @@ export interface AggregationResult {
   commentsAggregated: number | null;
 }
 
+/** Casts, changes, or removes a vote and immediately aggregates the target's score. */
 export const castVote = async (
   userId: number,
   targetType: VoteTargetType,
@@ -92,6 +93,7 @@ export const castVote = async (
   return { success: true };
 };
 
+/** Returns a user's vote direction on a target, checking Redis cache first. */
 export const getUserVote = async (userId: number, targetType: VoteTargetType, targetId: number): Promise<number> => {
   // Check Redis cache first
   const cacheKey = `vote:${userId}:${targetType}:${targetId}`;
@@ -114,6 +116,7 @@ export const getUserVote = async (userId: number, targetType: VoteTargetType, ta
   return direction;
 };
 
+/** Batch-fetches a user's vote directions for multiple posts. */
 export const getUserVotesForPosts = async (
   userId: number,
   postIds: number[]
@@ -132,6 +135,7 @@ export const getUserVotesForPosts = async (
   return votes;
 };
 
+/** Batch-fetches a user's vote directions for multiple comments. */
 export const getUserVotesForComments = async (
   userId: number,
   commentIds: number[]
@@ -150,6 +154,7 @@ export const getUserVotesForComments = async (
   return votes;
 };
 
+/** Aggregates vote counts for a single post or comment and updates its score. */
 export const aggregateVotesForTarget = async (targetType: VoteTargetType, targetId: number): Promise<void> => {
   const column = targetType === 'post' ? 'post_id' : 'comment_id';
 
@@ -187,7 +192,7 @@ export const aggregateVotesForTarget = async (targetType: VoteTargetType, target
   }
 };
 
-// Background aggregation for all pending votes
+/** Aggregates votes for all posts and comments modified in the last minute. */
 export const aggregateAllVotes = async (): Promise<AggregationResult> => {
   // Get all posts with votes in the last interval
   const postsResult = await query<{ post_id: number }>(`

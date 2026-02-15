@@ -6,6 +6,7 @@ interface LeaderboardTableProps {
   currentUserId?: string;
 }
 
+/** Renders a segment leaderboard table with ranks, athlete names, and effort times. */
 export function LeaderboardTable({ entries, currentUserId }: LeaderboardTableProps) {
   if (entries.length === 0) {
     return (

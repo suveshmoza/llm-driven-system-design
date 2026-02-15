@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import type { Channel } from '../types';
 import { StreamCard } from './StreamCard';
 
+/** Renders the followed channels page split into live and offline sections. */
 export function FollowingPage() {
   const { user } = useAuthStore();
   const [following, setFollowing] = useState<Channel[]>([]);

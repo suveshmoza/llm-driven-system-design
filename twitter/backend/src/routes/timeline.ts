@@ -295,4 +295,5 @@ router.get('/hashtag/:tag', async (req: Request, res: Response, next: NextFuncti
   }
 });
 
+/** Timeline router serving home, user, explore, and hashtag feeds with hybrid fanout. */
 export default router;

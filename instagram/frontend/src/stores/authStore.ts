@@ -14,6 +14,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
 }
 
+/** Persisted auth state with login, register, logout, and session check. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

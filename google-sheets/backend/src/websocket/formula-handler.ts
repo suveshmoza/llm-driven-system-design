@@ -33,6 +33,7 @@ import {
  * evaluateFormula('=INVALID');     // Returns '#ERROR'
  * ```
  */
+/** Evaluates a spreadsheet formula (SUM, AVERAGE, COUNT, etc.) and returns the result. */
 export function evaluateFormula(value: string): string {
   // If not a formula, return as-is
   if (!value || !value.startsWith('=')) {

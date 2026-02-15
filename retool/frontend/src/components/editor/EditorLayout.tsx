@@ -7,6 +7,7 @@ import { PropertyInspector } from './PropertyInspector';
 import { QueryPanel } from './QueryPanel';
 import type { ComponentDefinition } from '../../types';
 
+/** Renders the three-pane app editor layout with palette, canvas, and properties. */
 export function EditorLayout() {
   const addComponent = useEditorStore((s) => s.addComponent);
   const componentDefinitions = useEditorStore((s) => s.componentDefinitions);

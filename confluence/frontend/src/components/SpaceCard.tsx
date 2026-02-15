@@ -5,6 +5,7 @@ interface SpaceCardProps {
   space: Space;
 }
 
+/** Renders a clickable space card with key badge, name, and page count. */
 export default function SpaceCard({ space }: SpaceCardProps) {
   return (
     <Link

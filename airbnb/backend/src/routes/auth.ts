@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+/** POST /api/auth/register - Registers a new user and creates a session. */
 // Register
 router.post('/register', async (req, res) => {
   const { email, password, name } = req.body;
@@ -44,6 +45,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
+/** POST /api/auth/login - Authenticates user with email/password and creates a session. */
 // Login
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
@@ -86,6 +88,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
+/** POST /api/auth/logout - Destroys the current session and clears the session cookie. */
 // Logout
 router.post('/logout', authenticate, async (req, res) => {
   const sessionId = req.cookies?.session;
@@ -98,11 +101,13 @@ router.post('/logout', authenticate, async (req, res) => {
   res.json({ message: 'Logged out' });
 });
 
+/** GET /api/auth/me - Returns the currently authenticated user. */
 // Get current user
 router.get('/me', authenticate, async (req, res) => {
   res.json({ user: req.user });
 });
 
+/** POST /api/auth/become-host - Upgrades the current user to host status. */
 // Become a host
 router.post('/become-host', authenticate, async (req, res) => {
   try {
@@ -114,6 +119,7 @@ router.post('/become-host', authenticate, async (req, res) => {
   }
 });
 
+/** PUT /api/auth/profile - Updates the authenticated user's profile fields. */
 // Update profile
 router.put('/profile', authenticate, async (req, res) => {
   const { name, bio, phone, avatar_url } = req.body;

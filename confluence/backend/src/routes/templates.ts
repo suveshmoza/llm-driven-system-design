@@ -98,4 +98,5 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+/** Router for page template CRUD with global and space-scoped templates. */
 export default router;

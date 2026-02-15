@@ -34,4 +34,5 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+/** Router for full-text page search with Elasticsearch and PostgreSQL fallback. */
 export default router;

@@ -112,6 +112,7 @@ interface ExtendedRequest extends Omit<Request, 'route'> {
   route?: { path?: string };
 }
 
+/** Express middleware that records HTTP request duration and counts per route. */
 export const metricsMiddleware = (
   req: ExtendedRequest,
   res: Response,
@@ -137,6 +138,7 @@ export const metricsMiddleware = (
   next();
 };
 
+/** Wraps an async operation with histogram duration tracking. */
 export const timedOperation = async <T>(
   histogram: Histogram<string>,
   labels: Record<string, string> | string,

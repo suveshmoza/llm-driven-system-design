@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useAuthStore, useProjectStore, useUIStore } from '../stores';
 import { Avatar, Button } from './ui';
 
+/** Renders the collapsible project sidebar with navigation links for board, backlog, and settings. */
 export function Sidebar() {
   const { currentProject, projects } = useProjectStore();
   const { sidebarOpen, toggleSidebar } = useUIStore();
@@ -151,6 +152,7 @@ function NavItem({
   );
 }
 
+/** Renders the top header bar with search, create issue button, and user profile menu. */
 export function Header() {
   const { user, logout } = useAuthStore();
   const { setSearchModalOpen, setCreateIssueModalOpen } = useUIStore();

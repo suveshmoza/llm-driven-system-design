@@ -1,6 +1,7 @@
 import { useEditorStore } from '../../stores/editorStore';
 import { BindingInput } from './BindingInput';
 
+/** Renders the right panel for editing selected component properties and bindings. */
 export function PropertyInspector() {
   const app = useEditorStore((s) => s.app);
   const selectedComponentId = useEditorStore((s) => s.selectedComponentId);

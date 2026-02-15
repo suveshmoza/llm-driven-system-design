@@ -2,6 +2,7 @@ interface DifficultyBadgeProps {
   difficulty: 'easy' | 'medium' | 'hard';
 }
 
+/** Renders a color-coded badge for problem difficulty level (easy/medium/hard). */
 export function DifficultyBadge({ difficulty }: DifficultyBadgeProps) {
   const colors = {
     easy: 'text-green-400 bg-green-400/10',

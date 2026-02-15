@@ -10,6 +10,7 @@ interface FileTreeProps {
   currentPath?: string;
 }
 
+/** Renders a repository file tree with folder/file icons and navigation links. */
 export function FileTree({ items, owner, repo, branch, currentPath }: FileTreeProps) {
   // Sort: directories first, then files, alphabetically
   const sortedItems = [...items].sort((a, b) => {

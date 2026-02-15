@@ -17,6 +17,7 @@ declare global {
 /**
  * Authentication middleware - validates session token
  */
+/** Session-based authentication middleware that rejects unauthenticated requests. */
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -46,6 +47,7 @@ export async function authMiddleware(
 /**
  * Optional auth middleware - doesn't require authentication but extracts user if present
  */
+/** Optional auth middleware that attaches user info if available but does not reject. */
 export async function optionalAuthMiddleware(
   req: Request,
   res: Response,
@@ -69,6 +71,7 @@ export async function optionalAuthMiddleware(
  * @param userId - User ID
  * @returns Session ID
  */
+/** Creates a new session in Redis with a 24-hour TTL and returns the session ID. */
 export async function createSession(userId: string): Promise<string> {
   const sessionId = crypto.randomUUID()
   await redis.setEx(
@@ -83,6 +86,7 @@ export async function createSession(userId: string): Promise<string> {
  * Destroy a session
  * @param sessionId - Session ID to destroy
  */
+/** Removes a session from Redis. */
 export async function destroySession(sessionId: string): Promise<void> {
   await redis.del(`session:${sessionId}`)
 }

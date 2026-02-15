@@ -36,6 +36,7 @@ interface AdminUser {
   metric_types: number;
 }
 
+/** Admin dashboard displaying system stats, sample distribution charts, and user management table. */
 export function Admin() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuthStore();

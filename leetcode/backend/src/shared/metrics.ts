@@ -140,7 +140,7 @@ function normalizePath(path: string): string {
     .replace(/\/\d+/g, '/:id');
 }
 
-// Middleware to track HTTP metrics
+/** Express middleware that records HTTP request count and latency histogram per method/path/status. */
 export const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
 
@@ -160,7 +160,7 @@ export const metricsMiddleware = (req: Request, res: Response, next: NextFunctio
   next();
 };
 
-// Handler for /metrics endpoint
+/** Serves Prometheus-formatted metrics at the /metrics endpoint. */
 export const metricsHandler = async (_req: Request, res: Response): Promise<void> => {
   try {
     res.set('Content-Type', register.contentType);

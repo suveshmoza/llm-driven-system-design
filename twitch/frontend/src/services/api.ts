@@ -1,5 +1,6 @@
 const API_BASE = '/api';
 
+/** Sends an authenticated fetch request to the backend API with JSON content type. */
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -21,7 +22,7 @@ async function request<T>(
   return response.json();
 }
 
-// Auth
+/** Authentication API client for login, registration, logout, and session retrieval. */
 export const authApi = {
   login: (username: string, password: string) =>
     request<{ user: import('../types').User }>('/auth/login', {
@@ -42,7 +43,7 @@ export const authApi = {
     request<{ user: import('../types').User }>('/auth/me'),
 };
 
-// Channels
+/** Channel API client for browsing, following, subscribing, and updating channels. */
 export const channelApi = {
   getAll: (params?: { category?: string; limit?: number; offset?: number }) => {
     const query = new URLSearchParams();
@@ -85,7 +86,7 @@ export const channelApi = {
     }),
 };
 
-// Categories
+/** Category API client for listing categories and their live channels. */
 export const categoryApi = {
   getAll: (params?: { limit?: number; offset?: number }) => {
     const query = new URLSearchParams();
@@ -109,7 +110,7 @@ export const categoryApi = {
   },
 };
 
-// Streams
+/** Stream API client for fetching stream info, VODs, and controlling stream state. */
 export const streamApi = {
   getInfo: (channelId: number) =>
     request<{ stream: import('../types').Stream }>(`/streams/${channelId}`),
@@ -133,7 +134,7 @@ export const streamApi = {
     request<{ success: boolean }>('/streams/stop', { method: 'POST' }),
 };
 
-// Users
+/** User API client for profiles, following lists, and profile updates. */
 export const userApi = {
   getProfile: (username: string) =>
     request<{ user: import('../types').User }>(`/users/${username}`),
@@ -154,7 +155,7 @@ export const userApi = {
     }),
 };
 
-// Emotes
+/** Emote API client for fetching global, channel-specific, and available emotes. */
 export const emoteApi = {
   getGlobal: () =>
     request<{ emotes: import('../types').Emote[] }>('/emotes/global'),

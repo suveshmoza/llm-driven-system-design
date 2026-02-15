@@ -71,6 +71,7 @@ interface HealthDataTypeResult {
   aggregation: string;
 }
 
+/** Admin API router for system stats, user management, and re-aggregation triggers. */
 const router: Router = express.Router();
 
 // All admin routes require authentication and admin role

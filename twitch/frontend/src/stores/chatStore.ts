@@ -20,6 +20,7 @@ interface ChatStore {
   clearMessages: () => void;
 }
 
+/** Chat state managing WebSocket connection, channel rooms, and real-time message delivery. */
 export const useChatStore = create<ChatStore>((set, get) => ({
   socket: null,
   connected: false,

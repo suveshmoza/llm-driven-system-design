@@ -5,6 +5,7 @@ interface BoardGridProps {
   boards: Board[];
 }
 
+/** Renders a responsive grid of board cards. */
 export default function BoardGrid({ boards }: BoardGridProps) {
   if (boards.length === 0) {
     return (

@@ -239,4 +239,5 @@ router.get('/:id/labels', async (req: Request, res: Response) => {
   }
 });
 
+/** Router for wiki page CRUD, tree navigation, labels, and page movement. */
 export default router;

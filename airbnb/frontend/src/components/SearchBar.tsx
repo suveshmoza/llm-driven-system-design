@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSearchStore } from '../stores/searchStore';
 
+/** Renders the full search bar with destination, check-in/out dates, and guest count inputs. */
 export function SearchBar() {
   const navigate = useNavigate();
   const { location, checkIn, checkOut, guests, setLocation, setDates, setGuests } =
@@ -82,6 +83,7 @@ export function SearchBar() {
   );
 }
 
+/** Renders a compact search bar button that navigates to the search page on click. */
 export function SearchBarCompact() {
   const navigate = useNavigate();
 

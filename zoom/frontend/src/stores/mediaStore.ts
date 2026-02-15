@@ -29,6 +29,7 @@ const initialState = {
   selectedMic: '',
 };
 
+/** Local media device state with mute, video, screen share, and hand raise toggles. */
 export const useMediaStore = create<MediaState>((set) => ({
   ...initialState,
 

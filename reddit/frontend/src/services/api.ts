@@ -21,6 +21,7 @@ async function request<T>(
   return response.json();
 }
 
+/** Reddit API client with methods for auth, subreddits, posts, comments, and votes. */
 export const api = {
   // Auth
   register: (username: string, email: string, password: string) =>

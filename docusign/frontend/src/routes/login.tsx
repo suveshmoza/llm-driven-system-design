@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useAuthStore } from '../stores/authStore'
 
+/** Login page with email and password form, redirecting to dashboard on success. */
 function LoginPage() {
   const { login, error, clearError } = useAuthStore()
   const navigate = useNavigate()

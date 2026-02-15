@@ -23,10 +23,12 @@ export interface MatchResult {
   quantity: number;
 }
 
+/** In-memory order book with price-time priority matching for a single trading pair. */
 class OrderBook {
   private bids: OrderBookEntry[] = []; // sorted by price DESC, then time ASC
   private asks: OrderBookEntry[] = []; // sorted by price ASC, then time ASC
 
+  /** Adds an order to the appropriate side of the book in sorted position. */
   addOrder(entry: OrderBookEntry): void {
     if (entry.side === 'buy') {
       this.insertBid(entry);
@@ -63,6 +65,7 @@ class OrderBook {
     this.asks.splice(insertIndex, 0, entry);
   }
 
+  /** Removes an order from the book by ID. Returns true if found and removed. */
   removeOrder(orderId: string): boolean {
     let idx = this.bids.findIndex((o) => o.orderId === orderId);
     if (idx !== -1) {
@@ -77,6 +80,7 @@ class OrderBook {
     return false;
   }
 
+  /** Matches crossing orders using price-time priority and returns executed matches. */
   matchOrders(): MatchResult[] {
     const matches: MatchResult[] = [];
 
@@ -116,6 +120,7 @@ class OrderBook {
     return matches;
   }
 
+  /** Returns aggregated bid and ask price levels for order book visualization. */
   getDepth(levels: number = 20): { bids: OrderBookLevel[]; asks: OrderBookLevel[] } {
     return {
       bids: this.aggregateLevels(this.bids, levels),
@@ -152,14 +157,17 @@ class OrderBook {
     return levels;
   }
 
+  /** Returns the highest bid price, or null if no bids. */
   getBestBid(): number | null {
     return this.bids.length > 0 ? this.bids[0].price : null;
   }
 
+  /** Returns the lowest ask price, or null if no asks. */
   getBestAsk(): number | null {
     return this.asks.length > 0 ? this.asks[0].price : null;
   }
 
+  /** Returns the spread between best ask and best bid, or null if either side is empty. */
   getSpread(): number | null {
     const bestBid = this.getBestBid();
     const bestAsk = this.getBestAsk();
@@ -178,6 +186,7 @@ class OrderBook {
   }
 }
 
+/** Manages order books for all trading pairs. */
 class OrderBookManager {
   private books: Map<string, OrderBook> = new Map();
 
@@ -195,4 +204,5 @@ class OrderBookManager {
   }
 }
 
+/** Singleton order book manager shared across the application. */
 export const orderBookManager = new OrderBookManager();

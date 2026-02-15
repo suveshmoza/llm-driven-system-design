@@ -15,6 +15,7 @@ interface TrendingStore {
   getSelectedVideos: () => Video[];
 }
 
+/** Trending videos state with SSE connection status, category selection, and live data. */
 export const useTrendingStore = create<TrendingStore>((set, get) => ({
   trending: {},
   stats: null,

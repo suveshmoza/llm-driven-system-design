@@ -72,6 +72,7 @@ export function expandMacro(macro: MacroNode): ExpandedMacro {
   }
 }
 
+/** Expands all macro nodes in content_json and returns their rendered HTML strings. */
 export function expandMacrosInContent(contentJson: { macros?: MacroNode[] }): string[] {
   if (!contentJson.macros || !Array.isArray(contentJson.macros)) return [];
 
@@ -81,6 +82,7 @@ export function expandMacrosInContent(contentJson: { macros?: MacroNode[] }): st
   });
 }
 
+/** Generates an HTML table of contents from h1-h3 headings in the page HTML. */
 export function generateTableOfContents(html: string): string {
   const headingRegex = /<h([1-3])(?:\s[^>]*)?>(.*?)<\/h[1-3]>/gi;
   const headings: Array<{ level: number; text: string; id: string }> = [];

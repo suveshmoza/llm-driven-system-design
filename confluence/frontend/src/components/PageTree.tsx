@@ -7,6 +7,7 @@ interface PageTreeProps {
   depth?: number;
 }
 
+/** Renders a recursive list of page tree nodes for sidebar navigation. */
 export default function PageTree({ nodes, spaceKey, depth = 0 }: PageTreeProps) {
   if (nodes.length === 0) {
     if (depth === 0) {

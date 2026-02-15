@@ -10,6 +10,7 @@ interface SaveToBoardProps {
   onSaved?: () => void;
 }
 
+/** Renders a modal dialog for saving a pin to a user's board with board creation option. */
 export default function SaveToBoard({ pinId, isOpen, onClose, onSaved }: SaveToBoardProps) {
   const { user } = useAuthStore();
   const [boards, setBoards] = useState<Board[]>([]);

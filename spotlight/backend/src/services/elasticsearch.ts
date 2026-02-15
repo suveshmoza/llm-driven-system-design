@@ -27,6 +27,7 @@ export interface SuggestionResult {
 }
 
 // Initialize Elasticsearch indices with proper mappings
+/** Initializes Elasticsearch indices with mappings for searchable documents. */
 export async function initializeElasticsearch(client: Client): Promise<void> {
   const indices: IndexConfig[] = [
     {

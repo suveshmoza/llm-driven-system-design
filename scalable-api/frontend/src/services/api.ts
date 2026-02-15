@@ -1,5 +1,6 @@
 const API_BASE = '/api/v1';
 
+/** Dashboard metrics response including system metrics, circuit breakers, and cache stats. */
 export interface DashboardData {
   metrics: {
     timestamp: string;
@@ -135,4 +136,5 @@ class ApiClient {
   }
 }
 
+/** Singleton API client for communicating with the scalable API backend. */
 export const api = new ApiClient();

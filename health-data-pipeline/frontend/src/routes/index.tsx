@@ -66,6 +66,7 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 // Create router
+/** Application router with lazy-loaded routes for dashboard, auth, metrics, devices, and admin. */
 export const router = createRouter({ routeTree });
 
 // Type registration

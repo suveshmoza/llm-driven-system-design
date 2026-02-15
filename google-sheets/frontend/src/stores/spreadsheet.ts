@@ -135,6 +135,7 @@ interface SpreadsheetState {
  * Main Zustand store for spreadsheet state.
  * Provides reactive state updates and actions for the spreadsheet UI.
  */
+/** Spreadsheet collaboration state with cell editing, selections, and WebSocket sync. */
 export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   // Initial state
   spreadsheetId: null,
@@ -599,6 +600,7 @@ function handleWebSocketMessage(
  * @param index - 0-based column index
  * @returns Column letter(s) like 'A', 'B', 'AA', etc.
  */
+/** Converts a zero-based column index to a spreadsheet column letter (e.g. 0 -> A, 26 -> AA). */
 export function getColumnLetter(index: number): string {
   let letter = '';
   let num = index;

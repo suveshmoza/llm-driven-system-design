@@ -43,7 +43,7 @@ const upload = multer({
   }
 });
 
-// Upload document to envelope
+/** POST /api/v1/documents/upload/:envelopeId - Uploads a PDF document to a draft envelope with validation and MinIO storage. */
 router.post('/upload/:envelopeId', authenticate, upload.single('document'), async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -118,7 +118,7 @@ router.post('/upload/:envelopeId', authenticate, upload.single('document'), asyn
   }
 });
 
-// Get document info
+/** GET /api/v1/documents/:id - Returns document metadata and a presigned URL for the document. */
 router.get('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -158,7 +158,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response): Promise<vo
   }
 });
 
-// Get document file (download)
+/** GET /api/v1/documents/:id/download - Downloads a document as an attachment. */
 router.get('/:id/download', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -199,7 +199,7 @@ router.get('/:id/download', authenticate, async (req: Request, res: Response): P
   }
 });
 
-// Get document for viewing (inline)
+/** GET /api/v1/documents/:id/view - Returns the document PDF inline for in-browser viewing. */
 router.get('/:id/view', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -240,7 +240,7 @@ router.get('/:id/view', authenticate, async (req: Request, res: Response): Promi
   }
 });
 
-// Delete document
+/** DELETE /api/v1/documents/:id - Deletes a document from a draft envelope. */
 router.delete('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -284,7 +284,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response): Promise
   }
 });
 
-// Get documents for an envelope
+/** GET /api/v1/documents/envelope/:envelopeId - Returns all documents for an envelope owned by the current user. */
 router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -317,4 +317,5 @@ router.get('/envelope/:envelopeId', authenticate, async (req: Request, res: Resp
   }
 });
 
+/** Express router for document management including upload, download, view, and delete operations. */
 export default router;

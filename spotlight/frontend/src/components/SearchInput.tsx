@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { useSpotlightStore } from '../stores/spotlightStore';
 
+/** Renders the spotlight search input with keyboard shortcut indicator. */
 export function SearchInput() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { query, setQuery, isLoading, isOpen } = useSpotlightStore();

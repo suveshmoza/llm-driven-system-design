@@ -175,4 +175,5 @@ router.get('/me', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+/** Auth router handling register, login, logout, and current user endpoints. */
 export default router;

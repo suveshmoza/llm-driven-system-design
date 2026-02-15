@@ -104,6 +104,7 @@ redisFanoutCircuit.fallback(async (tweetId: number | string, followers: number[]
   return { queued: true };
 });
 
+/** Pushes a tweet to all non-celebrity followers' Redis timeline caches with circuit breaker protection. */
 export async function fanoutTweet(
   tweetId: number | string,
   authorId: number | string
@@ -193,6 +194,7 @@ export async function fanoutTweet(
   }
 }
 
+/** Returns IDs of celebrity users that a given user follows, for pull-based timeline merge. */
 export async function getFollowedCelebrities(userId: number | string): Promise<number[]> {
   const result = await withRetry(
     () => pool.query(
@@ -206,6 +208,7 @@ export async function getFollowedCelebrities(userId: number | string): Promise<n
   return result.rows.map((r: { id: number }) => r.id);
 }
 
+/** Removes a deleted tweet from all follower timeline caches via Redis pipeline. */
 export async function removeTweetFromTimelines(
   tweetId: number | string,
   authorId: number | string
@@ -248,6 +251,7 @@ export async function removeTweetFromTimelines(
   }
 }
 
+/** Processes failed fanout items from the Redis retry queue in batches. */
 export async function processFanoutRetryQueue(
   batchSize = 10
 ): Promise<{ processed?: number; success?: number; failed?: number; error?: string }> {
@@ -301,6 +305,7 @@ export async function processFanoutRetryQueue(
   }
 }
 
+/** Rebuilds a user's timeline cache from scratch by querying followed non-celebrity tweets. */
 export async function rebuildTimelineCache(
   userId: number | string
 ): Promise<{ success?: boolean; tweetCount?: number; error?: string }> {

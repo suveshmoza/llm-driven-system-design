@@ -1,5 +1,6 @@
 import { db } from '../config/database.js';
 
+/** Generated health insight with severity, direction, and actionable recommendation. */
 export interface Insight {
   type: string;
   severity: string;
@@ -9,6 +10,7 @@ export interface Insight {
   data: Record<string, unknown>;
 }
 
+/** Database row representation of a stored health insight. */
 export interface InsightRow {
   id: string;
   user_id: string;
@@ -37,6 +39,11 @@ interface TrendResult {
   intercept: number;
 }
 
+/**
+ * Analyzes aggregated health data to generate actionable insights.
+ * Uses linear regression for trend detection and threshold-based alerting
+ * for heart rate, sleep, activity, and weight metrics.
+ */
 export class InsightsService {
   async analyzeUser(userId: string): Promise<Insight[]> {
     const insights: Insight[] = [];
@@ -304,4 +311,5 @@ export class InsightsService {
   }
 }
 
+/** Singleton insights service instance. */
 export const insightsService = new InsightsService();

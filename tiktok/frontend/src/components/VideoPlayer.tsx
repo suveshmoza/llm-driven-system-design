@@ -7,6 +7,7 @@ interface VideoPlayerProps {
   isActive: boolean;
 }
 
+/** Full-screen video player with play/pause toggle, mute, and view tracking. */
 export default function VideoPlayer({ video, isActive }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);

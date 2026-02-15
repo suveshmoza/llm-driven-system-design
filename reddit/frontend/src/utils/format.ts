@@ -1,3 +1,4 @@
+/** Converts an ISO date string into a human-readable relative time (e.g. "3 hours ago"). */
 export function formatTimeAgo(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -31,6 +32,7 @@ export function formatTimeAgo(dateString: string): string {
   return `${years} year${years !== 1 ? 's' : ''} ago`;
 }
 
+/** Formats large numbers with K/M suffixes (e.g. 1500 becomes "1.5K"). */
 export function formatNumber(num: number): string {
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + 'M';

@@ -7,6 +7,7 @@ interface TrendingListProps {
   limit?: number;
 }
 
+/** Renders a list of trending search phrases with popularity scores and selection callbacks. */
 export function TrendingList({ onSelect, limit = 10 }: TrendingListProps) {
   const [trending, setTrending] = useState<TrendingResponse['trending']>([]);
   const [isLoading, setIsLoading] = useState(true);

@@ -11,11 +11,13 @@ export const minio = new MinioClient({
 export const AUDIO_BUCKET = 'audio';
 export const COVERS_BUCKET = 'covers';
 
+/** Constructs a public URL for an object in MinIO storage. */
 export function getPublicUrl(bucket: string, objectName: string): string {
   const endpoint = process.env.MINIO_PUBLIC_ENDPOINT || 'http://localhost:9000';
   return `${endpoint}/${bucket}/${objectName}`;
 }
 
+/** Generates a time-limited presigned URL for accessing a stored object. */
 export async function getPresignedUrl(bucket: string, objectName: string, expiry = 3600): Promise<string> {
   return await minio.presignedGetObject(bucket, objectName, expiry);
 }

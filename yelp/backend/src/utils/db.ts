@@ -2,11 +2,12 @@ import pg, { Pool, PoolClient } from 'pg';
 
 const { Pool: PgPool } = pg;
 
+/** PostgreSQL connection pool for the Yelp business reviews system. */
 export const pool: Pool = new PgPool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Helper function for transactions
+/** Executes a callback within a PostgreSQL transaction with automatic BEGIN/COMMIT/ROLLBACK. */
 export async function withTransaction<T>(
   callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {
@@ -24,7 +25,7 @@ export async function withTransaction<T>(
   }
 }
 
-// Helper for parameterized queries with named parameters
+/** Converts a named-parameter query template into a positional-parameter query for pg. */
 export function buildQuery(
   template: string,
   params: Record<string, unknown>

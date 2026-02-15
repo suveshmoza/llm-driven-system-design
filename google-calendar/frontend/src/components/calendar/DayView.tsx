@@ -9,6 +9,7 @@ interface DayViewProps {
   onEventClick: (event: CalendarEvent) => void
 }
 
+/** Single-day time grid view with absolute-positioned event blocks. */
 export function DayView({ currentDate, events, onTimeSlotClick, onEventClick }: DayViewProps) {
   const hours = getHoursOfDay()
   const dayEvents = events

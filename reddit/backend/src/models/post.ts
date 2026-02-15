@@ -25,6 +25,7 @@ export interface Post {
 
 export type SortOption = 'hot' | 'new' | 'top' | 'controversial';
 
+/** Creates a new post with an initial hot score and records creation metrics. */
 export const createPost = async (
   subredditId: number,
   authorId: number,
@@ -63,6 +64,7 @@ export const createPost = async (
   return post;
 };
 
+/** Finds a single post by ID with author and subreddit info. */
 export const findPostById = async (id: number): Promise<Post | undefined> => {
   const result = await query<Post>(
     `SELECT p.*, u.username as author_username, s.name as subreddit_name
@@ -75,6 +77,7 @@ export const findPostById = async (id: number): Promise<Post | undefined> => {
   return result.rows[0];
 };
 
+/** Lists posts in a subreddit with configurable sort order and pagination. */
 export const listPostsBySubreddit = async (
   subredditId: number,
   sort: SortOption = 'hot',
@@ -113,6 +116,7 @@ export const listPostsBySubreddit = async (
   return result.rows;
 };
 
+/** Lists all non-archived posts across subreddits with sorting and pagination. */
 export const listAllPosts = async (
   sort: SortOption = 'hot',
   limit: number = 25,
@@ -150,6 +154,7 @@ export const listAllPosts = async (
   return result.rows;
 };
 
+/** Lists posts authored by a specific user, ordered by creation date. */
 export const listPostsByUser = async (userId: number, limit: number = 25, offset: number = 0): Promise<Post[]> => {
   const result = await query<Post>(
     `SELECT p.*, u.username as author_username, s.name as subreddit_name
@@ -164,6 +169,7 @@ export const listPostsByUser = async (userId: number, limit: number = 25, offset
   return result.rows;
 };
 
+/** Recalculates a post's score and hot ranking after vote changes. */
 export const updatePostScore = async (postId: number, upvotes: number, downvotes: number): Promise<void> => {
   const score = upvotes - downvotes;
   const post = await findPostById(postId);
@@ -177,6 +183,7 @@ export const updatePostScore = async (postId: number, upvotes: number, downvotes
   );
 };
 
+/** Deletes a post by ID. */
 export const deletePost = async (postId: number): Promise<void> => {
   await query(`DELETE FROM posts WHERE id = $1`, [postId]);
   logger.info({ postId }, 'Post deleted');

@@ -3,6 +3,7 @@
 export type AggregationType = 'sum' | 'average' | 'latest' | 'min' | 'max';
 export type HealthCategory = 'activity' | 'vitals' | 'body' | 'sleep';
 
+/** Configuration for a single health data type including unit, aggregation strategy, and category. */
 export interface HealthDataTypeConfig {
   unit: string;
   aggregation: AggregationType;
@@ -27,6 +28,7 @@ export type HealthDataTypeKey =
   | 'BODY_FAT'
   | 'SLEEP_ANALYSIS';
 
+/** Registry of all 16 supported health data types with their units and aggregation strategies. */
 export const HealthDataTypes: Record<HealthDataTypeKey, HealthDataTypeConfig> = {
   // Activity types (sum aggregation)
   STEPS: { unit: 'count', aggregation: 'sum', category: 'activity' },
@@ -61,7 +63,7 @@ export type DeviceType =
   | 'third_party_scale'
   | 'manual_entry';
 
-// Device priority for deduplication (higher = preferred)
+/** Device priority ranking for deduplication (higher value = preferred source). */
 export const DevicePriority: Record<DeviceType, number> = {
   apple_watch: 100,
   iphone: 80,
@@ -79,7 +81,7 @@ type UnitConversionKey =
   | 'stones_to_kg'
   | 'fahrenheit_to_celsius';
 
-// Unit conversion helpers
+/** Unit conversion functions for normalizing health measurements (distance, weight, temperature). */
 export const UnitConversions: Record<UnitConversionKey, (val: number) => number> = {
   // Distance
   miles_to_meters: (val: number): number => val * 1609.344,
@@ -94,6 +96,7 @@ export const UnitConversions: Record<UnitConversionKey, (val: number) => number>
   fahrenheit_to_celsius: (val: number): number => (val - 32) * 5 / 9
 };
 
+/** Converts a value from one unit to another using registered conversion functions. */
 export function normalizeUnit(value: number, fromUnit: string, toUnit: string): number {
   const conversionKey = `${fromUnit}_to_${toUnit}` as UnitConversionKey;
   const converter = UnitConversions[conversionKey];
@@ -105,10 +108,12 @@ export function normalizeUnit(value: number, fromUnit: string, toUnit: string): 
   return value;
 }
 
+/** Returns true if the given type string is a recognized health data type. */
 export function validateHealthType(type: string): boolean {
   return type in HealthDataTypes;
 }
 
+/** Returns the aggregation strategy (sum, average, latest, etc.) for a health data type. */
 export function getAggregationType(type: string): AggregationType {
   const config = HealthDataTypes[type as HealthDataTypeKey];
   return config ? config.aggregation : 'average';

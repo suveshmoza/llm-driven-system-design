@@ -57,6 +57,7 @@ function shuffleArray<T>(array: T[]): T[] {
   return shuffled;
 }
 
+/** Player playback state with queue management and shuffle/repeat modes. */
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTrack: null,
   isPlaying: false,

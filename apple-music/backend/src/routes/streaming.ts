@@ -102,6 +102,7 @@ function selectQuality(preferred: string, network: string, maxTierQuality: strin
 }
 
 // Get stream URL for a track
+/** GET /api/stream/:trackId - Returns a signed stream URL with quality adapted to subscription tier and network. */
 router.get('/:trackId', authenticate, async (req: Request<{ trackId: string }, unknown, unknown, StreamQuery>, res: Response) => {
   const startTime = Date.now();
 
@@ -210,6 +211,7 @@ router.get('/:trackId', authenticate, async (req: Request<{ trackId: string }, u
 });
 
 // Prefetch next track (for gapless playback)
+/** POST /api/stream/prefetch - Pre-generates a stream URL for the next track in the queue. */
 router.post('/prefetch', authenticate, async (req: Request<object, unknown, PrefetchBody>, res: Response) => {
   const startTime = Date.now();
 
@@ -278,6 +280,7 @@ router.post('/prefetch', authenticate, async (req: Request<object, unknown, Pref
 });
 
 // Get available qualities for a track
+/** GET /api/stream/:trackId/qualities - Returns available audio quality options for a track. */
 router.get('/:trackId/qualities', optionalAuth, async (req: Request<{ trackId: string }>, res: Response) => {
   try {
     const { trackId } = req.params;
@@ -318,6 +321,7 @@ router.get('/:trackId/qualities', optionalAuth, async (req: Request<{ trackId: s
 });
 
 // Report playback progress
+/** POST /api/stream/progress - Updates playback position and records completed listens. */
 router.post('/progress', authenticate, async (req: Request<object, unknown, ProgressBody>, res: Response) => {
   try {
     const { trackId, position, duration, completed } = req.body;
@@ -371,6 +375,7 @@ router.post('/progress', authenticate, async (req: Request<object, unknown, Prog
 });
 
 // Get current playback state
+/** GET /api/stream/playback/current - Returns the user's current playback position from Redis. */
 router.get('/playback/current', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -414,6 +419,7 @@ router.get('/playback/current', authenticate, async (req: Request, res: Response
 });
 
 // Report stream end (explicit stop/skip)
+/** POST /api/stream/end - Reports stream termination and decrements active stream count. */
 router.post('/end', authenticate, async (req: Request<object, unknown, EndStreamBody>, res: Response) => {
   try {
     const { trackId, reason } = req.body;

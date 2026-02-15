@@ -6,6 +6,7 @@ interface NumberInputWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a number input widget with min/max constraints. */
 export function NumberInputWidget({ component, isEditor }: NumberInputWidgetProps) {
   const setComponentValue = useDataStore((s) => s.setComponentValue);
   const componentValues = useDataStore((s) => s.componentValues);

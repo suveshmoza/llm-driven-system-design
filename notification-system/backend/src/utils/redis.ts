@@ -17,19 +17,23 @@ redis.on('connect', () => {
 });
 
 // Helper functions for common operations
+/** Retrieves a JSON-parsed value from Redis cache by key. */
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const value = await redis.get(key);
   return value ? JSON.parse(value) as T : null;
 }
 
+/** Stores a JSON-serialized value in Redis with configurable TTL. */
 export async function cacheSet<T>(key: string, value: T, ttlSeconds: number = 300): Promise<void> {
   await redis.setex(key, ttlSeconds, JSON.stringify(value));
 }
 
+/** Deletes a key from Redis cache. */
 export async function cacheDelete(key: string): Promise<void> {
   await redis.del(key);
 }
 
+/** Atomically increments a counter in Redis with automatic TTL on first increment. */
 export async function incrementCounter(key: string, ttlSeconds: number = 3600): Promise<number> {
   const count = await redis.incr(key);
   if (count === 1) {
@@ -38,6 +42,7 @@ export async function incrementCounter(key: string, ttlSeconds: number = 3600): 
   return count;
 }
 
+/** Retrieves the current value of a Redis counter, returning 0 if not set. */
 export async function getCounter(key: string): Promise<number> {
   const value = await redis.get(key);
   return parseInt(value || '0') || 0;

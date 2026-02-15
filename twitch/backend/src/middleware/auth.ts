@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { getSession } from '../services/redis.js';
 import { query } from '../services/database.js';
 
+/** Middleware that requires a valid session cookie, rejecting unauthenticated requests with 401. */
 async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const sessionId = req.cookies.session as string | undefined;
 
@@ -21,6 +22,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction): Pro
   next();
 }
 
+/** Middleware that requires admin role, rejecting non-admin users with 403. */
 async function requireAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   const sessionId = req.cookies.session as string | undefined;
 
@@ -47,6 +49,7 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction): Pr
   next();
 }
 
+/** Middleware that attaches userId to request if a valid session exists, without blocking. */
 async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const sessionId = req.cookies.session as string | undefined;
 

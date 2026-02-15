@@ -17,6 +17,7 @@ interface SidebarProps {
   playlists?: { id: string; name: string }[];
 }
 
+/** Renders the left sidebar with navigation links, user playlists, and account menu. */
 export function Sidebar({ playlists = [] }: SidebarProps) {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();

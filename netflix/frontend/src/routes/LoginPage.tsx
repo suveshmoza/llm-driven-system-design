@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the login form with email/password fields and Netflix-styled branding. */
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuthStore();

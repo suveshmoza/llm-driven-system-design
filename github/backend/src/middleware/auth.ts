@@ -31,6 +31,7 @@ declare global {
 }
 
 // Auth middleware
+/** Middleware that resolves session from header or cookie and attaches user context to request. */
 export async function authMiddleware(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const sessionId = req.headers['x-session-id'] as string | undefined || (req as Request & { cookies?: { sessionId?: string } }).cookies?.sessionId;
 
@@ -56,6 +57,7 @@ export async function authMiddleware(req: Request, _res: Response, next: NextFun
 }
 
 // Require authentication middleware
+/** Middleware that requires an authenticated session, rejecting unauthenticated requests with 401. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
@@ -65,6 +67,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 }
 
 // Require admin middleware
+/** Middleware that requires admin role, rejecting non-admin users with 403. */
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!req.user || req.user.role !== 'admin') {
     res.status(403).json({ error: 'Admin access required' });
@@ -74,6 +77,7 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 }
 
 // Login handler
+/** POST /api/auth/login - Authenticates a user with username/password and creates a Redis session. */
 export async function login(req: Request, res: Response): Promise<void> {
   const { username, password } = req.body as { username?: string; password?: string };
 
@@ -133,6 +137,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 }
 
 // Register handler
+/** POST /api/auth/register - Creates a new user account with bcrypt-hashed password. */
 export async function register(req: Request, res: Response): Promise<void> {
   const { username, email, password, displayName } = req.body as {
     username?: string;
@@ -202,6 +207,7 @@ export async function register(req: Request, res: Response): Promise<void> {
 }
 
 // Logout handler
+/** POST /api/auth/logout - Destroys the current session from Redis. */
 export async function logout(req: Request, res: Response): Promise<void> {
   const sessionId = req.headers['x-session-id'] as string | undefined || req.sessionId;
 
@@ -213,6 +219,7 @@ export async function logout(req: Request, res: Response): Promise<void> {
 }
 
 // Get current user
+/** GET /api/auth/me - Returns the currently authenticated user from the session. */
 export async function getCurrentUser(req: Request, res: Response): Promise<void> {
   if (!req.user) {
     res.status(401).json({ error: 'Not authenticated' });

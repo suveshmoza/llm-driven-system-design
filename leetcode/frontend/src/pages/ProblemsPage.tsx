@@ -13,6 +13,7 @@ interface Problem {
   userStatus?: 'solved' | 'attempted' | 'unsolved';
 }
 
+/** Renders a virtualized problem list with difficulty filtering, search, and solve-status indicators. */
 export function ProblemsPage() {
   const [problems, setProblems] = useState<Problem[]>([]);
   const [loading, setLoading] = useState(true);

@@ -20,6 +20,7 @@ interface HealthChartProps {
   showMinMax?: boolean;
 }
 
+/** Renders a time-series health chart (line or area) with optional min/max range indicators. */
 export function HealthChart({
   data,
   title,

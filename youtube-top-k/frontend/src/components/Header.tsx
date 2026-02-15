@@ -5,6 +5,7 @@ interface HeaderProps {
   isSimulating: boolean;
 }
 
+/** Renders the app header with logo, SSE connection indicator, and view simulation button. */
 export function Header({ onSimulate, isSimulating }: HeaderProps) {
   const { isConnected, lastUpdate } = useTrendingStore();
 

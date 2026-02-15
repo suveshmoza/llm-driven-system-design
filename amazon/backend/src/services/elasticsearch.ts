@@ -45,6 +45,7 @@ export interface SearchResult {
   aggregations: Record<string, unknown>;
 }
 
+/** Initializes the Elasticsearch client, verifies connection, and creates the products index if needed. */
 export async function initializeElasticsearch(): Promise<Client | null> {
   client = new Client({
     node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200'
@@ -68,6 +69,7 @@ export async function initializeElasticsearch(): Promise<Client | null> {
   return client;
 }
 
+/** Returns the Elasticsearch client instance, or null if not initialized. */
 export function getElasticsearch(): Client | null {
   return client;
 }
@@ -123,6 +125,7 @@ async function createProductIndex(): Promise<void> {
   console.log('Products index created');
 }
 
+/** Indexes a single product document in Elasticsearch. */
 export async function indexProduct(product: Product): Promise<void> {
   if (!client) return;
 
@@ -156,6 +159,7 @@ export async function indexProduct(product: Product): Promise<void> {
   }
 }
 
+/** Removes a product document from the Elasticsearch index. */
 export async function deleteProductFromIndex(productId: string | number): Promise<void> {
   if (!client) return;
 
@@ -169,6 +173,7 @@ export async function deleteProductFromIndex(productId: string | number): Promis
   }
 }
 
+/** Performs a full-text search with faceted filtering, sorting, and aggregations for category/price/rating. */
 export async function searchProducts(
   queryText: string | undefined,
   filters: SearchFilters = {},
@@ -303,6 +308,7 @@ export async function searchProducts(
   }
 }
 
+/** Indexes multiple products in a single bulk operation for efficient reindexing. */
 export async function bulkIndexProducts(products: Product[]): Promise<void> {
   if (!client || products.length === 0) return;
 

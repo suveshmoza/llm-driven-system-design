@@ -78,6 +78,7 @@ const calculateBookingPrice = (listing: ListingRow, checkIn: string, checkOut: s
   };
 };
 
+/** GET /api/bookings/check-availability - Checks date availability and returns pricing for a listing. */
 // Check availability
 router.get('/check-availability', async (req: Request, res: Response) => {
   const { listing_id, check_in, check_out } = req.query;
@@ -136,6 +137,7 @@ router.get('/check-availability', async (req: Request, res: Response) => {
   }
 });
 
+/** POST /api/bookings - Creates a booking with double-booking prevention using row-level locking. */
 // Create booking (with double-booking prevention)
 router.post('/', authenticate, async (req, res) => {
   const { listing_id, check_in, check_out, guests, message } = req.body;
@@ -271,6 +273,7 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
+/** GET /api/bookings/my-trips - Returns the authenticated guest's bookings, optionally filtered by status. */
 // Get guest's bookings
 router.get('/my-trips', authenticate, async (req, res) => {
   const { status } = req.query;
@@ -308,6 +311,7 @@ router.get('/my-trips', authenticate, async (req, res) => {
   }
 });
 
+/** GET /api/bookings/host-reservations - Returns booking requests for the host's listings. */
 // Get host's booking requests
 router.get('/host-reservations', authenticate, requireHost, async (req, res) => {
   const { status } = req.query;
@@ -344,6 +348,7 @@ router.get('/host-reservations', authenticate, requireHost, async (req, res) => 
   }
 });
 
+/** GET /api/bookings/:id - Returns a single booking with full listing and user details. */
 // Get single booking
 router.get('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
@@ -393,6 +398,7 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
+/** PUT /api/bookings/:id/respond - Allows a host to confirm or decline a pending booking request. */
 // Host: Confirm or decline booking
 router.put('/:id/respond', authenticate, requireHost, async (req, res) => {
   const { id } = req.params;
@@ -473,6 +479,7 @@ router.put('/:id/respond', authenticate, requireHost, async (req, res) => {
   }
 });
 
+/** PUT /api/bookings/:id/cancel - Cancels a pending or confirmed booking and releases blocked dates. */
 // Cancel booking
 router.put('/:id/cancel', authenticate, async (req, res) => {
   const { id } = req.params;
@@ -556,6 +563,7 @@ router.put('/:id/cancel', authenticate, async (req, res) => {
   }
 });
 
+/** PUT /api/bookings/:id/complete - Marks a confirmed booking as completed after checkout date. */
 // Complete booking (after checkout)
 router.put('/:id/complete', authenticate, requireHost, async (req, res) => {
   const { id } = req.params;

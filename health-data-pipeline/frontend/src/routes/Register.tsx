@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 
+/** User registration form with name, email, password confirmation, and validation. */
 export function Register() {
   const navigate = useNavigate();
   const { register, isLoading, error, clearError } = useAuthStore();

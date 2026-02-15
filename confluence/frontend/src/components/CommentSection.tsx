@@ -8,6 +8,7 @@ interface CommentSectionProps {
   pageId: string;
 }
 
+/** Renders threaded comments with reply, resolve, and delete capabilities. */
 export default function CommentSection({ pageId }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');

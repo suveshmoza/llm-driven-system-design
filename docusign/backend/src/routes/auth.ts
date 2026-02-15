@@ -15,7 +15,7 @@ interface UserRow {
   role: string;
 }
 
-// Register new user
+/** POST /api/v1/auth/register - Creates a new user account with hashed password and session cookie. */
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, name, password } = req.body;
@@ -63,7 +63,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Login
+/** POST /api/v1/auth/login - Authenticates user with email and password, returns session token. */
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -114,7 +114,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Logout
+/** POST /api/v1/auth/logout - Destroys session and clears authentication cookie. */
 router.post('/logout', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     if (req.token) {
@@ -128,12 +128,12 @@ router.post('/logout', authenticate, async (req: Request, res: Response): Promis
   }
 });
 
-// Get current user
+/** GET /api/v1/auth/me - Returns the currently authenticated user's profile. */
 router.get('/me', authenticate, async (req: Request, res: Response): Promise<void> => {
   res.json({ user: req.user });
 });
 
-// Update password
+/** PUT /api/v1/auth/password - Updates the authenticated user's password after verifying current password. */
 router.put('/password', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -175,4 +175,5 @@ router.put('/password', authenticate, async (req: Request, res: Response): Promi
   }
 });
 
+/** Express router for authentication endpoints including registration, login, logout, and password management. */
 export default router;

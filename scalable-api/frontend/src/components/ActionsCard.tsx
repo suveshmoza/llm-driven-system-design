@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { useAuthStore } from '../stores/auth';
 import { useDashboardStore } from '../stores/dashboard';
 
+/** Renders admin action buttons for cache clearing, metrics reset, and external service testing. */
 export function ActionsCard() {
   const { token } = useAuthStore();
   const { fetchDashboard } = useDashboardStore();

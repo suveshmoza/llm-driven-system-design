@@ -2,6 +2,7 @@ import { createRootRoute, Outlet, Link, useNavigate } from '@tanstack/react-rout
 import { useEffect } from 'react'
 import { useAuthStore } from '../stores/authStore'
 
+/** Root layout component providing navigation header, authentication state, and content outlet. */
 function RootComponent() {
   const { user, isAuthenticated, isLoading, checkAuth, logout } = useAuthStore()
   const navigate = useNavigate()

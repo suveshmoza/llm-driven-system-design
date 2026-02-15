@@ -8,11 +8,13 @@ interface WSClient {
   userId?: string;
 }
 
+/** WebSocket connection manager with channel-based pub/sub for real-time price streaming. */
 class WebSocketManager {
   private wss: WebSocketServer | null = null;
   private clients: Map<string, WSClient> = new Map();
   private clientIdCounter = 0;
 
+  /** Attaches the WebSocket server to an HTTP server and sets up connection handling. */
   initialize(server: Server): void {
     this.wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -107,6 +109,7 @@ class WebSocketManager {
     }
   }
 
+  /** Sends a message to all clients subscribed to a specific channel. */
   broadcast(channel: string, data: Record<string, unknown>): void {
     const message = JSON.stringify({ channel, ...data });
 
@@ -117,6 +120,7 @@ class WebSocketManager {
     }
   }
 
+  /** Broadcasts a message to all connected WebSocket clients regardless of subscriptions. */
   broadcastToAll(data: Record<string, unknown>): void {
     const message = JSON.stringify(data);
 
@@ -127,6 +131,7 @@ class WebSocketManager {
     }
   }
 
+  /** Sends a message to all clients authenticated as the specified user. */
   sendToUser(userId: string, data: Record<string, unknown>): void {
     const channel = `user:${userId}`;
     this.broadcast(channel, data);
@@ -137,4 +142,5 @@ class WebSocketManager {
   }
 }
 
+/** Singleton WebSocket manager instance. */
 export const wsManager = new WebSocketManager();

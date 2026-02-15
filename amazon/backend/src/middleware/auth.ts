@@ -17,6 +17,7 @@ declare global {
   }
 }
 
+/** Extracts session ID from headers and attaches user data to the request. Does not block unauthenticated requests. */
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -67,6 +68,7 @@ export async function authMiddleware(
   }
 }
 
+/** Requires the request to have an authenticated user. Returns 401 otherwise. */
 export function requireAuth(
   req: Request,
   res: Response,
@@ -79,6 +81,7 @@ export function requireAuth(
   next();
 }
 
+/** Requires the authenticated user to have admin role. Returns 403 otherwise. */
 export function requireAdmin(
   req: Request,
   res: Response,
@@ -95,6 +98,7 @@ export function requireAdmin(
   next();
 }
 
+/** Requires the authenticated user to have seller or admin role. Returns 403 otherwise. */
 export function requireSeller(
   req: Request,
   res: Response,

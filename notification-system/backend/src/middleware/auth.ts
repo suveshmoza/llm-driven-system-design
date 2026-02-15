@@ -23,6 +23,7 @@ interface SessionData {
   role: string;
 }
 
+/** Middleware that validates session token from Authorization header and attaches user context. */
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -83,6 +84,7 @@ export async function authMiddleware(
   }
 }
 
+/** Middleware that requires admin role, rejecting non-admin users with 403. */
 export function adminMiddleware(
   req: Request,
   res: Response,

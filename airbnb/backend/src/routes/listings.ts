@@ -67,6 +67,7 @@ const upload = multer({
   },
 });
 
+/** POST /api/listings - Creates a new listing with PostGIS location data. */
 // Create listing
 router.post('/', authenticate, requireHost, async (req, res) => {
   const {
@@ -131,6 +132,7 @@ router.post('/', authenticate, requireHost, async (req, res) => {
   }
 });
 
+/** GET /api/listings - Returns paginated active listings with optional host_id filter. */
 // Get all listings (with basic filters)
 router.get('/', optionalAuth, async (req, res) => {
   const { limit = 20, offset = 0, host_id } = req.query;
@@ -164,6 +166,7 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+/** GET /api/listings/:id - Returns a single listing with host info, photos, and reviews using cache-aside pattern. */
 // Get single listing - with caching
 router.get('/:id', optionalAuth, async (req, res) => {
   const { id } = req.params;
@@ -226,6 +229,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
   }
 });
 
+/** PUT /api/listings/:id - Updates an existing listing's details. Requires host ownership. */
 // Update listing
 router.put('/:id', authenticate, requireHost, async (req, res) => {
   const { id } = req.params;
@@ -316,6 +320,7 @@ router.put('/:id', authenticate, requireHost, async (req, res) => {
   }
 });
 
+/** DELETE /api/listings/:id - Deletes a listing. Requires host ownership. */
 // Delete listing
 router.delete('/:id', authenticate, requireHost, async (req, res) => {
   const { id } = req.params;
@@ -347,6 +352,7 @@ router.delete('/:id', authenticate, requireHost, async (req, res) => {
   }
 });
 
+/** POST /api/listings/:id/photos - Uploads up to 10 photos for a listing using multer. */
 // Upload photos
 router.post('/:id/photos', authenticate, requireHost, upload.array('photos', 10), async (req, res) => {
   const { id } = req.params;
@@ -389,6 +395,7 @@ router.post('/:id/photos', authenticate, requireHost, upload.array('photos', 10)
   }
 });
 
+/** DELETE /api/listings/:id/photos/:photoId - Deletes a single listing photo. */
 // Delete photo
 router.delete('/:id/photos/:photoId', authenticate, requireHost, async (req, res) => {
   const { id, photoId } = req.params;
@@ -417,6 +424,7 @@ router.delete('/:id/photos/:photoId', authenticate, requireHost, async (req, res
   }
 });
 
+/** GET /api/listings/:id/availability - Returns cached availability blocks for a date range. */
 // Get availability calendar - with caching
 router.get('/:id/availability', async (req, res) => {
   const { id } = req.params;
@@ -445,6 +453,7 @@ router.get('/:id/availability', async (req, res) => {
   }
 });
 
+/** PUT /api/listings/:id/availability - Blocks or unblocks dates with overlap-aware splitting. */
 // Update availability (block/unblock dates)
 router.put('/:id/availability', authenticate, requireHost, async (req, res) => {
   const { id } = req.params;
@@ -519,6 +528,7 @@ router.put('/:id/availability', authenticate, requireHost, async (req, res) => {
   }
 });
 
+/** GET /api/listings/host/my-listings - Returns all listings owned by the authenticated host. */
 // Get host's listings
 router.get('/host/my-listings', authenticate, requireHost, async (req, res) => {
   try {

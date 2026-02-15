@@ -11,6 +11,7 @@ interface SearchBoxProps {
   recentSearches?: string[];
 }
 
+/** Renders a search input with autocomplete dropdown, recent searches, and keyboard navigation. */
 export function SearchBox({
   initialValue = '',
   onSearch,

@@ -16,6 +16,7 @@ interface DashboardState {
   setRefreshInterval: (interval: number) => void;
 }
 
+/** Dashboard state with auto-refreshing metrics, cache stats, and load balancer status. */
 export const useDashboardStore = create<DashboardState>((set, _get) => ({
   data: null,
   lbStatus: null,

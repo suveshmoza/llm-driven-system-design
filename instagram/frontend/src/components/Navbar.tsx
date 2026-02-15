@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 import { Avatar } from './Avatar';
 
+/** Top navigation bar with logo, navigation icons, and user avatar. */
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
 

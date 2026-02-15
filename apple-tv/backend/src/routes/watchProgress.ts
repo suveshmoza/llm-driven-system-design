@@ -11,9 +11,8 @@ import {
   completeWatchProgressIdempotency
 } from '../shared/idempotency.js';
 
+/** Watch progress routes for tracking playback position, continue watching, batch sync, and history. */
 const router: Router = express.Router();
-
-interface WatchProgressRow {
   content_id: string;
   position: number;
   duration: number;

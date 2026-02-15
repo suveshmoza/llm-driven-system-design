@@ -25,6 +25,7 @@ interface EndStreamResult {
 
 const liveStreams = new Map<string | number, StreamInfo>();
 
+/** Starts periodic viewer count simulation and Prometheus metrics updates for live channels. */
 function setupStreamSimulator(): void {
   // Update viewer counts and metrics periodically
   setInterval(async () => {
@@ -59,6 +60,7 @@ function setupStreamSimulator(): void {
 }
 
 // Simulated HLS manifest for demo
+/** Generates a simulated HLS media playlist with rolling segment references. */
 function generateHLSManifest(channelId: string | number): string {
   const baseUrl = `http://localhost:3001/api/streams/${channelId}/segments`;
   const now = Date.now();
@@ -76,6 +78,7 @@ ${baseUrl}/segment_${Math.floor(now / 4000)}.ts
 `;
 }
 
+/** Generates a simulated HLS master playlist with multiple quality variants. */
 function generateMasterPlaylist(channelId: string | number): string {
   const baseUrl = `http://localhost:3001/api/streams/${channelId}`;
 
@@ -89,6 +92,7 @@ ${baseUrl}/playlist_480p.m3u8
 `;
 }
 
+/** Marks a channel as live and creates a stream record with distributed lock protection. */
 async function startStream(
   channelId: string | number,
   title: string,
@@ -142,6 +146,7 @@ async function startStream(
   }
 }
 
+/** Marks a channel as offline and finalizes the stream record with duration. */
 async function endStream(channelId: string | number): Promise<EndStreamResult | null> {
   const streamInfo = liveStreams.get(channelId);
 

@@ -13,6 +13,7 @@ interface UserRow {
   role: 'user' | 'admin';
 }
 
+/** Validates session cookie and attaches user to the request. Returns 401 if not authenticated. */
 export const authenticate = async (
   req: Request,
   res: Response,
@@ -53,6 +54,7 @@ export const authenticate = async (
   }
 };
 
+/** Attempts to authenticate the user from session cookie but does not require authentication. */
 export const optionalAuth = async (
   req: Request,
   res: Response,
@@ -85,6 +87,7 @@ export const optionalAuth = async (
   next();
 };
 
+/** Requires the authenticated user to have host status. Returns 403 otherwise. */
 export const requireHost = (
   req: Request,
   res: Response,
@@ -97,6 +100,7 @@ export const requireHost = (
   next();
 };
 
+/** Requires the authenticated user to have admin role. Returns 403 otherwise. */
 export const requireAdmin = (
   req: Request,
   res: Response,

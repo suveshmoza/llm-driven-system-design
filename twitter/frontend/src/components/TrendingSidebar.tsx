@@ -4,6 +4,7 @@ import { trendsApi } from '../services/api';
 import { Trend } from '../types';
 import { formatNumber } from '../utils/format';
 
+/** Renders the trending hashtags sidebar with auto-refresh and rising indicators. */
 export function TrendingSidebar() {
   const [trends, setTrends] = useState<Trend[]>([]);
   const [isLoading, setIsLoading] = useState(true);

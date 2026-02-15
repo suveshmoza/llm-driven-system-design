@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useChatStore } from '../stores/chatStore';
 import { AuthModal } from './AuthModal';
 
+/** Renders the root layout with navigation header, WebSocket chat connection, and auth modal. */
 export function RootLayout() {
   const { user, isLoading, fetchUser, logout } = useAuthStore();
   const { connect, disconnect, authenticate } = useChatStore();

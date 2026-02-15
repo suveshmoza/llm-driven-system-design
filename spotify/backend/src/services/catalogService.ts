@@ -5,6 +5,7 @@ import { getPublicUrl as _getPublicUrl, COVERS_BUCKET as _COVERS_BUCKET } from '
 const CACHE_TTL = 300; // 5 minutes
 
 // Get all artists with pagination
+/** Lists artists with optional search filtering and pagination. */
 export async function getArtists({ limit = 20, offset = 0, search = '' }) {
   const cacheKey = `artists:${limit}:${offset}:${search}`;
 
@@ -53,6 +54,7 @@ export async function getArtists({ limit = 20, offset = 0, search = '' }) {
 }
 
 // Get artist by ID with albums
+/** Returns an artist with their albums, top tracks, and related artists. */
 export async function getArtistById(artistId: string) {
   const cacheKey = `artist:${artistId}`;
 
@@ -103,6 +105,7 @@ export async function getArtistById(artistId: string) {
 }
 
 // Get all albums with pagination
+/** Lists albums with optional search and artist filtering. */
 export async function getAlbums({ limit = 20, offset = 0, search = '', artistId = null }: { limit?: number; offset?: number; search?: string; artistId?: string | null }) {
   let query = `
     SELECT a.*, ar.name as artist_name
@@ -149,6 +152,7 @@ export async function getAlbums({ limit = 20, offset = 0, search = '', artistId 
 }
 
 // Get album by ID with tracks
+/** Returns an album with all its tracks and artist info. */
 export async function getAlbumById(albumId: string) {
   const cacheKey = `album:${albumId}`;
 
@@ -226,6 +230,7 @@ export async function getTracksByIds(trackIds: string[]) {
 }
 
 // Search across all content
+/** Searches across artists, albums, and tracks using ILIKE text matching. */
 export async function search(query: string, { limit = 20, types = ['artists', 'albums', 'tracks'] }: { limit?: number; types?: string[] }) {
   const results: { artists?: unknown[]; albums?: unknown[]; tracks?: unknown[] } = {};
   const searchTerm = `%${query}%`;

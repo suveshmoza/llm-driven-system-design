@@ -11,6 +11,7 @@ interface CodeEditorProps {
   height?: string;
 }
 
+/** Renders a CodeMirror editor with VS Code dark theme and Python/JavaScript language support. */
 export function CodeEditor({
   value,
   onChange,

@@ -63,7 +63,7 @@ export interface SearchHotelsResult {
   totalPages: number;
 }
 
-// Create or update the hotels index mapping
+/** Creates the Elasticsearch hotels index with geo-point, nested room type, and text mappings. */
 export async function setupIndex(): Promise<void> {
   try {
     const indexExists = await client.indices.exists({ index: HOTELS_INDEX });
@@ -117,7 +117,7 @@ export async function setupIndex(): Promise<void> {
   }
 }
 
-// Index a hotel document
+/** Indexes or updates a hotel document in Elasticsearch with immediate refresh. */
 export async function indexHotel(hotel: HotelDocument): Promise<void> {
   try {
     await client.index({
@@ -132,7 +132,7 @@ export async function indexHotel(hotel: HotelDocument): Promise<void> {
   }
 }
 
-// Remove a hotel from the index
+/** Removes a hotel document from the Elasticsearch index, ignoring 404 errors. */
 export async function removeHotel(hotelId: string): Promise<void> {
   try {
     await client.delete({
@@ -149,7 +149,7 @@ export async function removeHotel(hotelId: string): Promise<void> {
   }
 }
 
-// Search hotels
+/** Searches hotels using bool query with city/country/geo/capacity/price/amenity filters and configurable sorting. */
 export async function searchHotels(params: SearchHotelsParams): Promise<SearchHotelsResult> {
   const {
     city,
@@ -275,7 +275,7 @@ export async function searchHotels(params: SearchHotelsParams): Promise<SearchHo
   }
 }
 
-// Get the Elasticsearch client (for health checks)
+/** Returns the Elasticsearch client instance for health checks and direct queries. */
 export function getClient(): Client {
   return client;
 }

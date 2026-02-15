@@ -6,7 +6,7 @@ import { AuthUser, SignerData } from '../types/express.js';
 // Re-export SignerData for consumers
 export type { SignerData } from '../types/express.js';
 
-// Authenticate logged-in users
+/** Validates session token from cookie or Authorization header and attaches user to request. */
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const token = req.cookies.token || req.headers.authorization?.replace('Bearer ', '');
@@ -37,7 +37,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   }
 }
 
-// Authenticate admin users
+/** Validates session token and ensures user has admin role before proceeding. */
 export async function authenticateAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await authenticate(req, res, () => {
@@ -53,7 +53,7 @@ export async function authenticateAdmin(req: Request, res: Response, next: NextF
   }
 }
 
-// Authenticate signing recipients via access token
+/** Authenticates signing recipients via unique access token from signing link. */
 export async function authenticateSigner(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const accessToken = req.params.accessToken || req.query.accessToken || req.body.accessToken;
@@ -113,7 +113,7 @@ export async function authenticateSigner(req: Request, res: Response, next: Next
   }
 }
 
-// Optional authentication - proceeds even if not authenticated
+/** Attempts authentication but proceeds to next middleware even if not authenticated. */
 export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const token = req.cookies.token || req.headers.authorization?.replace('Bearer ', '');

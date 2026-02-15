@@ -66,6 +66,7 @@ interface ReviewStatsRow {
   one_star: string;
 }
 
+/** Manages hotel reviews with booking eligibility checks, pagination, and rating statistics. */
 class ReviewService {
   async createReview(reviewData: CreateReviewData, userId: string): Promise<Review> {
     const { bookingId, rating, title, content } = reviewData;

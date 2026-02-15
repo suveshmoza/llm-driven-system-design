@@ -19,6 +19,7 @@ export const QUEUES: Record<string, string> = {
   DEAD_LETTER: 'notifications.dead_letter',
 };
 
+/** Connects to RabbitMQ and declares priority-based notification queues with dead letter exchange. */
 export async function initRabbitMQ(): Promise<void> {
   const url = process.env.RABBITMQ_URL || 'amqp://notification_user:notification_password@localhost:5672';
 
@@ -57,6 +58,7 @@ export interface QueueMessage {
   retryCount?: number;
 }
 
+/** Publishes a persistent message to a named RabbitMQ queue. */
 export async function publishToQueue(queueName: string, message: QueueMessage): Promise<boolean> {
   if (!channel) {
     throw new Error('RabbitMQ channel not initialized');
@@ -73,6 +75,7 @@ export interface ConsumeOptions {
   prefetch?: number;
 }
 
+/** Registers a consumer callback for a named RabbitMQ queue with acknowledgment handling. */
 export async function consumeQueue(
   queueName: string,
   handler: (message: QueueMessage) => Promise<void>,
@@ -116,11 +119,13 @@ export async function consumeQueue(
   });
 }
 
+/** Resolves a channel type and priority to a specific queue name. */
 export function getQueueName(channelType: string, priority: string): string {
   const key = `${channelType.toUpperCase()}_${priority.toUpperCase()}`;
   return QUEUES[key] || QUEUES[`${channelType.toUpperCase()}_NORMAL`];
 }
 
+/** Returns the active RabbitMQ channel or null if not initialized. */
 export function getChannel(): Channel | null {
   return channel;
 }

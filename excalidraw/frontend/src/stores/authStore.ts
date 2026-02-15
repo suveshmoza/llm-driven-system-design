@@ -14,6 +14,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
 }
 
+/** Authentication state with login, register, and session management. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

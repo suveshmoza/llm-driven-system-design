@@ -18,6 +18,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+/** Authentication state with session persistence, login/logout, and token management. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({

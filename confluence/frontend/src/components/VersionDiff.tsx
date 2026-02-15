@@ -7,6 +7,7 @@ interface VersionDiffProps {
   currentVersion: number;
 }
 
+/** Displays a side-by-side diff between two selected page versions. */
 export default function VersionDiff({ pageId, currentVersion }: VersionDiffProps) {
   const [versions, setVersions] = useState<PageVersion[]>([]);
   const [fromVersion, setFromVersion] = useState<number>(Math.max(1, currentVersion - 1));

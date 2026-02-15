@@ -73,6 +73,7 @@ const pubSubBreaker = createPubSubBreaker(
  * // Cell saved, cached, broadcast, and ACK sent to client
  * ```
  */
+/** Processes a cell edit, evaluates formulas, persists to DB, and broadcasts to collaborators. */
 export async function handleCellEdit(
   ws: ExtendedWebSocket,
   payload: CellEditPayload

@@ -6,6 +6,7 @@ interface MetricsCardProps {
   };
 }
 
+/** Displays system metrics including memory usage, RSS, uptime, and CPU time. */
 export function MetricsCard({ data }: MetricsCardProps) {
   if (!data) {
     return (

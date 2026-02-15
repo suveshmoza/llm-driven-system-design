@@ -25,6 +25,7 @@ export interface CreateMeetingInput {
   };
 }
 
+/** Creates a meeting with a unique human-readable code and default settings. */
 export async function createMeeting(hostId: string, input: CreateMeetingInput) {
   const meetingCode = generateMeetingCode();
   const settings = {
@@ -46,16 +47,19 @@ export async function createMeeting(hostId: string, input: CreateMeetingInput) {
   return result.rows[0];
 }
 
+/** Looks up a meeting by its human-readable code. */
 export async function getMeetingByCode(code: string) {
   const result = await pool.query('SELECT * FROM meetings WHERE meeting_code = $1', [code]);
   return result.rows[0] || null;
 }
 
+/** Looks up a meeting by its UUID. */
 export async function getMeetingById(id: string) {
   const result = await pool.query('SELECT * FROM meetings WHERE id = $1', [id]);
   return result.rows[0] || null;
 }
 
+/** Returns all meetings hosted by a user, ordered by most recent. */
 export async function getUserMeetings(userId: string) {
   const result = await pool.query(
     `SELECT * FROM meetings WHERE host_id = $1 ORDER BY created_at DESC LIMIT 50`,
@@ -64,6 +68,7 @@ export async function getUserMeetings(userId: string) {
   return result.rows;
 }
 
+/** Transitions a meeting to active status and records the start time. */
 export async function startMeeting(meetingId: string, hostId: string) {
   const result = await pool.query(
     `UPDATE meetings SET status = 'active', actual_start = NOW(), updated_at = NOW()
@@ -78,6 +83,7 @@ export async function startMeeting(meetingId: string, hostId: string) {
   return result.rows[0];
 }
 
+/** Ends a meeting and records the end time, host-only. */
 export async function endMeeting(meetingId: string, hostId: string) {
   const result = await pool.query(
     `UPDATE meetings SET status = 'ended', actual_end = NOW(), updated_at = NOW()
@@ -92,6 +98,7 @@ export async function endMeeting(meetingId: string, hostId: string) {
   return result.rows[0];
 }
 
+/** Adds a participant to a meeting or re-joins if previously left. */
 export async function joinMeeting(meetingId: string, userId: string, displayName: string) {
   // Upsert: if already joined but left, update left_at to null
   const result = await pool.query(
@@ -106,6 +113,7 @@ export async function joinMeeting(meetingId: string, userId: string, displayName
   return result.rows[0];
 }
 
+/** Records a participant's departure from the meeting. */
 export async function leaveMeeting(meetingId: string, userId: string) {
   const result = await pool.query(
     `UPDATE meeting_participants SET left_at = NOW()
@@ -117,6 +125,7 @@ export async function leaveMeeting(meetingId: string, userId: string) {
   return result.rows[0] || null;
 }
 
+/** Returns all currently active participants in a meeting. */
 export async function getParticipants(meetingId: string) {
   const result = await pool.query(
     `SELECT mp.*, u.username, u.avatar_url
@@ -129,6 +138,7 @@ export async function getParticipants(meetingId: string) {
   return result.rows;
 }
 
+/** Updates a participant's media state (mute, video, screen share, hand raise). */
 export async function updateParticipantState(
   meetingId: string,
   userId: string,
@@ -171,6 +181,7 @@ export async function updateParticipantState(
   return result.rows[0] || null;
 }
 
+/** Changes a participant's role (e.g. host, co-host, participant). */
 export async function setParticipantRole(meetingId: string, userId: string, role: string) {
   const result = await pool.query(
     `UPDATE meeting_participants SET role = $3

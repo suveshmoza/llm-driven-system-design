@@ -13,6 +13,7 @@ declare global {
   }
 }
 
+/** Validates Bearer token from Authorization header and attaches user to request. */
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -49,6 +50,7 @@ export async function authMiddleware(
   }
 }
 
+/** Restricts access to users with the admin role. */
 export function adminMiddleware(
   req: Request,
   res: Response,

@@ -39,6 +39,7 @@ const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
  * uploads for larger files. Tracks upload progress and provides
  * cancellation support. After upload, monitors transcoding status.
  */
+/** Video upload state with chunked upload progress and transcoding status tracking. */
 export const useUploadStore = create<UploadState>((set, get) => ({
   currentUpload: null,
   transcodingStatus: null,

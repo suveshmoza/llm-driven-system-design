@@ -139,7 +139,7 @@ const autocompleteIndexMapping = {
   },
 };
 
-// Initialize indices
+/** Creates the document and autocomplete Elasticsearch indices with custom analyzers if they do not exist. */
 export const initializeIndices = async (): Promise<void> => {
   try {
     // Check and create document index
@@ -174,7 +174,7 @@ export const initializeIndices = async (): Promise<void> => {
   }
 };
 
-// Index a document
+/** Indexes a single document into the Elasticsearch document index by URL ID. */
 export const indexDocument = async (doc: SearchDocument): Promise<void> => {
   await esClient.index({
     index: config.elasticsearch.documentIndex,
@@ -194,7 +194,7 @@ export const indexDocument = async (doc: SearchDocument): Promise<void> => {
   });
 };
 
-// Bulk index documents
+/** Bulk indexes an array of documents into Elasticsearch with refresh for immediate visibility. */
 export const bulkIndexDocuments = async (docs: SearchDocument[]): Promise<unknown> => {
   if (docs.length === 0) return;
 
@@ -227,7 +227,7 @@ export const bulkIndexDocuments = async (docs: SearchDocument[]): Promise<unknow
   return result;
 };
 
-// Search documents
+/** Executes a function_score query combining BM25, PageRank, inlink count, and freshness decay. */
 export const searchDocuments = async (
   query: string,
   options: { page?: number; limit?: number } = {}
@@ -327,7 +327,7 @@ export const searchDocuments = async (
   };
 };
 
-// Get autocomplete suggestions
+/** Returns autocomplete suggestions matching the prefix, sorted by frequency and recency. */
 export const getAutocompleteSuggestions = async (prefix: string, limit = 10): Promise<string[]> => {
   const response = await esClient.search({
     index: config.elasticsearch.autocompleteIndex,
@@ -353,7 +353,7 @@ export const getAutocompleteSuggestions = async (prefix: string, limit = 10): Pr
   return response.hits.hits.map((hit) => (hit._source as { query: string }).query);
 };
 
-// Add search suggestion
+/** Upserts a search suggestion, incrementing frequency if it already exists. */
 export const addSearchSuggestion = async (queryText: string): Promise<void> => {
   try {
     // Check if suggestion exists
@@ -396,7 +396,7 @@ export const addSearchSuggestion = async (queryText: string): Promise<void> => {
   }
 };
 
-// Update page rank in documents
+/** Bulk updates PageRank scores for documents in the Elasticsearch index. */
 export const updatePageRanks = async (pageRanks: Record<string, number>): Promise<void> => {
   const operations: unknown[] = [];
 

@@ -8,6 +8,7 @@ interface EventCardProps {
   compact?: boolean
 }
 
+/** Renders an event as a colored pill with title and optional time display. */
 export function EventCard({ event, onClick, showTime = true, compact = false }: EventCardProps) {
   const backgroundColor = event.color || '#3B82F6'
 

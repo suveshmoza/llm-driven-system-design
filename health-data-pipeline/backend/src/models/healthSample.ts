@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { HealthDataTypes, normalizeUnit, HealthDataTypeKey } from './healthTypes.js';
 
+/** Input data shape for creating a HealthSample. */
 export interface HealthSampleData {
   id?: string;
   userId: string;
@@ -15,6 +16,7 @@ export interface HealthSampleData {
   metadata?: Record<string, unknown>;
 }
 
+/** Database row representation of a health sample with snake_case columns. */
 export interface HealthSampleRow {
   id: string;
   user_id: string;
@@ -29,6 +31,10 @@ export interface HealthSampleRow {
   metadata: Record<string, unknown> | null;
 }
 
+/**
+ * Represents a single health data sample with validation and unit normalization.
+ * Converts between API input format and database row format.
+ */
 export class HealthSample {
   id: string;
   userId: string;

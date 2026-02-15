@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import { config } from '../config/index.js';
 
+/** Redis client for session storage and real-time meeting state. */
 export const redis = new Redis({
   host: config.redis.host,
   port: config.redis.port,

@@ -318,4 +318,5 @@ class SfuService {
   }
 }
 
+/** Singleton simulated SFU service modeling mediasoup architecture for signaling. */
 export const sfuService = new SfuService();

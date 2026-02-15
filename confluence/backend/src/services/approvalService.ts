@@ -14,6 +14,7 @@ interface Approval {
   reviewer_username?: string;
 }
 
+/** Creates a pending approval request for a page, rejecting duplicates. */
 export async function requestApproval(pageId: string, requestedBy: string): Promise<Approval> {
   // Check for existing pending approval
   const existing = await pool.query(
@@ -34,6 +35,7 @@ export async function requestApproval(pageId: string, requestedBy: string): Prom
   return result.rows[0];
 }
 
+/** Approves or rejects a pending approval, publishing the page on approval. */
 export async function reviewApproval(
   approvalId: string,
   reviewedBy: string,
@@ -79,6 +81,7 @@ export async function reviewApproval(
   }
 }
 
+/** Retrieves all approval records for a given page with requester and reviewer info. */
 export async function getPageApprovals(pageId: string): Promise<Approval[]> {
   const result = await pool.query(
     `SELECT pa.*,
@@ -94,6 +97,7 @@ export async function getPageApprovals(pageId: string): Promise<Approval[]> {
   return result.rows;
 }
 
+/** Retrieves all pending approvals, optionally filtered by requesting user. */
 export async function getPendingApprovals(userId?: string): Promise<Approval[]> {
   let query = `
     SELECT pa.*,

@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import * as api from '../services/api';
 import type { Board } from '../types';
 
+/** Renders the pin creation form with image upload, board selection, and metadata inputs. */
 export default function CreatePin() {
   const { user } = useAuthStore();
   const navigate = useNavigate();

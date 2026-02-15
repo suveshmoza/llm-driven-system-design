@@ -10,6 +10,7 @@ interface ShareDialogProps {
   onCollaboratorsChange: (collaborators: Collaborator[]) => void;
 }
 
+/** Renders the share dialog for generating collaboration links. */
 export function ShareDialog({ drawingId, collaborators, isOwner, onClose, onCollaboratorsChange }: ShareDialogProps) {
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState('edit');

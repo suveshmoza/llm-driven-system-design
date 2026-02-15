@@ -16,6 +16,7 @@ interface RequestsCardProps {
   durations?: Record<string, DurationStats>;
 }
 
+/** Displays per-endpoint request statistics with status code breakdown and P99 latency. */
 export function RequestsCard({ requests, durations }: RequestsCardProps) {
   if (!requests) {
     return (

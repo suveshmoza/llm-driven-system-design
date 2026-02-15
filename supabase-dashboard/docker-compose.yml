@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: supabase-postgres
+    environment:
+      POSTGRES_USER: supabase
+      POSTGRES_PASSWORD: supabase123
+      POSTGRES_DB: supabase_meta
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supabase"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  target-postgres:
+    image: postgres:16-alpine
+    container_name: supabase-target-postgres
+    environment:
+      POSTGRES_USER: sample
+      POSTGRES_PASSWORD: sample123
+      POSTGRES_DB: sample_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - target_postgres_data:/var/lib/postgresql/data
+      - ./backend/src/db/sample-db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sample"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: valkey/valkey:7-alpine
+    container_name: supabase-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+  target_postgres_data:
+  redis_data:

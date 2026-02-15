@@ -123,6 +123,7 @@ interface RoomTypeRow {
   updated_at: Date;
 }
 
+/** Manages hotel CRUD operations with automatic Elasticsearch index synchronization. */
 class HotelService {
   async createHotel(hotelData: CreateHotelData, ownerId: string): Promise<Hotel> {
     const {

@@ -10,6 +10,7 @@ export interface Session {
   expiresAt: string;
 }
 
+/** Creates a new session in both Redis (for fast lookup) and PostgreSQL (for persistence). */
 export const createSession = async (userId: number): Promise<{ sessionId: string; expiresAt: Date }> => {
   const sessionId = uuidv4();
   const expiresAt = new Date(Date.now() + SESSION_TTL * 1000);
@@ -35,6 +36,7 @@ interface SessionRow {
   expires_at: Date;
 }
 
+/** Retrieves a session by ID, checking Redis first and falling back to PostgreSQL. */
 export const getSession = async (sessionId: string): Promise<Session | null> => {
   // Try Redis first
   const cached = await redisClient.get(`session:${sessionId}`);
@@ -67,15 +69,18 @@ export const getSession = async (sessionId: string): Promise<Session | null> => 
   return session;
 };
 
+/** Deletes a session from both Redis and PostgreSQL. */
 export const deleteSession = async (sessionId: string): Promise<void> => {
   await redisClient.del(`session:${sessionId}`);
   await query('DELETE FROM sessions WHERE id = $1', [sessionId]);
 };
 
+/** Hashes a plaintext password using bcrypt with salt rounds of 10. */
 export const hashPassword = async (password: string): Promise<string> => {
   return bcrypt.hash(password, 10);
 };
 
+/** Compares a plaintext password against a bcrypt hash. */
 export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
   return bcrypt.compare(password, hash);
 };

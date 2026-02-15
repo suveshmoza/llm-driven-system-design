@@ -67,6 +67,7 @@ function localBroadcast(channelId: string, message: unknown): void {
   });
 }
 
+/** Initializes WebSocket chat server with Redis pub/sub for cross-instance message delivery. */
 function setupChatWebSocket(wss: WebSocketServer, _redisClient: RedisClientType): void {
   // Initialize circuit breaker for Redis chat publishing
   redisChatBreaker = createCircuitBreaker(

@@ -38,6 +38,7 @@ interface AppError extends Error {
   status?: number;
 }
 
+/** GET /api/cart - Returns the authenticated user's cart with product details and subtotal. */
 // Get cart
 router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -67,6 +68,7 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
   }
 });
 
+/** POST /api/cart - Adds a product to the cart with inventory reservation and availability check. */
 // Add to cart
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -127,6 +129,7 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
   }
 });
 
+/** PUT /api/cart/:productId - Updates the quantity of a cart item with inventory adjustment. */
 // Update cart item quantity
 router.put('/:productId', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -197,6 +200,7 @@ router.put('/:productId', requireAuth, async (req: Request, res: Response, next:
   }
 });
 
+/** DELETE /api/cart/:productId - Removes a single item from the cart and releases inventory reservation. */
 // Remove from cart
 router.delete('/:productId', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -238,6 +242,7 @@ router.delete('/:productId', requireAuth, async (req: Request, res: Response, ne
   }
 });
 
+/** DELETE /api/cart - Clears all items from the cart and releases all inventory reservations. */
 // Clear cart
 router.delete('/', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

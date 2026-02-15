@@ -16,9 +16,11 @@ pool.on('error', (err: Error) => {
   console.error('Unexpected error on idle client', err);
 });
 
+/** Executes a parameterized SQL query against the connection pool. */
 export const query = (text: string, params?: unknown[]): Promise<QueryResult> =>
   pool.query(text, params);
 
+/** Acquires a client from the pool for manual transaction control. */
 export const getClient = (): Promise<PoolClient> => pool.connect();
 
 export default pool;

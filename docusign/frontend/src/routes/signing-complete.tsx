@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
+/** Confirmation page displayed after a recipient successfully completes signing all documents. */
 function SigningCompletePage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">

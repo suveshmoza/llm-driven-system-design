@@ -49,6 +49,7 @@ interface SessionCache {
   userId: string;
 }
 
+/** Handles user registration, login, session management with Redis-backed token validation. */
 class AuthService {
   async register(userData: RegisterUserData): Promise<AuthResult> {
     const { email, password, firstName, lastName, phone, role = 'user' } = userData;

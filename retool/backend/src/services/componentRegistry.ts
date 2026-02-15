@@ -14,6 +14,7 @@ export interface ComponentDefinition {
   propSchema: ComponentPropSchema[];
 }
 
+/** Registry of available widget types with their default properties and constraints. */
 export const componentRegistry: ComponentDefinition[] = [
   {
     type: 'table',

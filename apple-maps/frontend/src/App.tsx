@@ -3,6 +3,7 @@ import SearchBar from './components/SearchBar';
 import RoutePanel from './components/RoutePanel';
 import MapControls from './components/MapControls';
 
+/** Root application component composing the map view, search bar, controls, and route panel. */
 export default function App() {
   return (
     <div className="h-screen w-screen relative overflow-hidden">

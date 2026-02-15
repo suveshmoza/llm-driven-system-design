@@ -465,4 +465,5 @@ router.get(
   }
 );
 
+/** Router for auction CRUD, watchlist, seller listings, and user bid history. */
 export default router;

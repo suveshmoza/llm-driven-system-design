@@ -17,6 +17,7 @@ import { useSpreadsheetStore, getColumnLetter } from '../stores/spreadsheet';
  *
  * @returns The toolbar component with all subcomponents
  */
+/** Renders the spreadsheet toolbar with formatting controls and action buttons. */
 export function Toolbar() {
   const title = useSpreadsheetStore((state) => state.title);
   const isConnected = useSpreadsheetStore((state) => state.isConnected);

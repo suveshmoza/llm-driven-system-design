@@ -19,6 +19,7 @@ interface CircuitBreakersCardProps {
   breakers?: Record<string, CircuitBreaker>;
 }
 
+/** Displays circuit breaker states with call statistics and reset controls. */
 export function CircuitBreakersCard({ breakers }: CircuitBreakersCardProps) {
   const { token } = useAuthStore();
   const { fetchDashboard } = useDashboardStore();

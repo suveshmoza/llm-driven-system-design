@@ -30,6 +30,7 @@ redisSub.on('error', (err: Error) => {
  * @param sessionId - The unique identifier for the session
  * @returns The session data object if found, null otherwise
  */
+/** Retrieves a session from Redis by session ID. */
 export async function getSession(sessionId: string) {
   const data = await redis.get(`session:${sessionId}`);
   return data ? JSON.parse(data) : null;
@@ -43,6 +44,7 @@ export async function getSession(sessionId: string) {
  * @param data - The session data object to store
  * @param ttlSeconds - Time-to-live in seconds (default: 86400 = 24 hours)
  */
+/** Stores a session in Redis with a configurable TTL. */
 export async function setSession(sessionId: string, data: object, ttlSeconds = 86400) {
   await redis.setex(`session:${sessionId}`, ttlSeconds, JSON.stringify(data));
 }
@@ -53,6 +55,7 @@ export async function setSession(sessionId: string, data: object, ttlSeconds = 8
  *
  * @param sessionId - The unique identifier for the session to delete
  */
+/** Removes a session from Redis. */
 export async function deleteSession(sessionId: string) {
   await redis.del(`session:${sessionId}`);
 }
@@ -65,6 +68,7 @@ export async function deleteSession(sessionId: string) {
  * @param spreadsheetId - The unique identifier of the spreadsheet
  * @param message - The message object to broadcast (will be JSON-stringified)
  */
+/** Publishes a message to a spreadsheet's Redis pub/sub channel. */
 export function publishToSpreadsheet(spreadsheetId: string, message: object) {
   redis.publish(`spreadsheet:${spreadsheetId}`, JSON.stringify(message));
 }
@@ -77,6 +81,7 @@ export function publishToSpreadsheet(spreadsheetId: string, message: object) {
  * @param spreadsheetId - The unique identifier of the spreadsheet to subscribe to
  * @param callback - Function called when a message is received on the channel
  */
+/** Subscribes to real-time updates on a spreadsheet's Redis pub/sub channel. */
 export function subscribeToSpreadsheet(spreadsheetId: string, callback: (message: object) => void) {
   redisSub.subscribe(`spreadsheet:${spreadsheetId}`);
   redisSub.on('message', (channel: string, message: string) => {
@@ -97,6 +102,7 @@ export function subscribeToSpreadsheet(spreadsheetId: string, callback: (message
  *
  * @param spreadsheetId - The unique identifier of the spreadsheet to unsubscribe from
  */
+/** Unsubscribes from a spreadsheet's Redis pub/sub channel. */
 export function unsubscribeFromSpreadsheet(spreadsheetId: string) {
   redisSub.unsubscribe(`spreadsheet:${spreadsheetId}`);
 }

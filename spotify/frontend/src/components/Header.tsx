@@ -2,6 +2,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '../stores/authStore';
 import { useState, useRef, useEffect } from 'react';
 
+/** Renders the top navigation bar with search and user menu. */
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const navigate = useNavigate();

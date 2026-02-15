@@ -4,6 +4,7 @@ import { playlistApi } from '../services/api';
 import type { Playlist } from '../types';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the left sidebar with navigation links and user playlists. */
 export function Sidebar() {
   const location = useLocation();
   const { isAuthenticated } = useAuthStore();

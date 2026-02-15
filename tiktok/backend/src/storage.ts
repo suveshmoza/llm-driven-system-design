@@ -22,6 +22,7 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
+/** Uploads a file buffer to MinIO S3-compatible storage. */
 export const uploadFile = async (
   bucket: string,
   key: string,

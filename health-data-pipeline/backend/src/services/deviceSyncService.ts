@@ -4,12 +4,14 @@ import { HealthSample, HealthSampleData } from '../models/healthSample.js';
 import { DevicePriority, DeviceType } from '../models/healthTypes.js';
 import { aggregationService } from './aggregationService.js';
 
+/** Input data for registering a new device. */
 export interface DeviceData {
   deviceType: string;
   deviceName: string;
   deviceIdentifier: string;
 }
 
+/** Database row representation of a registered user device. */
 export interface UserDevice {
   id: string;
   user_id: string;
@@ -21,12 +23,17 @@ export interface UserDevice {
   created_at: Date;
 }
 
+/** Result of a device sync operation including counts of synced/failed samples. */
 export interface SyncResult {
   synced: number;
   errors: number;
   errorDetails: Array<{ sample: HealthSampleData; error: string }>;
 }
 
+/**
+ * Manages device registration and health data ingestion.
+ * Validates samples, performs batch inserts, and triggers downstream aggregation.
+ */
 export class DeviceSyncService {
   async registerDevice(userId: string, deviceData: DeviceData): Promise<UserDevice> {
     const { deviceType, deviceName, deviceIdentifier } = deviceData;
@@ -150,4 +157,5 @@ export class DeviceSyncService {
   }
 }
 
+/** Singleton device sync service instance. */
 export const deviceSyncService = new DeviceSyncService();

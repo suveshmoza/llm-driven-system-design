@@ -52,6 +52,7 @@ const stateLogger = createChildLogger({ component: 'state-sync' });
  * });
  * ```
  */
+/** Sends the full spreadsheet state (cells, sheets, collaborators) to a newly connected client. */
 export async function sendInitialState(
   ws: ExtendedWebSocket,
   spreadsheetId: string

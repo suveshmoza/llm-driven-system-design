@@ -2,6 +2,7 @@ import type { Response, NextFunction } from 'express';
 import { getSession, findUserById } from '../models/user.js';
 import type { AuthenticatedRequest } from '../shared/logger.js';
 
+/** Extracts session cookie and attaches the authenticated user to the request object. */
 export const authenticate = async (req: AuthenticatedRequest, _res: Response, next: NextFunction): Promise<void> => {
   const sessionId = req.cookies?.session || req.headers['x-session-id'];
 
@@ -29,6 +30,7 @@ export const authenticate = async (req: AuthenticatedRequest, _res: Response, ne
   }
 };
 
+/** Middleware that rejects unauthenticated requests with 401. */
 export const requireAuth = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
@@ -37,6 +39,7 @@ export const requireAuth = (req: AuthenticatedRequest, res: Response, next: Next
   next();
 };
 
+/** Middleware that rejects non-admin users with 403. */
 export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });

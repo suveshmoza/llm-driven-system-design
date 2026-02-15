@@ -4,6 +4,7 @@ import { redisClient } from '../db.js';
 const CACHE_TTL = 3600; // 1 hour for recommendations
 
 // Get personalized recommendations based on listening history
+/** Generates personalized track recommendations based on listening history and preferences. */
 export async function getRecommendations(userId: string, { limit = 30 }: { limit?: number }) {
   const cacheKey = `recommendations:${userId}`;
 
@@ -115,6 +116,7 @@ export async function getPopularTracks({ limit = 30 }) {
 }
 
 // Get similar tracks to a given track
+/** Finds tracks similar to a given track by genre and audio features. */
 export async function getSimilarTracks(trackId: string, { limit = 20 }: { limit?: number }) {
   // Get the track's artist
   const trackResult = await pool.query(
@@ -155,6 +157,7 @@ export async function getSimilarTracks(trackId: string, { limit = 20 }: { limit?
 }
 
 // Get artist radio (tracks from similar artists)
+/** Creates a radio mix of tracks by an artist and similar artists. */
 export async function getArtistRadio(artistId: string, { limit = 50 }: { limit?: number }) {
   // Get artist's top tracks
   const artistTracksResult = await pool.query(

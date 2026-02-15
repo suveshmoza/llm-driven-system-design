@@ -26,6 +26,7 @@ export interface CommentWithReplies extends Comment {
 
 export type CommentSortOption = 'best' | 'new' | 'top' | 'controversial';
 
+/** Creates a comment with materialized path, updates post comment count in a transaction. */
 export const createComment = async (
   postId: number,
   authorId: number,
@@ -98,6 +99,7 @@ export const createComment = async (
   }
 };
 
+/** Finds a single comment by ID with author username. */
 export const findCommentById = async (id: number): Promise<Comment | undefined> => {
   const result = await query<Comment>(
     `SELECT c.*, u.username as author_username
@@ -109,6 +111,7 @@ export const findCommentById = async (id: number): Promise<Comment | undefined> 
   return result.rows[0];
 };
 
+/** Lists all comments for a post and assembles them into a nested tree structure. */
 export const listCommentsByPost = async (postId: number, sort: CommentSortOption = 'best'): Promise<CommentWithReplies[]> => {
   let orderBy: string;
   switch (sort) {
@@ -173,6 +176,7 @@ const buildCommentTree = (comments: Comment[]): CommentWithReplies[] => {
   return rootComments;
 };
 
+/** Fetches a comment and all its descendants using materialized path prefix matching. */
 export const getCommentSubtree = async (commentId: number): Promise<CommentWithReplies[] | null> => {
   const comment = await findCommentById(commentId);
   if (!comment) return null;
@@ -189,6 +193,7 @@ export const getCommentSubtree = async (commentId: number): Promise<CommentWithR
   return buildCommentTree(result.rows);
 };
 
+/** Updates a comment's upvote and downvote tallies and recalculates the net score. */
 export const updateCommentScore = async (commentId: number, upvotes: number, downvotes: number): Promise<void> => {
   const score = upvotes - downvotes;
   await query(
@@ -197,6 +202,7 @@ export const updateCommentScore = async (commentId: number, upvotes: number, dow
   );
 };
 
+/** Deletes a comment and decrements the parent post's comment count. */
 export const deleteComment = async (commentId: number): Promise<void> => {
   const comment = await findCommentById(commentId);
   if (!comment) return;

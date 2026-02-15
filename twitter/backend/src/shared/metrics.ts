@@ -172,6 +172,7 @@ export const idempotencyMisses = new promClient.Counter({
 /**
  * Express middleware for HTTP metrics
  */
+/** Express middleware tracking HTTP request duration and count by method, route, and status. */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const start = Date.now();
 
@@ -194,6 +195,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
 /**
  * Get metrics in Prometheus format
  */
+/** Returns all collected metrics in Prometheus exposition format. */
 export async function getMetrics(): Promise<string> {
   return register.metrics();
 }
@@ -201,6 +203,7 @@ export async function getMetrics(): Promise<string> {
 /**
  * Get content type for metrics
  */
+/** Returns the Prometheus content type header value. */
 export function getMetricsContentType(): string {
   return register.contentType;
 }
@@ -208,6 +211,7 @@ export function getMetricsContentType(): string {
 /**
  * Helper to categorize follower count for metrics buckets
  */
+/** Categorizes a follower count into a bucket label for metrics aggregation. */
 export function getFollowerCountBucket(count: number): string {
   if (count < 100) return '<100';
   if (count < 1000) return '100-1000';

@@ -136,7 +136,7 @@ export const auditEventsLogged = new client.Counter({
   registers: [register],
 });
 
-// Express middleware for request metrics
+/** Express middleware that records HTTP request duration in the Prometheus histogram. */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const end = httpRequestDuration.startTimer();
 
@@ -148,7 +148,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
   next();
 }
 
-// Get metrics endpoint handler
+/** Serves all registered Prometheus metrics in the exposition format. */
 export async function getMetrics(_req: Request, res: Response): Promise<void> {
   res.set('Content-Type', register.contentType);
   res.end(await register.metrics());

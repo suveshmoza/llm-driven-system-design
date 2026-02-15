@@ -53,6 +53,7 @@ interface CalendarState {
   getViewDateRange: () => { start: Date; end: Date }
 }
 
+/** Calendar state with view navigation, event CRUD, calendar visibility, and modal control. */
 export const useCalendarStore = create<CalendarState>((set, get) => ({
   currentDate: new Date(),
   view: 'month',

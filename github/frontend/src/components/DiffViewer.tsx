@@ -2,6 +2,7 @@ interface DiffViewerProps {
   diff: string;
 }
 
+/** Renders a unified diff view with syntax-highlighted additions and deletions. */
 export function DiffViewer({ diff }: DiffViewerProps) {
   const lines = diff.split('\n');
 
@@ -50,6 +51,7 @@ interface FileDiffProps {
   };
 }
 
+/** Renders a summary of file-level diff statistics with additions and deletions bar. */
 export function FileDiffSummary({ file }: FileDiffProps) {
   const total = file.additions + file.deletions;
   const addPercent = total > 0 ? (file.additions / total) * 100 : 0;

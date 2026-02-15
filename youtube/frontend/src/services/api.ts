@@ -43,6 +43,7 @@ async function request<T>(
  * Includes standard REST methods (GET, POST, PATCH, DELETE) plus
  * specialized methods for video uploads (chunked and simple).
  */
+/** YouTube API client with methods for auth, videos, channels, uploads, and comments. */
 export const api = {
   /**
    * Perform a GET request.

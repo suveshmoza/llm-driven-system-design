@@ -1,6 +1,7 @@
 import { createClient, RedisClientType } from 'redis';
 import config from '../config/index.js';
 
+/** Redis client for session storage, domain mapping cache, and shopping cart persistence. */
 const client: RedisClientType = createClient({
   url: config.redis.url,
 });
@@ -34,7 +35,7 @@ export interface CartData {
   subtotal: number;
 }
 
-// Session management
+/** Stores session data in Redis with a configurable TTL (default 24 hours). */
 export async function setSession(
   sessionId: string,
   data: SessionData,
@@ -45,16 +46,18 @@ export async function setSession(
   });
 }
 
+/** Retrieves session data from Redis by session ID. */
 export async function getSession(sessionId: string): Promise<SessionData | null> {
   const data = await client.get(`session:${sessionId}`);
   return data ? JSON.parse(data) : null;
 }
 
+/** Removes a session from Redis on logout. */
 export async function deleteSession(sessionId: string): Promise<void> {
   await client.del(`session:${sessionId}`);
 }
 
-// Domain to store mapping cache
+/** Caches a custom domain to store ID mapping for fast subdomain/domain resolution. */
 export async function setDomainMapping(
   domain: string,
   storeId: number,
@@ -65,12 +68,13 @@ export async function setDomainMapping(
   });
 }
 
+/** Resolves a domain to a store ID from the Redis cache. */
 export async function getDomainMapping(domain: string): Promise<number | null> {
   const storeId = await client.get(`domain:${domain}`);
   return storeId ? parseInt(storeId, 10) : null;
 }
 
-// Cart management
+/** Persists a shopping cart to Redis with a configurable TTL (default 7 days). */
 export async function setCart(
   cartId: string,
   data: CartData,
@@ -81,11 +85,13 @@ export async function setCart(
   });
 }
 
+/** Retrieves a shopping cart from Redis by cart ID. */
 export async function getCart(cartId: string): Promise<CartData | null> {
   const data = await client.get(`cart:${cartId}`);
   return data ? JSON.parse(data) : null;
 }
 
+/** Removes a shopping cart from Redis after checkout completion. */
 export async function deleteCart(cartId: string): Promise<void> {
   await client.del(`cart:${cartId}`);
 }

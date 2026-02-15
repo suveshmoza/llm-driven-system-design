@@ -20,6 +20,7 @@ function formatTime(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+/** Renders the fixed bottom audio player with playback controls, progress bar, volume, and queue panel. */
 export function Player() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [showQueue, setShowQueue] = useState(false);

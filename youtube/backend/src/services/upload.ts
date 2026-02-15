@@ -68,6 +68,7 @@ interface CancelUploadResult {
 }
 
 // Initialize a new upload session
+/** Initializes a chunked upload session and returns an upload ID with presigned URLs. */
 export const initUpload = async (
   userId: string,
   filename: string,
@@ -117,6 +118,7 @@ export const initUpload = async (
 };
 
 // Upload a single chunk
+/** Uploads a single chunk of a video file and tracks progress. */
 export const uploadChunk = async (
   uploadId: string,
   chunkNumber: number,
@@ -176,6 +178,7 @@ export const uploadChunk = async (
 };
 
 // Complete upload and start transcoding
+/** Finalizes a chunked upload, merges chunks, and queues transcoding. */
 export const completeUpload = async (
   uploadId: string,
   userId: string,
@@ -248,6 +251,7 @@ export const completeUpload = async (
 };
 
 // Cancel upload
+/** Cancels an in-progress upload and cleans up stored chunks. */
 export const cancelUpload = async (
   uploadId: string,
   userId: string
@@ -285,6 +289,7 @@ export const cancelUpload = async (
 };
 
 // Get upload status
+/** Returns the current status and progress of a chunked upload session. */
 export const getUploadStatus = async (
   uploadId: string,
   userId: string

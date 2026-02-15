@@ -15,6 +15,7 @@ import { api } from '../services/api';
  *
  * @returns JSX element for the sticky header
  */
+/** Top navigation bar with logo, search, notification badge, and user menu. */
 export function Header() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const [unreadCount, setUnreadCount] = useState(0);

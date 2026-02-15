@@ -1,6 +1,7 @@
 import { usePlayerStore } from '../stores/playerStore';
 import { formatDurationSeconds } from '../utils/format';
 
+/** Renders the persistent bottom player bar with playback controls and progress. */
 export function Player() {
   const {
     currentTrack,

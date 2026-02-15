@@ -7,6 +7,7 @@ interface TemplatePickerProps {
   onClose: () => void;
 }
 
+/** Modal dialog for selecting a page template or starting with a blank page. */
 export default function TemplatePicker({ templates, onSelect, onClose }: TemplatePickerProps) {
   const [selected, setSelected] = useState<string | null>(null);
 

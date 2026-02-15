@@ -7,6 +7,7 @@ interface ButtonWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a button widget that triggers query execution on click. */
 export function ButtonWidget({ component, isEditor }: ButtonWidgetProps) {
   const executeQuery = useDataStore((s) => s.executeQuery);
   const app = useEditorStore((s) => s.app);

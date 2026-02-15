@@ -8,6 +8,7 @@ interface TableWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a data table widget with sortable columns and row selection. */
 export function TableWidget({ component }: TableWidgetProps) {
   const getBindingContext = useDataStore((s) => s.getBindingContext);
   const [page, setPage] = useState(0);

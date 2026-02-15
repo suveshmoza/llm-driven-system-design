@@ -7,6 +7,7 @@ interface BindingInputProps {
   binding?: string;
 }
 
+/** Renders a text input with syntax highlighting for {{ binding }} expressions. */
 export function BindingInput({ value, onChange, onBindingChange, binding }: BindingInputProps) {
   const segments = getBindingSegments(value);
   const hasBinding = segments.some((s) => s.isBinding);

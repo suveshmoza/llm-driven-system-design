@@ -345,6 +345,7 @@ export interface KafkaPlaybackMessage {
 }
 
 // Type guards
+/** Type guard that checks if a string is a valid playback event type. */
 export function isPlaybackEventType(value: string): value is PlaybackEventType {
   return [
     'play_started',
@@ -357,6 +358,7 @@ export function isPlaybackEventType(value: string): value is PlaybackEventType {
   ].includes(value);
 }
 
+/** Type guard that checks if a string is a valid library item type. */
 export function isLibraryItemType(value: string): value is LibraryItemType {
   return ['track', 'album', 'artist', 'playlist'].includes(value);
 }

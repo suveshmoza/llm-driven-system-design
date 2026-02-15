@@ -6,6 +6,7 @@ import { videoService } from '../services/videos';
 import type { Video, Season, Episode } from '../types';
 import { useBrowseStore } from '../stores/browseStore';
 
+/** Renders the video detail page with synopsis, season/episode list, and similar titles row. */
 export function VideoDetailPage() {
   const { videoId } = useParams({ from: '/video/$videoId' });
   const navigate = useNavigate();

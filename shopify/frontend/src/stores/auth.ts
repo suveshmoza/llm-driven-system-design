@@ -12,6 +12,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+/** Merchant authentication state with login, registration, and session persistence. */
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,

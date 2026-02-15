@@ -1,6 +1,7 @@
 import { useTrendingStore } from '../stores/trendingStore';
 import { VideoCard } from './VideoCard';
 
+/** Renders the ranked list of trending videos for the selected category. */
 export function TrendingList() {
   const { trending, selectedCategory } = useTrendingStore();
   const categoryData = trending[selectedCategory];

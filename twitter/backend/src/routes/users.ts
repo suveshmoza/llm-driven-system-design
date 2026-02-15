@@ -282,4 +282,5 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+/** Users router for profiles, follow/unfollow, follower/following lists, and search. */
 export default router;

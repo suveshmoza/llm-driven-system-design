@@ -5,6 +5,7 @@ interface DataSourceFormProps {
   onClose: () => void;
 }
 
+/** Renders a form for configuring database connection parameters. */
 export function DataSourceForm({ onClose }: DataSourceFormProps) {
   const addDataSource = useDataStore((s) => s.addDataSource);
 

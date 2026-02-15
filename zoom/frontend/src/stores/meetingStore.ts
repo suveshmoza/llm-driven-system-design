@@ -40,6 +40,7 @@ const initialState = {
   screenSharingUserId: null,
 };
 
+/** Meeting room state with participant list, chat messages, and breakout room management. */
 export const useMeetingStore = create<MeetingState>((set) => ({
   ...initialState,
 

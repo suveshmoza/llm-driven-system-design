@@ -14,6 +14,7 @@ interface TrackRowProps {
   showArtwork?: boolean;
 }
 
+/** Renders a track row with play controls, artwork, artist link, and context menu. */
 export function TrackRow({ track, index, tracks, showAlbum = true, showArtwork = true }: TrackRowProps) {
   const { playTrack, currentTrack, isPlaying } = usePlayerStore();
   const { user } = useAuthStore();
@@ -147,6 +148,7 @@ interface AlbumCardProps {
   album: Album;
 }
 
+/** Renders an album card with artwork, title, and hover-to-play button. */
 export function AlbumCard({ album }: AlbumCardProps) {
   const { playQueue } = usePlayerStore();
   const [isHovered, setIsHovered] = useState(false);
@@ -194,6 +196,7 @@ interface ArtistCardProps {
   artist: Artist;
 }
 
+/** Renders a circular artist card with image and name. */
 export function ArtistCard({ artist }: ArtistCardProps) {
   return (
     <Link to="/artists/$id" params={{ id: artist.id }} className="group block text-center hover-scale">
@@ -221,6 +224,7 @@ interface PlaylistCardProps {
   };
 }
 
+/** Renders a playlist card with artwork, name, and track count. */
 export function PlaylistCard({ playlist }: PlaylistCardProps) {
   return (
     <Link to="/playlists/$id" params={{ id: playlist.id }} className="group block hover-scale">
@@ -250,6 +254,7 @@ interface RadioStationCardProps {
   };
 }
 
+/** Renders a radio station card with gradient background and station name. */
 export function RadioStationCard({ station }: RadioStationCardProps) {
   return (
     <Link to="/radio/$id" params={{ id: station.id }} className="group block hover-scale">

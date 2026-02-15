@@ -6,6 +6,7 @@ interface SelectWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a dropdown select widget with dynamic options from data bindings. */
 export function SelectWidget({ component, isEditor }: SelectWidgetProps) {
   const setComponentValue = useDataStore((s) => s.setComponentValue);
   const componentValues = useDataStore((s) => s.componentValues);

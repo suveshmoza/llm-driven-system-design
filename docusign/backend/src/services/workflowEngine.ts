@@ -65,14 +65,15 @@ interface CountRow {
   count: string;
 }
 
+/** Manages envelope lifecycle state transitions, recipient routing, and signing workflow orchestration. */
 class WorkflowEngine {
-  // Validate state transition
+  /** Checks whether a state transition is allowed based on the envelope state machine. */
   canTransition(currentState: string, newState: string): boolean {
     const allowedTransitions = ENVELOPE_STATES[currentState] || [];
     return allowedTransitions.includes(newState);
   }
 
-  // Transition envelope state
+  /** Transitions an envelope to a new state with audit logging and workflow event publishing. */
   async transitionState(envelopeId: string, newState: string, actor: string = 'system'): Promise<string> {
     const result = await query<{ status: string }>(
       'SELECT status FROM envelopes WHERE id = $1',
@@ -123,7 +124,7 @@ class WorkflowEngine {
     return newState;
   }
 
-  // Validate envelope before sending
+  /** Validates that an envelope has documents, recipients, and signature fields before sending. */
   async validateEnvelope(envelopeId: string): Promise<boolean> {
     // Check for documents
     const docsResult = await query<CountRow>(
@@ -168,7 +169,7 @@ class WorkflowEngine {
     return true;
   }
 
-  // Send envelope to recipients - WITH IDEMPOTENCY
+  /** Sends an envelope to recipients with idempotency, generating access tokens and notifying first recipients. */
   async sendEnvelope(envelopeId: string, senderId: string): Promise<EnvelopeRow> {
     // Generate idempotency key for send operation
     const idempotencyKey = generateSendIdempotencyKey(envelopeId, senderId);
@@ -280,7 +281,7 @@ class WorkflowEngine {
     return envelope;
   }
 
-  // Get next recipients based on routing order
+  /** Returns the next group of recipients to sign based on routing order (supports parallel signing). */
   async getNextRecipients(envelopeId: string): Promise<RecipientRow[]> {
     const result = await query<RecipientRow>(
       `SELECT * FROM recipients
@@ -298,7 +299,7 @@ class WorkflowEngine {
     return pending.filter(r => r.routing_order === nextOrder);
   }
 
-  // Notify recipient to sign - with async queue support
+  /** Sends a signing notification to a recipient via async queue or synchronous email fallback. */
   async notifyRecipient(recipient: RecipientRow, envelope: EnvelopeRow): Promise<void> {
     // Update recipient status to delivered
     await query(
@@ -358,7 +359,7 @@ class WorkflowEngine {
     });
   }
 
-  // Complete a recipient (all fields signed)
+  /** Marks a recipient as complete and advances the workflow to the next routing group or completes the envelope. */
   async completeRecipient(recipientId: string, ipAddress: string, userAgent: string): Promise<RecipientRow> {
     const result = await query<RecipientRow>(
       `UPDATE recipients
@@ -423,7 +424,7 @@ class WorkflowEngine {
     return recipient;
   }
 
-  // Complete an envelope (all signatures collected)
+  /** Marks an envelope as completed and sends completion notifications to all participants. */
   async completeEnvelope(envelopeId: string): Promise<void> {
     await query(
       `UPDATE envelopes
@@ -506,7 +507,7 @@ class WorkflowEngine {
     }
   }
 
-  // Decline an envelope
+  /** Records a recipient's decline, transitions the envelope to declined status, and notifies the sender. */
   async declineEnvelope(recipientId: string, reason: string, ipAddress: string, userAgent: string): Promise<RecipientRow> {
     const recipientResult = await query<RecipientRow>(
       `UPDATE recipients
@@ -560,7 +561,7 @@ class WorkflowEngine {
     return recipient;
   }
 
-  // Void an envelope
+  /** Voids an active envelope and notifies all recipients of the cancellation. */
   async voidEnvelope(envelopeId: string, reason: string, userId: string): Promise<void> {
     const result = await query<{ status: string }>(
       'SELECT status FROM envelopes WHERE id = $1',
@@ -613,7 +614,7 @@ class WorkflowEngine {
     }
   }
 
-  // Check if recipient has completed all required fields
+  /** Returns true if the recipient has completed all required document fields. */
   async checkRecipientCompletion(recipientId: string): Promise<boolean> {
     const result = await query<CountRow>(
       `SELECT COUNT(*) as count
@@ -628,4 +629,5 @@ class WorkflowEngine {
   }
 }
 
+/** Singleton workflow engine for managing envelope lifecycle and signing orchestration. */
 export const workflowEngine = new WorkflowEngine();

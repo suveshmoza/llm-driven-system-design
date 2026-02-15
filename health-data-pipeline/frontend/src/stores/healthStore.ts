@@ -30,6 +30,7 @@ interface HealthState {
   clearError: () => void;
 }
 
+/** Health data state managing daily/weekly summaries, metric history, devices, and insights. */
 export const useHealthStore = create<HealthState>((set, _get) => ({
   dailySummary: null,
   weeklySummary: null,

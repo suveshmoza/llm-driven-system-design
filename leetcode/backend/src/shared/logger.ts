@@ -25,7 +25,7 @@ const logger = pino({
   timestamp: () => `,"timestamp":"${new Date().toISOString()}"`
 });
 
-// Create child loggers for specific modules
+/** Creates a child logger scoped to a specific module name for structured context. */
 export const createModuleLogger = (module: string) => {
   return logger.child({ module });
 };
@@ -39,7 +39,7 @@ declare module 'express-session' {
   }
 }
 
-// Express middleware for request logging
+/** Express middleware that logs request method, path, status code, and duration with severity-based levels. */
 export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
 

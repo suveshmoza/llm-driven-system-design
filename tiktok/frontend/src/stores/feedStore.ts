@@ -19,6 +19,7 @@ interface FeedState {
   recordView: (videoId: number, watchDurationMs: number, completionRate: number) => Promise<void>;
 }
 
+/** Feed state with video loading, pagination, like/unlike, and view tracking. */
 export const useFeedStore = create<FeedState>((set, get) => ({
   videos: [],
   currentIndex: 0,

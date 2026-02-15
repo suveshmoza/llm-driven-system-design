@@ -14,6 +14,7 @@ const FILL_COLORS = [
 
 const STROKE_WIDTHS = [1, 2, 3, 4, 6];
 
+/** Renders the properties panel for editing selected element styles. */
 export function PropertiesPanel() {
   const {
     strokeColor,

@@ -11,6 +11,7 @@ pool.on('error', (err: Error) => {
   console.error('Unexpected error on idle client', err);
 });
 
+/** Executes a parameterized SQL query against the connection pool with optional development logging. */
 export const query = async <T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -24,14 +25,17 @@ export const query = async <T extends pg.QueryResultRow = pg.QueryResultRow>(
   return res;
 };
 
+/** Acquires a client from the pool for multi-statement transactions. */
 export const getClient = async (): Promise<PoolClient> => {
   return await pool.connect();
 };
 
+/** Closes all connections in the pool for graceful shutdown. */
 export const end = async (): Promise<void> => {
   await pool.end();
 };
 
+/** Aggregated database access object exposing query, getClient, pool, and end. */
 export const db = {
   query,
   getClient,

@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 
+/** Redis client instance for session management and cache operations. */
 export const redis = new (Redis as unknown as typeof Redis.default)(process.env.REDIS_URL || 'redis://localhost:6379');
 
 redis.on('error', (err: Error) => {
@@ -15,7 +16,7 @@ interface SessionData {
   userId: string;
 }
 
-// Cache helper functions
+/** Generic cache helper with get, set, delete, pattern-delete, and get-or-set operations. */
 export const cache = {
   // Get cached value
   async get<T>(key: string): Promise<T | null> {
@@ -61,7 +62,7 @@ export const cache = {
   },
 };
 
-// Session management
+/** Session management helpers for creating, retrieving, and destroying user sessions. */
 export const sessions = {
   async create(
     userId: string,

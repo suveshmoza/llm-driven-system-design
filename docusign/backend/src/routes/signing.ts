@@ -80,7 +80,7 @@ interface RequestWithSocket extends Request {
   connection: Socket;
 }
 
-// Get signing session info
+/** GET /api/v1/signing/session/:accessToken - Returns signing session details including envelope, documents, and fields for a recipient. */
 router.get('/session/:accessToken', async (req: Request, res: Response): Promise<void> => {
   try {
     const { accessToken } = req.params;
@@ -179,7 +179,7 @@ router.get('/session/:accessToken', async (req: Request, res: Response): Promise
   }
 });
 
-// Get document for signing (public, requires access token)
+/** GET /api/v1/signing/document/:accessToken/:documentId - Serves a document PDF for the signing ceremony with audit logging. */
 router.get('/document/:accessToken/:documentId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { accessToken, documentId } = req.params;
@@ -247,7 +247,7 @@ router.get('/document/:accessToken/:documentId', async (req: Request, res: Respo
   }
 });
 
-// Capture signature - WITH IDEMPOTENCY FOR LEGAL COMPLIANCE
+/** POST /api/v1/signing/sign/:accessToken - Captures a signature with idempotency protection for legal compliance. */
 router.post('/sign/:accessToken', authenticateSigner, async (req: Request, res: Response): Promise<void> => {
   try {
     const { fieldId, signatureData, type = 'draw' } = req.body;
@@ -393,7 +393,7 @@ router.post('/sign/:accessToken', authenticateSigner, async (req: Request, res: 
   }
 });
 
-// Complete field (for non-signature fields like date, text, checkbox)
+/** POST /api/v1/signing/complete-field/:accessToken - Completes a non-signature field (date, text, checkbox) with a value. */
 router.post('/complete-field/:accessToken', authenticateSigner, async (req: Request, res: Response): Promise<void> => {
   try {
     const { fieldId, value } = req.body;
@@ -497,7 +497,7 @@ router.post('/complete-field/:accessToken', authenticateSigner, async (req: Requ
   }
 });
 
-// Finish signing (mark recipient as complete) - WITH IDEMPOTENCY
+/** POST /api/v1/signing/finish/:accessToken - Marks a recipient as complete after all required fields are filled, with idempotency. */
 router.post('/finish/:accessToken', authenticateSigner, async (req: Request, res: Response): Promise<void> => {
   try {
     const recipient = req.signer as SignerData;
@@ -562,7 +562,7 @@ router.post('/finish/:accessToken', authenticateSigner, async (req: Request, res
   }
 });
 
-// Decline to sign
+/** POST /api/v1/signing/decline/:accessToken - Declines to sign the document with an optional reason. */
 router.post('/decline/:accessToken', authenticateSigner, async (req: Request, res: Response): Promise<void> => {
   try {
     const { reason } = req.body;
@@ -584,7 +584,7 @@ router.post('/decline/:accessToken', authenticateSigner, async (req: Request, re
   }
 });
 
-// Get signature image
+/** GET /api/v1/signing/signature-image/:signatureId/:accessToken - Returns a presigned URL for the recipient's captured signature image. */
 router.get('/signature-image/:signatureId/:accessToken', authenticateSigner, async (req: Request, res: Response): Promise<void> => {
   try {
     const { signatureId } = req.params;
@@ -610,4 +610,5 @@ router.get('/signature-image/:signatureId/:accessToken', authenticateSigner, asy
   }
 });
 
+/** Express router for the signing ceremony including session management, signature capture, field completion, and decline. */
 export default router;

@@ -24,7 +24,7 @@ interface SessionData {
   deviceId: string;
 }
 
-// Verify session token
+/** Validates session token from cookie or Authorization header, caches in Redis for 5 minutes. */
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
@@ -85,7 +85,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
   }
 }
 
-// Check if user is admin
+/** Restricts access to admin users only, returns 403 for non-admin roles. */
 export function adminMiddleware(req: Request, res: Response, next: NextFunction): void {
   if (req.user?.role !== 'admin') {
     res.status(403).json({ error: 'Admin access required' });

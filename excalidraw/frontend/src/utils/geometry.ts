@@ -3,6 +3,7 @@ import type { ExcalidrawElement, Point } from '../types';
 /**
  * Get the bounding box of an element.
  */
+/** Calculates the axis-aligned bounding box for a drawing element. */
 export const getBoundingBox = (element: ExcalidrawElement): { x: number; y: number; width: number; height: number } => {
   if (element.type === 'freehand' && element.points && element.points.length > 0) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -28,6 +29,7 @@ export const getBoundingBox = (element: ExcalidrawElement): { x: number; y: numb
 /**
  * Test if a point is inside a rectangle.
  */
+/** Tests if a point lies inside a rectangle. */
 export const pointInRect = (px: number, py: number, x: number, y: number, w: number, h: number): boolean => {
   const left = Math.min(x, x + w);
   const right = Math.max(x, x + w);
@@ -39,6 +41,7 @@ export const pointInRect = (px: number, py: number, x: number, y: number, w: num
 /**
  * Test if a point is inside an ellipse.
  */
+/** Tests if a point lies inside an ellipse. */
 export const pointInEllipse = (px: number, py: number, cx: number, cy: number, rx: number, ry: number): boolean => {
   const dx = (px - cx) / rx;
   const dy = (py - cy) / ry;
@@ -48,6 +51,7 @@ export const pointInEllipse = (px: number, py: number, cx: number, cy: number, r
 /**
  * Test if a point is inside a diamond (rotated square).
  */
+/** Tests if a point lies inside a diamond shape. */
 export const pointInDiamond = (px: number, py: number, x: number, y: number, w: number, h: number): boolean => {
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -59,6 +63,7 @@ export const pointInDiamond = (px: number, py: number, x: number, y: number, w: 
 /**
  * Distance from a point to a line segment.
  */
+/** Calculates the perpendicular distance from a point to a line segment. */
 export const distanceToLine = (px: number, py: number, x1: number, y1: number, x2: number, y2: number): number => {
   const dx = x2 - x1;
   const dy = y2 - y1;

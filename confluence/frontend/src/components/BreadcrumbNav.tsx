@@ -12,6 +12,7 @@ interface BreadcrumbNavProps {
   spaceName: string;
 }
 
+/** Renders breadcrumb navigation from space root through ancestor pages. */
 export default function BreadcrumbNav({ breadcrumbs, spaceKey, spaceName }: BreadcrumbNavProps) {
   return (
     <nav className="flex items-center gap-1 text-sm text-confluence-text-subtle mb-4 flex-wrap">

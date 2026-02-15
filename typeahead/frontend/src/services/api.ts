@@ -12,6 +12,7 @@ import { memoryCache } from './cache.js';
 const API_BASE = '/api/v1';
 const DEFAULT_TIMEOUT = 5000; // 5 seconds
 
+/** HTTP client for the typeahead API covering suggestions, trending, analytics, and admin endpoints. */
 class ApiService {
   private abortControllers: Map<string, AbortController> = new Map();
 

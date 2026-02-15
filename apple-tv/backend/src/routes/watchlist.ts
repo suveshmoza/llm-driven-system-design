@@ -2,9 +2,8 @@ import express, { Request, Response, Router } from 'express';
 import * as db from '../db/index.js';
 import { isAuthenticated } from '../middleware/auth.js';
 
+/** Watchlist routes for adding, removing, listing, and checking content in the user's saved list. */
 const router: Router = express.Router();
-
-interface WatchlistContentRow {
   id: string;
   title: string;
   description: string;

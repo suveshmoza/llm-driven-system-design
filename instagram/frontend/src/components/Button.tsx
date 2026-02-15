@@ -6,6 +6,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
+/** Reusable button with variant, size, and loading state support. */
 export function Button({
   children,
   variant = 'primary',

@@ -13,6 +13,7 @@ interface MetricCardProps {
   subtitle?: string;
 }
 
+/** Displays a single health metric value with icon, color theme, optional trend indicator, and subtitle. */
 export function MetricCard({
   title,
   value,

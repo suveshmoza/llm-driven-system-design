@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore';
 import { wsClient } from '../services/websocket';
 import { formatTime } from '../utils/format';
 
+/** Renders the in-meeting chat panel with message history and send input. */
 export function ChatPanel() {
   const { chatMessages, participants } = useMeetingStore();
   const { user } = useAuthStore();

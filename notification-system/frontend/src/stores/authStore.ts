@@ -16,6 +16,7 @@ interface AuthState {
   clearError: () => void;
 }
 
+/** Authentication state with token persistence, login, registration, and session validation. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({

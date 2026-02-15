@@ -14,6 +14,7 @@ interface SearchState {
   addRecentSearch: (query: string) => void;
 }
 
+/** Search results state with query execution, loading/error tracking, and localStorage-backed recent searches. */
 export const useSearchStore = create<SearchState>((set, get) => ({
   query: '',
   results: null,

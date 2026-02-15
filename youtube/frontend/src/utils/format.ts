@@ -6,6 +6,7 @@
  * @param seconds - Duration in seconds (can be null)
  * @returns Formatted time string (e.g., "1:23:45" or "3:45")
  */
+/** Formats seconds into a human-readable duration string (e.g. "1:30" or "2:05:30"). */
 export const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '0:00';
 
@@ -27,6 +28,7 @@ export const formatDuration = (seconds: number | null): string => {
  * @param count - Number of views
  * @returns Formatted string (e.g., "1.2M views", "500K views")
  */
+/** Formats view counts with K/M/B suffixes (e.g. 1500 becomes "1.5K views"). */
 export const formatViewCount = (count: number): string => {
   if (count >= 1000000000) {
     return `${(count / 1000000000).toFixed(1)}B views`;
@@ -48,6 +50,7 @@ export const formatViewCount = (count: number): string => {
  * @param count - Number of subscribers
  * @returns Formatted string (e.g., "1.23M subscribers")
  */
+/** Formats subscriber counts with K/M/B suffixes. */
 export const formatSubscriberCount = (count: number): string => {
   if (count >= 1000000000) {
     return `${(count / 1000000000).toFixed(2)}B subscribers`;
@@ -69,6 +72,7 @@ export const formatSubscriberCount = (count: number): string => {
  * @param dateString - ISO date string (can be null)
  * @returns Relative time string (e.g., "5 hours ago", "Just now")
  */
+/** Converts a date string into a relative time description (e.g. "3 hours ago"). */
 export const timeAgo = (dateString: string | null): string => {
   if (!dateString) return '';
 
@@ -100,6 +104,7 @@ export const timeAgo = (dateString: string | null): string => {
  * @param bytes - File size in bytes
  * @returns Formatted string (e.g., "1.50 MB", "256 KB")
  */
+/** Formats byte counts into human-readable file sizes (e.g. "1.5 MB"). */
 export const formatFileSize = (bytes: number): string => {
   if (bytes >= 1073741824) {
     return `${(bytes / 1073741824).toFixed(2)} GB`;
@@ -121,6 +126,7 @@ export const formatFileSize = (bytes: number): string => {
  * @param title - Video title to display on the placeholder
  * @returns Data URI string for the SVG image
  */
+/** Generates a deterministic placeholder thumbnail color based on the video title. */
 export const getPlaceholderThumbnail = (title: string): string => {
   // Return a simple data URI for placeholder
   return `data:image/svg+xml,${encodeURIComponent(`
@@ -141,6 +147,7 @@ export const getPlaceholderThumbnail = (title: string): string => {
  * @param maxLength - Maximum allowed length including ellipsis
  * @returns Original text or truncated text with "..."
  */
+/** Truncates text to a maximum length with an ellipsis. */
 export const truncate = (text: string, maxLength: number): string => {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 3) + '...';
@@ -156,6 +163,7 @@ export const truncate = (text: string, maxLength: number): string => {
  * @param username - Username for fallback avatar generation
  * @returns Avatar URL (either the provided one or a generated SVG data URI)
  */
+/** Returns the avatar URL or falls back to a generated placeholder. */
 export const getAvatarUrl = (avatarUrl: string | null, username: string): string => {
   if (avatarUrl) return avatarUrl;
   // Generate a simple avatar with first letter

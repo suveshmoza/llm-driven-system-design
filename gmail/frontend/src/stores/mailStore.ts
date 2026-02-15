@@ -27,6 +27,7 @@ interface MailState {
   clearCurrentThread: () => void;
 }
 
+/** Mail state managing threads, labels, unread counts, compose modal, and thread actions. */
 export const useMailStore = create<MailState>((set, get) => ({
   threads: [],
   totalThreads: 0,

@@ -1,6 +1,6 @@
 const API_BASE = '/api/v1';
 
-// Custom error class for rate limit errors
+/** Error thrown when API returns 429, includes retry-after seconds for backoff. */
 export class RateLimitError extends Error {
   retryAfter: number;
 
@@ -39,7 +39,7 @@ async function request<T>(
   return response.json();
 }
 
-// Auth API
+/** Authentication API methods for login, registration, logout, and session validation. */
 export const authApi = {
   login: (username: string, password: string) =>
     request<{ user: { id: string; username: string; email: string; role: string } }>(
@@ -68,7 +68,7 @@ export const authApi = {
     request<{ user: { id: string; username: string; role: string } }>('/auth/me'),
 };
 
-// Problems API
+/** Problems API for listing, fetching details, and retrieving submission history per problem. */
 export const problemsApi = {
   list: (params?: { difficulty?: string; search?: string; page?: number; limit?: number }) => {
     const searchParams = new URLSearchParams();
@@ -123,7 +123,7 @@ export const problemsApi = {
     }>(`/problems/${slug}/submissions`),
 };
 
-// Submissions API
+/** Submissions API for submitting code, running against test cases, and polling execution status. */
 export const submissionsApi = {
   submit: (problemSlug: string, language: string, code: string) =>
     request<{ submissionId: string; status: string; message: string }>('/submissions', {
@@ -175,7 +175,7 @@ export const submissionsApi = {
     }>(`/submissions/${id}/status`),
 };
 
-// Users API
+/** Users API for profiles, submission history, and problem-solving progress tracking. */
 export const usersApi = {
   getProfile: (id: string) =>
     request<{
@@ -221,7 +221,7 @@ export const usersApi = {
     }>('/users/me/progress'),
 };
 
-// Admin API
+/** Admin API for platform statistics, leaderboard rankings, and system health monitoring. */
 export const adminApi = {
   getStats: () =>
     request<{

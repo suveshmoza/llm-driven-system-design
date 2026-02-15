@@ -7,6 +7,7 @@ interface ComposeModalProps {
   onClose: () => void;
 }
 
+/** Renders a compose email modal with To/CC/BCC fields, subject, body, and send action. */
 export function ComposeModal({ onClose }: ComposeModalProps) {
   const [to, setTo] = useState<string[]>([]);
   const [cc, setCc] = useState<string[]>([]);

@@ -7,6 +7,7 @@ import type { Channel } from '../types';
 import { VideoPlayer } from './VideoPlayer';
 import { Chat } from './Chat';
 
+/** Renders a channel page with video player, channel info, follow/subscribe actions, and chat sidebar. */
 export function ChannelPage() {
   const { channelName } = useParams({ from: '/$channelName' });
   const { user } = useAuthStore();

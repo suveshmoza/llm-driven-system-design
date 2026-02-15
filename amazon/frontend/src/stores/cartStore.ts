@@ -15,6 +15,7 @@ interface CartState {
   clearCart: () => Promise<void>;
 }
 
+/** Global shopping cart state managing items, subtotal, and inventory-aware add/update/remove operations. */
 export const useCartStore = create<CartState>((set) => ({
   items: [],
   subtotal: '0.00',

@@ -2,10 +2,12 @@ import { Client } from '@elastic/elasticsearch';
 import { config } from '../config/index.js';
 import { logger } from './logger.js';
 
+/** Elasticsearch client instance for the wiki search index. */
 export const esClient = new Client({
   node: config.elasticsearch.node,
 });
 
+/** Creates the wiki_pages Elasticsearch index with custom analyzer if it does not exist. */
 export async function ensureIndex(): Promise<void> {
   try {
     const exists = await esClient.indices.exists({ index: config.elasticsearch.index });

@@ -39,6 +39,7 @@ function DraggableComponent({ definition }: { definition: ComponentDefinition })
   );
 }
 
+/** Renders the left palette of available widget types that can be dragged to the canvas. */
 export function ComponentPalette() {
   const componentDefinitions = useEditorStore((s) => s.componentDefinitions);
 

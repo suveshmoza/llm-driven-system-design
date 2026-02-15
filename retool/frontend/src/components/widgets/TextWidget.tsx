@@ -8,6 +8,7 @@ interface TextWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a text display widget with binding-resolved content. */
 export function TextWidget({ component }: TextWidgetProps) {
   const getBindingContext = useDataStore((s) => s.getBindingContext);
   const context = getBindingContext();

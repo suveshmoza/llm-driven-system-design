@@ -167,4 +167,5 @@ class WebSocketClient {
   }
 }
 
+/** Singleton WebSocket client for real-time meeting signaling and chat. */
 export const wsClient = new WebSocketClient();

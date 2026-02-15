@@ -2,6 +2,7 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { redis } from './redis.js';
 
+/** General API rate limiter: 500 requests per 15-minute window via Redis. */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 500,
@@ -14,6 +15,7 @@ export const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later' },
 });
 
+/** Authentication rate limiter: 20 requests per 15-minute window via Redis. */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,

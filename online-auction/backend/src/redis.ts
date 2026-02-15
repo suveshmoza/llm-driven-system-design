@@ -18,6 +18,7 @@ redis.on('connect', () => {
 });
 
 // Distributed lock implementation with metrics
+/** Acquires a distributed lock with SET NX and records metrics. */
 export const acquireLock = async (key: string, ttlSeconds: number = 5): Promise<Lock | null> => {
   const lockKey = `lock:${key}`;
   const lockValue = Date.now().toString();
@@ -33,6 +34,7 @@ export const acquireLock = async (key: string, ttlSeconds: number = 5): Promise<
   return null;
 };
 
+/** Releases a distributed lock using a Lua CAS script to prevent accidental deletion. */
 export const releaseLock = async (lock: Lock | null): Promise<void> => {
   if (!lock) return;
 
@@ -55,47 +57,57 @@ export const releaseLock = async (lock: Lock | null): Promise<void> => {
 export const publisher = redis.duplicate();
 export const subscriber = redis.duplicate();
 
+/** Publishes a bid update to the auction's Redis pub/sub channel. */
 export const publishBidUpdate = async (auctionId: string, data: unknown): Promise<void> => {
   await publisher.publish(`auction:${auctionId}`, JSON.stringify(data));
 };
 
 // Auction endings sorted set
+/** Adds an auction to the sorted set of scheduled endings by timestamp. */
 export const scheduleAuctionEnd = async (auctionId: string, endTime: Date | string): Promise<void> => {
   const timestamp = new Date(endTime).getTime();
   await redis.zadd('auction_endings', timestamp, auctionId);
 };
 
+/** Removes an auction from the scheduled endings sorted set. */
 export const removeAuctionFromSchedule = async (auctionId: string): Promise<void> => {
   await redis.zrem('auction_endings', auctionId);
 };
 
+/** Returns auction IDs whose end times are before the given timestamp. */
 export const getEndingAuctions = async (beforeTimestamp: number): Promise<string[]> => {
   return redis.zrangebyscore('auction_endings', 0, beforeTimestamp);
 };
 
 // Session management
+/** Stores a user session token in Redis with a TTL. */
 export const setSession = async (token: string, userId: string, ttlSeconds: number = 86400): Promise<void> => {
   await redis.setex(`session:${token}`, ttlSeconds, userId);
 };
 
+/** Retrieves the user ID associated with a session token. */
 export const getSession = async (token: string): Promise<string | null> => {
   return redis.get(`session:${token}`);
 };
 
+/** Deletes a session token from Redis. */
 export const deleteSession = async (token: string): Promise<void> => {
   await redis.del(`session:${token}`);
 };
 
 // Cache for auction data
+/** Caches auction data in Redis with a TTL. */
 export const cacheAuction = async (auctionId: string, data: Auction, ttlSeconds: number = 60): Promise<void> => {
   await redis.setex(`auction:cache:${auctionId}`, ttlSeconds, JSON.stringify(data));
 };
 
+/** Retrieves cached auction data, returning null on miss. */
 export const getCachedAuction = async (auctionId: string): Promise<Auction | null> => {
   const data = await redis.get(`auction:cache:${auctionId}`);
   return data ? JSON.parse(data) : null;
 };
 
+/** Invalidates all cached data for an auction (full data, bids, current bid). */
 export const invalidateAuctionCache = async (auctionId: string): Promise<void> => {
   await redis.del(`auction:cache:${auctionId}`);
   await redis.del(`auction:bids:${auctionId}`);

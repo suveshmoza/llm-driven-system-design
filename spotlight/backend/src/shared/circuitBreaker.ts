@@ -61,6 +61,7 @@ export interface CircuitBreakerState {
 /**
  * Create or get a circuit breaker for a specific operation
  */
+/** Creates a circuit breaker with configurable thresholds and fallback behavior. */
 export function createCircuitBreaker<T>(
   name: string,
   action: (...args: unknown[]) => Promise<T>,
@@ -113,6 +114,7 @@ export function createCircuitBreaker<T>(
 /**
  * Create a circuit breaker specifically for Elasticsearch index operations
  */
+/** Creates a circuit breaker specifically for Elasticsearch indexing operations. */
 export function createIndexCircuitBreaker<T>(
   indexName: string,
   action: (...args: unknown[]) => Promise<T>
@@ -123,6 +125,7 @@ export function createIndexCircuitBreaker<T>(
 /**
  * Execute an operation with circuit breaker protection
  */
+/** Wraps an async operation with circuit breaker protection and fallback. */
 export async function withCircuitBreaker<T>(
   breakerName: string,
   action: () => Promise<T>,

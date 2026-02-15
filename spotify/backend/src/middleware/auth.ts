@@ -78,6 +78,7 @@ async function getUserRole(userId: string): Promise<string | null> {
 /**
  * Clear role cache for a user (call after role changes).
  */
+/** Invalidates the cached role entry for a user after role changes. */
 export function clearRoleCache(userId: string): void {
   roleCache.delete(`role:${userId}`);
 }
@@ -86,6 +87,7 @@ export function clearRoleCache(userId: string): void {
  * Require authentication middleware.
  * Attaches user info to request.
  */
+/** Middleware that rejects unauthenticated requests with 401. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void | Response {
   if (!req.session || !req.session.userId) {
     authEventsTotal.inc({ event: 'unauthorized', success: 'false' });
@@ -100,6 +102,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
  * Optional authentication middleware.
  * Continues whether or not user is authenticated.
  */
+/** Middleware that attaches user info if authenticated but allows anonymous access. */
 export function optionalAuth(req: Request, res: Response, next: NextFunction): void {
   // Just continue - session may or may not have userId
   next();
@@ -214,6 +217,7 @@ export function requirePremium(req: Request, res: Response, next: NextFunction):
  * @param {string} ownerId - Owner of the resource
  * @param {string} userRole - Role of the user
  */
+/** Checks if a user can access a resource owned by another user. */
 export function canAccessResource(userId: string, ownerId: string, userRole: string): boolean {
   // Admins can access anything
   if (userRole === Roles.ADMIN) return true;

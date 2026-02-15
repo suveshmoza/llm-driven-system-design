@@ -78,7 +78,7 @@ interface FieldRow {
   recipient_email?: string;
 }
 
-// List envelopes for current user
+/** GET /api/v1/envelopes - Lists envelopes for the current user with optional status filter and pagination. */
 router.get('/', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { status, page = '1', limit = '20' } = req.query as { status?: string; page?: string; limit?: string };
@@ -132,7 +132,7 @@ router.get('/', authenticate, async (req: Request, res: Response): Promise<void>
   }
 });
 
-// Create new envelope
+/** POST /api/v1/envelopes - Creates a new draft envelope with name, message, and authentication settings. */
 router.post('/', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, message, authenticationLevel = 'email', expirationDate } = req.body;
@@ -171,7 +171,7 @@ router.post('/', authenticate, async (req: Request, res: Response): Promise<void
   }
 });
 
-// Get envelope details
+/** GET /api/v1/envelopes/:id - Returns full envelope details including documents, recipients, and fields. */
 router.get('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -231,7 +231,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response): Promise<vo
   }
 });
 
-// Update envelope
+/** PUT /api/v1/envelopes/:id - Updates envelope properties for draft envelopes only. */
 router.put('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -277,7 +277,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response): Promise<vo
   }
 });
 
-// Send envelope
+/** POST /api/v1/envelopes/:id/send - Sends a draft envelope to recipients via the workflow engine. */
 router.post('/:id/send', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -312,7 +312,7 @@ router.post('/:id/send', authenticate, async (req: Request, res: Response): Prom
   }
 });
 
-// Void envelope
+/** POST /api/v1/envelopes/:id/void - Voids an active envelope with an optional reason. */
 router.post('/:id/void', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -346,7 +346,7 @@ router.post('/:id/void', authenticate, async (req: Request, res: Response): Prom
   }
 });
 
-// Delete envelope (draft only)
+/** DELETE /api/v1/envelopes/:id - Permanently deletes a draft envelope. */
 router.delete('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -380,7 +380,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response): Promise
   }
 });
 
-// Get envelope statistics for dashboard
+/** GET /api/v1/envelopes/stats/summary - Returns envelope count breakdown by status for the current user's dashboard. */
 router.get('/stats/summary', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.user) {
@@ -408,4 +408,5 @@ router.get('/stats/summary', authenticate, async (req: Request, res: Response): 
   }
 });
 
+/** Express router for envelope CRUD operations, sending, voiding, and statistics. */
 export default router;

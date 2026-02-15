@@ -2,6 +2,7 @@ import { Outlet } from '@tanstack/react-router';
 import { Sidebar } from './Sidebar';
 import { TrendingSidebar } from './TrendingSidebar';
 
+/** Renders the three-column Twitter layout with sidebar, main feed, and trending panel. */
 export function Layout() {
   return (
     <div className="min-h-screen bg-white">

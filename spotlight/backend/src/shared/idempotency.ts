@@ -101,6 +101,7 @@ const store = new IdempotencyStore();
 /**
  * Generate an idempotency key from request data
  */
+/** Generates a deterministic idempotency key from operation type and input data. */
 export function generateIdempotencyKey(operation: string, data: unknown): string {
   const hash = crypto.createHash('sha256');
   hash.update(operation);
@@ -112,6 +113,7 @@ export function generateIdempotencyKey(operation: string, data: unknown): string
  * Express middleware for handling idempotency
  * Checks Idempotency-Key header and returns cached results if available
  */
+/** Express middleware that deduplicates requests using idempotency keys. */
 export function idempotencyMiddleware(operationType: string = 'unknown') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
@@ -208,6 +210,7 @@ export function idempotencyMiddleware(operationType: string = 'unknown') {
 /**
  * Wrapper function for idempotent operations
  */
+/** Wraps an operation with idempotency checking and result caching. */
 export async function withIdempotency<T extends Record<string, unknown>>(
   idempotencyKey: string | undefined | null,
   operation: () => Promise<T>,

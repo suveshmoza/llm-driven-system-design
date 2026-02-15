@@ -2,6 +2,7 @@ import { useAuthStore } from '../stores/authStore';
 import { SearchBar } from './SearchBar';
 import { getInitials, stringToColor } from '../utils/format';
 
+/** Renders the top header bar with Gmail branding, search bar, and user menu. */
 export function Header() {
   const { user, logout } = useAuthStore();
 

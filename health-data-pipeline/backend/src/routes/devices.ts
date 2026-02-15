@@ -6,6 +6,7 @@ import { logger } from '../shared/logger.js';
 import { checkIdempotency, storeIdempotencyKey, generateIdempotencyKey } from '../shared/idempotency.js';
 import { samplesIngestedTotal, syncDuration, createTimer } from '../shared/metrics.js';
 
+/** Device management router for registration, listing, and health data sync with idempotency. */
 const router: Router = express.Router();
 
 // All routes require authentication

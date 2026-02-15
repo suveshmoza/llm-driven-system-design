@@ -38,6 +38,7 @@ export interface Config {
   buckets: BucketsConfig;
 }
 
+/** Application configuration for database, Redis, MinIO, session, and storage bucket settings. */
 const config: Config = {
   port: parseInt(process.env.PORT || '3000', 10),
   database: {

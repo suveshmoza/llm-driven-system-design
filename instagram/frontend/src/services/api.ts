@@ -41,6 +41,7 @@ async function requestFormData<T>(
 }
 
 // Auth
+/** API client for authentication: register, login, logout, and session check. */
 export const authApi = {
   register: (data: { username: string; email: string; password: string; displayName?: string }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
@@ -54,6 +55,7 @@ export const authApi = {
 };
 
 // Posts
+/** API client for post CRUD, likes, and post retrieval. */
 export const postsApi = {
   create: (formData: FormData) =>
     requestFormData<{ post: import('../types').Post }>('/posts', formData),
@@ -83,6 +85,7 @@ export const postsApi = {
 };
 
 // Comments
+/** API client for comment CRUD on posts. */
 export const commentsApi = {
   getComments: (postId: string, cursor?: string) =>
     request<{ comments: import('../types').Comment[]; nextCursor: string | null }>(
@@ -106,6 +109,7 @@ export const commentsApi = {
 };
 
 // Users
+/** API client for user profiles, follow/unfollow, and user search. */
 export const usersApi = {
   getProfile: (username: string) =>
     request<{ user: import('../types').User }>(`/users/${username}`),
@@ -144,6 +148,7 @@ export const usersApi = {
 };
 
 // Feed
+/** API client for personalized feed retrieval with pagination. */
 export const feedApi = {
   getFeed: (cursor?: string) =>
     request<{ posts: import('../types').Post[]; nextCursor: string | null }>(
@@ -157,6 +162,7 @@ export const feedApi = {
 };
 
 // Stories
+/** API client for story creation, viewing, and story tray retrieval. */
 export const storiesApi = {
   create: (formData: FormData) =>
     requestFormData<{ story: import('../types').Story }>('/stories', formData),

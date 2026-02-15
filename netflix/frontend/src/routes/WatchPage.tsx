@@ -5,6 +5,7 @@ import { videoService } from '../services/videos';
 import { usePlayerStore } from '../stores/playerStore';
 import type { Video, Episode } from '../types';
 
+/** Renders the full-screen video player with adaptive quality selection and progress tracking. */
 export function WatchPage() {
   const { videoId } = useParams({ from: '/watch/$videoId' });
   const search = useSearch({ from: '/watch/$videoId' });

@@ -1,6 +1,7 @@
 import * as Minio from 'minio';
 import config from '../config/index.js';
 
+/** MinIO object storage client for video and thumbnail asset management. */
 const minioClient = new Minio.Client({
   endPoint: config.minio.endPoint,
   port: config.minio.port,
@@ -10,6 +11,7 @@ const minioClient = new Minio.Client({
 });
 
 // Ensure buckets exist
+/** Creates required MinIO buckets (videos, thumbnails) if they do not already exist. */
 const initBuckets = async (): Promise<void> => {
   const buckets: string[] = [config.buckets.videos, config.buckets.thumbnails];
 

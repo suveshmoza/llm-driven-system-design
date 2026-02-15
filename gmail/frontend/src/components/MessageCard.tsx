@@ -7,6 +7,7 @@ interface MessageCardProps {
   isLast: boolean;
 }
 
+/** Renders a single email message within a thread with expandable body and sender avatar. */
 export function MessageCard({ message, isLast }: MessageCardProps) {
   const [expanded, setExpanded] = useState(isLast);
 

@@ -27,6 +27,7 @@ interface LeaderboardEntry {
   avg_runtime: string;
 }
 
+/** Renders the admin dashboard with platform stats, submission breakdown, and leaderboard table. */
 export function AdminPage() {
   const { user, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();

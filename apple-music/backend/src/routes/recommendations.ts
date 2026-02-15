@@ -16,6 +16,7 @@ interface RecentlyPlayedRow {
 }
 
 // Get personalized "For You" recommendations
+/** GET /api/recommendations/for-you - Returns personalized sections based on listening history and genre preferences. */
 router.get('/for-you', authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -193,6 +194,7 @@ router.get('/for-you', authenticate, async (req: Request, res: Response) => {
 });
 
 // Get similar tracks to a given track
+/** GET /api/recommendations/similar/:trackId - Returns tracks similar to the given track based on genre and artist overlap. */
 router.get('/similar/:trackId', optionalAuth, async (req: Request<{ trackId: string }, unknown, unknown, { limit?: string }>, res: Response) => {
   try {
     const { trackId } = req.params;
@@ -243,6 +245,7 @@ router.get('/similar/:trackId', optionalAuth, async (req: Request<{ trackId: str
 });
 
 // Get similar artists
+/** GET /api/recommendations/similar-artists/:artistId - Returns artists with overlapping genres. */
 router.get('/similar-artists/:artistId', optionalAuth, async (req: Request<{ artistId: string }, unknown, unknown, { limit?: string }>, res: Response) => {
   try {
     const { artistId } = req.params;
@@ -280,6 +283,7 @@ router.get('/similar-artists/:artistId', optionalAuth, async (req: Request<{ art
 });
 
 // Get browse sections (for non-authenticated users or general browsing)
+/** GET /api/recommendations/browse - Returns curated browse sections for the public landing page. */
 router.get('/browse', optionalAuth, async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'browse:sections';

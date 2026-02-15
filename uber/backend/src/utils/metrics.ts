@@ -1,7 +1,7 @@
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import type { Request, Response, NextFunction } from 'express';
 
-// Create a custom registry
+/** Prometheus metrics registry for ride-hailing service observability. */
 export const registry = new Registry();
 
 // Collect default Node.js metrics (CPU, memory, event loop, etc.)
@@ -252,6 +252,7 @@ interface RequestWithRoute {
 }
 
 // Middleware to track HTTP metrics
+/** Express middleware that tracks HTTP request count and duration by method, route, and status. */
 export const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
   const reqWithRoute = req as RequestWithRoute;

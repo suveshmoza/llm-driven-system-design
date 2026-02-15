@@ -46,6 +46,7 @@ const VOLATILITY: Record<string, number> = {
   'SOL-ETH': 0.03,
 };
 
+/** Simulated market price engine using Geometric Brownian Motion with per-pair volatility. */
 class MarketService {
   private prices: Map<string, number> = new Map();
   private priceHistory: Map<string, number[]> = new Map();
@@ -94,6 +95,7 @@ class MarketService {
     return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
   }
 
+  /** Simulates a price tick using Geometric Brownian Motion and updates candle data. */
   simulatePriceTick(symbol: string): PriceData | null {
     const currentPrice = this.prices.get(symbol);
     if (currentPrice === undefined) return null;
@@ -165,10 +167,12 @@ class MarketService {
     };
   }
 
+  /** Returns the current price for a symbol, or undefined if not tracked. */
   getCurrentPrice(symbol: string): number | undefined {
     return this.prices.get(symbol);
   }
 
+  /** Returns full price data including 24h change and volume for a symbol. */
   getPriceData(symbol: string): PriceData | null {
     const price = this.prices.get(symbol);
     if (price === undefined) return null;
@@ -187,6 +191,7 @@ class MarketService {
     };
   }
 
+  /** Returns price data for all tracked trading pairs. */
   getAllPrices(): Map<string, PriceData> {
     const result = new Map<string, PriceData>();
     for (const symbol of this.prices.keys()) {
@@ -196,10 +201,12 @@ class MarketService {
     return result;
   }
 
+  /** Returns the current in-progress candle for a symbol. */
   getCurrentCandle(symbol: string): CandleState | undefined {
     return this.candles.get(symbol);
   }
 
+  /** Returns the most recently completed candle, or null if current candle is still open. */
   getCompletedCandle(symbol: string): CandleState | null {
     const candle = this.candles.get(symbol);
     if (!candle) return null;
@@ -211,10 +218,12 @@ class MarketService {
     return null;
   }
 
+  /** Returns all tracked trading pair symbols. */
   getAllSymbols(): string[] {
     return Array.from(this.prices.keys());
   }
 
+  /** Updates the market price from an executed trade and adjusts 24h high/low. */
   updatePriceFromTrade(symbol: string, price: number, volume: number): void {
     this.prices.set(symbol, price);
 
@@ -228,4 +237,5 @@ class MarketService {
   }
 }
 
+/** Singleton market service instance shared across the application. */
 export const marketService = new MarketService();

@@ -20,6 +20,7 @@ export interface AuthenticatedRequest extends Request {
   storeIdempotencyResult?: (status: string, response: unknown) => Promise<void>;
 }
 
+/** Validates session via x-session-id header and attaches user object to the request. */
 export const authMiddleware = async (
   req: Request,
   res: Response,
@@ -59,6 +60,7 @@ export const authMiddleware = async (
   }
 };
 
+/** Rejects non-admin users with 403 Forbidden after authentication. */
 export const adminMiddleware = (
   req: Request,
   res: Response,

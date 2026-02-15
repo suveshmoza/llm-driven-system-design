@@ -3,14 +3,8 @@ import * as db from '../db/index.js';
 import { client as redis } from '../db/redis.js';
 import { isAuthenticated } from '../middleware/auth.js';
 
+/** Recommendation routes for personalized content, genre-based, trending, and similarity suggestions. */
 const router: Router = express.Router();
-
-interface ContentRow {
-  id: string;
-  title: string;
-  description: string;
-  thumbnail_url: string;
-  banner_url?: string;
   content_type: string;
   genres: string[];
   rating: string;

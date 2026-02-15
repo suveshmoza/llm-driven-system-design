@@ -250,4 +250,5 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
+/** Router for event CRUD with date range queries and conflict detection. */
 export default router

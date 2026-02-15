@@ -176,6 +176,7 @@ export async function withRetry<T>(
 /**
  * Create a retryable version of a function
  */
+/** Creates a retryable wrapper around a function with configurable backoff. */
 export function retryable<T extends (...args: unknown[]) => Promise<unknown>>(
   fn: T,
   options: Partial<RetryConfig> = {}

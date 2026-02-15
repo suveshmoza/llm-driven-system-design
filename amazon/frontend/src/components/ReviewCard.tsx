@@ -6,6 +6,7 @@ interface ReviewCardProps {
   review: Review;
 }
 
+/** Renders a single product review with avatar, rating stars, verified purchase badge, and helpful button. */
 export function ReviewCard({ review }: ReviewCardProps) {
   const [helpfulCount, setHelpfulCount] = useState(review.helpful_count);
   const [marked, setMarked] = useState(false);

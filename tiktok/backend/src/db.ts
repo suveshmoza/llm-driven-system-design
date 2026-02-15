@@ -14,9 +14,11 @@ pool.on('error', (err: Error) => {
   process.exit(-1);
 });
 
+/** Executes a parameterized SQL query against the connection pool. */
 export const query = (text: string, params?: unknown[]): Promise<QueryResult> =>
   pool.query(text, params);
 
+/** Acquires a client from the pool for manual transaction control. */
 export const getClient = (): Promise<PoolClient> => pool.connect();
 
 export default pool;

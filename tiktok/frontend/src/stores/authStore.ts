@@ -13,6 +13,7 @@ interface AuthState {
   updateUser: (updates: Partial<User>) => void;
 }
 
+/** Authentication state with login, register, logout, and profile update. */
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,

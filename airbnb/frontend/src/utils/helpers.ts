@@ -1,13 +1,16 @@
 import { format, parseISO, differenceInDays } from 'date-fns';
 
+/** Formats an ISO date string to "MMM d, yyyy" format (e.g., "Jan 5, 2024"). */
 export function formatDate(dateString: string): string {
   return format(parseISO(dateString), 'MMM d, yyyy');
 }
 
+/** Formats an ISO date string to short "MMM d" format (e.g., "Jan 5"). */
 export function formatDateShort(dateString: string): string {
   return format(parseISO(dateString), 'MMM d');
 }
 
+/** Formats a check-in/check-out date range, combining months when they match. */
 export function formatDateRange(checkIn: string, checkOut: string): string {
   const checkInDate = parseISO(checkIn);
   const checkOutDate = parseISO(checkOut);
@@ -18,10 +21,12 @@ export function formatDateRange(checkIn: string, checkOut: string): string {
   return `${format(checkInDate, 'MMM d')} - ${format(checkOutDate, 'MMM d, yyyy')}`;
 }
 
+/** Calculates the number of nights between check-in and check-out dates. */
 export function getNights(checkIn: string, checkOut: string): number {
   return differenceInDays(parseISO(checkOut), parseISO(checkIn));
 }
 
+/** Formats a number as USD currency without decimal places (e.g., "$120"). */
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -31,15 +36,18 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+/** Formats a rating number to two decimal places, or returns "New" if no rating exists. */
 export function formatRating(rating: number | undefined | null): string {
   if (!rating) return 'New';
   return rating.toFixed(2);
 }
 
+/** Returns the singular or plural form of a word based on count. */
 export function pluralize(count: number, singular: string, plural?: string): string {
   return count === 1 ? singular : (plural || `${singular}s`);
 }
 
+/** Converts an amenity key (e.g., "air_conditioning") to a human-readable label. */
 export function getAmenityLabel(amenity: string): string {
   const labels: Record<string, string> = {
     wifi: 'WiFi',
@@ -63,6 +71,7 @@ export function getAmenityLabel(amenity: string): string {
   return labels[amenity] || amenity.replace(/_/g, ' ');
 }
 
+/** Converts a property type key to a human-readable label. */
 export function getPropertyTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     apartment: 'Apartment',
@@ -77,6 +86,7 @@ export function getPropertyTypeLabel(type: string): string {
   return labels[type] || type;
 }
 
+/** Converts a room type key (e.g., "entire_place") to a human-readable label. */
 export function getRoomTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     entire_place: 'Entire place',
@@ -86,6 +96,7 @@ export function getRoomTypeLabel(type: string): string {
   return labels[type] || type;
 }
 
+/** Converts a booking status key to a human-readable label. */
 export function getBookingStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     pending: 'Pending',
@@ -97,6 +108,7 @@ export function getBookingStatusLabel(status: string): string {
   return labels[status] || status;
 }
 
+/** Returns Tailwind CSS color classes for a booking status badge. */
 export function getBookingStatusColor(status: string): string {
   const colors: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-800',

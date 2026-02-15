@@ -8,6 +8,7 @@ interface SpaceSidebarProps {
   spaceKey: string;
 }
 
+/** Left sidebar with space header, create-page button, and hierarchical page tree. */
 export default function SpaceSidebar({ space, tree, spaceKey }: SpaceSidebarProps) {
   return (
     <aside className="w-72 bg-confluence-sidebar border-r border-confluence-border overflow-y-auto scrollbar-thin shrink-0">

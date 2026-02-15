@@ -18,7 +18,7 @@ export interface AuthenticatedRequest extends Request {
   sessionToken?: string;
 }
 
-// Authenticate user from session token
+/** Validates session token and attaches user to request, returning 401 if unauthenticated. */
 export async function authenticate(
   req: AuthenticatedRequest,
   res: Response,
@@ -61,7 +61,7 @@ export async function authenticate(
   }
 }
 
-// Optional authentication - doesn't fail if not authenticated
+/** Attaches user to request if authenticated, but does not reject unauthenticated requests. */
 export async function optionalAuth(
   req: AuthenticatedRequest,
   res: Response,
@@ -92,7 +92,7 @@ export async function optionalAuth(
   }
 }
 
-// Require specific roles
+/** Returns middleware that restricts access to users with the specified roles. */
 export function requireRole(
   ...roles: Array<'user' | 'business_owner' | 'admin'>
 ): RequestHandler {
@@ -117,10 +117,10 @@ export function requireRole(
   };
 }
 
-// Require admin role
+/** Middleware restricting access to admin users only. */
 export const requireAdmin: RequestHandler = requireRole('admin');
 
-// Require business owner or admin
+/** Middleware restricting access to business owners and admins. */
 export const requireBusinessOwner: RequestHandler = requireRole(
   'business_owner',
   'admin'

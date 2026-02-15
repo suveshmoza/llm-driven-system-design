@@ -120,6 +120,7 @@ async function updateProductRatings(): Promise<void> {
   }
 }
 
+/** Starts periodic background jobs for reservation cleanup, recommendation updates, and rating aggregation. */
 export function startBackgroundJobs(): void {
   // Release expired reservations every minute
   setInterval(releaseExpiredReservations, 60 * 1000);

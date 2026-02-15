@@ -21,7 +21,7 @@ async function request<T>(
   return response.json();
 }
 
-// Auth
+/** Authentication API for athlete login, registration, logout, and session checks. */
 export const auth = {
   login: (email: string, password: string) =>
     request<{ user: import('../types').User }>('/auth/login', {
@@ -42,7 +42,7 @@ export const auth = {
     request<{ user: import('../types').User }>('/auth/me'),
 };
 
-// Activities
+/** Activity API for listing, uploading GPX files, simulating routes, and managing kudos/comments. */
 export const activities = {
   list: (params?: { limit?: number; offset?: number; type?: string; userId?: string }) => {
     const query = new URLSearchParams();
@@ -105,7 +105,7 @@ export const activities = {
     }),
 };
 
-// Feed
+/** Social activity feed API for following-based feeds and explore discovery. */
 export const feed = {
   get: (params?: { limit?: number; before?: number }) => {
     const query = new URLSearchParams();
@@ -123,7 +123,7 @@ export const feed = {
   },
 };
 
-// Users
+/** User profile and social API for profiles, follow/unfollow, and follower/following lists. */
 export const users = {
   get: (id: string) =>
     request<import('../types').User>(`/users/${id}`),
@@ -147,7 +147,7 @@ export const users = {
     request<{ achievements: import('../types').Achievement[] }>(`/users/${id}/achievements`),
 };
 
-// Segments
+/** Segment API for browsing, leaderboard retrieval, effort history, and segment creation. */
 export const segments = {
   list: (params?: { limit?: number; offset?: number; type?: string; search?: string; lat?: number; lng?: number }) => {
     const query = new URLSearchParams();
@@ -185,7 +185,7 @@ export const segments = {
     request<{ message: string }>(`/segments/${id}`, { method: 'DELETE' }),
 };
 
-// Stats
+/** Statistics API for personal records, achievement progress, and admin-level platform metrics. */
 export const stats = {
   me: () =>
     request<import('../types').UserStats>('/stats/me'),

@@ -1,5 +1,6 @@
 import { useAuthStore } from '../stores/auth';
 
+/** Renders the top navigation bar with user info and logout button. */
 export function Header() {
   const { user, logout } = useAuthStore();
 

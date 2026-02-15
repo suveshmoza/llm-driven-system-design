@@ -1,7 +1,7 @@
 import pg, { Pool, PoolClient, QueryResult } from 'pg';
 import config from '../config/index.js';
 
-// Main pool for general queries
+/** PostgreSQL connection pool with multi-tenant Row-Level Security support via store_id context. */
 const pool: Pool = new pg.Pool(config.database);
 
 // Test connection
@@ -14,7 +14,7 @@ pool.on('error', (err: Error) => {
   process.exit(-1);
 });
 
-// Execute a query with tenant context set
+/** Executes a SQL query with tenant isolation by setting the RLS store_id context before querying. */
 export async function queryWithTenant(
   storeId: number,
   queryText: string,
@@ -31,12 +31,12 @@ export async function queryWithTenant(
   }
 }
 
-// Execute a query without tenant context (for platform operations)
+/** Executes a SQL query without tenant context for platform-wide operations. */
 export async function query(queryText: string, params: unknown[] = []): Promise<QueryResult> {
   return pool.query(queryText, params);
 }
 
-// Get a client with tenant context set (for transactions)
+/** Acquires a pool client with tenant RLS context for multi-statement transactions. */
 export async function getClientWithTenant(storeId: number): Promise<PoolClient> {
   const client = await pool.connect();
   await client.query(`SET app.current_store_id = '${storeId}'`);

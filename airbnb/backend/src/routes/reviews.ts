@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+/** POST /api/reviews - Creates a review for a completed booking. Supports both guest and host reviews. */
 // Create review (for a completed booking)
 router.post('/', authenticate, async (req, res) => {
   const { booking_id, rating, cleanliness_rating, communication_rating, location_rating, value_rating, content } = req.body;
@@ -71,6 +72,7 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
+/** GET /api/reviews/listing/:listingId - Returns paginated guest reviews and rating statistics for a listing. */
 // Get reviews for a listing (only public/visible ones)
 router.get('/listing/:listingId', async (req, res) => {
   const { listingId } = req.params;
@@ -113,6 +115,7 @@ router.get('/listing/:listingId', async (req, res) => {
   }
 });
 
+/** GET /api/reviews/user/:userId - Returns reviews about a user as host, guest, or both. */
 // Get reviews about a user (as host or guest)
 router.get('/user/:userId', async (req, res) => {
   const { userId } = req.params;
@@ -153,6 +156,7 @@ router.get('/user/:userId', async (req, res) => {
   }
 });
 
+/** GET /api/reviews/booking/:bookingId/status - Returns review completion status and visibility for a booking. */
 // Get review status for a booking (what reviews exist, visibility)
 router.get('/booking/:bookingId/status', authenticate, async (req, res) => {
   const { bookingId } = req.params;

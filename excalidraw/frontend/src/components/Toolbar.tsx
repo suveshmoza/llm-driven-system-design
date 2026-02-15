@@ -12,6 +12,7 @@ const tools: { id: Tool; label: string; shortcut: string; icon: string }[] = [
   { id: 'text', label: 'Text', shortcut: 'T', icon: 'T' },
 ];
 
+/** Renders the drawing toolbar with shape tools, color picker, and undo/redo. */
 export function Toolbar() {
   const { activeTool, setActiveTool } = useCanvasStore();
 

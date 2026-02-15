@@ -13,6 +13,7 @@ interface AuthState {
   updateBalance: (balance: number) => void;
 }
 
+/** Authentication state with session management, login/register/logout, and balance tracking. */
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
@@ -78,6 +79,7 @@ interface FeedState {
   updateItem: (id: string, updates: Partial<Transfer>) => void;
 }
 
+/** Social feed state managing personal and global transaction feeds. */
 export const useFeedStore = create<FeedState>((set) => ({
   items: [],
   isLoading: false,
@@ -120,6 +122,7 @@ interface RequestsState {
   loadRequests: () => Promise<void>;
 }
 
+/** Payment request state managing sent and received money requests. */
 export const useRequestsStore = create<RequestsState>((set) => ({
   sent: [],
   received: [],
@@ -147,6 +150,7 @@ interface WalletState {
   loadWallet: () => Promise<void>;
 }
 
+/** Wallet state managing balance, pending balance, and linked payment methods. */
 export const useWalletStore = create<WalletState>((set) => ({
   balance: 0,
   pendingBalance: 0,
@@ -177,6 +181,7 @@ interface FriendsState {
   loadRequests: () => Promise<void>;
 }
 
+/** Friends state managing accepted friends and pending friend requests. */
 export const useFriendsStore = create<FriendsState>((set) => ({
   friends: [],
   requests: [],

@@ -32,6 +32,7 @@ async function request<T>(
   return response.json();
 }
 
+/** Client-side API functions for auth, wallet, transfers, requests, feed, friends, and payment methods. */
 export const api = {
   // Auth
   login: (username: string, password: string) =>

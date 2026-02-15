@@ -1,5 +1,6 @@
 import * as Minio from 'minio';
 
+/** MinIO S3-compatible client instance for document and signature storage. */
 export const minioClient = new Minio.Client({
   endPoint: process.env.MINIO_ENDPOINT || 'localhost',
   port: parseInt(process.env.MINIO_PORT || '9000'),
@@ -11,6 +12,7 @@ export const minioClient = new Minio.Client({
 const DOCUMENTS_BUCKET = 'docusign-documents';
 const SIGNATURES_BUCKET = 'docusign-signatures';
 
+/** Creates the documents and signatures buckets if they do not already exist. */
 export async function initializeMinio() {
   // Create buckets if they don't exist
   const docsBucketExists = await minioClient.bucketExists(DOCUMENTS_BUCKET);
@@ -26,6 +28,7 @@ export async function initializeMinio() {
   }
 }
 
+/** Uploads a document buffer to the documents bucket and returns the storage key. */
 export async function uploadDocument(key: string, buffer: Buffer, contentType: string): Promise<string> {
   await minioClient.putObject(DOCUMENTS_BUCKET, key, buffer, buffer.length, {
     'Content-Type': contentType
@@ -33,10 +36,12 @@ export async function uploadDocument(key: string, buffer: Buffer, contentType: s
   return key;
 }
 
+/** Retrieves a document from MinIO as a readable stream. */
 export async function getDocument(key: string): Promise<NodeJS.ReadableStream> {
   return await minioClient.getObject(DOCUMENTS_BUCKET, key);
 }
 
+/** Retrieves a document from MinIO and returns the complete file contents as a Buffer. */
 export async function getDocumentBuffer(key: string): Promise<Buffer> {
   const stream = await minioClient.getObject(DOCUMENTS_BUCKET, key);
   const chunks: Buffer[] = [];
@@ -47,10 +52,12 @@ export async function getDocumentBuffer(key: string): Promise<Buffer> {
   });
 }
 
+/** Generates a presigned GET URL for a document with configurable expiration. */
 export async function getDocumentUrl(key: string, expiresInSeconds: number = 3600): Promise<string> {
   return await minioClient.presignedGetObject(DOCUMENTS_BUCKET, key, expiresInSeconds);
 }
 
+/** Uploads a signature image buffer to the signatures bucket and returns the storage key. */
 export async function uploadSignature(key: string, buffer: Buffer, contentType: string): Promise<string> {
   await minioClient.putObject(SIGNATURES_BUCKET, key, buffer, buffer.length, {
     'Content-Type': contentType
@@ -58,10 +65,12 @@ export async function uploadSignature(key: string, buffer: Buffer, contentType: 
   return key;
 }
 
+/** Retrieves a signature image from MinIO as a readable stream. */
 export async function getSignature(key: string): Promise<NodeJS.ReadableStream> {
   return await minioClient.getObject(SIGNATURES_BUCKET, key);
 }
 
+/** Retrieves a signature image from MinIO and returns the complete contents as a Buffer. */
 export async function getSignatureBuffer(key: string): Promise<Buffer> {
   const stream = await minioClient.getObject(SIGNATURES_BUCKET, key);
   const chunks: Buffer[] = [];
@@ -72,14 +81,17 @@ export async function getSignatureBuffer(key: string): Promise<Buffer> {
   });
 }
 
+/** Generates a presigned GET URL for a signature image with configurable expiration. */
 export async function getSignatureUrl(key: string, expiresInSeconds: number = 3600): Promise<string> {
   return await minioClient.presignedGetObject(SIGNATURES_BUCKET, key, expiresInSeconds);
 }
 
+/** Permanently removes a document from the documents bucket. */
 export async function deleteDocument(key: string): Promise<void> {
   await minioClient.removeObject(DOCUMENTS_BUCKET, key);
 }
 
+/** Permanently removes a signature image from the signatures bucket. */
 export async function deleteSignature(key: string): Promise<void> {
   await minioClient.removeObject(SIGNATURES_BUCKET, key);
 }

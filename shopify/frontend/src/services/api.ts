@@ -1,5 +1,6 @@
 const API_BASE = '/api';
 
+/** HTTP request helper with session-based auth for the Shopify multi-tenant API. */
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -21,7 +22,7 @@ async function request<T>(
   return response.json();
 }
 
-// Auth
+/** Authentication API for merchant login, registration, and session management. */
 export const authApi = {
   login: (email: string, password: string) =>
     request<{ user: import('../types').User }>('/auth/login', {
@@ -40,7 +41,7 @@ export const authApi = {
   me: () => request<{ user: import('../types').User }>('/auth/me'),
 };
 
-// Stores
+/** Store management API for listing, creating, updating, and getting analytics for merchant stores. */
 export const storesApi = {
   list: () => request<{ stores: import('../types').Store[] }>('/stores'),
 
@@ -63,7 +64,7 @@ export const storesApi = {
     request<{ analytics: import('../types').Analytics }>(`/stores/${storeId}/analytics`),
 };
 
-// Products
+/** Product catalog API for CRUD operations on store products and variants. */
 export const productsApi = {
   list: (storeId: number) =>
     request<{ products: import('../types').Product[] }>(`/stores/${storeId}/products`),
@@ -87,7 +88,7 @@ export const productsApi = {
     request(`/stores/${storeId}/products/${productId}`, { method: 'DELETE' }),
 };
 
-// Variants
+/** Product variant API for creating, updating, and deleting variant options (size, color, etc.). */
 export const variantsApi = {
   create: (storeId: number, productId: number, data: Partial<import('../types').Variant>) =>
     request<{ variant: import('../types').Variant }>(`/stores/${storeId}/products/${productId}/variants`, {
@@ -105,7 +106,7 @@ export const variantsApi = {
     request(`/stores/${storeId}/variants/${variantId}`, { method: 'DELETE' }),
 };
 
-// Collections
+/** Collection API for managing product groupings within a store. */
 export const collectionsApi = {
   list: (storeId: number) =>
     request<{ collections: import('../types').Collection[] }>(`/stores/${storeId}/collections`),
@@ -129,7 +130,7 @@ export const collectionsApi = {
     request(`/stores/${storeId}/collections/${collectionId}`, { method: 'DELETE' }),
 };
 
-// Orders
+/** Order management API for listing, viewing, and updating order status. */
 export const ordersApi = {
   list: (storeId: number) =>
     request<{ orders: import('../types').Order[] }>(`/stores/${storeId}/orders`),
@@ -144,7 +145,7 @@ export const ordersApi = {
     }),
 };
 
-// Customers
+/** Customer listing and detail API for merchant admin panels. */
 export const customersApi = {
   list: (storeId: number) =>
     request<{ customers: import('../types').Customer[] }>(`/stores/${storeId}/customers`),
@@ -153,7 +154,7 @@ export const customersApi = {
     request<{ customer: import('../types').Customer }>(`/stores/${storeId}/customers/${customerId}`),
 };
 
-// Storefront API
+/** Public storefront API for browsing products, collections, and managing shopping carts. */
 export const storefrontApi = {
   getStore: (subdomain: string) =>
     request<{ store: import('../types').Store }>(`/storefront/${subdomain}`),

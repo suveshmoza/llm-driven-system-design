@@ -133,4 +133,5 @@ router.post('/:id/resolve', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+/** Router for threaded page comments with CRUD and resolve/unresolve toggle. */
 export default router;

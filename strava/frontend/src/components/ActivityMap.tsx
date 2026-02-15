@@ -23,6 +23,7 @@ function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression }) {
   return null;
 }
 
+/** Renders a Leaflet map with the decoded polyline GPS track for an activity. */
 export function ActivityMap({
   encodedPolyline,
   points,

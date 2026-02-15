@@ -16,6 +16,7 @@ export interface AppRow {
   updated_at: string;
 }
 
+/** Service for CRUD operations on low-code applications and their components. */
 export const appService = {
   async listByOwner(ownerId: string): Promise<AppRow[]> {
     const result = await pool.query(

@@ -1,3 +1,4 @@
+/** Formats a duration in seconds to H:MM:SS or M:SS string. */
 export function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -9,6 +10,7 @@ export function formatDuration(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
+/** Formats a distance in meters to a human-readable km string. */
 export function formatDistance(meters: number): string {
   if (meters >= 1000) {
     return `${(meters / 1000).toFixed(2)} km`;
@@ -16,6 +18,7 @@ export function formatDistance(meters: number): string {
   return `${Math.round(meters)} m`;
 }
 
+/** Formats speed as pace (min/km for runs) or km/h (for rides). */
 export function formatSpeed(metersPerSecond: number, type: string = 'run'): string {
   if (type === 'run' || type === 'hike' || type === 'walk') {
     // Pace: min/km
@@ -29,10 +32,12 @@ export function formatSpeed(metersPerSecond: number, type: string = 'run'): stri
   return `${(metersPerSecond * 3.6).toFixed(1)} km/h`;
 }
 
+/** Formats elevation in meters with a trailing "m" unit. */
 export function formatElevation(meters: number): string {
   return `${Math.round(meters)} m`;
 }
 
+/** Formats an ISO date string to a localized medium-length date display. */
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
@@ -43,6 +48,7 @@ export function formatDate(dateString: string): string {
   });
 }
 
+/** Formats an ISO date string to a localized date and time display. */
 export function formatDateTime(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
@@ -54,6 +60,7 @@ export function formatDateTime(dateString: string): string {
   });
 }
 
+/** Converts an ISO date string to a human-readable relative time (e.g., "2 hours ago"). */
 export function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -69,6 +76,7 @@ export function formatRelativeTime(dateString: string): string {
   return formatDate(dateString);
 }
 
+/** Returns an emoji icon representing the activity type (run, ride, swim, etc.). */
 export function getActivityIcon(type: string): string {
   switch (type) {
     case 'run':
@@ -86,6 +94,7 @@ export function getActivityIcon(type: string): string {
   }
 }
 
+/** Returns a Tailwind color class corresponding to the activity type. */
 export function getActivityColor(type: string): string {
   switch (type) {
     case 'run':

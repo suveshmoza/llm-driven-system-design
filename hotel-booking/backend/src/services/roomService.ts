@@ -85,6 +85,7 @@ interface PricingOverrideRow {
   price: string;
 }
 
+/** Manages room types and dynamic pricing with per-date price overrides and ownership verification. */
 class RoomService {
   async createRoomType(hotelId: string, roomData: CreateRoomTypeData, ownerId: string): Promise<RoomType> {
     // Verify hotel ownership

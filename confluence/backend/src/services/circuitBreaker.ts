@@ -1,6 +1,7 @@
 import CircuitBreaker from 'opossum';
 import { logger } from './logger.js';
 
+/** Creates an Opossum circuit breaker with logging for state transitions. */
 export function createCircuitBreaker<T>(
   fn: (...args: unknown[]) => Promise<T>,
   name: string,

@@ -27,6 +27,7 @@ interface SidebarProps {
   onNavigate: (label: string) => void;
 }
 
+/** Renders the Gmail sidebar with label navigation, unread counts, and compose button. */
 export function Sidebar({ onCompose, onNavigate }: SidebarProps) {
   const { labels, unreadCounts, currentLabel, fetchLabels, fetchUnreadCounts } =
     useMailStore();

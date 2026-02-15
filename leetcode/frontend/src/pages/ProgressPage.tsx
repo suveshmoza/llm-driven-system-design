@@ -14,6 +14,7 @@ interface Progress {
   best_runtime_ms: number | null;
 }
 
+/** Displays user problem-solving progress with difficulty breakdown and per-problem status. */
 export function ProgressPage() {
   const { isAuthenticated } = useAuthStore();
   const [progress, setProgress] = useState<Progress[]>([]);

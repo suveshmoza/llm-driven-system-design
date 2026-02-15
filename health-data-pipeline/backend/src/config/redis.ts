@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis';
 import { config } from './index.js';
 
+/** Redis client instance for session storage and caching. */
 export const redis: Redis = new Redis(config.redis.url);
 
 redis.on('error', (err: Error) => {
@@ -11,6 +12,7 @@ redis.on('connect', () => {
   console.log('Redis connected');
 });
 
+/** Cache helper interface for typed get/set, key generation, and user cache invalidation. */
 export interface CacheHelpers {
   get: <T = unknown>(key: string) => Promise<T | null>;
   set: (key: string, value: unknown, ttlSeconds?: number) => Promise<void>;
@@ -19,7 +21,7 @@ export interface CacheHelpers {
   invalidateUser: (userId: string) => Promise<void>;
 }
 
-// Cache helpers
+/** Cache helpers providing JSON-serialized get/set, user-scoped keys, and wildcard invalidation. */
 export const cache: CacheHelpers = {
   get: async <T = unknown>(key: string): Promise<T | null> => {
     const value = await redis.get(key);

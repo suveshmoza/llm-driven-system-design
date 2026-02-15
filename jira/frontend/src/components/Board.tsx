@@ -12,6 +12,7 @@ interface BoardProps {
   isLoading?: boolean;
 }
 
+/** Renders a Kanban board with drag-and-drop issue cards across workflow status columns. */
 export function KanbanBoard({ issues, workflow, onIssueClick, isLoading }: BoardProps) {
   const { updateIssueInList } = useIssueStore();
   const [draggedIssue, setDraggedIssue] = useState<IssueWithDetails | null>(null);
@@ -213,6 +214,7 @@ interface BacklogProps {
   isLoading?: boolean;
 }
 
+/** Renders the backlog view with sprint and backlog issue sections and drag-to-sprint support. */
 export function Backlog({
   backlogIssues,
   sprintIssues,

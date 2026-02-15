@@ -3,6 +3,7 @@ import { redis } from '../config/redis.js';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcrypt';
 
+/** Authenticated user profile returned from the database. */
 export interface User {
   id: string;
   email: string;
@@ -16,6 +17,10 @@ interface Session {
   expiresAt: Date;
 }
 
+/**
+ * Manages user registration, login, session lifecycle, and profile retrieval.
+ * Sessions are stored in both PostgreSQL (durable) and Redis (fast lookup).
+ */
 export class AuthService {
   async register(email: string, password: string, name: string): Promise<{ user: User; session: Session }> {
     // Check if user exists
@@ -126,4 +131,5 @@ export class AuthService {
   }
 }
 
+/** Singleton authentication service instance. */
 export const authService = new AuthService();

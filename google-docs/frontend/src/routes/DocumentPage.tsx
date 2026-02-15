@@ -9,6 +9,7 @@ import CommentsPanel from '../components/CommentsPanel';
 import VersionHistoryPanel from '../components/VersionHistoryPanel';
 import type { WSMessage, PresenceState } from '../types';
 
+/** Renders the collaborative document editor with WebSocket sync, comments panel, and version history. */
 export default function DocumentPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();

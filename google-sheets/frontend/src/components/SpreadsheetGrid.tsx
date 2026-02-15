@@ -37,6 +37,7 @@ const ROW_HEADER_WIDTH = 50;
  *
  * @returns The complete spreadsheet grid component
  */
+/** Renders the virtualized spreadsheet grid with row/column headers. */
 export function SpreadsheetGrid() {
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);

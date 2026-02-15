@@ -32,6 +32,7 @@ interface SpotlightState {
   clear: () => void;
 }
 
+/** Spotlight search state with query, results, suggestions, and keyboard navigation. */
 export const useSpotlightStore = create<SpotlightState>((set, get) => ({
   // Modal state
   isOpen: false,

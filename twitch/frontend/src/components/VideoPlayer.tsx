@@ -5,6 +5,7 @@ interface VideoPlayerProps {
   channel: Channel;
 }
 
+/** Renders a simulated video player with playback controls, volume slider, and fullscreen toggle. */
 export function VideoPlayer({ channel }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);

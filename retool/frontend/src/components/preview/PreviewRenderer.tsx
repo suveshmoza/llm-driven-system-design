@@ -10,6 +10,7 @@ interface PreviewRendererProps {
   app: App;
 }
 
+/** Renders the app in preview mode with live data and interactive widgets. */
 export function PreviewRenderer({ app }: PreviewRendererProps) {
   const executeQuery = useDataStore((s) => s.executeQuery);
   const dataSources = useDataStore((s) => s.dataSources);

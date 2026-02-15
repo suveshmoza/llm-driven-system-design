@@ -11,6 +11,7 @@ interface TrackListProps {
   onPlay?: (track: Track, index: number) => void;
 }
 
+/** Renders a list of tracks with play, like, and duration controls. */
 export function TrackList({ tracks, showAlbum = true, showNumber = true, showArtist = true, onPlay }: TrackListProps) {
   const { currentTrack, isPlaying, playTrack } = usePlayerStore();
 

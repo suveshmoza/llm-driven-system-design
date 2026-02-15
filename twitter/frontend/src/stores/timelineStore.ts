@@ -29,6 +29,7 @@ interface TimelineStore {
 
 let lastFetchParams: { type: string; param?: string } = { type: 'home' };
 
+/** Timeline state managing tweets, infinite scroll, and optimistic like/retweet updates. */
 export const useTimelineStore = create<TimelineStore>((set, get) => ({
   tweets: [],
   isLoading: false,

@@ -1,5 +1,6 @@
 import { useMapStore } from '../stores/mapStore';
 
+/** Renders the route directions panel with origin/destination inputs, route options, and turn-by-turn maneuvers. */
 export default function RoutePanel() {
   const {
     origin,

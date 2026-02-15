@@ -4,6 +4,7 @@ import { useBrowseStore } from '../stores/browseStore';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from '@tanstack/react-router';
 
+/** Renders the Netflix homepage with hero banner, continue watching row, and genre-based video rows. */
 export function BrowsePage() {
   const navigate = useNavigate();
   const { currentProfile, isAuthenticated } = useAuthStore();

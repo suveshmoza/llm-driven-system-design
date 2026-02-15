@@ -15,6 +15,7 @@ interface MasonryGridProps {
 const COLUMN_WIDTH_MIN = 236;
 const GAP = 16;
 
+/** Renders a virtualized masonry grid layout for Pinterest-style pin display with infinite scroll. */
 export default function MasonryGrid({
   pins,
   onLoadMore,

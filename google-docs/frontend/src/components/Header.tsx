@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the app header with Google Docs logo, navigation, and user menu. */
 export default function Header() {
   const { user, logout } = useAuthStore();
 

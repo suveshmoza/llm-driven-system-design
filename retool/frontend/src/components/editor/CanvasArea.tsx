@@ -6,6 +6,7 @@ const GRID_COLS = 12;
 const COL_WIDTH = 80;
 const ROW_HEIGHT = 40;
 
+/** Renders the drag-and-drop canvas area where widgets are positioned on a grid. */
 export function CanvasArea() {
   const app = useEditorStore((s) => s.app);
   const selectedComponentId = useEditorStore((s) => s.selectedComponentId);

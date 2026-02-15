@@ -7,6 +7,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+/** Verifies PostgreSQL connectivity by executing a test query. */
 async function initDatabase(): Promise<boolean> {
   const client = await pool.connect();
   try {
@@ -17,6 +18,7 @@ async function initDatabase(): Promise<boolean> {
   }
 }
 
+/** Executes a parameterized SQL query against the connection pool with slow-query logging. */
 async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -30,6 +32,7 @@ async function query<T extends QueryResultRow = QueryResultRow>(
   return result;
 }
 
+/** Acquires a dedicated client from the connection pool for transaction use. */
 async function getClient(): Promise<PoolClient> {
   return pool.connect();
 }

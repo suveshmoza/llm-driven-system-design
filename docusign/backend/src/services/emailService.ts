@@ -35,6 +35,7 @@ export interface EmailNotificationRow {
   envelope_name?: string;
 }
 
+/** Simulated email service that stores email notifications in the database for development and admin inspection. */
 class EmailService {
   private baseUrl: string;
 
@@ -42,7 +43,7 @@ class EmailService {
     this.baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   }
 
-  // Store email in database (simulated sending)
+  /** Persists an email notification record in the database as a simulated send. */
   async storeEmail(
     recipientId: string | null,
     envelopeId: string,
@@ -61,7 +62,7 @@ class EmailService {
     console.log(`[EMAIL] Body: ${body.substring(0, 200)}...`);
   }
 
-  // Send signing request to recipient
+  /** Sends a signing request email with a unique signing URL to the recipient. */
   async sendSigningRequest(recipient: Recipient, envelope: Envelope): Promise<{ signingUrl: string }> {
     const signingUrl = `${this.baseUrl}/sign/${recipient.access_token}`;
 
@@ -87,7 +88,7 @@ DocuSign
     return { signingUrl };
   }
 
-  // Send reminder to recipient
+  /** Sends a reminder email to a recipient who has not yet signed. */
   async sendReminder(recipient: Recipient, envelope: Envelope): Promise<void> {
     const signingUrl = `${this.baseUrl}/sign/${recipient.access_token}`;
 
@@ -107,7 +108,7 @@ DocuSign
     await this.storeEmail(recipient.id, envelope.id, 'reminder', subject, body);
   }
 
-  // Send completion notification
+  /** Sends a notification that all parties have signed the envelope. */
   async sendCompletionNotification(recipient: Recipient, envelope: Envelope): Promise<void> {
     const downloadUrl = `${this.baseUrl}/envelopes/${envelope.id}/download`;
 
@@ -126,7 +127,7 @@ Thank you for using DocuSign.
     await this.storeEmail(recipient.id, envelope.id, 'completed', subject, body);
   }
 
-  // Send decline notification to sender
+  /** Notifies the sender that a recipient has declined to sign the document. */
   async sendDeclineNotification(recipient: Recipient, envelope: Envelope, reason?: string): Promise<void> {
     const subject = `Document Declined: ${envelope.name}`;
     const body = `
@@ -146,7 +147,7 @@ DocuSign
     await this.storeEmail(null, envelope.id, 'declined', subject, body);
   }
 
-  // Send void notification
+  /** Notifies a recipient that the envelope has been voided and is no longer available. */
   async sendVoidNotification(recipient: Recipient, envelope: Envelope, reason?: string): Promise<void> {
     const subject = `Document Voided: ${envelope.name}`;
     const body = `
@@ -165,7 +166,7 @@ DocuSign
     await this.storeEmail(recipient.id, envelope.id, 'voided', subject, body);
   }
 
-  // Get all emails for an envelope (for debugging/admin)
+  /** Returns all email notifications associated with an envelope for debugging and admin review. */
   async getEnvelopeEmails(envelopeId: string): Promise<EmailNotificationRow[]> {
     const result = await query<EmailNotificationRow>(
       `SELECT en.*, r.email as recipient_email, r.name as recipient_name
@@ -178,7 +179,7 @@ DocuSign
     return result.rows;
   }
 
-  // Get recent emails (for admin dashboard)
+  /** Returns the most recent email notifications across all envelopes for the admin dashboard. */
   async getRecentEmails(limit: number = 50): Promise<EmailNotificationRow[]> {
     const result = await query<EmailNotificationRow>(
       `SELECT en.*, r.email as recipient_email, r.name as recipient_name,
@@ -194,4 +195,5 @@ DocuSign
   }
 }
 
+/** Singleton email service instance for simulated email delivery. */
 export const emailService = new EmailService();

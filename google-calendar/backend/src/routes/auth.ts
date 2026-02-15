@@ -126,4 +126,5 @@ router.post('/register', async (req, res) => {
   }
 })
 
+/** Router for session-based auth: login, logout, register, and current user. */
 export default router

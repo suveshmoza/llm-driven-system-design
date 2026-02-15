@@ -46,6 +46,7 @@ interface EnvelopeState {
   clearError: () => void;
 }
 
+/** Envelope management store handling envelopes, documents, recipients, and fields with full CRUD operations. */
 export const useEnvelopeStore = create<EnvelopeState>((set, _get) => ({
   envelopes: [],
   currentEnvelope: null,

@@ -8,6 +8,7 @@ interface MeetingCardProps {
   onJoin: () => void;
 }
 
+/** Renders a meeting summary card with title, code, time, and join action. */
 export function MeetingCard({ title, meetingCode, scheduledStart, status, onJoin }: MeetingCardProps) {
   const statusColors: Record<string, string> = {
     scheduled: 'text-zoom-primary',

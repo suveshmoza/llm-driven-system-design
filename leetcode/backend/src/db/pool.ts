@@ -23,4 +23,5 @@ pool.on('error', (err: Error) => {
   process.exit(-1);
 });
 
+/** PostgreSQL connection pool for the leetcode database with auto-reconnect. */
 export default pool;

@@ -19,6 +19,7 @@ export interface Session {
   expiresAt: Date | string;
 }
 
+/** Creates a new user with a bcrypt-hashed password. */
 export const createUser = async (username: string, email: string, password: string): Promise<User> => {
   const passwordHash = await bcrypt.hash(password, 10);
   const result = await query<User>(
@@ -30,6 +31,7 @@ export const createUser = async (username: string, email: string, password: stri
   return result.rows[0];
 };
 
+/** Finds a user by username, including the password hash for login verification. */
 export const findUserByUsername = async (username: string): Promise<User | undefined> => {
   const result = await query<User>(
     `SELECT id, username, email, password_hash, karma_post, karma_comment, role, created_at
@@ -39,6 +41,7 @@ export const findUserByUsername = async (username: string): Promise<User | undef
   return result.rows[0];
 };
 
+/** Finds a user by numeric ID, excluding the password hash. */
 export const findUserById = async (id: number): Promise<User | undefined> => {
   const result = await query<User>(
     `SELECT id, username, email, karma_post, karma_comment, role, created_at
@@ -48,10 +51,12 @@ export const findUserById = async (id: number): Promise<User | undefined> => {
   return result.rows[0];
 };
 
+/** Compares a plaintext password against a bcrypt hash. */
 export const verifyPassword = async (password: string, passwordHash: string): Promise<boolean> => {
   return bcrypt.compare(password, passwordHash);
 };
 
+/** Creates a new session in PostgreSQL and caches it in Redis with a 7-day TTL. */
 export const createSession = async (userId: number): Promise<string> => {
   const sessionId = uuidv4();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
@@ -68,6 +73,7 @@ export const createSession = async (userId: number): Promise<string> => {
   return sessionId;
 };
 
+/** Retrieves a session from Redis cache, falling back to PostgreSQL if not cached. */
 export const getSession = async (sessionId: string): Promise<Session | null> => {
   // Try Redis first
   const cached = await redis.get(`session:${sessionId}`);
@@ -97,11 +103,13 @@ export const getSession = async (sessionId: string): Promise<Session | null> => 
   return null;
 };
 
+/** Deletes a session from both PostgreSQL and Redis. */
 export const deleteSession = async (sessionId: string): Promise<void> => {
   await query(`DELETE FROM sessions WHERE id = $1`, [sessionId]);
   await redis.del(`session:${sessionId}`);
 };
 
+/** Recalculates a user's post and comment karma from aggregate vote scores. */
 export const updateUserKarma = async (userId: number): Promise<void> => {
   await query(`
     UPDATE users u

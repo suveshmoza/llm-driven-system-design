@@ -7,6 +7,7 @@ interface Props {
   onClose: () => void;
 }
 
+/** Renders the side panel with threaded comments, replies, and resolve/delete actions. */
 export default function CommentsPanel({ documentId, onClose }: Props) {
   const { user } = useAuthStore();
   const { comments, fetchComments, addComment, resolveComment, deleteComment, replyToComment } = useDocumentStore();

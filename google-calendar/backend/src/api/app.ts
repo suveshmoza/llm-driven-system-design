@@ -9,6 +9,7 @@ import eventRoutes from '../routes/events.js'
 
 const PgSession = pgSession(session)
 
+/** Express app with PostgreSQL-backed sessions, CORS, and calendar routes. */
 export const app = express()
 
 // Middleware

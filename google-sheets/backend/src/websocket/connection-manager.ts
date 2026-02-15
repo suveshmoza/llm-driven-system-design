@@ -44,6 +44,7 @@ let colorIndex = 0;
  * const nextUserColor = getNextColor(); // '#4ECDC4'
  * ```
  */
+/** Returns the next available cursor color from the palette, cycling through options. */
 export function getNextColor(): string {
   const color = COLORS[colorIndex % COLORS.length];
   colorIndex++;
@@ -66,6 +67,7 @@ export function getNextColor(): string {
  * room.clients.add(ws);
  * ```
  */
+/** Gets an existing room or creates a new one for the given spreadsheet. */
 export function getOrCreateRoom(spreadsheetId: string): Room {
   if (!rooms.has(spreadsheetId)) {
     rooms.set(spreadsheetId, { clients: new Set() });
@@ -90,6 +92,7 @@ export function getOrCreateRoom(spreadsheetId: string): Room {
  * }
  * ```
  */
+/** Returns the room for a spreadsheet if it exists. */
 export function getRoom(spreadsheetId: string): Room | undefined {
   return rooms.get(spreadsheetId);
 }
@@ -113,6 +116,7 @@ export function getRoom(spreadsheetId: string): Room | undefined {
  * await joinRoom('spreadsheet-456', ws);
  * ```
  */
+/** Adds a WebSocket client to a spreadsheet room and loads initial state. */
 export async function joinRoom(spreadsheetId: string, ws: ExtendedWebSocket): Promise<void> {
   const room = getOrCreateRoom(spreadsheetId);
   room.clients.add(ws);
@@ -150,6 +154,7 @@ export async function joinRoom(spreadsheetId: string, ws: ExtendedWebSocket): Pr
  * });
  * ```
  */
+/** Removes a WebSocket client from its room and notifies remaining collaborators. */
 export async function leaveRoom(ws: ExtendedWebSocket): Promise<void> {
   if (!ws.spreadsheetId) return;
 
@@ -195,6 +200,7 @@ export async function leaveRoom(ws: ExtendedWebSocket): Promise<void> {
  * ws.send(JSON.stringify({ type: 'COLLABORATORS', collaborators }));
  * ```
  */
+/** Returns all collaborators in a room, optionally excluding one client. */
 export function getRoomCollaborators(
   spreadsheetId: string,
   excludeWs?: ExtendedWebSocket
@@ -240,6 +246,7 @@ export function getRoomCollaborators(
  * console.log(`Broadcast to ${sentCount} clients`);
  * ```
  */
+/** Sends a message to all clients in a room, optionally excluding the sender. */
 export function broadcastToRoom(
   spreadsheetId: string,
   message: any,
@@ -276,6 +283,7 @@ export function broadcastToRoom(
  * console.log(`${count} users currently editing`);
  * ```
  */
+/** Returns the number of connected clients in a spreadsheet room. */
 export function getRoomSize(spreadsheetId: string): number {
   const room = rooms.get(spreadsheetId);
   return room ? room.clients.size : 0;

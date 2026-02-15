@@ -81,4 +81,5 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+/** Trends router returning trending hashtags scored with exponential time decay. */
 export default router;

@@ -1,7 +1,7 @@
 import { clsx } from 'clsx';
 import type { IssueType, Priority, StatusCategory } from '../types';
 
-// Issue type icons
+/** Renders a colored SVG icon representing the issue type (story, bug, task, epic, subtask). */
 export function IssueTypeIcon({ type, className = '' }: { type: IssueType; className?: string }) {
   const baseClass = clsx('w-4 h-4', className);
 
@@ -39,7 +39,7 @@ export function IssueTypeIcon({ type, className = '' }: { type: IssueType; class
   }
 }
 
-// Priority icons
+/** Renders an arrow icon colored by priority level (highest, high, medium, low, lowest). */
 export function PriorityIcon({ priority, className = '' }: { priority: Priority; className?: string }) {
   const baseClass = clsx('w-4 h-4', className);
 
@@ -82,7 +82,7 @@ export function PriorityIcon({ priority, className = '' }: { priority: Priority;
   }
 }
 
-// Status badge
+/** Renders a status badge with background color based on workflow status category. */
 export function StatusBadge({ name, category }: { name: string; category: StatusCategory }) {
   const categoryColors: Record<StatusCategory, string> = {
     todo: 'bg-gray-200 text-gray-700',
@@ -97,7 +97,7 @@ export function StatusBadge({ name, category }: { name: string; category: Status
   );
 }
 
-// User avatar
+/** Renders a circular avatar with initials fallback and configurable size. */
 export function Avatar({
   user,
   size = 'md',
@@ -137,7 +137,7 @@ export function Avatar({
   );
 }
 
-// Button component
+/** Renders a styled button with primary/secondary/ghost/danger variants. */
 export function Button({
   children,
   variant = 'primary',
@@ -185,7 +185,7 @@ export function Button({
   );
 }
 
-// Input component
+/** Renders a labeled text input with optional error message display. */
 export function Input({
   type = 'text',
   placeholder,
@@ -221,7 +221,7 @@ export function Input({
   );
 }
 
-// Textarea component
+/** Renders a labeled multi-line textarea with optional error message display. */
 export function Textarea({
   placeholder,
   value,
@@ -253,7 +253,7 @@ export function Textarea({
   );
 }
 
-// Select component
+/** Renders a labeled dropdown select with typed options array. */
 export function Select({
   value,
   onChange,
@@ -294,7 +294,7 @@ export function Select({
   );
 }
 
-// Loading spinner
+/** Renders an animated loading spinner in small, medium, or large size. */
 export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   const sizes = {
     sm: 'w-4 h-4',
@@ -307,7 +307,7 @@ export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   );
 }
 
-// Empty state
+/** Renders a centered empty state message with optional call-to-action button. */
 export function EmptyState({ message, action }: { message: string; action?: { label: string; onClick: () => void } }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-gray-500">
@@ -329,7 +329,7 @@ export function EmptyState({ message, action }: { message: string; action?: { la
   );
 }
 
-// Modal component
+/** Renders a backdrop-overlay modal dialog with title, close button, and scrollable content. */
 export function Modal({
   isOpen,
   onClose,

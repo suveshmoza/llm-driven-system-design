@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useMailStore } from '../stores/mailStore';
 import { ThreadListItem } from './ThreadListItem';
 
+/** Renders a virtualized list of email threads with pagination for the current label. */
 export function ThreadList() {
   const parentRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();

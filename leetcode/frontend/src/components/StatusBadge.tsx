@@ -17,6 +17,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   success: { label: 'Success', className: 'text-green-400 bg-green-400/10' },
 };
 
+/** Renders a color-coded badge for submission status (accepted, wrong answer, TLE, etc.). */
 export function StatusBadge({ status }: StatusBadgeProps) {
   const config = statusConfig[status] || { label: status, className: 'text-gray-400 bg-gray-400/10' };
 

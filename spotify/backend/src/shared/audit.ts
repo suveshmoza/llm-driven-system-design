@@ -74,6 +74,7 @@ export const AuditActions = {
  * @param {Object} details - Additional details about the action
  * @param {boolean} success - Whether the action succeeded
  */
+/** Records an audit event for compliance and security tracking. */
 export async function auditLog(
   req: AuthenticatedRequest | null,
   action: string,
@@ -144,6 +145,7 @@ export async function auditLog(
  * @param {Object} filters - Filter options
  * @returns {Promise<Array>} Matching audit log entries
  */
+/** Queries audit logs with filtering by action, user, time range, and pagination. */
 export async function queryAuditLogs({
   actorId = null,
   action = null,

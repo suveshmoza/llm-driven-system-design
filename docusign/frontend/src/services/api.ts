@@ -18,7 +18,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json();
 }
 
-// Auth
+/** API client methods for authentication (login, register, logout, current user). */
 export const authApi = {
   login: (email: string, password: string) =>
     fetchWithAuth('/auth/login', {
@@ -38,7 +38,7 @@ export const authApi = {
   me: () => fetchWithAuth('/auth/me'),
 };
 
-// Envelopes
+/** API client methods for envelope CRUD, sending, voiding, and statistics. */
 export const envelopeApi = {
   list: (status?: string, page = 1, limit = 20) => {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
@@ -75,7 +75,7 @@ export const envelopeApi = {
   stats: () => fetchWithAuth('/envelopes/stats/summary'),
 };
 
-// Documents
+/** API client methods for document upload, retrieval, viewing, and deletion. */
 export const documentApi = {
   upload: async (envelopeId: string, file: File) => {
     const formData = new FormData();
@@ -108,7 +108,7 @@ export const documentApi = {
     fetchWithAuth(`/documents/${id}`, { method: 'DELETE' }),
 };
 
-// Recipients
+/** API client methods for recipient management including add, update, delete, and reorder. */
 export const recipientApi = {
   add: (envelopeId: string, data: { name: string; email: string; role?: string; routingOrder?: number }) =>
     fetchWithAuth(`/recipients/${envelopeId}`, {
@@ -135,7 +135,7 @@ export const recipientApi = {
     }),
 };
 
-// Fields
+/** API client methods for document field placement, update, and deletion. */
 export const fieldApi = {
   add: (documentId: string, data: {
     recipientId: string;
@@ -164,7 +164,7 @@ export const fieldApi = {
     fetchWithAuth(`/fields/${id}`, { method: 'DELETE' }),
 };
 
-// Signing
+/** API client methods for the signing ceremony including session, signature capture, and completion. */
 export const signingApi = {
   getSession: (accessToken: string) =>
     fetch(`${API_BASE}/signing/session/${accessToken}`, {
@@ -221,7 +221,7 @@ export const signingApi = {
     }),
 };
 
-// Audit
+/** API client methods for audit trail events, chain verification, and certificates. */
 export const auditApi = {
   getEvents: (envelopeId: string) =>
     fetchWithAuth(`/audit/envelope/${envelopeId}`),
@@ -240,7 +240,7 @@ export const auditApi = {
   },
 };
 
-// Admin
+/** API client methods for admin operations including stats, user management, and envelope inspection. */
 export const adminApi = {
   stats: () => fetchWithAuth('/admin/stats'),
 

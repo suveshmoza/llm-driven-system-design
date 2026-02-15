@@ -5,6 +5,7 @@ interface StreamCardProps {
   channel: Channel;
 }
 
+/** Renders a stream thumbnail card with live indicator, viewer count, and channel info. */
 export function StreamCard({ channel }: StreamCardProps) {
   return (
     <Link

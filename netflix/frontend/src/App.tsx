@@ -146,6 +146,7 @@ declare module '@tanstack/react-router' {
   }
 }
 
+/** Root application component that initializes auth state and provides the router. */
 export function App() {
   const { checkAuth, isLoading } = useAuthStore();
 

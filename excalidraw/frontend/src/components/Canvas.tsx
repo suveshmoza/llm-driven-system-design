@@ -7,6 +7,7 @@ import { simplifyPath } from '../utils/pathSimplification';
 import { wsClient } from '../services/websocket';
 import type { ExcalidrawElement, Point } from '../types';
 
+/** Renders the main drawing canvas with mouse/touch event handling for shapes. */
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

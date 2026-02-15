@@ -71,6 +71,7 @@ interface MapState {
 const DEFAULT_CENTER: LatLng = { lat: 37.7749, lng: -122.4194 };
 const DEFAULT_ZOOM = 14;
 
+/** Map navigation state with route calculation, traffic overlay, POI search, and turn-by-turn navigation. */
 export const useMapStore = create<MapState>((set, get) => ({
   // Map view
   center: DEFAULT_CENTER,

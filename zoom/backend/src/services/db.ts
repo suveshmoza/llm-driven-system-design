@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { config } from '../config/index.js';
 
+/** PostgreSQL connection pool for meeting and participant data. */
 export const pool = new pg.Pool({
   host: config.db.host,
   port: config.db.port,

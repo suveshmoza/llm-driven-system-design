@@ -4,6 +4,7 @@ import { useDocumentStore } from '../stores/documentStore';
 import Header from '../components/Header';
 import DocumentList from '../components/DocumentList';
 
+/** Renders the document list homepage with create-new-document action and recent documents grid. */
 export default function HomePage() {
   const { documents, fetchDocuments, createDocument, isLoading } = useDocumentStore();
   const navigate = useNavigate();

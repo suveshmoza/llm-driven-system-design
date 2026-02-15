@@ -25,6 +25,7 @@ interface DiffResult {
   toTitle: string;
 }
 
+/** Retrieves all version records for a page ordered by version number descending. */
 export async function getVersionHistory(pageId: string): Promise<PageVersion[]> {
   const result = await pool.query(
     `SELECT pv.*, u.username as author_username
@@ -37,6 +38,7 @@ export async function getVersionHistory(pageId: string): Promise<PageVersion[]> 
   return result.rows;
 }
 
+/** Retrieves a specific version of a page by version number. */
 export async function getVersion(pageId: string, versionNumber: number): Promise<PageVersion | null> {
   const result = await pool.query(
     `SELECT pv.*, u.username as author_username
@@ -48,6 +50,7 @@ export async function getVersion(pageId: string, versionNumber: number): Promise
   return result.rows.length > 0 ? result.rows[0] : null;
 }
 
+/** Computes a line-by-line diff between two page versions for history display. */
 export async function computeDiff(
   pageId: string,
   fromVersion: number,
@@ -79,6 +82,7 @@ export async function computeDiff(
   };
 }
 
+/** Restores a page to a previous version, creating a new version record. */
 export async function restoreVersion(
   pageId: string,
   versionNumber: number,

@@ -11,6 +11,7 @@ const views: { value: ViewType; label: string }[] = [
   { value: 'day', label: 'Day' },
 ]
 
+/** Toggle button group for switching between month, week, and day views. */
 export function ViewSwitcher({ view, onViewChange }: ViewSwitcherProps) {
   return (
     <div className="flex rounded-lg border border-gray-300 overflow-hidden">

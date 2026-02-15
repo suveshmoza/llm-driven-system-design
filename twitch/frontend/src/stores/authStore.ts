@@ -14,6 +14,7 @@ interface AuthState {
   clearError: () => void;
 }
 
+/** Authentication state with session-based login, registration, and auto-fetch on mount. */
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: true,

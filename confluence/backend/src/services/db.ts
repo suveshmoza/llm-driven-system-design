@@ -4,6 +4,7 @@ import { logger } from './logger.js';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool configured from environment variables. */
 export const pool = new Pool({
   host: config.db.host,
   port: config.db.port,

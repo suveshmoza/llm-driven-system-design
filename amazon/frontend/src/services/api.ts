@@ -28,6 +28,7 @@ async function request<T>(
   return response.json();
 }
 
+/** Centralized API client for all backend endpoints. Automatically attaches session ID from localStorage. */
 export const api = {
   // Auth
   login: (email: string, password: string) =>

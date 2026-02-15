@@ -10,6 +10,7 @@ const CATEGORIES = [
   { id: 'education', label: 'Education', icon: '📚' },
 ];
 
+/** Renders horizontally scrollable category filter pills with video counts. */
 export function CategoryFilter() {
   const { selectedCategory, setSelectedCategory, trending } = useTrendingStore();
 

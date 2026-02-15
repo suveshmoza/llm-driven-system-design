@@ -2,6 +2,7 @@ import React from 'react';
 import { Navbar, VideoCard } from '../components';
 import { useBrowseStore } from '../stores/browseStore';
 
+/** Displays the user's saved video list in a responsive grid layout. */
 export function MyListPage() {
   const { myList, loadMyList, isLoading } = useBrowseStore();
 

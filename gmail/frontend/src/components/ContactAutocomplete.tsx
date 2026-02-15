@@ -8,6 +8,7 @@ interface ContactAutocompleteProps {
   placeholder?: string;
 }
 
+/** Renders an autocomplete input for email contacts with frequency-ranked suggestions. */
 export function ContactAutocomplete({
   selected,
   onChange,

@@ -13,6 +13,7 @@ interface AuthState {
   checkAuth: () => Promise<void>;
 }
 
+/** Athlete authentication state with login, registration, and session management. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

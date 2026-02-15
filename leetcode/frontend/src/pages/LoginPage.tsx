@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
+/** Renders the login form with username/password fields, error handling, and registration link. */
 export function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');

@@ -17,6 +17,7 @@ interface ChatProps {
   channelName: string;
 }
 
+/** Renders the live chat panel with messages, emote picker, and message input for a channel. */
 export function Chat({ channelId, channelName }: ChatProps) {
   const { user } = useAuthStore();
   const { messages, viewerCount, sendMessage, connected } = useChatStore();

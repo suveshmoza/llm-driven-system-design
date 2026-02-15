@@ -21,7 +21,7 @@ async function fetchAPI<T>(
   return response.json();
 }
 
-// Auth
+/** Authentication API methods for register, login, logout, and profile management. */
 export const authAPI = {
   register: (data: { email: string; password: string; name: string }) =>
     fetchAPI('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
@@ -39,7 +39,7 @@ export const authAPI = {
     fetchAPI('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
 };
 
-// Listings
+/** Listings API methods for CRUD operations, photo uploads, and availability management. */
 export const listingsAPI = {
   getAll: (params?: Record<string, string | number>) => {
     const searchParams = new URLSearchParams();
@@ -103,7 +103,7 @@ export const listingsAPI = {
     fetchAPI(`/listings/${listingId}/photos/${photoId}`, { method: 'DELETE' }),
 };
 
-// Search
+/** Search API methods for geographic listing search, autocomplete suggestions, and popular destinations. */
 export const searchAPI = {
   search: (params: import('../types').SearchParams) => {
     const searchParams = new URLSearchParams();
@@ -146,7 +146,7 @@ export const searchAPI = {
     }>('/search/popular-destinations'),
 };
 
-// Bookings
+/** Bookings API methods for availability checks, booking creation, trip management, and host responses. */
 export const bookingsAPI = {
   checkAvailability: (
     listingId: number,
@@ -201,7 +201,7 @@ export const bookingsAPI = {
     fetchAPI(`/bookings/${id}/complete`, { method: 'PUT' }),
 };
 
-// Reviews
+/** Reviews API methods for creating reviews, fetching listing/user reviews, and checking review status. */
 export const reviewsAPI = {
   create: (data: {
     booking_id: number;
@@ -244,7 +244,7 @@ export const reviewsAPI = {
     }>(`/reviews/booking/${bookingId}/status`),
 };
 
-// Messages
+/** Messages API methods for conversation management, sending messages, and unread count tracking. */
 export const messagesAPI = {
   startConversation: (listingId: number, bookingId?: number) =>
     fetchAPI<{ conversation: import('../types').Conversation }>('/messages/start', {

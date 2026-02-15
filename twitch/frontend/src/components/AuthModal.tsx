@@ -7,6 +7,7 @@ interface AuthModalProps {
   onSwitchMode: () => void;
 }
 
+/** Renders a modal dialog for user login or registration with form validation. */
 export function AuthModal({ mode, onClose, onSwitchMode }: AuthModalProps) {
   const { login, register, error, clearError } = useAuthStore();
   const [username, setUsername] = useState('');

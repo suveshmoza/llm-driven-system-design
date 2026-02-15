@@ -10,6 +10,7 @@ interface MacroRendererProps {
   };
 }
 
+/** Renders wiki macros (info, warning, note, code, toc) as styled React components. */
 export default function MacroRenderer({ contentJson }: MacroRendererProps) {
   if (!contentJson?.macros || contentJson.macros.length === 0) {
     return null;

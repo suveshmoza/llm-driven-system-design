@@ -30,6 +30,7 @@ interface BidFormProps {
  * @param props - Component props with auction data and callbacks
  * @returns JSX element for the bid form
  */
+/** Bid placement form with manual and proxy bid modes and minimum bid enforcement. */
 export function BidForm({ auction, userAutoBid, onBidPlaced }: BidFormProps) {
   const { isAuthenticated } = useAuthStore();
   const [bidAmount, setBidAmount] = useState('');

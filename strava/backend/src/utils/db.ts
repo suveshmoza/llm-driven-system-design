@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/** PostgreSQL connection pool for the Strava fitness tracking database. */
 export const pool: Pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://strava:strava_dev@localhost:5432/strava'
 });
@@ -12,6 +13,7 @@ pool.on('error', (err: Error) => {
   process.exit(-1);
 });
 
+/** Executes a parameterized SQL query against the connection pool. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -25,6 +27,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   return res;
 }
 
+/** Acquires a pool client for multi-statement transactions. */
 export async function getClient(): Promise<PoolClient> {
   const client = await pool.connect();
   return client;

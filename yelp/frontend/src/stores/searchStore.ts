@@ -13,6 +13,7 @@ interface SearchState {
   clearSearch: () => void;
 }
 
+/** Business search state with geo-spatial filters, category filtering, and pagination. */
 export const useSearchStore = create<SearchState>((set, get) => ({
   businesses: [],
   isLoading: false,

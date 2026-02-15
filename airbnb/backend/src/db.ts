@@ -18,13 +18,16 @@ pool.on('error', (err) => {
   process.exit(-1);
 });
 
+/** Executes a parameterized SQL query against the connection pool. */
 export const query = <T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
 ): Promise<QueryResult<T>> => pool.query<T>(text, params);
 
+/** Acquires a client from the connection pool for manual query management. */
 export const getClient = (): Promise<PoolClient> => pool.connect();
 
+/** Wraps a callback in a database transaction with automatic BEGIN, COMMIT, and ROLLBACK. */
 export const transaction = async <T>(
   callback: (client: PoolClient) => Promise<T>
 ): Promise<T> => {

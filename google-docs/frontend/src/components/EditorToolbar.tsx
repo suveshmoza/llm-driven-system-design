@@ -4,6 +4,7 @@ interface Props {
   editor: Editor;
 }
 
+/** Renders the rich text formatting toolbar with bold, italic, heading, and list controls. */
 export default function EditorToolbar({ editor }: Props) {
   const buttonClass = (isActive: boolean) =>
     `p-2 rounded hover:bg-gray-100 ${isActive ? 'bg-blue-50 text-docs-blue' : 'text-gray-600'}`;

@@ -92,6 +92,10 @@ interface HealthDataTypeRow {
   aggregation: string;
 }
 
+/**
+ * Provides read access to health data including samples, aggregates, summaries, and history.
+ * Results are cached in Redis to reduce database load for dashboard queries.
+ */
 export class HealthQueryService {
   async getSamples(userId: string, options: GetSamplesOptions): Promise<SampleRow[]> {
     const { type, startDate, endDate, limit = 1000, offset = 0 } = options;
@@ -286,4 +290,5 @@ export class HealthQueryService {
   }
 }
 
+/** Singleton health query service instance. */
 export const healthQueryService = new HealthQueryService();

@@ -33,6 +33,7 @@ const perpendicularDistance = (point: Point, lineStart: Point, lineEnd: Point): 
  * @param epsilon - Maximum distance threshold (higher = more simplification)
  * @returns Simplified array of points
  */
+/** Reduces the number of points in a freehand path using the Ramer-Douglas-Peucker algorithm. */
 export const simplifyPath = (points: Point[], epsilon: number = 2): Point[] => {
   if (points.length <= 2) return points;
 

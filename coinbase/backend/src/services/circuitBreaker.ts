@@ -7,6 +7,13 @@ const defaultOptions = {
   volumeThreshold: 5,
 };
 
+/**
+ * Creates an Opossum circuit breaker wrapping an async function.
+ * @param fn - The async function to protect with circuit breaking.
+ * @param name - Descriptive name for logging and identification.
+ * @param options - Override default circuit breaker thresholds.
+ * @returns Configured CircuitBreaker instance.
+ */
 export function createCircuitBreaker<T>(
   fn: (...args: unknown[]) => Promise<T>,
   name: string,

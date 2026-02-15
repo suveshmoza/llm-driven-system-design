@@ -39,6 +39,7 @@ const sheetLogger = createChildLogger({ component: 'sheet-operations' });
  * // Column width saved to DB and broadcast to all room members
  * ```
  */
+/** Resizes a column width, persists the change, and broadcasts to collaborators. */
 export async function handleResizeColumn(
   ws: ExtendedWebSocket,
   payload: ResizeColumnPayload
@@ -92,6 +93,7 @@ export async function handleResizeColumn(
  * // Row height saved to DB and broadcast to all room members
  * ```
  */
+/** Resizes a row height, persists the change, and broadcasts to collaborators. */
 export async function handleResizeRow(
   ws: ExtendedWebSocket,
   payload: ResizeRowPayload
@@ -144,6 +146,7 @@ export async function handleResizeRow(
  * // Sheet name updated in DB and broadcast to all room members
  * ```
  */
+/** Renames a sheet, persists the change, and broadcasts to collaborators. */
 export async function handleRenameSheet(
   ws: ExtendedWebSocket,
   payload: RenameSheetPayload

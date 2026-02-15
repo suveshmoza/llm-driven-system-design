@@ -8,6 +8,7 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
+/** Middleware that requires a valid session with userId for protected routes. */
 export function requireAuth(
   req: AuthenticatedRequest,
   res: Response,
@@ -19,6 +20,7 @@ export function requireAuth(
   next();
 }
 
+/** Middleware that restricts access to users with the admin role. */
 export function requireAdmin(
   req: AuthenticatedRequest,
   res: Response,
@@ -33,6 +35,7 @@ export function requireAdmin(
   next();
 }
 
+/** Middleware that attaches user info if authenticated but allows unauthenticated access. */
 export function optionalAuth(
   _req: AuthenticatedRequest,
   _res: Response,

@@ -40,6 +40,10 @@ interface Aggregate {
   sampleCount: number;
 }
 
+/**
+ * Handles health data deduplication and time-period aggregation.
+ * Uses device priority ranking to resolve overlapping samples from multiple sources.
+ */
 export class AggregationService {
   // Queue aggregation job (in production would use Redis queue/Bull)
   async queueAggregation(userId: string, types: string[], dateRange: DateRange): Promise<void> {
@@ -263,4 +267,5 @@ export class AggregationService {
   }
 }
 
+/** Singleton aggregation service instance. */
 export const aggregationService = new AggregationService();

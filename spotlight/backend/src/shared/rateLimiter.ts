@@ -209,6 +209,7 @@ export interface CreateRateLimiterOptions {
 /**
  * Create a custom rate limiter with specified options
  */
+/** Creates a rate limiter middleware with configurable window and request limits. */
 export function createRateLimiter({ windowMs, max, routeName }: CreateRateLimiterOptions): RateLimitRequestHandler {
   return rateLimit({
     windowMs,

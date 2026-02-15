@@ -11,6 +11,7 @@ interface MiniCalendarProps {
 
 const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
+/** Compact month calendar for the sidebar with date selection and month navigation. */
 export function MiniCalendar({ selectedDate, onDateSelect }: MiniCalendarProps) {
   const [displayMonth, setDisplayMonth] = useState(selectedDate)
   const days = getMonthDays(displayMonth)

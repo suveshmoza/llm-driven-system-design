@@ -41,6 +41,7 @@ export interface UpdateDrawingInput {
   isPublic?: boolean;
 }
 
+/** Creates a new drawing with initial empty canvas state. */
 export const createDrawing = async (input: CreateDrawingInput): Promise<DrawingRow> => {
   const { title, ownerId, elements = [], appState = {}, isPublic = false } = input;
 

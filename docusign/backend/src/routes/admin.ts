@@ -99,7 +99,7 @@ interface EnvelopeCountRow {
   count: string;
 }
 
-// Get system statistics
+/** GET /api/v1/admin/stats - Returns system-wide statistics for envelopes, users, signatures, and documents. */
 router.get('/stats', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     // Envelope stats
@@ -156,7 +156,7 @@ router.get('/stats', authenticateAdmin, async (req: Request, res: Response): Pro
   }
 });
 
-// List all users
+/** GET /api/v1/admin/users - Lists all users with pagination and envelope counts. */
 router.get('/users', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { page = '1', limit = '20' } = req.query as { page?: string; limit?: string };
@@ -189,7 +189,7 @@ router.get('/users', authenticateAdmin, async (req: Request, res: Response): Pro
   }
 });
 
-// List all envelopes (admin view)
+/** GET /api/v1/admin/envelopes - Lists all envelopes with optional status filter and pagination. */
 router.get('/envelopes', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { status, page = '1', limit = '20' } = req.query as { status?: string; page?: string; limit?: string };
@@ -237,7 +237,7 @@ router.get('/envelopes', authenticateAdmin, async (req: Request, res: Response):
   }
 });
 
-// Get envelope details (admin view)
+/** GET /api/v1/admin/envelopes/:id - Returns full envelope details including documents, recipients, and audit events. */
 router.get('/envelopes/:id', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -286,7 +286,7 @@ router.get('/envelopes/:id', authenticateAdmin, async (req: Request, res: Respon
   }
 });
 
-// Get recent emails
+/** GET /api/v1/admin/emails - Returns recent simulated email notifications. */
 router.get('/emails', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { limit = '50' } = req.query as { limit?: string };
@@ -298,7 +298,7 @@ router.get('/emails', authenticateAdmin, async (req: Request, res: Response): Pr
   }
 });
 
-// Get emails for envelope
+/** GET /api/v1/admin/emails/envelope/:envelopeId - Returns all email notifications for a specific envelope. */
 router.get('/emails/envelope/:envelopeId', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { envelopeId } = req.params;
@@ -310,7 +310,7 @@ router.get('/emails/envelope/:envelopeId', authenticateAdmin, async (req: Reques
   }
 });
 
-// Update user role
+/** PUT /api/v1/admin/users/:id/role - Updates a user's role to 'user' or 'admin'. */
 router.put('/users/:id/role', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -338,7 +338,7 @@ router.put('/users/:id/role', authenticateAdmin, async (req: Request, res: Respo
   }
 });
 
-// Delete user (only if they have no envelopes)
+/** DELETE /api/v1/admin/users/:id - Deletes a user if they have no existing envelopes. */
 router.delete('/users/:id', authenticateAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -366,4 +366,5 @@ router.delete('/users/:id', authenticateAdmin, async (req: Request, res: Respons
   }
 });
 
+/** Express router for admin-only endpoints including user management, envelope inspection, and email logs. */
 export default router;

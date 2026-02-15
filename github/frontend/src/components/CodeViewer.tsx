@@ -8,6 +8,7 @@ interface CodeViewerProps {
   language?: string;
 }
 
+/** Renders syntax-highlighted source code with line numbers using highlight.js. */
 export function CodeViewer({ content, filename, language }: CodeViewerProps) {
   const codeRef = useRef<HTMLElement>(null);
 

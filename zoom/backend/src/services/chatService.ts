@@ -1,6 +1,7 @@
 import { pool } from './db.js';
 import { logger } from './logger.js';
 
+/** Persists a chat message to the database, supporting optional direct messages. */
 export async function saveMessage(
   meetingId: string,
   senderId: string,
@@ -17,6 +18,7 @@ export async function saveMessage(
   return result.rows[0];
 }
 
+/** Retrieves chat messages for a meeting in chronological order. */
 export async function getMessages(meetingId: string, limit = 100) {
   const result = await pool.query(
     `SELECT m.*, u.username AS sender_name, u.display_name AS sender_display_name

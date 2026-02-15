@@ -9,6 +9,7 @@ interface RequestWithOptionalUser extends AuthenticatedRequest {
 }
 
 // Authentication middleware
+/** Validates the session token from cookies and attaches user data to the request. */
 export async function authenticate(
   req: AuthenticatedRequest,
   res: Response,
@@ -35,6 +36,7 @@ export async function authenticate(
 }
 
 // Require rider role
+/** Restricts access to authenticated users with the rider role. */
 export function requireRider(
   req: RequestWithOptionalUser,
   res: Response,
@@ -48,6 +50,7 @@ export function requireRider(
 }
 
 // Require driver role
+/** Restricts access to authenticated users with the driver role. */
 export function requireDriver(
   req: RequestWithOptionalUser,
   res: Response,

@@ -10,6 +10,7 @@ interface AuthState {
   logout: () => void
 }
 
+/** Persisted auth state with user session and logout action. */
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

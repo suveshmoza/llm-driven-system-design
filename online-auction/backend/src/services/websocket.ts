@@ -17,6 +17,7 @@ const auctionSubscribers = new Map<string, Set<AuctionWebSocket>>();
 // Map of client connections to their subscribed auctions
 const clientSubscriptions = new Map<AuctionWebSocket, Set<string>>();
 
+/** Initializes the WebSocket server with Redis pub/sub for real-time bid updates. */
 export const setupWebSocket = (server: Server): WebSocketServer => {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -194,6 +195,7 @@ const broadcastToAuction = (auctionId: string, message: string): void => {
 };
 
 // Get stats about connected clients
+/** Returns WebSocket connection statistics for monitoring. */
 export const getConnectionStats = (): ConnectionStats => {
   const totalClients = clientSubscriptions.size;
   let totalSubscriptions = 0;

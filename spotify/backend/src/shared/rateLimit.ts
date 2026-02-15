@@ -7,6 +7,7 @@ import { rateLimitHitsTotal } from './metrics.js';
  * Rate limiting using Redis sliding window algorithm.
  * More accurate than token bucket and prevents burst abuse.
  */
+/** Checks and increments a sliding-window rate limit counter in Redis. */
 export async function checkRateLimit(key: string, limit: number, windowSec: number) {
   const now = Date.now();
   const windowStart = now - windowSec * 1000;

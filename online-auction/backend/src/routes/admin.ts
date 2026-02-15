@@ -198,4 +198,5 @@ router.get('/health', async (_req: Request, res: Response): Promise<void> => {
   }
 });
 
+/** Router for admin dashboard: stats, user management, auction moderation, and system health. */
 export default router;

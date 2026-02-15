@@ -44,6 +44,7 @@ interface SellerRow {
   id: number;
 }
 
+/** GET /api/products - Returns paginated products with optional category filter and sorting. */
 // List products
 router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -112,6 +113,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction): Promise
   }
 });
 
+/** GET /api/products/:id - Returns a single product with category, seller, and stock info using cache-aside pattern. */
 // Get single product
 router.get('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -155,6 +157,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction): Prom
   }
 });
 
+/** GET /api/products/:id/recommendations - Returns "also bought" product recommendations from Redis or database. */
 // Get product recommendations
 router.get('/:id/recommendations', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -195,6 +198,7 @@ router.get('/:id/recommendations', async (req: Request, res: Response, next: Nex
   }
 });
 
+/** POST /api/products - Creates a new product with initial inventory and indexes in Elasticsearch. Seller/admin only. */
 // Create product (seller/admin only)
 router.post('/', requireSeller, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -266,6 +270,7 @@ router.post('/', requireSeller, async (req: Request, res: Response, next: NextFu
   }
 });
 
+/** PUT /api/products/:id - Updates product details and re-indexes in Elasticsearch. Seller/admin only. */
 // Update product
 router.put('/:id', requireSeller, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -313,6 +318,7 @@ router.put('/:id', requireSeller, async (req: Request, res: Response, next: Next
   }
 });
 
+/** DELETE /api/products/:id - Deletes a product from database and Elasticsearch. Admin only. */
 // Delete product
 router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -327,6 +333,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: Ne
   }
 });
 
+/** PUT /api/products/:id/inventory - Updates or creates inventory for a product at a warehouse. Seller/admin only. */
 // Update inventory
 router.put('/:id/inventory', requireSeller, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {

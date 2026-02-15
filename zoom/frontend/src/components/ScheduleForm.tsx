@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import * as api from '../services/api';
 
+/** Renders the meeting scheduling form with title, date/time, and settings. */
 export function ScheduleForm() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');

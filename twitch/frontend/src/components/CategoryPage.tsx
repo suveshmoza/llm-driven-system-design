@@ -4,6 +4,7 @@ import { categoryApi } from '../services/api';
 import type { Channel, Category } from '../types';
 import { StreamCard } from './StreamCard';
 
+/** Renders a category detail page with header and grid of live channels streaming in that category. */
 export function CategoryPage() {
   const { slug } = useParams({ from: '/category/$slug' });
   const [category, setCategory] = useState<Category | null>(null);

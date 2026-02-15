@@ -3,6 +3,7 @@ import { useSearch } from '@tanstack/react-router';
 import { Navbar, VideoCard } from '../components';
 import { useBrowseStore } from '../stores/browseStore';
 
+/** Renders search results as a video card grid with query extracted from URL search params. */
 export function SearchPage() {
   const searchParams = useSearch({ from: '/search' });
   const query = (searchParams as { q?: string }).q || '';

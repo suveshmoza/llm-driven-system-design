@@ -29,6 +29,7 @@ interface LibraryRow {
 }
 
 // Get user library
+/** GET /api/library - Returns the authenticated user's library items filtered by type. */
 router.get('/', authenticate, async (req: Request<object, unknown, unknown, LibraryQuery>, res: Response) => {
   try {
     const { type, limit = '50', offset = '0' } = req.query;
@@ -149,6 +150,7 @@ router.get('/', authenticate, async (req: Request<object, unknown, unknown, Libr
 });
 
 // Add item to library
+/** POST /api/library - Adds a track, album, artist, or playlist to the user's library. */
 router.post('/', authenticate, async (req: Request<object, unknown, AddToLibraryBody>, res: Response) => {
   try {
     const { itemType, itemId } = req.body;
@@ -187,6 +189,7 @@ router.post('/', authenticate, async (req: Request<object, unknown, AddToLibrary
 });
 
 // Remove item from library
+/** DELETE /api/library/:itemType/:itemId - Removes an item from the user's library. */
 router.delete('/:itemType/:itemId', authenticate, async (req: Request<{ itemType: string; itemId: string }>, res: Response) => {
   try {
     const { itemType, itemId } = req.params;
@@ -213,6 +216,7 @@ router.delete('/:itemType/:itemId', authenticate, async (req: Request<{ itemType
 });
 
 // Check if item is in library
+/** GET /api/library/check/:itemType/:itemId - Checks if an item exists in the user's library. */
 router.get('/check/:itemType/:itemId', authenticate, async (req: Request<{ itemType: string; itemId: string }>, res: Response) => {
   try {
     const { itemType, itemId } = req.params;
@@ -232,6 +236,7 @@ router.get('/check/:itemType/:itemId', authenticate, async (req: Request<{ itemT
 });
 
 // Sync library (get changes since last sync)
+/** GET /api/library/sync - Returns library changes since the last sync token for cross-device sync. */
 router.get('/sync', authenticate, async (req: Request<object, unknown, unknown, { lastSyncToken?: string }>, res: Response) => {
   try {
     const { lastSyncToken } = req.query;
@@ -267,6 +272,7 @@ router.get('/sync', authenticate, async (req: Request<object, unknown, unknown, 
 });
 
 // Record listening history
+/** POST /api/library/history - Records a track play event and updates genre preferences. */
 router.post('/history', authenticate, async (req: Request<object, unknown, RecordHistoryBody>, res: Response) => {
   try {
     const { trackId, durationPlayedMs, contextType, contextId, completed } = req.body;
@@ -312,6 +318,7 @@ router.post('/history', authenticate, async (req: Request<object, unknown, Recor
 });
 
 // Get listening history
+/** GET /api/library/history - Returns the user's listening history with track details. */
 router.get('/history', authenticate, async (req: Request<object, unknown, unknown, { limit?: string; offset?: string }>, res: Response) => {
   try {
     const { limit = '50', offset = '0' } = req.query;
@@ -337,6 +344,7 @@ router.get('/history', authenticate, async (req: Request<object, unknown, unknow
 });
 
 // Get recently played
+/** GET /api/library/recently-played - Returns distinct recently played tracks. */
 router.get('/recently-played', authenticate, async (req: Request<object, unknown, unknown, { limit?: string }>, res: Response) => {
   try {
     const { limit = '20' } = req.query;

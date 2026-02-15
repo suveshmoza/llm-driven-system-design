@@ -22,6 +22,7 @@ const DEFAULT_TTL_SECONDS = 300; // 5 minutes
  * @param {number} ttlSeconds - TTL for the idempotency record
  * @returns {Promise<{isDuplicate: boolean, cachedResult: any}>}
  */
+/** Checks if an idempotency key has been used and returns cached result if available. */
 export async function checkIdempotency(key: string, operation: string, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const fullKey = `idempotency:${key}`;
 
@@ -70,6 +71,7 @@ export async function checkIdempotency(key: string, operation: string, ttlSecond
  * @param {any} result - Result to cache
  * @param {number} ttlSeconds - TTL for the result
  */
+/** Stores the result of an idempotent operation for deduplication. */
 export async function storeIdempotencyResult(key: string, result: unknown, ttlSeconds = DEFAULT_TTL_SECONDS) {
   const fullKey = `idempotency:${key}`;
 

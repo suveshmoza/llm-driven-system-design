@@ -75,6 +75,7 @@ const connections = new Map<string, Map<string, ExtendedWebSocket>>();
 // Server ID for distributed routing
 const SERVER_ID = process.env.PORT || uuid();
 
+/** Initializes WebSocket server with authentication, presence tracking, and real-time message delivery. */
 export function setupWebSocket(server: HttpServer): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 

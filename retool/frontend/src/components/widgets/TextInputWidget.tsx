@@ -6,6 +6,7 @@ interface TextInputWidgetProps {
   isEditor?: boolean;
 }
 
+/** Renders a text input widget with label and onChange handler. */
 export function TextInputWidget({ component, isEditor }: TextInputWidgetProps) {
   const setComponentValue = useDataStore((s) => s.setComponentValue);
   const componentValues = useDataStore((s) => s.componentValues);

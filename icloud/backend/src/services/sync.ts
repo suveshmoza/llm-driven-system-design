@@ -46,6 +46,7 @@ interface FileRow {
   version_vector: VersionVector;
 }
 
+/** Manages bidirectional file sync with version vector causality tracking and conflict detection. */
 export class SyncService {
   /**
    * Compare two version vectors

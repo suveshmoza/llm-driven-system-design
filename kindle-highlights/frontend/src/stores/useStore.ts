@@ -31,6 +31,7 @@ interface AppState {
   setSearchQuery: (query: string) => void
 }
 
+/** Global application state with authentication and UI preferences. */
 export const useStore = create<AppState>()(
   persist(
     (set) => ({

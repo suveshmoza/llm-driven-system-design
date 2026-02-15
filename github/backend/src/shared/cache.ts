@@ -116,31 +116,34 @@ async function deletePattern(pattern: string): Promise<number> {
   }
 }
 
-// Repository Metadata Cache
+/** Retrieves cached repository metadata by repo ID. */
 export async function getRepoFromCache(repoId: number): Promise<object | null> {
   return getFromCache<object>(`repo:${repoId}`, 'repo_metadata');
 }
 
+/** Stores repository metadata in cache with configured TTL. */
 export async function setRepoInCache(repoId: number, data: object): Promise<boolean> {
   return setInCache(`repo:${repoId}`, data, CACHE_TTL.REPO_METADATA);
 }
 
+/** Invalidates cached repository metadata. */
 export async function invalidateRepoCache(repoId: number): Promise<boolean> {
   return deleteFromCache(`repo:${repoId}`);
 }
 
-// File Tree Cache
+/** Retrieves cached file tree for a repository ref and path. */
 export async function getTreeFromCache(repoId: number, ref: string, path = ''): Promise<object[] | null> {
   const key = `repo:${repoId}:tree:${ref}:${path}`;
   return getFromCache<object[]>(key, 'file_tree');
 }
 
+/** Stores a file tree in cache for a repository ref and path. */
 export async function setTreeInCache(repoId: number, ref: string, path: string, data: object[]): Promise<boolean> {
   const key = `repo:${repoId}:tree:${ref}:${path}`;
   return setInCache(key, data, CACHE_TTL.FILE_TREE);
 }
 
-// File Content Cache
+/** Retrieves cached file content for a repository ref and file path. */
 export async function getFileFromCache(repoId: number, ref: string, path: string): Promise<string | null> {
   const key = `repo:${repoId}:file:${ref}:${path}`;
   return getFromCache<string>(key, 'file_content');

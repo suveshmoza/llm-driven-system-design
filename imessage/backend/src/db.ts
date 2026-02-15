@@ -11,6 +11,7 @@ pool.on('error', (err: Error) => {
   console.error('Unexpected error on idle client', err);
 });
 
+/** Executes a parameterized SQL query with development-mode duration logging. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[]
@@ -24,10 +25,12 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   return result;
 }
 
+/** Acquires a dedicated client from the connection pool for manual query execution. */
 export async function getClient(): Promise<PoolClient> {
   return await pool.connect();
 }
 
+/** Executes a callback within a database transaction with automatic commit/rollback. */
 export async function transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {

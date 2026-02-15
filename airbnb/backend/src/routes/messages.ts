@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+/** POST /api/messages/start - Creates or retrieves an existing conversation for a listing. */
 // Get or create conversation
 router.post('/start', authenticate, async (req, res) => {
   const { listing_id, booking_id } = req.body;
@@ -58,6 +59,7 @@ router.post('/start', authenticate, async (req, res) => {
   }
 });
 
+/** GET /api/messages - Returns all conversations for the authenticated user with last message and unread count. */
 // Get user's conversations
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -86,6 +88,7 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
+/** GET /api/messages/:id - Returns a conversation with all messages and marks unread ones as read. */
 // Get single conversation with messages
 router.get('/:id', authenticate, async (req, res) => {
   const { id } = req.params;
@@ -138,6 +141,7 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
+/** POST /api/messages/:id/messages - Sends a message in an existing conversation. */
 // Send message
 router.post('/:id/messages', authenticate, async (req, res) => {
   const { id } = req.params;
@@ -178,6 +182,7 @@ router.post('/:id/messages', authenticate, async (req, res) => {
   }
 });
 
+/** GET /api/messages/unread/count - Returns the total number of unread messages for the authenticated user. */
 // Get unread message count
 router.get('/unread/count', authenticate, async (req, res) => {
   try {
