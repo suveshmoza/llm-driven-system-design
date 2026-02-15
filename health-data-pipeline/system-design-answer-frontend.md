@@ -8,217 +8,167 @@
 
 "I'll design the frontend for a health data pipeline like Apple Health, which displays metrics from multiple devices, visualizes health trends over time, and allows users to share data with healthcare providers. The key frontend challenges are rendering large amounts of time-series data efficiently, building responsive chart visualizations that work across date ranges, and creating intuitive interfaces for managing privacy and sharing settings.
 
-The core technical challenges are implementing performant chart rendering with Recharts, managing complex health data state with Zustand, building accessible date range selectors for historical queries, and creating a dashboard that displays insights and recommendations prominently."
+The core technical challenges are implementing performant chart rendering with Recharts, managing complex health data state with Zustand, building accessible date range selectors for historical queries, and creating a dashboard that surfaces AI-generated insights prominently while showing real-time device sync status."
 
 ---
 
 ## 🎯 Requirements Clarification (3 minutes)
 
 ### User-Facing Features
-- **Dashboard**: Daily summary with key health metrics
-- **Trends**: Historical charts for each metric type
-- **Insights**: AI-generated health recommendations
-- **Devices**: Manage connected devices and sync status
-- **Sharing**: Create and manage share tokens for providers
+- **Dashboard**: Daily summary with key health metrics across activity, vitals, body, and sleep
+- **Trends**: Historical charts for each metric type with configurable date ranges
+- **Insights**: AI-generated health recommendations sorted by severity
+- **Devices**: Manage connected devices and monitor sync status
+- **Sharing**: Create and manage time-limited share tokens for providers
 
 ### Non-Functional Requirements
-- **Performance**: Charts render in < 100ms with weeks of data
-- **Responsiveness**: Dashboard adapts from mobile to desktop
-- **Accessibility**: WCAG 2.1 AA for health-critical information
-- **Offline**: Display cached data when offline
+- **Performance**: Charts render in under 100ms with weeks of data
+- **Responsiveness**: Dashboard adapts from mobile to desktop breakpoints
+- **Accessibility**: WCAG 2.1 AA for health-critical information display
+- **Offline**: Display cached data when the device loses connectivity
 
 ### UI Scale Estimates
-- 16 health metric types across 4 categories
-- Charts can show 7-365 days of data
-- Up to 1,440 data points per day (heart rate at 1/min)
-- Real-time sync status updates
+- 16 health metric types across 4 categories (activity, vitals, body, sleep)
+- Charts can show 7 to 365 days of data
+- Up to 1,440 data points per day for heart rate at one-minute granularity
+- Real-time sync status updates via SSE connection
 
 ---
 
 ## 🏗️ High-Level Architecture (5 minutes)
 
 ```
-+----------------------------------------------------------+
-|                    React Application                       |
-|                                                            |
-|  +----------------------+  +---------------------------+   |
-|  |    Layout Shell      |  |      Route Components      |  |
-|  |  - Navigation        |  |  - Dashboard (index)       |  |
-|  |  - Header            |  |  - Trends (/trends/:type)  |  |
-|  |  - Sync Status       |  |  - Insights (/insights)    |  |
-|  +----------------------+  |  - Devices (/devices)      |  |
-|                            |  - Sharing (/sharing)      |  |
-|  +----------------------+  +---------------------------+   |
-|  |    Zustand Store     |                                  |
-|  |  - healthStore       |  +---------------------------+   |
-|  |  - uiStore           |  |      Chart Components      |  |
-|  |  - syncStore         |  |  - LineChart (trends)      |  |
-|  +----------------------+  |  - BarChart (daily totals) |  |
-|                            |  - AreaChart (ranges)       |  |
-|                            +---------------------------+   |
-+----------------------------------------------------------+
-                           |
-                           v
-+----------------------------------------------------------+
-|                      API Layer                             |
-|    /api/v1/samples | /api/v1/aggregates | /api/v1/insights |
-+----------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│                     React Application                         │
+│                                                               │
+│  ┌─────────────────────┐   ┌───────────────────────────────┐ │
+│  │    Layout Shell      │   │       Route Components        │ │
+│  │  - Navigation        │   │  - Dashboard (/)              │ │
+│  │  - Header            │   │  - Trends (/trends/:type)     │ │
+│  │  - SyncStatusBar     │   │  - Insights (/insights)       │ │
+│  └─────────────────────┘   │  - Devices (/devices)          │ │
+│                             │  - Sharing (/sharing)          │ │
+│  ┌─────────────────────┐   └───────────────────────────────┘ │
+│  │   Zustand Stores     │                                     │
+│  │  - healthStore       │   ┌───────────────────────────────┐ │
+│  │  - uiStore           │   │      Chart Components         │ │
+│  │  - syncStore         │   │  - LineChart (trends)         │ │
+│  └─────────────────────┘   │  - BarChart (daily totals)    │ │
+│                             │  - AreaChart (ranges)          │ │
+│                             └───────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       API Layer                               │
+│  /api/v1/users/me/summary  │  /api/v1/users/me/aggregates    │
+│  /api/v1/users/me/insights │  /api/v1/devices/:id/sync       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Component Hierarchy
-
-```
-App
-├── Layout
-│   ├── Sidebar
-│   │   ├── NavItem (Dashboard)
-│   │   ├── NavItem (Trends)
-│   │   ├── NavItem (Insights)
-│   │   ├── NavItem (Devices)
-│   │   └── NavItem (Sharing)
-│   └── Header
-│       ├── DateRangeSelector
-│       ├── SyncStatusIndicator
-│       └── UserMenu
-├── Routes
-│   ├── Dashboard (/)
-│   │   ├── DailySummaryCard (steps, calories)
-│   │   ├── VitalsCard (heart rate, BP)
-│   │   ├── SleepCard
-│   │   ├── WeightCard
-│   │   └── InsightsPreview
-│   ├── TrendsPage (/trends/:metricType)
-│   │   ├── DateRangePicker
-│   │   ├── TrendChart (Recharts)
-│   │   └── StatsSummary
-│   ├── InsightsPage (/insights)
-│   │   ├── InsightCard (heart rate trend)
-│   │   ├── InsightCard (sleep deficit)
-│   │   └── InsightCard (activity change)
-│   ├── DevicesPage (/devices)
-│   │   ├── DeviceCard
-│   │   └── AddDeviceModal
-│   └── SharingPage (/sharing)
-│       ├── ShareTokenList
-│       └── CreateShareModal
-└── Modals
-    └── InsightDetailModal
-```
+> "I'm using TanStack Router for file-based routing, Zustand for global state, and Recharts for chart rendering. The layout shell persists across routes and includes the sync status indicator, so users always know whether their data is fresh. Chart components are shared between the Dashboard (mini sparklines) and Trends page (full interactive charts)."
 
 ---
 
 ## 📊 Deep Dive: Health Dashboard Layout (8 minutes)
 
-### Dashboard Grid Structure
+The dashboard is the primary surface. It shows a daily snapshot organized by health category.
 
 ```
-+------------------------------------------------------------------+
-|                    INSIGHTS BANNER (full width)                   |
-|  [!] Your resting heart rate has increased 5% this month         |
-+------------------------------------------------------------------+
-|                                                                   |
-|  +------------------+  +------------------+  +------------------+  |
-|  |    ACTIVITY      |  |     VITALS       |  |      SLEEP       |  |
-|  +------------------+  +------------------+  +------------------+  |
-|  | 🚶 Steps         |  | ❤️ Heart Rate    |  | 😴 7h 23m        |  |
-|  |   8,234 / 10,000 |  |   72 bpm avg     |  |   ▓▓▓▓▓▓▓░░░     |  |
-|  |   ▓▓▓▓▓▓▓▓░░     |  |                  |  |   Goal: 8h       |  |
-|  |                  |  | 💓 Resting HR    |  +------------------+  |
-|  | 🔥 Calories      |  |   58 bpm         |  |                   |
-|  |   423 / 500      |  |                  |  +------------------+  |
-|  |   ▓▓▓▓▓▓▓▓░      |  | 🩸 Blood O2     |  |     WEIGHT       |  |
-|  +------------------+  |   98%            |  +------------------+  |
-|                        +------------------+  | ⚖️ 72.5 kg       |  |
-|                                              | 📊 22.1% body fat |  |
-|                                              +------------------+  |
-+------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│            INSIGHTS BANNER (full width, if any)               │
+│  ⚠️  Your resting heart rate has increased 5% this month     │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│    ACTIVITY       │  │     VITALS        │  │      SLEEP       │
+├──────────────────┤  ├──────────────────┤  ├──────────────────┤
+│ Steps             │  │ Heart Rate        │  │ 7h 23m           │
+│   8,234 / 10,000  │  │   72 bpm avg      │  │   ████████░░     │
+│   ████████░░      │  │                   │  │   Goal: 8h       │
+│                   │  │ Resting HR        │  └──────────────────┘
+│ Calories          │  │   58 bpm          │
+│   423 / 500       │  │                   │  ┌──────────────────┐
+│   ████████░       │  │ Blood O2          │  │     WEIGHT       │
+└──────────────────┘  │   98%             │  ├──────────────────┤
+                      └──────────────────┘  │ 72.5 kg           │
+                                            │ 22.1% body fat    │
+                                            └──────────────────┘
 ```
 
-### Responsive Breakpoints
+### Responsive Grid Strategy
 
 | Breakpoint | Grid Layout | Description |
 |------------|-------------|-------------|
-| Mobile (< 768px) | 1 column | Cards stack vertically |
-| Tablet (768-1024px) | 2 columns | Activity + Vitals, Sleep + Weight |
-| Desktop (> 1024px) | 3 columns | All cards visible at once |
+| Mobile (< 768px) | 1 column | Cards stack vertically, insights banner collapses |
+| Tablet (768-1024px) | 2 columns | Activity + Vitals side by side, Sleep + Weight below |
+| Desktop (> 1024px) | 3 columns | All category cards visible simultaneously |
 
-### Daily Summary Card Structure
+> "I use a CSS Grid with Tailwind's responsive utilities. Each card is self-contained with its own loading state. On mobile, the insights banner becomes a dismissible notification to save vertical space. The grid reflows naturally without JavaScript layout calculations."
 
-```
-+--------------------------------+
-|  [icon]  ACTIVITY              |
-+--------------------------------+
-|                                |
-|  Steps              8,234      |
-|  ▓▓▓▓▓▓▓▓░░░░░░░░   steps     |
-|  (82% of 10,000 goal)          |
-|                                |
-|  Distance            5.2 km    |
-|                                |
-|  Active Calories      423      |
-|  ▓▓▓▓▓▓▓▓░░░░░░░░   kcal      |
-|  (85% of 500 goal)             |
-|                                |
-+--------------------------------+
-```
+### Daily Summary Card Anatomy
 
-### Progress Bar Component
+Each card follows a consistent structure: icon and category title at the top, then a list of metrics with progress bars for goal-tracked values and plain readings for vitals.
 
 ```
-Progress Calculation:
-progress = min((value / goal) * 100, 100)
-
-Visual representation:
-▓▓▓▓▓▓▓▓░░░░░░░░  82% (value: 8234, goal: 10000)
-└─filled─┘└─empty─┘
-
-Accessibility:
-role="progressbar"
-aria-valuenow={8234}
-aria-valuemax={10000}
-aria-label="8,234 of 10,000 steps"
+┌──────────────────────────────┐
+│  [icon]  ACTIVITY             │
+├──────────────────────────────┤
+│                               │
+│  Steps              8,234     │
+│  ████████░░░░░░░░    steps    │
+│  (82% of 10,000 goal)        │
+│                               │
+│  Distance            5.2 km   │
+│                               │
+│  Active Calories      423     │
+│  ████████░░░░░░░░    kcal     │
+│  (85% of 500 goal)           │
+│                               │
+└──────────────────────────────┘
 ```
+
+Progress bars use role="progressbar" with aria-valuenow, aria-valuemax, and a descriptive aria-label like "8,234 of 10,000 steps". This ensures screen readers announce meaningful context rather than just a percentage.
+
+### Metric Configuration
+
+| Metric | Display Name | Unit | Color | Goal |
+|--------|--------------|------|-------|------|
+| STEPS | Steps | steps | #22c55e (green) | 10,000 |
+| HEART_RATE | Heart Rate | bpm | #ef4444 (red) | - |
+| RESTING_HEART_RATE | Resting HR | bpm | #f97316 (orange) | - |
+| SLEEP_ANALYSIS | Sleep | hours | #8b5cf6 (purple) | 8 |
+| WEIGHT | Weight | kg | #3b82f6 (blue) | - |
+| DISTANCE | Distance | km | #06b6d4 (cyan) | - |
+| ACTIVE_ENERGY | Calories | kcal | #eab308 (yellow) | 500 |
+| OXYGEN_SATURATION | Blood O2 | % | #0ea5e9 (sky) | - |
 
 ---
 
 ## 📈 Deep Dive: Trend Charts with Recharts (8 minutes)
 
-### Chart Component Architecture
+The Trends page shows a full interactive chart for a selected health metric over a configurable date range. This is the most complex frontend component.
 
 ```
-+------------------------------------------------------------------+
-|                      TrendChart Component                         |
-+------------------------------------------------------------------+
-|                                                                   |
-|  Props:                                                           |
-|  - data: Array<{ date: string, value: number }>                   |
-|  - metricType: STEPS | HEART_RATE | SLEEP | WEIGHT | ...         |
-|  - dateRange: '7d' | '30d' | '90d' | '1y'                        |
-|  - showTrendLine: boolean                                         |
-|                                                                   |
-+------------------------------------------------------------------+
-         |
-         v
-+------------------------------------------------------------------+
-|  ResponsiveContainer (100% width, 320px height)                   |
-|  +--------------------------------------------------------------+ |
-|  |                         LineChart                             | |
-|  |  +----------------------------------------------------------+ | |
-|  |  |       Y-Axis                     Chart Area               | | |
-|  |  |    120 ─┤                   .                            | | |
-|  |  |        │                  .   .     Goal line            | | |
-|  |  |    100 ─┤ - - - - - - .-.-.-.-.-.-.-.-.-.-- ─ ─ ─ ─ ─    | | |
-|  |  |        │           .         .                           | | |
-|  |  |     80 ─┤        .             .                         | | |
-|  |  |        │      .                  .     Trend line        | | |
-|  |  |     60 ─┤ . . . . . . . . . . . . . . . . . .           | | |
-|  |  |        │                                                 | | |
-|  |  |     40 ─┤                                                | | |
-|  |  |        └──┬────┬────┬────┬────┬────┬────┬──              | | |
-|  |  |          Mon  Tue  Wed  Thu  Fri  Sat  Sun               | | |
-|  |  +----------------------------------------------------------+ | |
-|  +--------------------------------------------------------------+ |
-+------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│                  TrendChart Component                          │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │  ResponsiveContainer (100% width, 320px height)          │ │
+│  │  ┌──────────────────────────────────────────────────────┐│ │
+│  │  │    120 ─┤                   .                        ││ │
+│  │  │         │                  . .    Goal line           ││ │
+│  │  │    100 ─┤ ─ ─ ─ ─ ─ ─ .─.─.─.─.─.─.─.─.─ ─ ─ ─ ─  ││ │
+│  │  │         │           .         .                      ││ │
+│  │  │     80 ─┤        .             .                     ││ │
+│  │  │         │      .                 .    Trend line      ││ │
+│  │  │     60 ─┤ . . . . . . . . . . . . . . . . .         ││ │
+│  │  │         │                                            ││ │
+│  │  │     40 ─┤                                            ││ │
+│  │  │         └──┬────┬────┬────┬────┬────┬────┬──         ││ │
+│  │  │           Mon  Tue  Wed  Thu  Fri  Sat  Sun          ││ │
+│  │  └──────────────────────────────────────────────────────┘│ │
+│  └──────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Date Formatting by Range
@@ -230,48 +180,35 @@ aria-label="8,234 of 10,000 steps"
 | 90 days | Month | Jan, Feb, Mar | ~6 |
 | 1 year | Month | Jan, Apr, Jul, Oct | ~12 |
 
-### Metric Configuration Table
+### Tooltip Design
 
-| Metric | Display Name | Unit | Color | Domain | Goal |
-|--------|--------------|------|-------|--------|------|
-| STEPS | Steps | steps | #22c55e (green) | auto | 10,000 |
-| HEART_RATE | Heart Rate | bpm | #ef4444 (red) | [40, 120] | - |
-| RESTING_HEART_RATE | Resting HR | bpm | #f97316 (orange) | [40, 100] | - |
-| SLEEP_ANALYSIS | Sleep | hours | #8b5cf6 (purple) | auto | 8 |
-| WEIGHT | Weight | kg | #3b82f6 (blue) | auto | - |
-| DISTANCE | Distance | km | #06b6d4 (cyan) | auto | - |
-| ACTIVE_ENERGY | Calories | kcal | #eab308 (yellow) | auto | 500 |
-| OXYGEN_SATURATION | Blood O2 | % | #0ea5e9 (sky) | [90, 100] | - |
-
-### Tooltip Component
+When the user hovers or taps a data point, a tooltip appears showing the formatted date and the metric value with its unit. The tooltip follows the cursor and is positioned to avoid clipping at chart edges.
 
 ```
-+-------------------------+
-| Saturday, January 15    |
-|                         |
-| 8,234 steps             |
-+-------------------------+
-
-Triggered on: hover/touch
-Position: follows cursor
-Contains: formatted date + value with unit
+┌─────────────────────────┐
+│ Saturday, January 15     │
+│                          │
+│ 8,234 steps              │
+└─────────────────────────┘
 ```
 
 ### Trend Line Calculation
 
-Linear regression for trend detection:
+The trend line uses linear regression over the visible data points. The slope is calculated as (n * SumXY - SumX * SumY) / (n * SumX^2 - (SumX)^2), where X is the day index and Y is the metric value. The trend line only renders when the data set contains at least 7 points, preventing misleading conclusions from sparse data.
 
-```
-slope = (n × ΣXY - ΣX × ΣY) / (n × ΣX² - (ΣX)²)
+> "I chose to compute the trend line on the frontend because it's a pure function of the displayed data points. When the user switches date ranges, the trend line recalculates instantly without an API call. The calculation is O(n) and operates on at most 365 pre-aggregated points, so performance is never a concern."
 
-Where:
-  X = day index (0, 1, 2, ...)
-  Y = metric value
-  n = number of data points
+---
 
-Rendered as: dashed line overlay on chart
-Visibility: only when showTrendLine=true and data.length >= 7
-```
+## 🔧 Deep Dive: Trade-off -- SVG vs Canvas for Chart Rendering
+
+**Decision**: Use SVG-based rendering via Recharts.
+
+**Why SVG works for this problem**: Health dashboards display at most 365 data points for a one-year view, well within SVG's performance ceiling. SVG gives us native DOM events for tooltips and hover interactions, crisp rendering at any display density (critical for retina displays where health professionals might read charts), and built-in accessibility through ARIA attributes on chart elements.
+
+**Why Canvas fails here**: Canvas rendering would require us to implement our own hit-testing for tooltip interactions -- effectively rebuilding DOM event handling in JavaScript. It also produces rasterized output that blurs on high-DPI displays unless we manually handle device pixel ratio scaling. For a data visualization where users need to hover individual data points to see exact values, canvas creates unnecessary complexity.
+
+**What we give up**: SVG degrades when rendering more than approximately 1,000 DOM nodes. If a user requests minute-level heart rate data for a full day (1,440 points), we would hit this threshold. We mitigate this by requesting server-side aggregation -- the API accepts a period parameter (hour, day, week) so the frontend never receives more than 365 data points regardless of the date range selected.
 
 ---
 
@@ -280,111 +217,111 @@ Visibility: only when showTrendLine=true and data.length >= 7
 ### Store Architecture
 
 ```
-+------------------------------------------------------------------+
-|                        healthStore                                |
-+------------------------------------------------------------------+
-|                                                                   |
-|  State:                                                           |
-|  +----------------------+  +----------------------------------+   |
-|  | Date Selection       |  | Cached Data                      |   |
-|  |----------------------|  |----------------------------------|   |
-|  | selectedDate: Date   |  | dailySummary: Record<type, val>  |   |
-|  | dateRange: {start,   |  | aggregates: Record<type,         |   |
-|  |            end}      |  |             Array<{date, value}>>|   |
-|  | dateRangePreset:     |  | insights: Insight[]              |   |
-|  |   '7d'|'30d'|'90d'   |  +----------------------------------+   |
-|  +----------------------+                                         |
-|                                                                   |
-|  Loading States:                                                  |
-|  +----------------------------------+                             |
-|  | isLoadingSummary: boolean        |                             |
-|  | isLoadingAggregates: boolean     |                             |
-|  +----------------------------------+                             |
-|                                                                   |
-+------------------------------------------------------------------+
-         |
-         v
-+------------------------------------------------------------------+
-|  Actions                                                          |
-+------------------------------------------------------------------+
-|  setSelectedDate(date) → triggers fetchDailySummary              |
-|  setDateRangePreset('7d'|'30d'|'90d'|'1y') → updates range       |
-|  fetchDailySummary(date) → GET /api/v1/users/me/summary          |
-|  fetchAggregates(types[], range) → GET /api/v1/users/me/aggregates|
-|  fetchInsights() → GET /api/v1/users/me/insights                 |
-+------------------------------------------------------------------+
-```
-
-### Date Range Preset Logic
-
-```
-setDateRangePreset(preset):
-
-+--------+     +-----------------------+     +------------------+
-| '7d'   | --> | start = today - 7     | --> | Update dateRange |
-| '30d'  | --> | start = today - 30    | --> | in store         |
-| '90d'  | --> | start = today - 90    | --> |                  |
-| '1y'   | --> | start = today - 365   | --> |                  |
-+--------+     +-----------------------+     +------------------+
-                         |
-                         v
-               +------------------+
-               | end = today      |
-               +------------------+
+┌──────────────────────────────────────────────────────────────┐
+│                        healthStore                            │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ┌────────────────────┐   ┌────────────────────────────────┐ │
+│  │  Date Selection     │   │  Cached Data                   │ │
+│  ├────────────────────┤   ├────────────────────────────────┤ │
+│  │  selectedDate       │   │  dailySummary: {type: value}   │ │
+│  │  dateRange:         │   │  aggregates: {type: points[]}  │ │
+│  │    { start, end }   │   │  insights: Insight[]           │ │
+│  │  dateRangePreset:   │   └────────────────────────────────┘ │
+│  │    7d | 30d | 90d   │                                      │
+│  └────────────────────┘                                      │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Actions                                                │  │
+│  │  setSelectedDate(date) ──▶ triggers fetchDailySummary   │  │
+│  │  setDateRangePreset(p) ──▶ updates range, refetches     │  │
+│  │  fetchDailySummary(date) ──▶ GET /api/v1/users/me/summary│  │
+│  │  fetchAggregates(types[], range) ──▶ GET /aggregates    │  │
+│  │  fetchInsights() ──▶ GET /api/v1/users/me/insights      │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Persistence Strategy
 
-```
-persist middleware configuration:
-+------------------------------------------+
-|  name: 'health-store'                    |
-|                                          |
-|  partialize: (state) => ({               |
-|    dateRangePreset: state.dateRangePreset|
-|  })                                      |
-|                                          |
-|  NOT persisted (fetched fresh):          |
-|  - dailySummary                          |
-|  - aggregates                            |
-|  - insights                              |
-+------------------------------------------+
-```
+The store uses Zustand's persist middleware, but only persists user preferences (dateRangePreset), never health data. Health data is always fetched fresh on app load to ensure accuracy.
 
-Rationale: Persist user preferences (date range), but always fetch fresh health data on app load.
+> "Persisting stale health data would create a dangerous UX for a health application -- a user might see yesterday's heart rate reading and mistake it for current. By only persisting the user's preferred date range, we restore their view preferences while guaranteeing data freshness."
 
 ### Sync Status Store
 
 ```
-+------------------------------------------------------------------+
-|                         syncStore                                 |
-+------------------------------------------------------------------+
-|                                                                   |
-|  devices: Array<{                                                 |
-|    id: string                                                     |
-|    name: "Apple Watch Series 9"                                   |
-|    type: "apple_watch"                                            |
-|    lastSync: Date | null                                          |
-|    isSyncing: boolean                                             |
-|  }>                                                               |
-|                                                                   |
-|  overallStatus: 'synced' | 'syncing' | 'error' | 'offline'       |
-|                                                                   |
-+------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│                        syncStore                              │
+├──────────────────────────────────────────────────────────────┤
+│  devices: Array of {                                          │
+│    id, name, type, lastSync, isSyncing                        │
+│  }                                                            │
+│                                                               │
+│  overallStatus: synced | syncing | error | offline            │
+│                                                               │
+│  Status indicator mapping:                                    │
+│  ┌──────────┬───────────┬──────────────────────────────────┐ │
+│  │  Status   │  Icon     │  Label                           │ │
+│  ├──────────┼───────────┼──────────────────────────────────┤ │
+│  │  synced   │  ● green  │  "All devices synced"            │ │
+│  │  syncing  │  ◐ blue   │  "Syncing..." (animated)         │ │
+│  │  error    │  ● red    │  "Sync error - tap to retry"     │ │
+│  │  offline  │  ○ gray   │  "Offline - cached data"         │ │
+│  └──────────┴───────────┴──────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Status Indicator UI
+The sync status indicator lives in the layout header, visible on every route. It connects to an SSE endpoint at /sync-status that pushes real-time updates as devices complete their sync cycles.
+
+---
+
+## 📅 Deep Dive: Date Range Selector (5 minutes)
+
+### Selector Layout
 
 ```
-+---------------------------+
-| Overall Status Display    |
-+---------------------------+
-| synced  → ● (green)  "All devices synced"         |
-| syncing → ◐ (blue)   "Syncing..." (animated)      |
-| error   → ● (red)    "Sync error - tap to retry"  |
-| offline → ○ (gray)   "Offline - cached data"      |
-+---------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│  ┌───────┬───────┬───────┬───────┐     Jan 8 - Jan 15, 2024  │
+│  │  7D   │  30D  │  90D  │  1Y   │                            │
+│  └───────┴───────┴───────┴───────┘                            │
+│     ↑                                                         │
+│   selected (white bg, ring shadow)                            │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+### Interaction Flow
+
+```
+    User clicks "30D"
+         │
+         ▼
+┌──────────────────────┐
+│ setDateRangePreset   │
+│ ('30d')              │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ Calculate range:      │
+│ start = today - 30    │
+│ end = today           │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ Store updates:        │
+│ dateRangePreset, range│
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ Charts re-render with │
+│ new data window       │
+└──────────────────────┘
+```
+
+Each button uses aria-pressed to indicate the active selection. The button group is wrapped in a role="group" with an aria-label of "Date range selection" so screen readers announce context. Keyboard navigation moves between buttons with arrow keys.
 
 ---
 
@@ -392,174 +329,92 @@ Rationale: Persist user preferences (date range), but always fetch fresh health 
 
 ### Insight Card Design
 
+Insights are sorted by severity (high first) and capped at 3 on the dashboard preview. The full list is available on the Insights page.
+
 ```
-+------------------------------------------------------------------+
-| HIGH SEVERITY (red border)                                        |
-+------------------------------------------------------------------+
-| ⚠️  Your resting heart rate has increased over the past month    |
-|                                                                   |
-|     Consider scheduling a check-up with your doctor if           |
-|     this trend continues.                                         |
-|                                                               [X] |
-+------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│ HIGH SEVERITY (red left border)                               │
+├──────────────────────────────────────────────────────────────┤
+│ ⚠️  Your resting heart rate has increased over the past month │
+│                                                               │
+│   Consider scheduling a check-up with your doctor if          │
+│   this trend continues.                                       │
+│                                                         [X]   │
+└──────────────────────────────────────────────────────────────┘
 
-+------------------------------------------------------------------+
-| MEDIUM SEVERITY (yellow border)                                   |
-+------------------------------------------------------------------+
-| 😴  You've averaged 5.8 hours of sleep over the past 2 weeks     |
-|                                                                   |
-|     Try setting a consistent bedtime to improve sleep quality.   |
-|                                                               [X] |
-+------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│ MEDIUM SEVERITY (yellow left border)                          │
+├──────────────────────────────────────────────────────────────┤
+│ 😴  You've averaged 5.8 hours of sleep over the past 2 weeks │
+│                                                               │
+│   Try setting a consistent bedtime to improve sleep quality.  │
+│                                                         [X]   │
+└──────────────────────────────────────────────────────────────┘
 
-+------------------------------------------------------------------+
-| LOW SEVERITY (blue border)                                        |
-+------------------------------------------------------------------+
-| 📈  Great job! You're 23% more active than your 4-week average   |
-|                                                               [X] |
-+------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│ LOW SEVERITY (blue left border)                               │
+├──────────────────────────────────────────────────────────────┤
+│ 📈  Great job! You're 23% more active than your 4-week avg   │
+│                                                         [X]   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Insight Types and Icons
+### Insight Types and Triggers
 
 | Insight Type | Icon | Condition | Severity |
 |--------------|------|-----------|----------|
-| HEART_RATE_TREND (up) | 📈 | slope > 0.5 BPM/day | medium |
-| HEART_RATE_TREND (down) | 📉 | slope < -0.5 BPM/day | low |
-| SLEEP_DEFICIT | 😴 | avg < 6 hours | high |
-| ACTIVITY_CHANGE (up) | 🏃 | > +20% vs 4-week avg | low |
-| ACTIVITY_CHANGE (down) | ⚠️ | < -20% vs 4-week avg | medium |
-| WEIGHT_CHANGE | ⚖️ | > 3% change in 30 days | medium |
+| Heart Rate Trend (up) | 📈 | slope > 0.5 BPM/day over 30 days | medium |
+| Heart Rate Trend (down) | 📉 | slope < -0.5 BPM/day over 30 days | low |
+| Sleep Deficit | 😴 | avg < 6 hours over 14 days | high |
+| Activity Change (up) | 🏃 | > +20% vs 4-week average | low |
+| Activity Change (down) | ⚠️ | < -20% vs 4-week average | medium |
+| Weight Change | ⚖️ | > 3% change over 30 days | medium |
 
 ### Severity Styling
 
 | Severity | Background | Border | Text |
 |----------|------------|--------|------|
-| high | bg-red-50 | border-red-500 | text-red-800 |
-| medium | bg-yellow-50 | border-yellow-500 | text-yellow-800 |
-| low | bg-blue-50 | border-blue-500 | text-blue-800 |
+| high | bg-red-50 | border-l-4 border-red-500 | text-red-800 |
+| medium | bg-yellow-50 | border-l-4 border-yellow-500 | text-yellow-800 |
+| low | bg-blue-50 | border-l-4 border-blue-500 | text-blue-800 |
 
-### Insights Sorting
-
-Insights are displayed by severity (high → medium → low), limited to top 3 on dashboard preview.
+High-severity insights use role="alert" with aria-live="polite" so screen readers announce them when the page loads, without interrupting current navigation.
 
 ---
 
-## 📅 Deep Dive: Date Range Selector (3 minutes)
+## 🔧 Deep Dive: Trade-off -- Server-Side vs Client-Side Aggregation
 
-### Selector Component Layout
+**Decision**: Request pre-aggregated data from the server.
 
-```
-+------------------------------------------------------------------+
-|  +-------+-------+-------+-------+        Jan 8 - Jan 15, 2024   |
-|  |  7D   |  30D  |  90D  |  1Y   |                               |
-|  +-------+-------+-------+-------+                               |
-|     ↑                                                            |
-|   selected (white bg, shadow)                                    |
-+------------------------------------------------------------------+
-```
+**Why server-side aggregation works**: The backend already computes hourly and daily aggregates during the ingestion pipeline. Sending raw samples to the frontend would mean transmitting 1,440 heart rate readings per day -- for a 30-day chart view, that is 43,200 data points. At roughly 50 bytes per sample, that is over 2MB per chart load, which is unacceptable on mobile networks. Pre-aggregated daily data for the same view is 30 data points at about 1.5KB total.
 
-### Interaction Flow
+**Why client-side aggregation fails at scale**: Beyond the payload size problem, client-side aggregation would require the browser to run the deduplication algorithm. Two devices might report overlapping step counts for the same time window, and the frontend would need to understand device priority rankings to resolve conflicts. This is domain logic that belongs on the server -- if the priority algorithm changes, we would need to push a client update rather than simply reprocessing on the backend.
 
-```
-User clicks "30D" button
-         |
-         v
-+----------------------------------+
-| setDateRangePreset('30d')        |
-+----------------------------------+
-         |
-         v
-+----------------------------------+
-| Calculate new date range:        |
-| start = today - 30 days          |
-| end = today                      |
-+----------------------------------+
-         |
-         v
-+----------------------------------+
-| Update store:                    |
-| - dateRangePreset = '30d'        |
-| - dateRange = { start, end }     |
-+----------------------------------+
-         |
-         v
-+----------------------------------+
-| Chart components re-render       |
-| with new date range              |
-+----------------------------------+
-```
-
-### Accessibility
-
-```
-Button attributes:
-- aria-pressed={isSelected}
-- Focus ring visible on keyboard nav
-- Grouped logically for screen readers
-```
+**What we give up**: Flexibility. When a user is viewing a 7-day chart and wants to drill down to hourly resolution for a specific day, we need an additional API call with a different period parameter. This adds latency to the drill-down interaction (approximately 200ms for a cached response). For a health dashboard where users primarily view daily summaries, this trade-off favors smaller payloads and consistent deduplication over interactive drill-down speed.
 
 ---
 
-## ⚖️ Trade-offs and Alternatives (5 minutes)
+## 🔧 Deep Dive: Trade-off -- Zustand vs React Query for Data Management
 
-| Decision | Chosen | Alternative | Rationale |
-|----------|--------|-------------|-----------|
-| Chart Library | ✅ Recharts | ❌ D3.js, Chart.js | React-native, declarative API, good TypeScript support |
-| State Management | ✅ Zustand | ❌ Redux, Context | Minimal boilerplate, built-in persistence, no providers needed |
-| Date Library | ✅ date-fns | ❌ Moment, Day.js | Tree-shakeable, immutable, comprehensive API |
-| Styling | ✅ Tailwind CSS | ❌ CSS Modules | Utility-first for rapid prototyping, consistent design system |
-| Data Fetching | ✅ Custom hooks | ❌ React Query | Simpler for this use case, less dependency |
+**Decision**: Use Zustand for state management with custom fetch actions.
 
-### Chart Performance Trade-offs
+**Why Zustand works for this application**: Health data has a natural structure -- a selected date drives the daily summary, and a date range drives chart data. Zustand's flat store model makes it easy to derive views from these two pieces of state. The persist middleware handles saving user preferences (preferred date range) without additional configuration. Unlike Redux, there is no boilerplate of action creators, reducers, and middleware setup.
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| SVG (Recharts) ✅ | Crisp at any resolution, easy tooltips, declarative | Performance degrades with 1000+ points |
-| Canvas | Better performance for large datasets | No native DOM events, harder accessibility |
+**Why React Query would create problems**: React Query excels when each component independently fetches its own data. But on the health dashboard, multiple cards share the same summary response -- steps, heart rate, sleep, and weight all come from a single GET /summary call. With React Query, we would either make redundant requests from each card or extract the query to a parent component and prop-drill the results. Zustand's shared store gives every card access to the same fetched data without coordination overhead.
 
-**Mitigation**: For 1-year views (365 points), SVG is sufficient. For minute-level data, aggregate to hourly before rendering.
-
-### Data Aggregation Strategy
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| Server-side ✅ | Smaller payloads, consistent aggregation | Additional API calls for granularity changes |
-| Client-side | More flexible visualizations | Large payloads, inconsistent across clients |
-
-**Decision**: Server-side aggregation - request period parameter (hour, day, week) in API call.
+**What we give up**: React Query provides automatic background refetching, stale-while-revalidate, and cache invalidation out of the box. With Zustand, we implement these manually -- a 5-minute refetch interval via setInterval, and explicit cache clearing when the user navigates away. This is approximately 30 lines of custom code that React Query would handle for free. For this application, the simpler mental model of a flat store outweighs the convenience of automatic cache management.
 
 ---
 
 ## ♿ Accessibility Considerations (2 minutes)
 
-### Screen Reader Support
+### Chart Accessibility
 
-```
-Chart accessibility:
-+------------------------------------------+
-| aria-label="Steps trend chart showing    |
-|             7 days of data"              |
-+------------------------------------------+
-
-Progress bar:
-+------------------------------------------+
-| role="progressbar"                       |
-| aria-valuenow={8234}                     |
-| aria-valuemax={10000}                    |
-| aria-label="8,234 of 10,000 steps"       |
-+------------------------------------------+
-
-Insight alerts:
-+------------------------------------------+
-| role="alert"                             |
-| aria-live="polite"                       |
-+------------------------------------------+
-```
+Charts are inherently visual. For screen reader users, each chart includes a hidden data table alternative that presents the same information in tabular form. The chart container uses an aria-label describing the chart purpose and data range, for example "Steps trend chart showing 7 days of data."
 
 ### Color Accessibility
 
-In addition to colors, use patterns for colorblind users:
+Each metric uses both color and line pattern to distinguish from others when multiple metrics are overlaid.
 
 | Metric | Color | Pattern |
 |--------|-------|---------|
@@ -567,18 +422,37 @@ In addition to colors, use patterns for colorblind users:
 | Heart Rate | Red (#ef4444) | Dashed line |
 | Sleep | Purple (#8b5cf6) | Dotted line |
 
-All color combinations meet WCAG 2.1 AA contrast requirements (4.5:1 minimum).
+All color combinations meet WCAG 2.1 AA contrast requirements with a minimum 4.5:1 ratio against the white chart background.
+
+### Keyboard Navigation
+
+- Date range selector buttons support arrow key navigation within the group
+- Dashboard cards are focusable and expand details on Enter
+- Insight dismiss buttons are keyboard accessible with visible focus rings
+
+---
+
+## ⚖️ Trade-offs Summary (3 minutes)
+
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| Chart Library | ✅ Recharts | ❌ D3.js | React-native declarative API, good TypeScript support, built-in responsiveness |
+| State Management | ✅ Zustand | ❌ React Query | Flat shared store for multi-card dashboard, built-in persistence |
+| Rendering | ✅ SVG | ❌ Canvas | Crisp at any resolution, native DOM events for tooltips, accessible |
+| Date Library | ✅ date-fns | ❌ Moment.js | Tree-shakeable, immutable, no global mutation |
+| Aggregation | ✅ Server-side | ❌ Client-side | Smaller payloads, consistent deduplication logic on server |
+| Styling | ✅ Tailwind CSS | ❌ CSS Modules | Utility-first for rapid iteration, consistent spacing system |
 
 ---
 
 ## 🚀 Closing Summary (1 minute)
 
-"The health data pipeline frontend is built around three key principles:
+"The health data pipeline frontend is built around three principles:
 
-1. **Dashboard-first design** - The daily summary provides an at-a-glance view of key health metrics with progress indicators toward goals. Insights are prominently displayed to surface AI-generated recommendations.
+1. **Dashboard-first design** -- The daily summary provides an at-a-glance view of key health metrics with progress indicators toward goals. Insights are prominently displayed with severity-based ordering so critical health alerts are never buried.
 
-2. **Responsive chart visualizations** - Recharts provides declarative, React-native charts for trend analysis. Date range presets (7d, 30d, 90d, 1y) enable quick navigation through historical data with appropriate date formatting for each range.
+2. **Responsive chart visualizations** -- Recharts provides declarative SVG-based charts for trend analysis. Date range presets (7D, 30D, 90D, 1Y) enable quick navigation through historical data with server-side aggregation keeping payloads small regardless of the time window.
 
-3. **Zustand for health state** - A single store manages date selection, cached aggregates, and insights with persist middleware for user preferences. This enables consistent state across the dashboard, trends, and insights views.
+3. **Zustand for coordinated state** -- A single store manages date selection, cached aggregates, and insights with persist middleware for user preferences. This enables consistent state across the dashboard, trends, and insights views without prop-drilling or redundant API calls.
 
-The main trade-off is simplicity versus flexibility. Server-side aggregation means smaller payloads and consistent data, but requires additional API calls when users want different time granularities. For a health dashboard where users typically view daily aggregates, this trade-off favors simpler client code."
+The main trade-off is simplicity versus flexibility. Server-side aggregation means smaller payloads and consistent deduplication, but requires additional API calls when users want different time granularities. For a health dashboard where users typically view daily aggregates, this trade-off favors simpler client code and faster initial loads."

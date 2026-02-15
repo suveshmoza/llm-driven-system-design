@@ -1,619 +1,452 @@
-# Twitter - System Design Answer (Frontend Focus)
+# Twitter -- System Design Answer (Frontend Focus)
 
-*45-minute system design interview format - Frontend Engineer Position*
+*45-minute system design interview -- Frontend Engineer Position*
 
-## 1. Requirements Clarification (3 minutes)
+## 📋 Opening Statement
 
-### Functional Requirements
-- **Timeline**: Infinite scroll feed of tweets from followed users
-- **Tweet Composition**: 280-character limit with media attachments
-- **Engagement**: Like, retweet, reply with optimistic updates
-- **Profile**: User page with tweets, followers, following
-- **Trending**: Real-time popular topics sidebar
-- **Search**: Hashtag and user search
+"I will design the frontend for Twitter, a real-time microblogging platform where users post 280-character tweets that appear in their followers' timelines. The defining frontend challenge is rendering a potentially infinite, dynamically-sized feed with instant engagement feedback. A user scrolling through hundreds of tweets must experience no jank, and actions like liking or retweeting must feel instantaneous even before the server confirms them.
 
-### Non-Functional Requirements
-- **Performance**: < 100ms perceived timeline load
-- **Responsiveness**: Mobile-first, desktop-enhanced
-- **Accessibility**: Screen reader support, keyboard navigation
-- **Real-time**: Updates without page refresh
-
-### UI/UX Priorities
-1. Content-first timeline with minimal chrome
-2. Quick compose always accessible
-3. Engagement actions visible but not intrusive
-4. Trending topics contextually available
+I will focus on three areas: virtualized timeline rendering for performance at scale, optimistic update patterns for engagement actions, and a responsive three-column layout that adapts from desktop to mobile."
 
 ---
 
-## 2. Component Architecture (5 minutes)
+## 🎯 Requirements
 
-### Component Hierarchy
+### Functional Requirements
+- **Timeline**: Infinite-scroll feed of tweets from followed users, rendered efficiently regardless of list size
+- **Tweet Composition**: 280-character limit with real-time character counter, media attachment buttons, auto-resizing textarea
+- **Engagement**: Like, retweet, and reply with optimistic updates and rollback on failure
+- **Profile**: User page displaying tweets, follower count, following count, and bio
+- **Trending Sidebar**: Real-time popular topics, refreshed periodically
+- **Search**: Hashtag and user search with autocomplete
+
+### Non-Functional Requirements
+- **Performance**: Sub-100ms perceived timeline load; 60fps scrolling through thousands of tweets
+- **Responsiveness**: Mobile-first design scaling to three-column desktop layout
+- **Accessibility**: Screen reader support with ARIA landmarks, keyboard navigation with vim-style shortcuts (j/k for next/previous tweet)
+- **Real-time Feel**: Engagement actions reflect instantly in the UI before server confirmation
+
+### UI/UX Priorities
+1. Content-first timeline with minimal chrome
+2. Compose tweet always accessible (sticky button or modal)
+3. Engagement actions visible but not intrusive
+4. Trending topics contextually available on desktop, hidden on mobile
+
+---
+
+## 🏗️ High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  App                                                                 │
+│                        Browser / Client                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
+│  │  TanStack     │  │   Zustand    │  │  React Query │               │
+│  │  Router       │  │   Stores     │  │  Cache       │               │
+│  │              │  │              │  │              │               │
+│  │ File-based   │  │ Auth, UI,    │  │ Server state │               │
+│  │ type-safe    │  │ Engagement   │  │ Timeline,    │               │
+│  │ routing      │  │ local state  │  │ Trends       │               │
+│  └──────────────┘  └──────────────┘  └──────────────┘               │
+│                           │                                          │
+│  ┌──────────────────────────────────────────────────────────┐       │
+│  │              Virtualized Rendering Layer                   │       │
+│  │         @tanstack/react-virtual (Timeline)                │       │
+│  │         Only ~80 DOM nodes regardless of list size         │       │
+│  └──────────────────────────────────────────────────────────┘       │
+│                                                                      │
+└──────────────────────────────────┬──────────────────────────────────┘
+                                   │
+                          REST API + SSE
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Backend API (Express)                             │
+│         Timeline, Tweets, Social Graph, Trends                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+> "I separate client-side concerns into three layers: TanStack Router for navigation, Zustand for local/UI state, and React Query for server-state caching. This prevents the common anti-pattern of mixing server cache with UI state in a single store."
+
+---
+
+## 🧩 Component Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  App (Root Layout)                                                   │
 │  ├── Header                                                         │
 │  │   ├── Logo                                                       │
-│  │   ├── SearchBar (autocomplete)                                   │
-│  │   └── UserMenu (compose, profile, settings)                      │
-│  ├── Layout (3-column on desktop)                                   │
-│  │   ├── LeftSidebar                                                │
+│  │   ├── SearchBar (autocomplete, debounced)                        │
+│  │   └── UserMenu (compose shortcut, profile, settings)             │
+│  │                                                                   │
+│  ├── ThreeColumnLayout                                              │
+│  │   ├── LeftSidebar (sticky)                                       │
 │  │   │   ├── NavLinks (Home, Explore, Notifications, Profile)       │
-│  │   │   └── TweetButton                                            │
+│  │   │   └── ComposeButton                                          │
+│  │   │                                                               │
 │  │   ├── MainContent                                                │
-│  │   │   └── Routes                                                 │
-│  │   │       ├── HomeTimeline                                       │
-│  │   │       ├── ExplorePage                                        │
-│  │   │       ├── ProfilePage                                        │
-│  │   │       └── TweetDetail                                        │
-│  │   └── RightSidebar                                               │
-│  │       ├── TrendingTopics                                         │
-│  │       └── WhoToFollow                                            │
-│  └── ComposeModal (global)                                          │
+│  │   │   └── Route Outlet                                           │
+│  │   │       ├── HomeTimeline (virtualized feed)                    │
+│  │   │       ├── ExplorePage (trending + search)                    │
+│  │   │       ├── ProfilePage (user tweets + stats)                  │
+│  │   │       └── TweetDetail (thread view)                          │
+│  │   │                                                               │
+│  │   └── RightSidebar (hidden on mobile/tablet)                     │
+│  │       ├── TrendingTopics (auto-refresh every 60s)                │
+│  │       └── WhoToFollow (suggested users)                          │
+│  │                                                                   │
+│  └── ComposeModal (global overlay)                                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### State Management Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       Zustand Stores                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  AuthStore           │  TimelineStore        │  UIStore             │
-│  - user              │  - tweets[]           │  - composeOpen       │
-│  - isAuthenticated   │  - hasMore            │  - activeTab         │
-│  - login/logout      │  - fetchTimeline()    │  - theme             │
-├─────────────────────────────────────────────────────────────────────┤
-│  EngagementStore     │  TrendingStore                               │
-│  - likes: Set        │  - trends[]                                  │
-│  - retweets: Set     │  - loading                                   │
-│  - toggleLike()      │  - fetchTrends()                             │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Zustand Stores                             │
+├────────────────┬────────────────────┬────────────────────────────┤
+│  AuthStore     │  EngagementStore   │  UIStore                   │
+│                │                    │                            │
+│  user          │  likes: Set        │  composeModalOpen          │
+│  isAuthenticated│  retweets: Set     │  activeNavTab              │
+│  login()       │  pendingLikes: Set │  theme (light/dark)        │
+│  logout()      │  toggleLike()      │  focusedTweetIndex         │
+│                │  toggleRetweet()   │                            │
+├────────────────┴────────────────────┴────────────────────────────┤
+│                     React Query Cache                             │
+│                                                                   │
+│  ['timeline', 'home']     Server-fetched timeline pages          │
+│  ['timeline', 'user', id] User profile tweets                    │
+│  ['trends']               Trending topics (stale: 30s)           │
+│  ['user', id]             User profile data                      │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+> "I use Zustand for truly local state -- auth session, engagement toggles, UI flags -- and React Query for anything fetched from the server. The engagement store uses Sets for O(1) like/retweet lookups, so checking whether the current user liked a tweet is instant."
 
 ---
 
-## 3. Timeline Component with Virtualization (10 minutes)
+## 🔌 API Contract
 
-### Why Virtualization
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/timeline/home?cursor=X&limit=20 | Home timeline with cursor pagination |
+| GET | /api/timeline/user/:id?cursor=X | User profile tweets |
+| POST | /api/tweets | Create tweet (with Idempotency-Key header) |
+| DELETE | /api/tweets/:id | Soft-delete own tweet |
+| POST | /api/tweets/:id/like | Like a tweet |
+| DELETE | /api/tweets/:id/like | Unlike a tweet |
+| POST | /api/tweets/:id/retweet | Retweet |
+| DELETE | /api/tweets/:id/retweet | Undo retweet |
+| GET | /api/trends | Get top 10 trending hashtags |
+| POST | /api/users/:id/follow | Follow user |
+| DELETE | /api/users/:id/follow | Unfollow user |
+| GET | /api/users/:id/followers | List followers |
+| GET | /api/users/:id/following | List following |
 
-Twitter timelines can have thousands of tweets. Without virtualization:
-- 200 tweets = 1200+ DOM nodes
-- Memory usage 150MB+
-- Scroll jank after 50 tweets
-
-With virtualization:
-- ~80 DOM nodes regardless of list size
-- Memory usage ~60MB
-- Smooth scrolling throughout
-
-### Virtualized Timeline Implementation
-
-**Timeline Component Structure:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Timeline Props                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  tweets: Tweet[]                                                     │
-│  isLoading: boolean                                                  │
-│  onLoadMore: () => void                                              │
-│  hasMore: boolean                                                    │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Virtualizer Configuration:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  useVirtualizer({                                                    │
-│    count: tweets.length,                                             │
-│    getScrollElement: () => parentRef.current,                        │
-│    estimateSize: () => 150,  // Average tweet height                 │
-│    overscan: 5,              // Extra items above/below              │
-│    measureElement: (el) => el.getBoundingClientRect().height         │
-│  })                                                                  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Infinite Scroll Trigger:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  useEffect: Watch virtual items                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  lastItem = virtualItems[virtualItems.length - 1]                    │
-│                                                                      │
-│  IF lastItem.index >= tweets.length - 5                              │
-│     AND hasMore                                                      │
-│     AND NOT isLoading:                                               │
-│       onLoadMore()                                                   │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Virtual Container Structure:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  <div ref={parentRef} class="timeline-scroll-container">            │
-│    <div style={{ height: totalSize, position: relative }}>          │
-│      {virtualItems.map(item => (                                     │
-│        <div                                                          │
-│          key={item.key}                                              │
-│          data-index={item.index}                                     │
-│          ref={measureElement}                                        │
-│          style={{                                                    │
-│            position: absolute,                                       │
-│            transform: translateY(item.start)                         │
-│          }}                                                          │
-│        >                                                             │
-│          <Tweet tweet={tweets[item.index]} />                        │
-│        </div>                                                        │
-│      ))}                                                             │
-│    </div>                                                            │
-│    {isLoading && <Spinner />}                                        │
-│  </div>                                                              │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Tweet Component
-
-**Tweet Structure:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Tweet (article, memo for performance)                               │
-├─────────────────────────────────────────────────────────────────────┤
-│  ┌──────┐  ┌──────────────────────────────────────────────────────┐ │
-│  │Avatar│  │ Header: DisplayName @username · timestamp             │ │
-│  │      │  ├──────────────────────────────────────────────────────┤ │
-│  │      │  │ Content: parsed text with #hashtags @mentions URLs   │ │
-│  │      │  ├──────────────────────────────────────────────────────┤ │
-│  │      │  │ Actions: [Reply] [Retweet] [Like] [Share]            │ │
-│  └──────┘  └──────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Memoization Strategy:**
-
-```
-memo(Tweet, (prev, next) => prev.tweet.id === next.tweet.id)
-```
-
-"I memoize Tweet by id only because engagement state comes from a separate store. When likes/retweets change, the component re-renders via the store hook, not props."
-
-### Content Parsing with Hashtag Links
-
-**parseContent() Function:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Input: "Check out #React and @dan_abramov https://react.dev"       │
-├─────────────────────────────────────────────────────────────────────┤
-│  Regex: /(#\w+)|(@\w+)|(https?:\/\/\S+)/g                           │
-├─────────────────────────────────────────────────────────────────────┤
-│  Output Parts:                                                       │
-│  ├── "Check out "                                                   │
-│  ├── <Link to="/hashtag/React">#React</Link>                        │
-│  ├── " and "                                                        │
-│  ├── <Link to="/profile/dan_abramov">@dan_abramov</Link>            │
-│  ├── " "                                                            │
-│  └── <a href="https://react.dev">react.dev</a>                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+> "All timeline endpoints use cursor-based pagination instead of offset-based. Cursors are opaque strings encoding the last tweet's timestamp, which avoids the problem of items shifting between pages when new tweets arrive."
 
 ---
 
-## 4. Optimistic Updates for Engagement (8 minutes)
+## 💾 Client-Side Data Model
 
-### Engagement Store with Optimistic State
+**Tweet shape received from API:**
 
-**EngagementStore Structure:**
+| Field | Type | Notes |
+|-------|------|-------|
+| id | string | Unique tweet identifier |
+| authorId | string | Author's user ID |
+| content | string | Up to 280 characters |
+| hashtags | string[] | Extracted at creation time |
+| mediaUrls | string[] | Up to 4 media attachments |
+| likeCount | number | Denormalized count |
+| retweetCount | number | Denormalized count |
+| replyCount | number | Denormalized count |
+| createdAt | ISO string | Creation timestamp |
+| author | object | Nested: username, displayName, avatarUrl, isCelebrity |
+| viewerHasLiked | boolean | Whether current user liked this |
+| viewerHasRetweeted | boolean | Whether current user retweeted this |
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     EngagementState                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│  Data                                                                │
-│  ├── likes: Set<string>           (tweet IDs user has liked)        │
-│  ├── retweets: Set<string>        (tweet IDs user has retweeted)    │
-│  ├── pendingLikes: Set<string>    (in-flight like requests)         │
-│  └── pendingRetweets: Set<string> (in-flight retweet requests)      │
-├─────────────────────────────────────────────────────────────────────┤
-│  Actions                                                             │
-│  ├── toggleLike(tweetId) ──▶ optimistic like/unlike                 │
-│  ├── toggleRetweet(tweetId) ──▶ optimistic retweet/unretweet        │
-│  └── initFromServer(likedIds, retweetedIds) ──▶ hydrate from API    │
-└─────────────────────────────────────────────────────────────────────┘
-```
+**Engagement state (client-side, Zustand):**
 
-**toggleLike() Flow:**
+| Field | Type | Purpose |
+|-------|------|---------|
+| likes | Set of string | Tweet IDs the current user has liked |
+| retweets | Set of string | Tweet IDs the current user has retweeted |
+| pendingLikes | Set of string | Tweet IDs with in-flight like requests |
+| pendingRetweets | Set of string | Tweet IDs with in-flight retweet requests |
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  toggleLike(tweetId)                                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  1. Check pending - if already in-flight, return                     │
-│                                                                      │
-│  2. Read current state                                               │
-│     isCurrentlyLiked = likes.has(tweetId)                            │
-│                                                                      │
-│  3. Optimistic update                                                │
-│     ┌─────────────────────────────────────────────────────────────┐ │
-│     │ IF isCurrentlyLiked: likes.delete(tweetId)                   │ │
-│     │ ELSE: likes.add(tweetId)                                     │ │
-│     │ pendingLikes.add(tweetId)                                    │ │
-│     └─────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│  4. API call                                                         │
-│     try {                                                            │
-│       await api.likeTweet(tweetId) or api.unlikeTweet(tweetId)      │
-│     } catch {                                                        │
-│       // Rollback                                                    │
-│       IF isCurrentlyLiked: likes.add(tweetId)                        │
-│       ELSE: likes.delete(tweetId)                                    │
-│     } finally {                                                      │
-│       pendingLikes.delete(tweetId)                                   │
-│     }                                                                │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Action Button with Animation
-
-**ActionButton Props:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  ActionButtonProps                                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│  icon: React.ReactNode                                               │
-│  count?: number                                                      │
-│  active?: boolean                                                    │
-│  activeColor?: string                                                │
-│  onClick?: () => void                                                │
-│  label: string                                                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Animation Behavior:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  onClick Handler                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│  1. e.stopPropagation() - prevent tweet click navigation             │
-│  2. setIsAnimating(true)                                             │
-│  3. call onClick()                                                   │
-│  4. setTimeout(() => setIsAnimating(false), 300)                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Count Formatting:**
-
-```
-formatCount(count):
-  >= 1,000,000 ──▶ "1.5M"
-  >= 1,000 ──▶ "15.2K"
-  else ──▶ "999"
-```
-
-### CSS Animations
-
-**Pop Animation (for like/retweet):**
-
-```
-@keyframes pop:
-  0%   { transform: scale(1) }
-  50%  { transform: scale(1.3) }
-  100% { transform: scale(1) }
-
-.animate-pop { animation: pop 0.3s ease-out }
-```
-
-**Heart Fill Animation:**
-
-```
-@keyframes heart-fill:
-  0%   { transform: scale(0); opacity: 0 }
-  50%  { transform: scale(1.2); opacity: 1 }
-  100% { transform: scale(1); opacity: 1 }
-
-.heart-icon.filled {
-  animation: heart-fill 0.3s ease-out;
-  fill: #F91880;
-}
-```
-
-**Brand Colors:**
-
-```
-┌────────────────────────┬──────────┐
-│ --twitter-blue         │ #1DA1F2  │
-│ --twitter-dark-blue    │ #1A91DA  │
-│ --twitter-black        │ #0F1419  │
-│ --twitter-gray         │ #536471  │
-│ --twitter-like         │ #F91880  │
-│ --twitter-retweet      │ #00BA7C  │
-└────────────────────────┴──────────┘
-```
+The engagement store is initialized from the server response (viewerHasLiked/viewerHasRetweeted fields) and then maintained locally for instant UI feedback.
 
 ---
 
-## 5. Compose Tweet Component (5 minutes)
+## 🔧 Deep Dive: Virtualized Timeline Rendering
 
-### Character Counter and Validation
+### The Problem
 
-**ComposeTweet State:**
+A Twitter timeline can contain thousands of tweets. Each tweet renders an avatar, variable-length text with parsed hashtags and mentions, engagement counters, and action buttons. Without virtualization, 200 tweets produce 1,200+ DOM nodes, consuming 150MB+ of memory and causing visible scroll jank after about 50 tweets.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  content: string                                                     │
-│  remaining = MAX_LENGTH (280) - content.length                       │
-│  isOverLimit = remaining < 0                                         │
-│  isNearLimit = remaining <= 20 && remaining >= 0                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### The Solution
 
-**Auto-resize Textarea:**
+The Timeline component uses a virtualizer that only renders tweets visible in the viewport plus a small overscan buffer. Regardless of how many tweets exist in the list, the DOM contains approximately 80 nodes.
 
 ```
-onChange Handler:
-  1. setContent(e.target.value)
-  2. textarea.style.height = 'auto'
-  3. textarea.style.height = textarea.scrollHeight + 'px'
+┌─────────────────────────────────────────────────────┐
+│  Scroll Container (ref tracked by virtualizer)       │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │  Spacer div (height = total virtual size)        │ │
+│  │                                                  │ │
+│  │  ── invisible above (not rendered) ──            │ │
+│  │                                                  │ │
+│  │  ┌──────────────────────────────────────┐       │ │
+│  │  │ Tweet (positioned absolutely)         │       │ │
+│  │  │ measured dynamically after render     │       │ │
+│  │  └──────────────────────────────────────┘       │ │
+│  │  ┌──────────────────────────────────────┐       │ │
+│  │  │ Tweet (visible in viewport)           │       │ │
+│  │  └──────────────────────────────────────┘       │ │
+│  │  ┌──────────────────────────────────────┐       │ │
+│  │  │ Tweet (overscan buffer)               │       │ │
+│  │  └──────────────────────────────────────┘       │ │
+│  │                                                  │ │
+│  │  ── invisible below (not rendered) ──            │ │
+│  │                                                  │ │
+│  └─────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────┘
 ```
 
-**Submit Flow:**
+**Virtualizer configuration:**
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  handleSubmit()                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  IF content.trim() AND NOT isOverLimit:                              │
-│    1. createTweetMutation.mutate(content)                            │
-│    2. onSuccess: setContent(''), invalidate ['timeline', 'home']    │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| estimateSize | 150px | Average tweet height without media |
+| overscan | 5 | Extra items above/below viewport for smooth fast scrolling |
+| measureElement | Dynamic via getBoundingClientRect | Tweet heights vary with text length and media |
 
-**Compose Layout:**
+**Infinite scroll trigger:** The component watches the last virtual item. When its index reaches within 5 items of the end of the data and more data is available, it calls the load-more callback. This prefetches the next page before the user reaches the bottom.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  ┌────────┐  ┌────────────────────────────────────────────────────┐ │
-│  │ Avatar │  │ <textarea placeholder="What's happening?">        │ │
-│  │        │  │                                                    │ │
-│  │        │  ├────────────────────────────────────────────────────┤ │
-│  │        │  │ [Image] [GIF] [Emoji]     [Counter] [Tweet Button]│ │
-│  └────────┘  └────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-```
+**Memoization:** Each Tweet component is wrapped in React.memo with an ID-only comparator. Engagement state (liked, retweeted) comes from the Zustand store via a hook, not from props, so the tweet only re-renders when the store subscription fires -- not on every parent render.
 
-**CharacterCounter Component:**
+### Performance Impact
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  IF remaining > 20: return null (don't show)                         │
-│                                                                      │
-│  IF remaining < 0:                                                   │
-│    Show red text: "-5"                                               │
-│  ELSE:                                                               │
-│    Show SVG circle with stroke-dasharray                             │
-│    Color: yellow if near limit, blue otherwise                       │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Metric | Without Virtualization | With Virtualization |
+|--------|------------------------|---------------------|
+| DOM nodes (200 tweets) | 1,200+ | ~80 |
+| Memory usage | 150MB+ | ~60MB |
+| Scroll jank threshold | 50 tweets | None observed |
+| Initial render time | 400ms | 80ms |
+
+### Trade-off: Virtualization Complexity vs. Simple List
+
+> "I chose virtualization despite the added complexity because Twitter's core experience is scrolling through a long feed. A simple list breaks down past 50-100 tweets -- users on slower devices would experience frame drops and increasing memory pressure. The alternative of pagination (load 20 tweets, click 'next') breaks the infinite-scroll mental model that social media users expect.
+
+> The trade-off is implementation complexity: dynamic height measurement requires careful handling. If a tweet's height changes after initial measurement (for example, a lazy-loaded image expanding the card), the virtualizer must be notified to re-measure. We handle this by observing resize events on each measured element. This adds about 100 lines of coordination code, but it is justified because timeline scrolling is the single most common user interaction."
 
 ---
 
-## 6. Trending Sidebar (5 minutes)
+## 🔧 Deep Dive: Optimistic Engagement Updates
 
-### Trending Topics Component
+### The Problem
 
-**TrendingSidebar Data Fetching:**
+Users expect engagement actions to feel instant. If clicking the heart icon requires waiting 200ms for a server round-trip before the UI updates, the interaction feels sluggish. Users may double-tap, creating duplicate requests. But if we update the UI immediately, we must handle the case where the server rejects the action.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  useQuery({                                                          │
-│    queryKey: ['trends'],                                             │
-│    queryFn: () => api.getTrends(),                                   │
-│    refetchInterval: 60000,  // Refresh every minute                  │
-│    staleTime: 30000,        // Consider fresh for 30s                │
-│  })                                                                  │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### The Solution
 
-**Trend Item Structure:**
+The EngagementStore implements a toggle-rollback pattern with a pending set to prevent duplicate in-flight requests.
+
+**Toggle-like flow:**
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  <Link to="/hashtag/$tag">                                           │
-│    ├── trend-meta: "Trending" #1                                    │
-│    ├── trend-hashtag: #JavaScript                                   │
-│    └── trend-count: 15.2K Tweets                                    │
-│  </Link>                                                             │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────┐                          ┌──────────────┐
+│   User taps  │                          │   Backend    │
+│   heart icon │                          │   API       │
+└──────┬───────┘                          └──────┬───────┘
+       │                                         │
+       │ 1. Check pendingLikes                   │
+       │    If tweet already pending ──▶ return   │
+       │                                         │
+       │ 2. Read current state                   │
+       │    wasLiked = likes.has(tweetId)         │
+       │                                         │
+       │ 3. Optimistic toggle                    │
+       │    wasLiked ? likes.delete : likes.add  │
+       │    pendingLikes.add(tweetId)             │
+       │    UI updates immediately               │
+       │                                         │
+       │ 4. API call ───────────────────────────▶│
+       │                                         │
+       │    ┌─── Success ◀───────────────────────│
+       │    │   pendingLikes.delete(tweetId)      │
+       │    │   State already correct, done       │
+       │    │                                     │
+       │    └─── Failure ◀───────────────────────│
+       │        Rollback: reverse the toggle      │
+       │        pendingLikes.delete(tweetId)      │
+       │        Show toast: "Couldn't like tweet" │
+       ▼                                         ▼
 ```
 
-**Sidebar Layout:**
+> "I track pending requests in a separate Set so that rapid taps on the same tweet are debounced. Without this, a user could toggle the like state multiple times before the first request resolves, creating race conditions where the final UI state does not match the server state."
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Trends for you                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  Trending · #1                                                       │
-│  #JavaScript                                                         │
-│  125K Tweets                                                         │
-├─────────────────────────────────────────────────────────────────────┤
-│  Trending · #2                                                       │
-│  #TypeScript                                                         │
-│  89.5K Tweets                                                        │
-├─────────────────────────────────────────────────────────────────────┤
-│  ... more trends                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│  Show more                                                           │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### Why Optimistic Updates Over Server Confirmation
+
+> "I chose optimistic updates with rollback over waiting for server confirmation because engagement actions are the most frequent interaction in a social media app -- a user might like dozens of tweets per session. Making each like feel like a 200ms round-trip would make the app feel unresponsive compared to native mobile apps.
+
+> The alternative -- waiting for the server -- is simpler to implement (no rollback logic, no pending tracking), but it fails the user experience test. Social media apps train users to expect instant feedback on taps. When you tap a heart and nothing happens for 200ms, it feels broken.
+
+> The trade-off is rollback complexity. If the server rejects a like (for example, the tweet was deleted between the user seeing it and tapping like), we must reverse the optimistic state change and show an error. This creates a brief flash where the heart goes from pink back to gray. In practice, server rejections are rare (<0.1% of engagement actions), so the trade-off is heavily in favor of optimism."
+
+### Animation Details
+
+Engagement buttons use a pop animation on toggle: the icon scales to 1.3x over 150ms, then returns to 1.0x. The like button additionally transitions from an outline heart (gray) to a filled heart (pink, brand color #F91880). Retweet uses green (#00BA7C). These animations provide haptic-like visual feedback that reinforces the optimistic state change.
+
+Count formatting follows abbreviation conventions: numbers above 1,000 display as "1.5K", above 1,000,000 as "1.5M". This keeps action bars compact even for viral tweets.
 
 ---
 
-## 7. Responsive Layout (5 minutes)
+## 🔧 Deep Dive: Responsive Three-Column Layout
 
-### Three-Column Desktop, Single Column Mobile
+### Layout Strategy
 
-**Layout Component:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  <div class="layout">                                                │
-│    <LeftSidebar />                                                  │
-│    <main class="main-content">{children}</main>                     │
-│    <RightSidebar />                                                 │
-│  </div>                                                              │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Responsive Breakpoints:**
+Twitter's desktop layout uses three columns: left navigation, center content, and right sidebar. This must collapse gracefully to a single column on mobile.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Mobile (< 640px):                                                   │
-│  ├── layout: single column                                          │
-│  ├── left-sidebar: hidden                                           │
-│  └── right-sidebar: hidden                                          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Tablet (>= 640px):                                                  │
-│  ├── grid-template-columns: 88px 1fr                                │
-│  ├── left-sidebar: sticky, icon-only nav                            │
-│  └── right-sidebar: hidden                                          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Desktop (>= 1024px):                                                │
-│  ├── grid-template-columns: 275px 600px 350px                       │
-│  ├── left-sidebar: full nav with labels                             │
-│  └── right-sidebar: visible                                         │
-├─────────────────────────────────────────────────────────────────────┤
-│  Large Desktop (>= 1280px):                                          │
-│  ├── grid-template-columns: 275px 600px 1fr                         │
-│  └── right-sidebar: max-width 350px                                 │
-└─────────────────────────────────────────────────────────────────────┘
+┌───── Desktop (>= 1024px) ────────────────────────────────────────┐
+│ ┌─────────────┐ ┌────────────────────────┐ ┌──────────────────┐  │
+│ │ Left Nav    │ │ Main Content            │ │ Right Sidebar    │  │
+│ │             │ │                         │ │                  │  │
+│ │ Home        │ │ ┌─────────────────────┐ │ │ Trends for you   │  │
+│ │ Explore     │ │ │ Tweet               │ │ │ #JavaScript      │  │
+│ │ Notify      │ │ └─────────────────────┘ │ │ #TypeScript      │  │
+│ │ Profile     │ │ ┌─────────────────────┐ │ │                  │  │
+│ │             │ │ │ Tweet               │ │ │ Who to follow    │  │
+│ │ [Tweet]     │ │ └─────────────────────┘ │ │ @user1           │  │
+│ │             │ │ ┌─────────────────────┐ │ │ @user2           │  │
+│ │             │ │ │ Tweet               │ │ │                  │  │
+│ │             │ │ └─────────────────────┘ │ │                  │  │
+│ └─────────────┘ └────────────────────────┘ └──────────────────┘  │
+│   275px fixed     600px center               350px fixed          │
+└──────────────────────────────────────────────────────────────────┘
+
+┌───── Tablet (640-1023px) ──────────────────┐
+│ ┌────┐ ┌────────────────────────────────┐  │
+│ │Nav │ │ Main Content                    │  │
+│ │    │ │                                 │  │
+│ │ 🏠 │ │ (full width, no right sidebar)  │  │
+│ │ 🔍 │ │                                 │  │
+│ │ 🔔 │ │                                 │  │
+│ │ 👤 │ │                                 │  │
+│ └────┘ └────────────────────────────────┘  │
+│ 88px     1fr                                │
+└────────────────────────────────────────────┘
+
+┌───── Mobile (< 640px) ───┐
+│ ┌──────────────────────┐ │
+│ │ Main Content          │ │
+│ │ (single column)       │ │
+│ │                       │ │
+│ │ Left nav: hidden      │ │
+│ │ Right sidebar: hidden │ │
+│ │                       │ │
+│ │ Bottom tab bar for    │ │
+│ │ navigation instead    │ │
+│ └──────────────────────┘ │
+└──────────────────────────┘
 ```
 
-**Main Content Styling:**
+**Breakpoint summary:**
+
+| Breakpoint | Grid Columns | Left Sidebar | Right Sidebar |
+|------------|-------------|--------------|---------------|
+| < 640px (mobile) | 1fr | Hidden (bottom tab bar) | Hidden |
+| 640-1023px (tablet) | 88px 1fr | Sticky, icon-only | Hidden |
+| >= 1024px (desktop) | 275px 600px 350px | Full nav with labels | Visible |
+| >= 1280px (large) | 275px 600px 1fr | Full nav | Max-width 350px |
+
+The main content column has left and right borders that create the signature Twitter "feed column" appearance. Content never exceeds 600px width, ensuring comfortable line lengths for reading tweets.
+
+### Compose Tweet Component
 
 ```
-.main-content {
-  min-height: 100vh;
-  border-left: 1px solid var(--twitter-light-gray);
-  border-right: 1px solid var(--twitter-light-gray);
-}
+┌──────────────────────────────────────────────────────────────────┐
+│  ┌────────┐  ┌──────────────────────────────────────────────┐    │
+│  │ Avatar │  │ What's happening?                             │    │
+│  │        │  │ (auto-resizing textarea)                      │    │
+│  │        │  ├──────────────────────────────────────────────┤    │
+│  │        │  │ [Image] [GIF] [Emoji]     ○ 257  [Tweet]     │    │
+│  └────────┘  └──────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+The character counter appears as a circular SVG progress indicator when within 20 characters of the limit. Below 0, it displays the negative count in red. The tweet button is disabled when content is empty, over the limit, or when a submission is in flight. The textarea auto-resizes by measuring scrollHeight on each input event.
+
+### Tweet Card Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  ┌──────┐  ┌──────────────────────────────────────────────────┐  │
+│  │Avatar│  │ Display Name  @username  ·  2h                   │  │
+│  │ 48px │  ├──────────────────────────────────────────────────┤  │
+│  │      │  │ Tweet content with #hashtags and @mentions       │  │
+│  │      │  │ parsed into interactive links                    │  │
+│  │      │  ├──────────────────────────────────────────────────┤  │
+│  │      │  │ 💬 12    🔁 45    ♥ 892    ⬆ Share               │  │
+│  └──────┘  └──────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Content parsing uses a regex to identify hashtags, @mentions, and URLs within tweet text. Each match is replaced with a navigable link component: hashtags link to /hashtag/:tag, mentions link to /profile/:username, and URLs open in a new tab with the domain displayed as link text.
 
 ---
 
-## 8. Accessibility Features (4 minutes)
-
-### ARIA Labels and Roles
-
-**Accessible Tweet Structure:**
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  <article aria-label="Tweet by {displayName}">                       │
-│    <div aria-hidden="true">                                         │
-│      <img src={avatarUrl} alt="" />  <!-- Decorative -->            │
-│    </div>                                                            │
-│    <div>                                                             │
-│      <header>                                                        │
-│        <span>{displayName}</span>                                   │
-│        <span aria-label="username {username}">@{username}</span>    │
-│        <time dateTime={createdAt} title={fullDate}>                 │
-│          {relativeTime}                                              │
-│        </time>                                                       │
-│      </header>                                                       │
-│      <p>{content}</p>                                                │
-│      <footer role="group" aria-label="Tweet actions">               │
-│        <ActionButton label="Reply, {count} replies" />              │
-│        <ActionButton label="Retweet" aria-pressed={isRetweeted} /> │
-│        <ActionButton label="Like" aria-pressed={isLiked} />        │
-│      </footer>                                                       │
-│    </div>                                                            │
-│  </article>                                                          │
-└─────────────────────────────────────────────────────────────────────┘
-```
+## ♿ Accessibility
 
 ### Keyboard Navigation
 
-**Timeline Keyboard Shortcuts:**
+| Key | Action |
+|-----|--------|
+| ArrowDown / j | Focus next tweet in timeline |
+| ArrowUp / k | Focus previous tweet |
+| l | Like focused tweet |
+| r | Open reply to focused tweet |
+| Enter | Navigate to focused tweet detail |
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Key          │ Action                                              │
-├───────────────┼─────────────────────────────────────────────────────┤
-│  ArrowDown, j │ Focus next tweet                                    │
-│  ArrowUp, k   │ Focus previous tweet                                │
-│  l            │ Like focused tweet                                  │
-│  r            │ Reply to focused tweet                              │
-└─────────────────────────────────────────────────────────────────────┘
-```
+The timeline uses a roving tabIndex pattern: only the currently focused tweet has tabIndex=0, all others have tabIndex=-1. This means pressing Tab moves focus out of the timeline entirely, while j/k navigate within it. An "aria-label" on each tweet article reads "Tweet by {displayName}" for screen readers.
 
-**Focus Management:**
+### ARIA Structure
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  1. Track focusedIndex in state                                      │
-│  2. Store refs to all tweet elements                                 │
-│  3. On key press: update focusedIndex                                │
-│  4. useEffect: tweetRefs[focusedIndex].focus()                      │
-│  5. Use tabIndex={focusedIndex === index ? 0 : -1} for roving       │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Timeline Container:**
-
-```
-<div role="feed" aria-label="Timeline" onKeyDown={handleKeyDown} tabIndex={0}>
-  {tweets.map((tweet, index) => (
-    <Tweet
-      ref={el => tweetRefs.current[index] = el}
-      tabIndex={index === focusedIndex ? 0 : -1}
-    />
-  ))}
-</div>
-```
+The timeline container has role="feed" and aria-label="Timeline". Each tweet is an article element with an accessible label. Action buttons include aria-pressed state for like and retweet toggles. The character counter announces remaining characters to screen readers via aria-live="polite".
 
 ---
 
-## 9. Summary (3 minutes)
+## ⚖️ Trade-offs Summary
 
-### Key Frontend Decisions
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| ✅ Virtualization | @tanstack/react-virtual | ❌ Simple list rendering | Thousands of tweets require constant ~80 DOM nodes |
+| ✅ Optimistic updates | Immediate UI + rollback | ❌ Wait for server | Engagement actions must feel instant (<50ms) |
+| ✅ State separation | Zustand + React Query | ❌ Single Redux store | Clean separation of server cache vs UI state |
+| ✅ Cursor pagination | Opaque cursor tokens | ❌ Offset pagination | Stable pagination when new tweets arrive |
+| ✅ CSS Grid layout | Three-column CSS Grid | ❌ Flexbox | Cleaner responsive breakpoints with grid-template-columns |
+| ✅ Memo by ID | React.memo with ID comparator | ❌ Deep comparison | Engagement state comes from store, not props |
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Virtualization | @tanstack/react-virtual | Handle thousands of tweets efficiently |
-| State | Zustand + React Query | Simple state + server cache separation |
-| Optimistic Updates | Local Set tracking | Instant feedback, rollback on failure |
-| Styling | Tailwind + CSS Variables | Rapid development with brand consistency |
-| Routing | TanStack Router | File-based, type-safe routing |
+### Deep Trade-off: Zustand + React Query vs. Single Redux Store
 
-### Performance Metrics
+> "I chose separating client state (Zustand) from server state (React Query) over a unified Redux store because the two types of state have fundamentally different lifecycles. Server state needs cache invalidation, background refetching, stale-while-revalidate semantics, and cursor-based pagination -- all of which React Query handles out of the box. Client state like 'is the compose modal open' or 'which tweet is focused' has none of these needs.
 
-| Metric | Target | Implementation |
-|--------|--------|----------------|
-| Initial Load | < 1.5s | Code splitting, lazy routes |
-| Timeline Render | < 100ms | Virtualization, memoization |
-| Engagement Action | < 50ms | Optimistic updates |
-| Scroll Performance | 60fps | Only ~80 DOM nodes |
+> A single Redux store with RTK Query could technically handle both, but it introduces unnecessary coupling. When a timeline refetch occurs, you do not want it to clobber UI state like the focused tweet index or the compose modal's draft text. With separate stores, a React Query cache invalidation triggers a background refetch and seamlessly updates the timeline data without disturbing any Zustand state.
 
-### Trade-offs Made
+> The trade-off is developer onboarding: new team members must learn two state management APIs instead of one. In practice, the boundaries are clear enough that this has not been a source of confusion -- timeline data goes through React Query hooks, everything else goes through Zustand."
 
-1. **Virtualization complexity** vs. simple list - chose virtualization for scale
-2. **Optimistic updates** vs. wait for server - chose optimism for better UX
-3. **Character counter** as SVG circle vs. text - chose visual for Twitter feel
-4. **Memoized tweets** - chose memoization to prevent unnecessary re-renders
+---
 
-### What Would Be Different at Scale
+## 🚀 Future Improvements
 
-1. **Server-side rendering**: Initial timeline rendered on server
-2. **Service workers**: Offline timeline access, background sync
-3. **Media CDN**: Image optimization, lazy loading with blur placeholders
-4. **WebSocket**: Real-time timeline updates, live engagement counts
-5. **Internationalization**: RTL support, localized timestamps
+1. **Server-Sent Events for live timeline updates**: Push new tweets into the feed without requiring the user to pull-to-refresh, with a "New tweets available" banner that scrolls to top on tap
+2. **Service Worker for offline access**: Cache the most recent timeline page and compose queue so users can draft tweets offline and send when connectivity returns
+3. **Media CDN with progressive loading**: Show blur-hash placeholders while images load, lazy-load media only when tweets scroll into the viewport
+4. **Dark mode theming**: Toggle between light (#FFFFFF background) and dark (#15202B background) modes using CSS custom properties, with system preference detection
+5. **Internationalization**: RTL text support for Arabic and Hebrew, locale-aware relative timestamps ("2h ago" vs. "il y a 2h")
+6. **Web Vitals monitoring**: Track LCP, FID, and CLS in production to detect rendering regressions before users report them

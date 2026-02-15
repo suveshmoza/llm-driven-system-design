@@ -2,588 +2,216 @@
 
 *45-minute system design interview format - Frontend Engineer Position*
 
-## Problem Statement
+---
 
-Design the terminal user interface for an AI-powered command-line coding assistant. Key challenges include:
-- Real-time streaming response rendering
-- Markdown and code syntax highlighting
-- Interactive permission prompts
-- Progress indicators for long operations
-- Keyboard shortcuts and history navigation
-- Theming and accessibility
+## 📋 Problem Statement
 
-## Requirements Clarification
+Design the terminal user interface for an AI-powered command-line coding assistant. The CLI must handle real-time streaming of LLM responses, render markdown and syntax-highlighted code, display interactive permission prompts, show progress indicators during tool execution, and support keyboard navigation with command history. The primary challenge is building a responsive, accessible terminal UI that handles the inherent complexity of streaming partial content -- including incomplete markdown, mid-render code blocks, and interleaved tool call events.
+
+---
+
+## 📋 Requirements Clarification
 
 ### Functional Requirements
-1. **Input Handling**: Multi-line input, command history, keyboard shortcuts
-2. **Streaming Output**: Render LLM responses token-by-token as they arrive
-3. **Code Formatting**: Syntax highlighting for code blocks
-4. **Permission Prompts**: Clear, interactive approval dialogs
-5. **Progress Indicators**: Spinners and status messages for tool execution
-6. **Session Display**: Show conversation history and context status
+
+1. **Input handling** -- multi-line text input, command history with arrow keys, slash-command autocomplete
+2. **Streaming output** -- render LLM response tokens as they arrive with zero perceptible lag
+3. **Code formatting** -- syntax highlighting for code blocks in the response stream
+4. **Permission prompts** -- clear, interactive approval dialogs for file writes and shell commands
+5. **Progress indicators** -- spinners and status messages while tools execute
+6. **Session display** -- show conversation history, context usage, and active model
 
 ### Non-Functional Requirements
-1. **Responsiveness**: No input lag, immediate visual feedback
-2. **Cross-Platform**: Consistent behavior on macOS, Linux, Windows terminals
-3. **Accessibility**: Clear contrast, screen reader support where possible
-4. **Customization**: Theme support, configurable keybindings
+
+1. **Responsiveness** -- no input lag; immediate visual feedback on every keypress
+2. **Cross-platform** -- consistent behavior on macOS, Linux, and Windows terminals
+3. **Accessibility** -- WCAG AA contrast ratios, screen reader announcements, keyboard-only navigation
+4. **Customization** -- light/dark theme support, configurable keybindings
 
 ### Terminal Constraints
-- Limited to ANSI escape codes for styling
-- No mouse interaction (keyboard-only)
-- Variable terminal widths (80-200+ columns)
-- Color support varies by terminal (8, 16, 256, or true color)
+
+- Styling limited to ANSI escape codes (no DOM, no CSS)
+- Keyboard-only interaction (no mouse events in most terminals)
+- Variable terminal widths from 80 to 200+ columns
+- Color support varies: 8-color, 16-color, 256-color, or true color depending on terminal emulator
 
 ---
 
 ## 🏗️ High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CLI Interface                             │
-├─────────────────────────────────────────────────────────────────┤
+┌───────────────────────────────────────────────────────────────────┐
+│                          CLI Interface                            │
+├───────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                    Input Layer                               │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │ │
-│  │  │ Readline │  │ History  │  │ Autocmp  │  │ Shortcuts│   │ │
-│  │  │  Handler │  │ Manager  │  │  Engine  │  │  Handler │   │ │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │ │
-│  └─────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                      Input Layer                            │  │
+│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌─────────┐ │  │
+│  │  │ Readline  │  │ History   │  │ Autocmp   │  │Shortcut │ │  │
+│  │  │ Handler   │  │ Manager   │  │ Engine    │  │ Handler │ │  │
+│  │  └───────────┘  └───────────┘  └───────────┘  └─────────┘ │  │
+│  └────────────────────────┬────────────────────────────────────┘  │
 │                           │                                       │
 │                           ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                   Rendering Layer                            │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │ │
-│  │  │ Markdown │  │  Syntax  │  │ Spinner  │  │  Dialog  │   │ │
-│  │  │ Renderer │  │Highlight │  │ Animate  │  │ Builder  │   │ │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │ │
-│  └─────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                    Rendering Layer                           │  │
+│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌─────────┐ │  │
+│  │  │ Markdown  │  │ Syntax    │  │ Spinner   │  │ Dialog  │ │  │
+│  │  │ Renderer  │  │ Highlight │  │ Animator  │  │ Builder │ │  │
+│  │  └───────────┘  └───────────┘  └───────────┘  └─────────┘ │  │
+│  └────────────────────────┬────────────────────────────────────┘  │
 │                           │                                       │
 │                           ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                    Output Layer                              │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │ │
-│  │  │  ANSI    │  │  Color   │  │  Layout  │  │ Terminal │   │ │
-│  │  │ Encoder  │  │  Theme   │  │  Engine  │  │ Adapter  │   │ │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │ │
-│  └─────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │                     Output Layer                            │  │
+│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌─────────┐ │  │
+│  │  │ ANSI      │  │ Color     │  │ Layout    │  │Terminal │ │  │
+│  │  │ Encoder   │  │ Theme     │  │ Engine    │  │ Adapter │ │  │
+│  │  └───────────┘  └───────────┘  └───────────┘  └─────────┘ │  │
+│  └─────────────────────────────────────────────────────────────┘  │
 │                                                                   │
-└─────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────┘
 ```
+
+> "I split the CLI into three distinct layers -- input, rendering, and output -- because each has fundamentally different concerns. The input layer deals with raw keypresses and readline state. The rendering layer transforms structured data (markdown, code, tool results) into styled text. The output layer handles the low-level ANSI encoding and terminal adaptation. This separation means I can swap rendering strategies without touching input handling, or adapt to a new terminal without changing how we parse markdown."
 
 ---
 
-## 🔧 CLI Interface Design
-
-### Configuration Model
-
-```
-┌────────────────────────────────────────────────────┐
-│                    CLIConfig                        │
-├────────────────────────────────────────────────────┤
-│  Display Settings                                   │
-│  ├── theme: 'dark' | 'light' | 'auto'              │
-│  ├── colorOutput: boolean                           │
-│  └── verbosity: 'quiet' | 'normal' | 'verbose'     │
-├────────────────────────────────────────────────────┤
-│  Behavior                                           │
-│  ├── streamResponses: boolean                       │
-│  ├── confirmBeforeWrite: boolean                    │
-│  └── autoApproveReads: boolean                      │
-├────────────────────────────────────────────────────┤
-│  Session                                            │
-│  ├── saveHistory: boolean                           │
-│  └── historyPath: string                            │
-└────────────────────────────────────────────────────┘
-```
-
-### Core CLI Class
-
-```
-┌────────────────────────────────────────────────────┐
-│                   CLIInterface                      │
-├────────────────────────────────────────────────────┤
-│  Private State                                      │
-│  ├── readline: Interface                            │
-│  ├── renderer: MarkdownRenderer                     │
-│  └── spinner: Spinner                               │
-├────────────────────────────────────────────────────┤
-│  Methods                                            │
-│  ├── prompt() ──▶ Promise<string>                  │
-│  │   └── Displays '>' and awaits user input        │
-│  ├── streamOutput(stream) ──▶ Promise<void>        │
-│  │   └── Iterates chunks, renders with markdown    │
-│  └── confirmAction(desc) ──▶ Promise<boolean>      │
-│      └── Prompts [y/n] for user approval           │
-└────────────────────────────────────────────────────┘
-```
-
-### Features
-- Markdown rendering for code blocks and formatting
-- Streaming output with syntax highlighting
-- Interactive prompts for permissions
-- Progress indicators for long operations
-- History navigation with arrow keys
-
----
-
-## 📡 Streaming Response Rendering
+## 🔧 Deep Dive: Streaming Response Rendering
 
 ### The Streaming Challenge
 
-When LLM responses stream token-by-token, we need to:
-1. Display text immediately as it arrives
-2. Handle incomplete markdown (e.g., partial code blocks)
-3. Apply syntax highlighting progressively
-4. Manage cursor position for multi-line content
+When LLM responses stream token-by-token, the renderer must display text immediately as it arrives, handle incomplete markdown (a code fence may arrive across two chunks), apply syntax highlighting progressively, and manage cursor position for multi-line content -- all without flickering or losing state.
 
-### Streaming Renderer Architecture
+### Streaming Renderer Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    StreamingRenderer                         │
-├─────────────────────────────────────────────────────────────┤
-│  State                                                       │
-│  ├── buffer: string (incomplete line content)               │
-│  ├── inCodeBlock: boolean                                    │
-│  └── codeLanguage: string                                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Token Stream ──▶ Buffer ──▶ Line Detection ──▶ Render      │
-│                                                               │
-│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐    │
-│  │   Chunk     │ ──▶ │  Accumulate │ ──▶ │ Split on \n │    │
-│  │   arrives   │     │  in buffer  │     │ and render  │    │
-│  └─────────────┘     └─────────────┘     └─────────────┘    │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│ Token chunk │────▶│ Accumulate in   │────▶│ Split on newline │
+│ arrives     │     │ line buffer     │     │ and render lines  │
+└─────────────┘     └─────────────────┘     └──────────────────┘
+                                                     │
+                                                     ▼
+                                            ┌──────────────────┐
+                                            │ Line Classifier  │
+                                            └────────┬─────────┘
+                                                     │
+                                          ┌──────────┴──────────┐
+                                          ▼                     ▼
+                                    ┌──────────┐         ┌──────────┐
+                                    │ Code     │         │ Markdown │
+                                    │ Block?   │         │ Format   │
+                                    │ Syntax   │         │ Bold,    │
+                                    │ Highlight│         │ italic,  │
+                                    └──────────┘         │ headers  │
+                                                         └──────────┘
 ```
 
-### Line Processing Flow
+The renderer maintains a small state machine: a line buffer accumulating partial text, a boolean tracking whether we are inside a fenced code block, and the current code language for syntax highlighting. When a newline arrives, the completed line is classified and rendered. If the line begins with a triple backtick, we toggle code block state and extract the language hint. Inside a code block, lines go through syntax highlighting. Outside, lines go through markdown formatting (bold, italic, inline code, headers).
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     renderLine(line)                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Input Line                                                   │
-│       │                                                       │
-│       ▼                                                       │
-│  ┌─────────────────┐                                         │
-│  │ Starts with ``` │                                         │
-│  └────────┬────────┘                                         │
-│           │                                                   │
-│     ┌─────┴─────┐                                            │
-│     ▼           ▼                                            │
-│   [YES]       [NO]                                           │
-│     │           │                                            │
-│     ▼           ▼                                            │
-│  Toggle      ┌─────────────────┐                             │
-│  codeBlock   │ inCodeBlock?    │                             │
-│  state       └────────┬────────┘                             │
-│                       │                                       │
-│                 ┌─────┴─────┐                                │
-│                 ▼           ▼                                │
-│               [YES]       [NO]                               │
-│                 │           │                                │
-│                 ▼           ▼                                │
-│           highlightCode  formatMarkdown                      │
-│           (line, lang)   (bold, italic, inline code)         │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+### Token-by-Token Cursor Management
+
+Each token writes directly to stdout. When a newline arrives, the current line is flushed and the line counter increments. To support re-rendering the current line (for example, when a bold marker completes mid-line), the renderer issues a carriage return followed by the ANSI clear-line escape, then re-outputs the line with updated formatting applied. This approach avoids full-screen repaints and keeps rendering cost proportional to the content being updated.
+
+> "I chose line-by-line rendering over full-screen terminal UI frameworks like Ink because it is simpler to reason about, works in every terminal, and avoids the overhead of a virtual DOM diff for what is fundamentally a scrolling text stream. The trade-off is that I cannot re-render previously output lines -- once a line scrolls up, it is final. But for a streaming assistant, this matches user expectations: you read the response top to bottom as it appears."
 
 ### Markdown Formatting Rules
 
-```
-┌────────────────────────────────────────────────────┐
-│              Markdown Transformations               │
-├────────────────────────────────────────────────────┤
-│                                                     │
-│  **text**  ──▶  BOLD styling                       │
-│  *text*    ──▶  ITALIC styling                     │
-│  `code`    ──▶  CYAN monospace                     │
-│  # Header  ──▶  BOLD + UNDERLINE                   │
-│  ## Header ──▶  BOLD only                          │
-│                                                     │
-└────────────────────────────────────────────────────┘
-```
-
-### Token-by-Token Rendering
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     TokenRenderer                            │
-├─────────────────────────────────────────────────────────────┤
-│  State                                                       │
-│  ├── currentLine: string (characters on current line)       │
-│  └── lineNumber: number                                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  write(token)                                                │
-│       │                                                       │
-│       ▼                                                       │
-│  For each character:                                         │
-│       │                                                       │
-│       ├── If '\n' ──▶ flushLine() and increment lineNumber  │
-│       │                                                       │
-│       └── Else ──▶ append to currentLine, write to stdout   │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  reRenderCurrentLine()                                       │
-│  ├── Move cursor to line start: \r\x1b[K                    │
-│  └── Re-output with formatting applied                       │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+| Markdown Pattern | Terminal Rendering |
+|------------------|--------------------|
+| **bold** | ANSI bold attribute |
+| *italic* | ANSI italic/dim attribute |
+| \`inline code\` | Cyan foreground, monospace |
+| # Header | Bold + underline |
+| ## Subheader | Bold only |
+| Fenced code block | Full syntax highlighting with language detection |
 
 ---
 
-## 🎨 Terminal UI Components
+## 🔧 Deep Dive: Permission Prompt UX
+
+### The Permission Dialog
+
+When the agent requests a file write or shell command, the CLI must interrupt the streaming flow and present a clear, unambiguous prompt. The dialog shows what tool is requesting access, what operation it will perform, and the specific details (file path, diff preview, or command string).
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │
+│    Permission Required                                   │
+│   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │
+│                                                          │
+│    Tool:      Edit                                       │
+│    Operation: Modify file                                │
+│                                                          │
+│    Details:                                              │
+│        /path/to/file.ts                                  │
+│                                                          │
+│    Changes:                                              │
+│        - old line (red)                                  │
+│        + new line (green)                                │
+│          context line (gray)                             │
+│                                                          │
+│   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │
+│    [y] Yes  [n] No  [a] Always allow (session)           │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+The dialog renders a bordered box with the tool name, operation description, and a unified diff preview using red for deletions and green for additions. The user responds with a single keypress: y (approve once), n (deny), or a (approve all similar operations for the rest of the session). The "always allow" option reduces prompt fatigue for repetitive operations like editing multiple files in the same directory.
+
+> "I made permission prompts synchronous and blocking by design. While the LLM stream is paused waiting for approval, no other output can appear. This prevents the confusing situation where tool results interleave with pending approval prompts. The cost is latency -- the LLM sits idle while the user decides -- but for destructive operations, clarity matters more than speed."
+
+---
+
+## 🔧 Deep Dive: Terminal UI Components
 
 ### Spinner Animation
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Spinner                               │
-├─────────────────────────────────────────────────────────────┤
-│  Frame Animation: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ (cycles at 80ms)    │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  start(message)                                              │
-│  ├── Hide cursor: \x1b[?25l                                 │
-│  └── Start interval: render frame + message every 80ms      │
-│                                                               │
-│  update(message)                                             │
-│  └── Change message text mid-spin                            │
-│                                                               │
-│  stop(finalMessage?)                                         │
-│  ├── Clear interval                                          │
-│  ├── Clear line: \r\x1b[K                                   │
-│  ├── Show cursor: \x1b[?25h                                 │
-│  └── Print ✓ + finalMessage (green)                         │
-│                                                               │
-│  fail(message)                                               │
-│  └── Print ✗ + message (red)                                │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The spinner cycles through braille dot frames at 80ms intervals, providing visual feedback during tool execution. It hides the cursor on start and restores it on stop, replacing the spinner line with a green checkmark and completion message, or a red X on failure.
 
 ### Progress Bar
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      ProgressBar                             │
-├─────────────────────────────────────────────────────────────┤
-│  State: width=40, current=0, total=100, label=""            │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Visual Output:                                              │
-│  ████████████████████░░░░░░░░░░░░░░░░░░░░  50% Uploading... │
-│  └── filled (cyan) ─┘└─── empty (gray) ──┘                  │
-│                                                               │
-│  update(current, total?, label?)                             │
-│  ├── Calculate percentage: current / total * 100            │
-│  ├── Calculate filled: percentage / 100 * width             │
-│  └── Render: \r + bar + percentage + label                  │
-│                                                               │
-│  complete(message?)                                          │
-│  ├── Set current = total                                     │
-│  ├── Print newline                                           │
-│  └── Print ✓ + message (green)                              │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+For longer operations like large file reads, a horizontal bar renders using filled and empty block characters with a percentage label. It updates in-place using carriage return, avoiding scroll.
 
-### Permission Dialog
+### Conversation Layout
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   PermissionDialog                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Display Format:                                             │
-│                                                               │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│   Permission Required                                        │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│                                                               │
-│   Tool:      Edit                                            │
-│   Operation: Modify file                                     │
-│                                                               │
-│   Details:                                                   │
-│       /path/to/file.ts                                       │
-│                                                               │
-│   Changes:                                                   │
-│       - old line (red)                                       │
-│       + new line (green)                                     │
-│         context line (gray)                                  │
-│                                                               │
-│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
-│   [y] Yes, allow  [n] No, deny  [a] Always allow (session)  │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  Methods                                                     │
-│  ├── prompt(request) ──▶ Promise<boolean>                   │
-│  ├── renderDiff(diff) ──▶ colorized +/- lines               │
-│  ├── promptWithOptions(options) ──▶ selected action          │
-│  └── indent(text, spaces) ──▶ prefixed text                 │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The conversation renderer distinguishes user messages, assistant messages, tool execution indicators, and tool results through color coding and indentation. Tool results longer than 20 lines are truncated to the first 10 and last 10 lines with an ellipsis separator. Error results display in red with the error message.
 
 ---
 
 ## ⌨️ Input Handling
 
-### Readline Interface
+### Readline and History
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     InputHandler                             │
-├─────────────────────────────────────────────────────────────┤
-│  Configuration                                               │
-│  ├── input: process.stdin                                    │
-│  ├── output: process.stdout                                  │
-│  ├── terminal: true                                          │
-│  ├── historySize: 100                                        │
-│  └── completer: autocomplete function                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Keypress Handling                                           │
-│                                                               │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
-│  │   Ctrl+C     │    │   Ctrl+D     │    │   Up/Down    │   │
-│  │   Cancel     │    │    Exit      │    │   History    │   │
-│  │  operation   │    │   session    │    │  navigate    │   │
-│  └──────────────┘    └──────────────┘    └──────────────┘   │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  History Navigation                                          │
-│  ├── Store inputs in history array                           │
-│  ├── Track historyIndex position                             │
-│  ├── Up arrow: decrement index, show older entry            │
-│  └── Down arrow: increment index, show newer entry          │
-├─────────────────────────────────────────────────────────────┤
-│  Autocomplete                                                │
-│  └── Commands: /help, /clear, /history, /exit, /model       │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The input layer wraps Node.js readline with custom keypress handling. Ctrl+C cancels the current operation (not the process). Ctrl+D exits the session. Up and down arrows navigate command history stored in a circular buffer of 100 entries. History persists to disk between sessions.
 
 ### Multi-Line Input
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    MultiLineInput                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Method 1: Empty Line Submission                             │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  (Enter empty line to submit, Ctrl+C to cancel)      │   │
-│  │  ... First line of input                              │   │
-│  │  ... Second line of input                             │   │
-│  │  ...                                                   │   │
-│  │  [empty line triggers submit]                         │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                               │
-│  Method 2: Delimiter Submission                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  (Type '<<<' on a new line to submit)                 │   │
-│  │  Line 1                                                │   │
-│  │  Line 2                                                │   │
-│  │  <<<                                                   │   │
-│  │  [delimiter triggers submit]                          │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+Two submission modes are supported. The default mode submits on an empty line -- the user types their message across multiple lines and presses Enter twice to send. The alternative mode uses a delimiter: the user types "<<<" on a new line to submit. This accommodates pasting code blocks that contain empty lines.
+
+### Slash Command Autocomplete
+
+When the user types "/", the autocomplete engine offers completions: /help, /clear, /history, /exit, /model. Tab completion cycles through matching options. This is implemented via the readline completer callback.
 
 ---
 
 ## 🎨 Theming System
 
-### Theme Structure
+### Theme Structure and Detection
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Theme                                 │
-├─────────────────────────────────────────────────────────────┤
-│  Base Colors                                                 │
-│  ├── primary    (main brand color)                          │
-│  ├── secondary  (complementary color)                       │
-│  ├── accent     (highlight color)                           │
-│  ├── background (terminal background)                       │
-│  └── foreground (default text)                              │
-├─────────────────────────────────────────────────────────────┤
-│  Semantic Colors                                             │
-│  ├── success    (green)                                      │
-│  ├── warning    (yellow/orange)                              │
-│  ├── error      (red)                                        │
-│  └── info       (blue/teal)                                  │
-├─────────────────────────────────────────────────────────────┤
-│  UI Elements                                                 │
-│  ├── prompt          (input prompt color)                   │
-│  ├── userMessage     (user text)                             │
-│  ├── assistantMessage (AI response)                         │
-│  ├── toolOutput      (tool results)                          │
-│  └── codeBlock       (code background)                       │
-├─────────────────────────────────────────────────────────────┤
-│  Syntax Highlighting                                         │
-│  ├── keyword   (purple)                                      │
-│  ├── string    (green)                                       │
-│  ├── number    (orange)                                      │
-│  ├── comment   (gray)                                        │
-│  ├── function  (blue)                                        │
-│  ├── variable  (red)                                         │
-│  └── operator  (cyan)                                        │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+Each theme defines five color categories: base colors (primary, secondary, accent, background, foreground), semantic colors (success, warning, error, info), UI element colors (prompt, user message, assistant message, tool output, code block), and syntax highlighting colors (keyword, string, number, comment, function, variable, operator).
 
-### Dark Theme Colors
+The theme manager auto-detects terminal background by reading the COLORFGBG environment variable. If the background value exceeds 6, it selects the light theme; otherwise, it defaults to dark. The user can override this with explicit configuration.
 
-```
-┌────────────────────────────────────────────────────┐
-│                   Dark Theme                        │
-├────────────────────────────────────────────────────┤
-│  primary:    #FF6B6B (Coral)                       │
-│  secondary:  #4ECDC4 (Teal)                        │
-│  accent:     #FFE66D (Yellow)                      │
-│  background: #1a1a1a                               │
-│  foreground: #ffffff                               │
-├────────────────────────────────────────────────────┤
-│  Semantic: success=#4CAF50, warning=#FFE66D        │
-│            error=#FF6B6B, info=#4ECDC4             │
-└────────────────────────────────────────────────────┘
-```
+| Theme | Primary | Secondary | Accent | Background |
+|-------|---------|-----------|--------|------------|
+| Dark | Coral (#FF6B6B) | Teal (#4ECDC4) | Yellow (#FFE66D) | #1a1a1a |
+| Light | Deep Red (#e53935) | Teal (#00897b) | Amber (#ffc107) | #ffffff |
 
-### Light Theme Colors
+### Color Capability Detection
 
-```
-┌────────────────────────────────────────────────────┐
-│                   Light Theme                       │
-├────────────────────────────────────────────────────┤
-│  primary:    #e53935 (Deep Red)                    │
-│  secondary:  #00897b (Teal)                        │
-│  accent:     #ffc107 (Amber)                       │
-│  background: #ffffff                               │
-│  foreground: #212121                               │
-├────────────────────────────────────────────────────┤
-│  Semantic: success=#4CAF50, warning=#ff9800        │
-│            error=#e53935, info=#00897b             │
-└────────────────────────────────────────────────────┘
-```
-
-### Theme Auto-Detection
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    ThemeManager                              │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Auto-detection Flow:                                        │
-│                                                               │
-│  Check COLORFGBG env ──▶ Parse bg value ──▶ Select theme    │
-│         │                       │                            │
-│         ▼                       ▼                            │
-│    "15;0"              bg > 6 ? light : dark                │
-│         │                                                    │
-│         └── fg=15, bg=0 ──▶ dark background                 │
-│                                                               │
-│  Fallback: default to dark theme                             │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  Styled Output Helpers                                       │
-│  ├── prompt(text)           ──▶ theme.prompt color          │
-│  ├── userMessage(text)      ──▶ theme.userMessage color     │
-│  ├── assistantMessage(text) ──▶ theme.assistantMessage      │
-│  ├── success(text)          ──▶ theme.success color         │
-│  ├── error(text)            ──▶ theme.error color           │
-│  ├── warning(text)          ──▶ theme.warning color         │
-│  └── code(text, lang)       ──▶ syntax highlighted          │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## ♿ Accessibility
-
-### Color Contrast (WCAG AA)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                AccessibilityChecker                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  WCAG AA Requirement: 4.5:1 contrast ratio                   │
-│                                                               │
-│  checkContrast(foreground, background)                       │
-│       │                                                       │
-│       ▼                                                       │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Calculate luminance for both colors                 │    │
-│  │  ├── Parse hex to RGB                                │    │
-│  │  ├── Normalize to 0-1 range                          │    │
-│  │  └── Apply: 0.2126*R + 0.7152*G + 0.0722*B          │    │
-│  └─────────────────────────────────────────────────────┘    │
-│       │                                                       │
-│       ▼                                                       │
-│  ratio = (max(L) + 0.05) / (min(L) + 0.05)                  │
-│       │                                                       │
-│       ▼                                                       │
-│  return ratio >= 4.5                                         │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Screen Reader Support
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                ScreenReaderSupport                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  announce(message, priority)                                 │
-│  └── Output terminal title sequence: \x1b]0;{msg}\x07       │
-│                                                               │
-│  getPlainText(formatted)                                     │
-│  └── Strip ANSI codes: remove /\x1b\[[0-9;]*m/g            │
-│                                                               │
-│  describeElement(type, content)                              │
-│  ├── 'code-block'       ──▶ "Code block: {preview}..."     │
-│  ├── 'permission-prompt' ──▶ "Permission required: {desc}" │
-│  ├── 'tool-result'      ──▶ "Tool output: {preview}"       │
-│  └── 'error'            ──▶ "Error: {content}"              │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Keyboard-Only Navigation
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 KeyboardNavigation                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Focus Management                                            │
-│  ├── focusIndex: current position                            │
-│  └── focusableElements: registered UI elements               │
-│                                                               │
-│  Tab Navigation                                              │
-│  ├── Tab       ──▶ Move focus forward                       │
-│  └── Shift+Tab ──▶ Move focus backward                      │
-│                                                               │
-│  Activation                                                   │
-│  └── Enter     ──▶ Activate focused element                 │
-│                                                               │
-│  Focus Indicator                                              │
-│  └── Render focused element with inverse colors              │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The output layer detects the terminal's color support level (8, 16, 256, or true color) and degrades gracefully. True color terminals get full hex color rendering. 256-color terminals get the nearest palette match. 8-color terminals fall back to bold/dim attributes for differentiation.
 
 ---
 
@@ -591,92 +219,98 @@ When LLM responses stream token-by-token, we need to:
 
 ### Terminal Width Handling
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     LayoutEngine                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Initialization                                              │
-│  ├── terminalWidth = process.stdout.columns || 80           │
-│  └── Listen for 'resize' event to update width              │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  wrap(text, indent)                                          │
-│  ├── Calculate maxWidth = terminalWidth - indent            │
-│  ├── Split into words                                        │
-│  ├── Accumulate words until line exceeds maxWidth           │
-│  └── Return indented lines joined by newlines               │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  truncate(text, maxLength?)                                  │
-│  └── If text > max: return text[0..max-3] + '...'           │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  center(text)                                                │
-│  └── Pad left with (terminalWidth - textLength) / 2 spaces  │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  hr(char = '─')                                              │
-│  └── Return char repeated terminalWidth times               │
-│                                                               │
-├─────────────────────────────────────────────────────────────┤
-│  box(content, title?)                                        │
-│                                                               │
-│  ┌─ Title ──────────────────────────────────┐               │
-│  │ Content line 1                            │               │
-│  │ Content line 2                            │               │
-│  └───────────────────────────────────────────┘               │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The layout engine reads terminal width from stdout columns (defaulting to 80) and listens for resize events. All text output passes through a word-wrap function that respects the current width minus any indentation. Long strings without natural break points are truncated with an ellipsis.
 
-### Conversation Layout
+### Box Drawing
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                 ConversationRenderer                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  renderUserMessage(content)                                  │
-│  └── Output: "You: {content}" with prompt color             │
-│                                                               │
-│  renderAssistantMessage(content)                             │
-│  └── Output: "Assistant:" + wrapped content (indent 2)      │
-│                                                               │
-│  renderToolExecution(tool, params)                           │
-│  └── Output: [Executing {tool}] + compact params (gray)     │
-│                                                               │
-│  renderToolResult(result)                                    │
-│  ├── Success with output:                                    │
-│  │   ├── If > 20 lines: show first 10 + "..." + last 10    │
-│  │   └── Else: show all output (gray)                       │
-│  └── Failure: show "Error: {message}" (red)                 │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
-```
+The box drawing function renders bordered content using Unicode box characters, with an optional title embedded in the top border. This is used for permission dialogs, error messages, and session status displays.
 
 ---
 
-## 📊 Trade-offs Summary
+## ♿ Accessibility
 
-| Decision | Pros | Cons |
+### Color Contrast
+
+All theme color pairs are validated against WCAG AA requirements (4.5:1 contrast ratio). The accessibility checker computes relative luminance for foreground and background colors and rejects combinations that fail the threshold. This runs at theme load time, not at render time.
+
+### Screen Reader Support
+
+Terminal announcements use the OSC title sequence to push status updates to screen readers. A plain-text extraction function strips all ANSI escape codes from formatted output. Semantic descriptions are generated for non-text elements: "Code block: first 50 characters...", "Permission required: Edit /path/to/file.ts", "Tool output: 15 lines".
+
+### Keyboard Navigation
+
+All interactive elements (permission prompts, option menus) support Tab/Shift+Tab navigation between focusable elements. The focused element renders with inverted colors. Enter activates the focused element.
+
+---
+
+## 🔧 Deep Trade-off: Line-by-Line Streaming vs Full Terminal UI Framework
+
+**Decision**: Render streamed content line-by-line using raw ANSI escape codes rather than adopting a full terminal UI framework like Ink (React for CLI) or Blessed.
+
+**Why line-by-line works for this problem**: An AI coding assistant produces a linear stream of text. The user reads top-to-bottom as tokens arrive. Line-by-line rendering maps naturally to this consumption pattern. It requires minimal state (just "am I in a code block?"), works in every terminal emulator, and adds zero framework overhead. Startup time is near-instant because there is no virtual DOM to initialize.
+
+**Why a full TUI framework fails here**: Ink re-renders the entire visible area on every state change, which creates visible flickering during fast token streaming (100+ tokens/second). Blessed adds 2-3MB to bundle size and has known compatibility issues with Windows Terminal. Both frameworks assume a "screen" metaphor (fixed viewport, cursor positioning) that fights against the natural scrolling behavior users expect from a CLI tool. When the assistant produces a 200-line response, the user expects it to scroll like any other terminal output -- not be trapped in a paged viewport.
+
+**What we give up**: We cannot retroactively update previously rendered lines. If the assistant's response contains a markdown table, we cannot re-align columns after seeing the widest cell. We also cannot implement features like collapsible sections or clickable links without mouse support. For a future web terminal interface, a component-based framework would be the right choice -- but for native terminal usage, raw ANSI is simpler and more robust.
+
+---
+
+## 🔧 Deep Trade-off: Synchronous Permission Prompts vs Async Queue
+
+**Decision**: Block all output while waiting for user permission approval rather than queuing prompts and continuing to stream.
+
+**Why blocking works**: When the LLM requests a file edit, the user needs full context to make a safety decision. If we continued streaming the assistant's explanation while simultaneously showing "Approve edit to auth.ts? [y/n]", the user might approve without reading because the prompt scrolled past. Blocking creates a clear modal moment: everything stops, the user reads the diff, and makes an informed decision. This is critical because permission prompts gate destructive operations.
+
+**Why async queuing fails**: In an async model, multiple tool calls could stack up approval prompts. The user would see "Approve edit to auth.ts?" followed immediately by "Approve edit to router.ts?" before having time to evaluate either. Worse, if the user types "y" intending to approve the first prompt, it might be consumed by the second. The interaction becomes unpredictable and dangerous for write operations.
+
+**What we give up**: Latency. The LLM sits idle during approval, wasting potential computation time. For sessions with many file edits, this creates a stop-and-go rhythm that some users find frustrating. The "always allow for session" option (the "a" key) mitigates this for trusted directories, letting users opt into faster flow after the first approval.
+
+---
+
+## 🔧 Deep Trade-off: ANSI Escape Codes vs Terminal-Specific APIs
+
+**Decision**: Use portable ANSI escape codes exclusively rather than terminal-specific features (iTerm2 inline images, Kitty graphics protocol, Sixel).
+
+**Why ANSI works**: ANSI escape codes are supported by every terminal emulator on every platform. The same escape sequence for bold text works in macOS Terminal, Windows Terminal, Linux xterm, and SSH sessions. This universality is essential for a developer tool that must work in CI environments, remote servers, and containerized development setups.
+
+**Why terminal-specific APIs fail at this stage**: Adopting Kitty's graphics protocol would enable inline image rendering -- useful for displaying charts or screenshots. But it would work in exactly one terminal emulator. Users on VS Code's integrated terminal, iTerm2, or any SSH session would see garbage characters or nothing. Supporting multiple protocols multiplies testing surface without benefiting most users.
+
+**What we give up**: Rich media rendering. We cannot show inline images, clickable hyperlinks (some terminals support OSC 8, but not universally), or proportional fonts. For a code-focused tool, these are acceptable losses -- the primary output is text and code, which ANSI handles well.
+
+---
+
+## ⚖️ Trade-offs Summary
+
+| Approach | Pros | Cons |
 |----------|------|------|
-| Line-by-line streaming | Immediate feedback, simple state | Can't re-render mid-line formatting |
-| ANSI escape codes | Universal terminal support | Limited styling options |
-| Built-in readline | Standard, cross-platform | Less control over input handling |
-| Sync permission prompts | Clear UX, no race conditions | Blocks other output |
-| Fixed spinner frames | Works in all terminals | No fancy animations |
-| Theme-based coloring | Consistent branding | May clash with terminal themes |
+| ✅ Line-by-line streaming | Immediate feedback, simple state, universal compatibility | Cannot re-render previous lines, no retroactive formatting |
+| ❌ Ink/React TUI framework | Component model, declarative rendering | Flickering on fast streams, startup overhead, viewport metaphor |
+| ✅ Synchronous permission prompts | Clear UX, no race conditions, safe decisions | Blocks LLM computation, stop-and-go rhythm |
+| ❌ Async permission queue | Non-blocking, higher throughput | Confusing overlap, risk of mis-approval |
+| ✅ ANSI escape codes | Universal support, zero dependencies | No rich media, limited styling palette |
+| ❌ Terminal-specific APIs | Inline images, clickable links | Fragmented support, testing burden |
+| ✅ Built-in readline | Standard, cross-platform, zero setup | Less control over input handling |
+| ❌ Custom input handler | Full control, custom key sequences | Platform-specific edge cases, maintenance |
+| ✅ Theme auto-detection | Works out of the box for most users | COLORFGBG not universally set |
+| ❌ Manual theme selection only | Always correct | Extra configuration step, worse defaults |
 
 ---
 
-## 🚀 Future Frontend Enhancements
+## 🚀 Scalability and Future Enhancements
 
-1. **Ink/React Integration**: Full React component model for CLI
-2. **Mouse Support**: Click-to-approve, scroll through history
-3. **Split Pane**: Show file preview alongside conversation
-4. **Rich Diffs**: Side-by-side file comparison
-5. **Image Rendering**: ASCII art preview of images (sixel support)
-6. **Custom Keybindings**: Configurable shortcuts
-7. **Plugin Widgets**: Third-party UI components
-8. **Web Terminal**: Browser-based interface option
+**What breaks first**: Terminal rendering becomes the bottleneck when LLM providers increase streaming speed. At 500+ tokens/second, the current line-by-line renderer may struggle to keep up with the rate of ANSI encoding and stdout writes. The mitigation is to batch tokens into larger chunks before rendering, sacrificing some real-time granularity for throughput.
+
+**What to build next**:
+
+1. **Split pane view** -- show file preview alongside conversation using terminal multiplexing
+2. **Rich diff rendering** -- side-by-side file comparison for edit approval
+3. **Web terminal option** -- browser-based interface using xterm.js for environments where native terminal is limiting
+4. **Mouse support** -- click-to-approve in terminals that support mouse events
+5. **Custom keybindings** -- user-configurable keyboard shortcuts for power users
+6. **Plugin widgets** -- third-party UI components for specialized tool output
+
+---
+
+## 💬 Closing Summary
+
+> "The AI code assistant's frontend is a terminal UI built on three layers: input handling via readline with history and autocomplete, a streaming markdown renderer that processes tokens line-by-line with syntax highlighting, and an ANSI output layer that adapts to terminal capabilities. The key design tension is between richness and portability -- I consistently chose portable, simple solutions (ANSI over terminal-specific APIs, line-by-line over full TUI frameworks, synchronous prompts over async queues) because a developer tool must work everywhere: local terminals, SSH sessions, CI environments, and containerized setups. The permission prompt system is deliberately blocking to prevent accidental approval of destructive operations. Theming auto-detects terminal background and validates contrast ratios for accessibility. The main scalability concern is rendering throughput as LLM streaming speeds increase, addressable by batching tokens before rendering."

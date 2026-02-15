@@ -1,637 +1,313 @@
-# Scalable API - System Design Answer (Frontend Focus)
+# Scalable API Platform — System Design Answer (Frontend Focus)
 
-*45-minute system design interview format - Frontend Engineer Position*
-
----
-
-## 1. Problem Statement (2 minutes)
-
-"Design the admin dashboard for a scalable API platform that displays real-time metrics, manages API keys, and visualizes system health."
-
-This is a **frontend-focused problem** requiring expertise in:
-- Real-time data visualization and charts
-- Dashboard layout and information hierarchy
-- State management for metrics streams
-- Responsive design for monitoring interfaces
-- Error states and loading patterns
+*45-minute system design interview — Frontend Engineer Position*
 
 ---
 
-## 2. Requirements Clarification (3 minutes)
+## 📋 Opening Statement
+
+"I'll design the admin dashboard for a scalable API platform — a real-time monitoring interface that displays live metrics, manages API keys, visualizes server health, and provides a request log explorer. The core frontend challenges are rendering live-updating data efficiently, managing multiple polling streams without overwhelming the browser, and presenting complex system health information in a scannable layout that helps operators make quick decisions during incidents."
+
+---
+
+## 🎯 Requirements
 
 ### Functional Requirements
-- Real-time metrics dashboard (requests/sec, latency, error rates)
-- API key management interface (create, revoke, view usage)
-- Server health status grid
-- Rate limit usage visualization
-- Request log explorer with filtering
+
+- Real-time metrics dashboard showing requests/sec, latency percentiles, error rates, and uptime
+- API key management interface with create, revoke, and usage visibility
+- Server health status grid with CPU, memory, and connection indicators
+- Request log explorer with filtering by status, method, path, and time range
+- Rate limit usage visualization per API key
 
 ### Non-Functional Requirements
-- **Refresh Rate**: Metrics update every 5-10 seconds
-- **Performance**: Dashboard renders in < 2 seconds
-- **Accessibility**: WCAG 2.1 AA compliance
-- **Responsiveness**: Usable on tablet and desktop
 
-### Frontend-Specific Clarifications
-- "Real-time updates?" - Polling every 5 seconds (WebSocket for alerts only)
-- "Charting library?" - Recharts for simplicity and React integration
-- "State management?" - Zustand for metrics store
-- "Styling?" - Tailwind CSS with custom dashboard theme
+- **Refresh rate**: Metrics update every 5 seconds via polling
+- **Render performance**: Dashboard initial paint in under 2 seconds; re-renders under 16ms
+- **Accessibility**: WCAG 2.1 AA compliance across all dashboard views
+- **Responsiveness**: Full functionality on tablet (768px+) and desktop
+- **Graceful degradation**: Dashboard remains usable when backend is temporarily unreachable
 
 ---
 
-## 3. High-Level Architecture (5 minutes)
+## 🏗️ High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Admin Dashboard                          │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │   Sidebar   │  │   Header    │  │   Alerts    │             │
-│  │  Navigation │  │  + Search   │  │   Banner    │             │
-│  └─────────────┘  └─────────────┘  └─────────────┘             │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    Metrics Overview                         ││
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       ││
-│  │  │ Requests │ │ Latency  │ │  Errors  │ │  Uptime  │       ││
-│  │  │  /sec    │ │   P99    │ │   Rate   │ │    %     │       ││
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       ││
-│  └─────────────────────────────────────────────────────────────┘│
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────┐  ┌─────────────────────────────┐  │
-│  │     Traffic Chart       │  │      Server Health Grid     │  │
-│  │   (Area + Line Chart)   │  │   (Status Cards + Gauges)   │  │
-│  └─────────────────────────┘  └─────────────────────────────┘  │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    API Key Management                       ││
-│  │   [Create Key]  [Filter: All Tiers]  [Search...]           ││
-│  │   ┌───────────────────────────────────────────────────┐    ││
-│  │   │ Key        │ Tier   │ Usage    │ Created  │ Actions│   ││
-│  │   ├───────────────────────────────────────────────────┤    ││
-│  │   │ sk_live... │ Pro    │ 45%      │ Jan 15   │ Edit   │   ││
-│  │   └───────────────────────────────────────────────────┘    ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Component Hierarchy
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ App                                                             │
-│ └── DashboardLayout                                             │
-│     ├── Sidebar                                                 │
-│     │   ├── NavItem (Dashboard)                                 │
-│     │   ├── NavItem (API Keys)                                  │
-│     │   ├── NavItem (Logs)                                      │
-│     │   └── NavItem (Settings)                                  │
-│     ├── Header                                                  │
-│     │   ├── SearchBar                                           │
-│     │   ├── AlertsDropdown                                      │
-│     │   └── UserMenu                                            │
-│     └── MainContent                                             │
-│         ├── MetricsOverview                                     │
-│         │   ├── StatCard (Requests/sec)                         │
-│         │   ├── StatCard (P99 Latency)                          │
-│         │   ├── StatCard (Error Rate)                           │
-│         │   └── StatCard (Uptime)                               │
-│         ├── ChartsSection                                       │
-│         │   ├── TrafficChart                                    │
-│         │   └── ServerHealthGrid                                │
-│         ├── APIKeyManager                                       │
-│         │   ├── CreateKeyModal                                  │
-│         │   ├── KeyTable                                        │
-│         │   └── UsageChart                                      │
-│         └── RequestLogExplorer                                  │
-│             ├── LogFilters                                      │
-│             └── LogTable                                        │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Admin Dashboard (SPA)                        │
+│                                                                     │
+│  ┌──────────┐  ┌──────────────────────────────────────────────────┐ │
+│  │          │  │  Header Bar          [Search]  [Alerts]  [User] │ │
+│  │ Sidebar  │  ├──────────────────────────────────────────────────┤ │
+│  │          │  │                                                  │ │
+│  │ Dashboard│  │  ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────┐ │ │
+│  │ API Keys │  │  │ Req/sec  │ │ P99 ms   │ │ Errors │ │Uptime│ │ │
+│  │ Logs     │  │  └──────────┘ └──────────┘ └────────┘ └──────┘ │ │
+│  │ Settings │  │                                                  │ │
+│  │          │  │  ┌────────────────────┐ ┌──────────────────────┐ │ │
+│  │          │  │  │  Traffic Chart     │ │  Server Health Grid  │ │ │
+│  │          │  │  │  (Area + Line)     │ │  (Status Cards)      │ │ │
+│  │          │  │  └────────────────────┘ └──────────────────────┘ │ │
+│  │          │  │                                                  │ │
+│  │          │  │  ┌──────────────────────────────────────────────┐│ │
+│  │          │  │  │  API Key Management / Request Log Explorer   ││ │
+│  │          │  │  └──────────────────────────────────────────────┘│ │
+│  └──────────┘  └──────────────────────────────────────────────────┘ │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │
+                    Polling (5s) │ REST API
+                                 │
+                                 ▼
+                  ┌──────────────────────────────┐
+                  │      Backend API Gateway     │
+                  │   /api/v1/admin/metrics       │
+                  │   /api/v1/admin/servers       │
+                  │   /api/v1/admin/keys          │
+                  │   /api/v1/admin/logs          │
+                  └──────────────────────────────┘
 ```
 
 ---
 
-## 4. Deep Dives (25 minutes)
-
-### Deep Dive 1: Real-Time Metrics Dashboard (8 minutes)
-
-**Challenge**: Display live system metrics with smooth updates and historical context.
-
-#### Metrics Store Architecture (Zustand)
+## 🧩 Component Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      useMetricsStore                            │
-├─────────────────────────────────────────────────────────────────┤
-│ State:                                                          │
-│   current: MetricsPoint | null  ──▶ Latest data point          │
-│   history: MetricsPoint[]       ──▶ Last 60 points (5 min)     │
-│   servers: ServerHealth[]       ──▶ All server statuses        │
-│   isLoading: boolean                                            │
-│   error: string | null                                          │
-├─────────────────────────────────────────────────────────────────┤
-│ Actions:                                                        │
-│   fetchMetrics()  ──▶ GET /admin/metrics/current                │
-│                   ──▶ GET /admin/servers/health                 │
-│   startPolling()  ──▶ setInterval(5000ms)                       │
-│   stopPolling()   ──▶ clearInterval()                           │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  App                                                             │
+│  ├── AuthGuard (checks session, redirects to /login)             │
+│  └── DashboardLayout                                             │
+│      ├── Sidebar ──── NavItem (x4: Dashboard, Keys, Logs, etc.) │
+│      ├── Header                                                  │
+│      │   ├── SearchBar                                           │
+│      │   ├── AlertsDropdown                                      │
+│      │   └── UserMenu                                            │
+│      └── MainContent (route outlet)                              │
+│          ├── MetricsOverview                                     │
+│          │   └── StatCard (x4: RPS, P99, Error Rate, Uptime)    │
+│          ├── ChartsSection                                       │
+│          │   ├── TrafficChart (Recharts AreaChart)               │
+│          │   └── ServerHealthGrid                                │
+│          │       └── ServerCard (xN per backend instance)        │
+│          ├── APIKeyManager                                       │
+│          │   ├── CreateKeyModal                                  │
+│          │   ├── KeyTable with UsageBars                         │
+│          │   └── RevokeConfirmModal                              │
+│          └── RequestLogExplorer                                  │
+│              ├── LogFilters (date, status, method, path)         │
+│              └── LogTable with expandable rows                   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-#### MetricsPoint Interface
-
-| Field | Type | Description |
-|-------|------|-------------|
-| timestamp | number | Unix timestamp |
-| requestsPerSec | number | Current throughput |
-| latencyP50 | number | Median latency (ms) |
-| latencyP99 | number | 99th percentile (ms) |
-| errorRate | number | Error percentage |
-| activeConnections | number | Current connections |
-
-#### ServerHealth Interface
-
-| Field | Type | Description |
-|-------|------|-------------|
-| id | string | Server identifier |
-| name | string | Display name |
-| status | enum | healthy / degraded / unhealthy |
-| cpu | number | CPU usage percentage |
-| memory | number | Memory usage percentage |
-| connections | number | Active connections |
-| lastCheck | number | Last health check timestamp |
-
-#### Polling Lifecycle
-
-```
-┌──────────────┐     ┌───────────────┐     ┌──────────────┐
-│  Component   │     │ MetricsStore  │     │   API        │
-│   Mount      │     │               │     │              │
-└──────┬───────┘     └───────┬───────┘     └──────┬───────┘
-       │                     │                    │
-       │  startPolling()     │                    │
-       │────────────────────▶│                    │
-       │                     │                    │
-       │                     │  GET /metrics      │
-       │                     │───────────────────▶│
-       │                     │                    │
-       │                     │◀─────── JSON ──────│
-       │                     │                    │
-       │  state update       │                    │
-       │◀────────────────────│                    │
-       │                     │                    │
-       │   ... every 5s ...  │                    │
-       │                     │                    │
-       │  stopPolling()      │                    │
-       │────────────────────▶│                    │
-       │  (on unmount)       │                    │
-       ▼                     ▼                    ▼
-```
-
-#### StatCard Component
-
-```
-┌─────────────────────────────────────────┐
-│  ┌───────────────────────┬───────────┐  │
-│  │ Title (gray-500)      │ TrendBadge│  │
-│  │ "P99 Latency"         │  ↑ 5.2%   │  │
-│  └───────────────────────┴───────────┘  │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │  Value (3xl font)      Unit     │    │
-│  │  "245"                 "ms"     │    │
-│  └─────────────────────────────────┘    │
-│                                         │
-│  ┌─────────────────────────────────┐    │
-│  │ ThresholdBar (optional)         │    │
-│  │ ████████████░░░░░ 70%          │    │
-│  └─────────────────────────────────┘    │
-└─────────────────────────────────────────┘
-```
-
-**StatCard Props:**
-- `title`: Display label
-- `value`: Current numeric value
-- `previousValue`: For trend calculation
-- `unit`: Optional suffix (ms, %, /sec)
-- `format`: number | percent | duration
-- `threshold`: { warning: number, critical: number }
-
-**Color Logic:**
-- Green: Below warning threshold
-- Amber: Between warning and critical
-- Red: Above critical threshold
-
-#### TrendBadge Logic
-
-```
-  Trend = ((current - previous) / previous) * 100
-
-  if |trend| < 1%  ──▶ Gray background (neutral)
-  if trend > 0     ──▶ Red background (increase = bad for latency/errors)
-  if trend < 0     ──▶ Green background (decrease = improvement)
-
-  Display: "↑ 5.2%" or "↓ 3.1%"
-```
-
-#### Traffic Chart (Recharts)
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Traffic Overview                                               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  req/s│                                                         │
-│   500 │                    ╭───╮                                │
-│   400 │              ╭────╯   ╰──╮                              │
-│   300 │        ╭────╯            ╰───╮                          │
-│   200 │  ╭────╯                      ╰────╮                     │
-│   100 │──╯                                ╰───                  │
-│       └─────────────────────────────────────────                │
-│         10:00  10:05  10:10  10:15  10:20  10:25                │
-│                                                                 │
-│  Chart Type: AreaChart with gradient fill                       │
-│  Data: history[] mapped to { time, requests, latencyP50/P99 }   │
-│  Update: Re-renders when history changes (every 5s poll)        │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Chart Configuration:**
-- `ResponsiveContainer`: 100% width, 300px height
-- `linearGradient`: Blue gradient for area fill (30% to 0% opacity)
-- `CartesianGrid`: Dashed stroke (#E5E7EB)
-- `XAxis`: Time labels (HH:MM format)
-- `YAxis`: No axis line, clean look
-- `Tooltip`: White background with border radius
+**State management split**: Zustand stores hold server-fetched data (metrics, API keys, auth state) because this data is shared across components and must survive route changes. Local React state handles ephemeral UI concerns — modal visibility, filter selections, search input text — that reset naturally on navigation.
 
 ---
 
-### Deep Dive 2: Server Health Grid (6 minutes)
+## 🔌 API Contract
 
-**Challenge**: Visualize multiple server statuses with quick scanning capability.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/v1/admin/metrics/current | Current RPS, latency percentiles, error rate, uptime |
+| GET | /api/v1/admin/servers/health | Status, CPU, memory, connections per server instance |
+| GET | /api/v1/admin/keys | List all API keys with usage stats (paginated) |
+| POST | /api/v1/admin/keys | Create new API key with tier and scopes |
+| DELETE | /api/v1/admin/keys/:id | Revoke an API key (soft delete) |
+| GET | /api/v1/admin/logs | Request logs with filter params (status, method, path, date range) |
+| POST | /api/v1/admin/login | Authenticate admin, establish session cookie |
+| POST | /api/v1/admin/logout | Destroy session |
+| GET | /api/v1/admin/me | Check current session validity |
 
-#### Health Summary Bar
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Server Health                 ● 5 Healthy  ● 1 Degraded  ● 0   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-Count servers by status for at-a-glance overview.
-
-#### Server Card Layout
-
-```
-┌───────────────────────────────────────────┐
-│  ● api-server-1            "2 min ago"    │  ◀── Status dot + name + last check
-├───────────────────────────────────────────┤
-│  CPU       ████████████░░░░  78%          │  ◀── ResourceBar
-│  Memory    ██████████████░░  85%          │  ◀── Warning color at 80%+
-│  Connections                 1,234        │  ◀── Plain text
-└───────────────────────────────────────────┘
-```
-
-**Card Styling by Status:**
-
-| Status | Border Color | Background |
-|--------|--------------|------------|
-| healthy | border-green-200 | bg-green-50 |
-| degraded | border-amber-200 | bg-amber-50 |
-| unhealthy | border-red-200 | bg-red-50 |
-
-**Status Dot:**
-- Green/Amber/Red with `animate-pulse` for visual attention
-- 3x3 rounded-full
-
-#### ResourceBar Component
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Props:                                                         │
-│    label: string ("CPU", "Memory")                              │
-│    value: number (0-100)                                        │
-│    thresholds: { warning: 70, critical: 90 }                    │
-├─────────────────────────────────────────────────────────────────┤
-│  Color Logic:                                                   │
-│    value >= critical  ──▶ bg-red-500                            │
-│    value >= warning   ──▶ bg-amber-500                          │
-│    else               ──▶ bg-green-500                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Render:                                                        │
-│    ┌────────────────────────────────┐                           │
-│    │ Label               Value%    │                           │
-│    ├────────────────────────────────┤                           │
-│    │ ████████████░░░░░░░░░░░░░░░░░░ │  ◀── 2px height bar      │
-│    └────────────────────────────────┘      with transition      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### Grid Layout
-
-- `grid-cols-1` on mobile
-- `md:grid-cols-2` on tablet
-- `lg:grid-cols-3` on desktop
-- `gap-4` between cards
-
-#### Loading State: ServerHealthSkeleton
-
-```
-┌───────────────────────────────────────────┐
-│  ░░░░░░░░░░░░░░░░░░░░            ░░░░░░   │  animate-pulse
-├───────────────────────────────────────────┤
-│  ░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░  ░░░%    │
-│  ░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░  ░░░%    │
-│  ░░░░░░░░░░░░░                   ░░░░░   │
-└───────────────────────────────────────────┘
-  Repeat 3x in grid
-```
+All responses follow a consistent envelope: a data field on success, an error object with message and code on failure, and a meta object containing requestId, timestamp, and optional pagination info.
 
 ---
 
-### Deep Dive 3: API Key Management Interface (6 minutes)
+## 💾 Client-Side Data Model
 
-**Challenge**: Allow admins to create, view, and revoke API keys with clear usage visibility.
+**Metrics Store (Zustand)**
 
-#### APIKeyManager Layout
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  API Keys                                    [Create New Key]   │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌────────────────────────────────────┐  ┌────────────────────┐ │
-│  │ Search by key prefix or name...   │  │ All Tiers      ▼  │ │
-│  └────────────────────────────────────┘  └────────────────────┘ │
-├─────────────────────────────────────────────────────────────────┤
-│  Key       │ Tier    │ Usage (Today) │ Created  │ Status │ Act │
-├─────────────────────────────────────────────────────────────────┤
-│  sk_liv... │ Pro     │ ████░░ 45%    │ Jan 15   │ Active │ ... │
-│  sk_tes... │ Free    │ ██░░░░ 22%    │ Jan 10   │ Active │ ... │
-│  sk_old... │ Enterp. │ ░░░░░░  0%    │ Dec 05   │ Revoked│ ... │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### State Management
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Local State (useState):                                        │
-│    isCreateModalOpen: boolean                                   │
-│    filterTier: 'all' | 'free' | 'pro' | 'enterprise'           │
-│    searchQuery: string                                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Store State (useAPIKeyStore):                                  │
-│    keys: APIKey[]                                               │
-│    isLoading: boolean                                           │
-│    createKey: (params) => Promise                               │
-│    revokeKey: (id) => Promise                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### Filtering Logic (useMemo)
-
-```
-  filteredKeys = keys.filter(key => {
-    matchesTier = (filterTier === 'all') OR (key.tier === filterTier)
-    matchesSearch = key.prefix.includes(query) OR
-                    key.name?.toLowerCase().includes(query)
-    return matchesTier AND matchesSearch
-  })
-```
-
-#### APIKey Interface
-
-| Field | Type | Description |
-|-------|------|-------------|
-| id | string | Unique identifier |
-| prefix | string | Display prefix (sk_live_...) |
-| name | string? | Optional friendly name |
-| tier | enum | free / pro / enterprise |
-| usageToday | number | Requests made today |
-| dailyLimit | number | Tier-based daily limit |
-| createdAt | Date | Creation timestamp |
-| isActive | boolean | Not revoked |
-
-#### Tier Badge Colors
-
-| Tier | Background | Text |
-|------|------------|------|
-| free | bg-gray-100 | text-gray-700 |
-| pro | bg-blue-100 | text-blue-700 |
-| enterprise | bg-purple-100 | text-purple-700 |
-
-#### Usage Bar in Row
-
-```
-  usagePercent = (usageToday / dailyLimit) * 100
-
-  Bar color:
-    > 90%  ──▶ bg-red-500
-    > 75%  ──▶ bg-amber-500
-    else   ──▶ bg-green-500
-
-  Display: "1,234 / 10,000" with visual bar below
-```
-
-#### Action Buttons
-
-```
-  ┌─────────────────────────────────────────┐
-  │  [Eye Icon]  ──▶ View details modal     │
-  │  [Trash Icon] ──▶ Revoke confirmation   │  (only if isActive)
-  └─────────────────────────────────────────┘
-```
-
-#### Revoke Confirmation Flow
-
-```
-  User clicks Trash ──▶ showRevokeConfirm = true
-                        ──▶ RevokeConfirmModal opens
-                            ──▶ Shows key prefix
-                            ──▶ Warns action is permanent
-                        ──▶ On confirm: revokeKey(id)
-                        ──▶ Close modal
-```
-
----
-
-### Deep Dive 4: Request Log Explorer (5 minutes)
-
-**Challenge**: Searchable, filterable log viewer for debugging API issues.
-
-#### Filter Bar Layout
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  [DateRangePicker] [Status ▼] [Method ▼] [Filter by path...  ] │
-├─────────────────────────────────────────────────────────────────┤
-│  1,234 requests  |  1,180 success  |  42 client  |  12 server  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### LogFilters Interface
-
-| Field | Type | Default |
+| Field | Type | Purpose |
 |-------|------|---------|
-| startTime | Date | 1 hour ago |
-| endTime | Date | now |
-| status | string | 'all' |
-| method | string | 'all' |
-| minLatency | number? | undefined |
-| path | string | '' |
+| current | MetricsPoint or null | Latest snapshot: RPS, latency percentiles, error rate, connections |
+| history | MetricsPoint[] (max 60) | Rolling 5-minute window for chart rendering |
+| servers | ServerHealth[] | Per-instance status, CPU, memory, connection count, last check time |
+| isLoading | boolean | Initial fetch in progress |
+| isStale | boolean | True after 3 consecutive poll failures |
+| error | string or null | Most recent fetch error message |
 
-#### Status Filter Options
+**API Key Store (Zustand)**
 
-| Value | Label |
-|-------|-------|
-| all | All Status |
-| 2xx | 2xx Success |
-| 4xx | 4xx Client Error |
-| 5xx | 5xx Server Error |
+| Field | Type | Purpose |
+|-------|------|---------|
+| keys | APIKey[] | All keys with prefix, tier, daily usage, daily limit, status |
+| isLoading | boolean | Fetch or mutation in progress |
+| createKey | async function | POST to create, appends to list on success |
+| revokeKey | async function | DELETE by id, marks as revoked optimistically |
 
-#### Method Filter Options
+**Auth Store (Zustand)**
 
-| Value |
-|-------|
-| all |
-| GET |
-| POST |
-| PUT |
-| DELETE |
-
-#### Status Counts (Quick Stats)
-
-```
-  statusCounts = logs.reduce((acc, log) => {
-    category = Math.floor(log.statusCode / 100)  // 2, 3, 4, or 5
-    acc[category] = (acc[category] || 0) + 1
-    return acc
-  }, {})
-
-  Display with colors:
-    2xx ──▶ text-green-600
-    4xx ──▶ text-amber-600
-    5xx ──▶ text-red-600
-```
-
-#### Log Table Structure
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Time     │ Method │ Path          │ Status │ Latency │ Size    │
-├─────────────────────────────────────────────────────────────────┤
-│ 10:23:45 │ GET    │ /api/users    │  200   │  45ms   │ 1.2 KB  │
-│ 10:23:44 │ POST   │ /api/auth     │  401   │ 120ms   │ 0.3 KB  │
-│ 10:23:42 │ GET    │ /api/products │  500   │ 2.3s    │ 0.1 KB  │
-└─────────────────────────────────────────────────────────────────┘
-  max-height: 600px with overflow-y: auto
-  sticky header in bg-gray-50
-```
-
-#### Status Code Colors
-
-| Range | Background | Text |
-|-------|------------|------|
-| 2xx | bg-green-50 | text-green-600 |
-| 3xx | bg-blue-50 | text-blue-600 |
-| 4xx | bg-amber-50 | text-amber-600 |
-| 5xx | bg-red-50 | text-red-600 |
-
-#### Expandable Log Row
-
-```
-  Click row ──▶ isExpanded = !isExpanded
-
-  If expanded:
-    ┌─────────────────────────────────────────────────────────────┐
-    │  LogDetails Component (spans all 6 columns)                 │
-    │    - Request headers                                        │
-    │    - Response headers                                       │
-    │    - Request body (if applicable)                           │
-    │    - Error message (if 4xx/5xx)                             │
-    └─────────────────────────────────────────────────────────────┘
-```
-
-#### MethodBadge Component
-
-```
-  GET    ──▶ Blue badge
-  POST   ──▶ Green badge
-  PUT    ──▶ Amber badge
-  DELETE ──▶ Red badge
-```
-
-#### LatencyBadge Logic
-
-```
-  < 100ms   ──▶ text-green-600
-  < 500ms   ──▶ text-amber-600
-  >= 500ms  ──▶ text-red-600 (slow request)
-```
+| Field | Type | Purpose |
+|-------|------|---------|
+| user | AdminUser or null | Current admin session (id, email, role) |
+| isLoading | boolean | Session check in progress |
+| login | async function | POST credentials, set user on success |
+| logout | async function | POST logout, clear user |
+| checkSession | async function | GET /admin/me on app mount |
 
 ---
 
-## 5. Loading and Error States (2 minutes)
+## 🔧 Deep Dive: Real-Time Metrics Polling
 
-#### MetricsSkeleton
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  grid-cols-4 with gap-4                                         │
-│                                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │ ░░░░░░░░ │  │ ░░░░░░░░ │  │ ░░░░░░░░ │  │ ░░░░░░░░ │        │
-│  │ ░░░░░░░░ │  │ ░░░░░░░░ │  │ ░░░░░░░░ │  │ ░░░░░░░░ │        │
-│  │ ░░░░░░   │  │ ░░░░░░   │  │ ░░░░░░   │  │ ░░░░░░   │        │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
-│                                                                 │
-│  Each card: animate-pulse with gray-200 rectangles             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### MetricsError Component
+**Challenge**: Keep the dashboard current with minimal performance impact and graceful handling of backend outages.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    bg-red-50 border-red-200                     │
-│                                                                 │
-│                    [ExclamationCircle Icon]                     │
-│                         (red-400, 12x12)                        │
-│                                                                 │
-│              "Failed to Load Metrics" (red-800)                 │
-│                                                                 │
-│                    {error message} (red-600)                    │
-│                                                                 │
-│                        [Retry Button]                           │
-│                    bg-red-600 hover:red-700                     │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────┐         ┌───────────────┐         ┌──────────────┐
+│  Component   │         │ MetricsStore  │         │   Backend    │
+│  (mounts)    │         │  (Zustand)    │         │   API        │
+└──────┬───────┘         └───────┬───────┘         └──────┬───────┘
+       │                         │                        │
+       │  startPolling()         │                        │
+       │────────────────────────▶│                        │
+       │                         │  GET /metrics/current  │
+       │                         │───────────────────────▶│
+       │                         │◀───────── JSON ────────│
+       │                         │                        │
+       │  Zustand state update   │                        │
+       │◀────────────────────────│                        │
+       │  (re-render StatCards   │                        │
+       │   + TrafficChart)       │                        │
+       │                         │                        │
+       │     ... 5s interval ... │                        │
+       │                         │                        │
+       │  stopPolling()          │                        │
+       │  (on unmount)           │                        │
+       │────────────────────────▶│                        │
+       ▼                         ▼                        ▼
 ```
 
-**Retry Flow:**
-- Button calls `fetchMetrics()` from store
-- Sets `isLoading = true` during fetch
-- Clears error on success
+The polling hook tracks consecutive failures. After three failures (15 seconds of silence), the store sets isStale to true. The UI responds by dimming the metrics cards and showing a warning banner: "Data may be outdated. Last update: X seconds ago." Critically, the last known values remain visible — operators still see the most recent metrics rather than an empty screen.
+
+> "I chose polling over WebSockets here because the dashboard tolerates 5-second staleness. WebSockets would add connection management complexity — heartbeats, reconnection with exponential backoff, state synchronization on reconnect — that is unjustified for a 5-second refresh cycle. The exception is critical alerts, where I would add a dedicated WebSocket channel to push urgent notifications immediately."
+
+**StatCard rendering optimization**: Each StatCard receives its specific value via a Zustand selector. When RPS changes but P99 stays the same, only the RPS card re-renders. The TrafficChart appends the new point to the history array and shifts old points out — Recharts handles the animation transition smoothly because the data shape is stable.
+
+**Trend badge logic**: Each StatCard computes a percentage change between the current value and the previous value. Changes under 1% display a neutral gray badge. Positive changes (increase) display red for metrics where up is bad (latency, errors) and green where up is good (throughput). This inverted color logic prevents operators from misreading a latency spike as positive.
 
 ---
 
-## 6. Trade-offs Summary (2 minutes)
+## 🔧 Deep Dive: Server Health Grid
 
-| Decision | Trade-off | Rationale |
-|----------|-----------|-----------|
-| Polling vs WebSocket | Simpler but higher latency | 5s delay acceptable for dashboard |
-| Recharts | Less customizable than D3 | React-native integration, faster development |
-| Client-side filtering | Memory usage for large datasets | Faster UX, server handles pagination |
-| Single-page dashboard | Initial load time | Monitoring context preserved |
-| Zustand | Less ecosystem than Redux | Simpler API, sufficient for dashboard |
+**Challenge**: Display N server instances in a scannable layout where operators can spot problems in under 2 seconds.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Server Health               ● 5 Healthy  ● 1 Degraded  ● 0  │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌──────────────────────┐  ┌──────────────────────┐            │
+│  │ ● api-server-1       │  │ ● api-server-2       │            │
+│  │   "2 min ago"        │  │   "30 sec ago"       │            │
+│  ├──────────────────────┤  ├──────────────────────┤            │
+│  │ CPU  ████████░░  78% │  │ CPU  ██████░░░░  55% │            │
+│  │ Mem  █████████░  85% │  │ Mem  ███████░░░  70% │            │
+│  │ Conn       1,234     │  │ Conn         891     │            │
+│  └──────────────────────┘  └──────────────────────┘            │
+│                                                                │
+│  ┌──────────────────────┐                                      │
+│  │ ● api-server-3       │  (degraded — amber border + bg)      │
+│  │   "5 min ago"        │                                      │
+│  ├──────────────────────┤                                      │
+│  │ CPU  ██████████  95% │  ◀── red bar (above 90% critical)   │
+│  │ Mem  █████████░  88% │  ◀── amber bar (above 80% warning)  │
+│  │ Conn       2,456     │                                      │
+│  └──────────────────────┘                                      │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Summary bar**: Before the grid, a single row aggregates server counts by status — "5 Healthy, 1 Degraded, 0 Unhealthy." This lets an operator glance at the page and immediately know whether investigation is needed.
+
+**Card border and background by status**: Healthy cards use green-50 background with green-200 border. Degraded uses amber tones. Unhealthy uses red tones with a pulsing status dot to draw attention. The status dot uses CSS animation (pulse) rather than JavaScript to avoid triggering React re-renders for the animation.
+
+**Resource bars**: Each CPU and memory bar uses threshold-based coloring. Below 70% is green, 70-90% is amber, above 90% is red. This three-tier system matches industry-standard monitoring conventions and requires no legend.
+
+**Responsive grid**: The cards use CSS grid with 1 column on mobile, 2 on tablet (md breakpoint), and 3 on desktop (lg breakpoint). Gap spacing is 16px. When a server goes unhealthy, its card visually stands out because of the contrasting red background, even in a dense grid.
+
+**Loading skeleton**: On initial load, 3 placeholder cards render with animated pulse backgrounds matching the card dimensions. This prevents layout shift when data arrives.
 
 ---
 
-## 7. Future Enhancements
+## 🔧 Deep Dive: API Key Management
 
-1. **WebSocket for Alerts**: Push critical alerts immediately
-2. **Custom Dashboard Layouts**: Drag-and-drop widget arrangement
-3. **Saved Filter Presets**: Quick access to common log queries
-4. **Metric Annotations**: Mark deployments and incidents on charts
-5. **Mobile Dashboard**: Responsive design for on-call monitoring
+**Challenge**: Allow admins to create, view, search, and revoke API keys with clear usage visibility and destructive action safety.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  API Keys                                   [+ Create New Key] │
+├────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────┐  ┌────────────────────┐          │
+│  │ Search by prefix or name │  │ Filter: All Tiers ▼│          │
+│  └──────────────────────────┘  └────────────────────┘          │
+├────────────────────────────────────────────────────────────────┤
+│  Key        │ Tier       │ Usage Today   │ Created  │ Actions  │
+├────────────────────────────────────────────────────────────────┤
+│  sk_live... │ Pro        │ ████░░  45%   │ Jan 15   │ [V] [X]  │
+│  sk_test... │ Free       │ ██░░░░  22%   │ Jan 10   │ [V] [X]  │
+│  sk_old...  │ Enterprise │ ░░░░░░   0%   │ Dec 05   │ Revoked  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Client-side filtering**: The key list is typically small (under 100 keys per account), so filtering by tier and search query happens in the browser using a memoized filter function. This avoids an API round-trip on every keystroke and delivers instant feedback.
+
+**Usage bar coloring**: The usage percentage (usageToday / dailyLimit) drives the bar color. Above 90% is red with a warning that the key is approaching its limit. Above 75% is amber. Below is green. The numeric display shows "1,234 / 10,000" alongside the visual bar for accessibility.
+
+**Revoke confirmation flow**: Clicking the revoke button opens a confirmation modal that displays the key prefix and warns that revocation is permanent and immediate — any applications using this key will begin receiving 401 errors. The confirm button uses red styling and requires a deliberate click. On confirmation, the UI optimistically marks the key as revoked (gray styling, actions disabled) before the API response returns. If the API call fails, the key reverts to active and an error toast appears.
+
+**Create key modal**: The creation form collects a friendly name, tier selection, and optional scope restrictions. On submission, the backend returns the full API key exactly once. The modal displays it with a copy button and a prominent warning: "This key will only be shown once. Copy it now." The modal cannot be dismissed without the user either copying the key or explicitly acknowledging the warning.
+
+**Tier badge styling**: Free keys use a gray badge. Pro uses blue. Enterprise uses purple. These colors are consistent across the dashboard wherever tier information appears, building visual familiarity.
+
+---
+
+## ⚖️ Trade-offs Summary
+
+| Decision | Approach | Pros | Cons |
+|----------|----------|------|------|
+| ✅ Polling (5s) | Simple interval-based fetching | Simple, reliable, no connection management | 5s max staleness |
+| ❌ WebSocket | Persistent bidirectional connection | Sub-second updates | Connection complexity, reconnection logic |
+| ✅ Zustand | Lightweight state management | Minimal boilerplate, selector-based re-renders | Smaller ecosystem than Redux |
+| ❌ Redux | Full-featured state management | Devtools, middleware ecosystem | Excessive ceremony for this use case |
+| ✅ Recharts | React-native charting library | Declarative API, good React integration | Less customizable than D3 |
+| ❌ D3 | Low-level visualization | Total control over rendering | Imperative API fights React's model |
+| ✅ Client-side filtering | Filter keys in browser | Instant feedback, no API round-trips | Memory grows with key count |
+| ❌ Server-side filtering | Filter via API params | Scales to thousands of keys | Network latency on every filter change |
+| ✅ Optimistic revocation | Update UI before API confirms | Instant feedback for destructive actions | Must handle rollback on API failure |
+| ❌ Pessimistic revocation | Wait for API before UI update | Simpler error handling | User sees delay, may double-click |
+
+### Deep Trade-off: Polling vs WebSocket for Dashboard Metrics
+
+> **Decision: 5-second polling over WebSocket for metrics updates**
+>
+> "I chose polling because the dashboard has a well-defined tolerance for staleness — operators reviewing trends and health status don't need sub-second updates. A 5-second polling interval means the data is at most 5 seconds behind reality, which is acceptable for a monitoring dashboard that displays time-series data already averaged over intervals.
+>
+> WebSocket would have reduced latency to near-instant, but introduces significant complexity: I need heartbeat mechanisms to detect stale connections, exponential backoff reconnection when the admin's laptop wakes from sleep, state synchronization to handle what happens when the client misses updates during a disconnect, and multiplexing logic if I want metrics and alerts on the same connection. Each of these is a potential bug surface.
+>
+> The trade-off is that during an acute incident where metrics are changing rapidly, operators see data that is up to 5 seconds old. For critical alerts — circuit breaker trips, server failures — I would add a separate lightweight WebSocket channel specifically for push notifications. This gives the best of both worlds: simple polling for the data that tolerates delay, and push for the events that demand immediacy."
+
+### Deep Trade-off: Recharts vs D3 for Traffic Visualization
+
+> **Decision: Recharts over D3 for the traffic area chart**
+>
+> "I chose Recharts because it operates within React's component model — the chart is a composition of React components (AreaChart, XAxis, Tooltip) that re-render efficiently when their data props change. With D3, I would need to manage a separate imperative rendering lifecycle that fights React's declarative updates: refs to DOM elements, useEffect hooks to synchronize D3 mutations with React state, and careful cleanup to avoid memory leaks.
+>
+> The cost is customization ceiling. Recharts provides good defaults for standard chart types, but if we needed custom interactions — dragging to zoom into a time range, overlaying deployment markers on the timeline, or rendering a heatmap of error rates — D3 gives full pixel-level control. For a standard area chart with tooltip and responsive sizing, Recharts delivers in hours what D3 would take days to build and maintain.
+>
+> If the dashboard evolves to need advanced visualizations, I would incrementally introduce D3 for those specific charts while keeping Recharts for the standard ones, rather than migrating everything."
+
+---
+
+## 🚀 Future Improvements
+
+1. **WebSocket channel for critical alerts** — Push circuit breaker trips, server failures, and rate limit threshold crossings immediately rather than waiting for the next poll cycle
+2. **Custom dashboard layouts** — Let operators drag and rearrange widgets, save layout preferences per user in the backend, and support multiple dashboard configurations for different on-call roles
+3. **Saved filter presets for log explorer** — Allow operators to save common filter combinations ("5xx errors in the last hour", "slow POST requests") and share them with the team
+4. **Deployment annotations on traffic charts** — Mark deployment timestamps on the time-series chart so operators can visually correlate traffic changes with releases
+5. **Keyboard shortcuts** — Quick navigation between dashboard sections (D for dashboard, K for keys, L for logs) and action shortcuts (R to refresh, F to focus search) for power users during incidents
+6. **Virtual scrolling for request logs** — When the log explorer grows beyond hundreds of visible rows, use TanStack Virtual to render only the rows in the viewport, preventing DOM bloat and scroll jank

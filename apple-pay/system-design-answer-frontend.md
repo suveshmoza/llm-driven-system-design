@@ -6,236 +6,146 @@
 
 ## 📋 Problem Statement
 
-Design the frontend architecture for a mobile wallet application that:
-- Displays and manages provisioned payment cards
-- Presents payment sheets for NFC and in-app payments
-- Shows transaction history with merchant details
-- Provides biometric authentication flows
+Design the frontend architecture for a mobile wallet application that displays and manages provisioned payment cards, presents payment sheets for NFC and in-app transactions, shows transaction history with merchant details, and provides biometric authentication flows. The UI must feel as trustworthy and responsive as handling physical currency.
 
 ---
 
 ## 🎯 Requirements Clarification
 
 ### Functional Requirements
-1. **Card Management**: Display cards with visual representations, add/remove cards
-2. **Payment Sheet**: Present payment options during checkout
-3. **Transaction History**: Searchable list with filtering
-4. **Device Management**: View and manage connected devices
-5. **Settings**: Card preferences, default card selection
+
+1. **Card Management** -- Display cards with visual representations matching real card art, add and remove cards from wallet, set default payment card
+2. **Payment Sheet** -- Present payment options during checkout with card selection, amount display, and biometric authentication trigger
+3. **Transaction History** -- Searchable, filterable list of past payments grouped by date with merchant icons and status indicators
+4. **NFC Simulation UI** -- Visual feedback during tap-to-pay flow showing authentication state and transaction progress
+5. **Device Management** -- View connected devices, mark device as lost (triggers card suspension across all cards on that device)
 
 ### Non-Functional Requirements
-1. **Responsive**: Works on various device sizes
-2. **Performance**: Card selection < 100ms, smooth animations
-3. **Accessibility**: VoiceOver/screen reader support
-4. **Offline Resilience**: Show cached cards and history when offline
 
-### UI/UX Requirements
-- Apple-like design language with clean aesthetics
-- Card stack visualization with realistic card art
-- Haptic feedback simulation for interactions
-- Clear status indicators for card states
+1. **Performance** -- Card selection responds in under 100ms; smooth 60fps animations during card carousel interactions
+2. **Offline Resilience** -- Cards and recent transactions visible without network connectivity; instant app load from cache
+3. **Accessibility** -- Full VoiceOver and screen reader support; keyboard navigation for all interactive elements
+4. **Security** -- No sensitive card data (PAN, CVV, tokens) stored in frontend state; only display-safe fields (last4, network, card art URL)
 
 ---
 
 ## 🏗️ High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          React Application                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                         TanStack Router                                  │
+┌───────────────────────────────────────────────────────────────────────────┐
+│                         React Application                                │
+├───────────────────────────────────────────────────────────────────────────┤
+│                          TanStack Router                                 │
 │                                                                          │
-│  /                  ──▶ Wallet View (card list)                          │
-│  /card/:id          ──▶ Card Detail                                      │
-│  /transactions      ──▶ Transaction History                              │
-│  /add-card          ──▶ Card Provisioning Flow                           │
-├─────────────────────────────────────────────────────────────────────────┤
+│   /                  ──▶  Wallet View (card stack + default card)         │
+│   /card/:id          ──▶  Card Detail (transactions, actions)            │
+│   /transactions      ──▶  Transaction History (virtualized list)         │
+│   /add-card          ──▶  Card Provisioning Flow (multi-step)            │
+├───────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  ┌────────────────────────┐    ┌─────────────────────────────────────┐  │
-│  │    Card Stack View     │    │       Payment Sheet Modal           │  │
-│  │                        │    │                                     │  │
-│  │  • Interactive carousel│    │  • Card selection                   │  │
-│  │  • 3D transformations  │    │  • Amount display                   │  │
-│  │  • Swipe gestures      │    │  • Biometric authentication        │  │
-│  └────────────────────────┘    └─────────────────────────────────────┘  │
+│  ┌────────────────────────┐     ┌──────────────────────────────────────┐ │
+│  │    Card Stack View     │     │       Payment Sheet Modal            │ │
+│  │                        │     │                                      │ │
+│  │  - Interactive carousel│     │  - Card selection dropdown           │ │
+│  │  - 3D transformations  │     │  - Amount + merchant display         │ │
+│  │  - Swipe gestures      │     │  - Biometric auth trigger            │ │
+│  │  - Spring physics      │     │  - State machine (idle/auth/done)    │ │
+│  └────────────────────────┘     └──────────────────────────────────────┘ │
 │                                                                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                         Zustand Store                                    │
+├───────────────────────────────────────────────────────────────────────────┤
+│                          Zustand Store                                    │
 │                                                                          │
-│  cards[]  │  transactions[]  │  selectedCardId  │  paymentSheet  │ auth │
-└─────────────────────────────────────────────────────────────────────────┘
+│  cards[]  │  transactions[]  │  selectedCardId  │  paymentSheet  │ auth  │
+├───────────────────────────────────────────────────────────────────────────┤
+│                    localStorage Persistence                               │
+│  Full card metadata + last 50 transactions cached for offline access     │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
+
+> "I'm structuring the app around four main views connected by TanStack Router, with Zustand managing global state and localStorage persistence providing offline-first behavior. The payment sheet is a modal overlay that can appear on any route when triggered by an in-app payment request."
 
 ---
 
-## 🗄️ State Management with Zustand
+## 🗄️ State Management
 
-### Store Design
+### Store Architecture
 
-The wallet store manages cards, transactions, and payment sheet state with offline persistence:
+The wallet store manages three data domains -- cards, transactions, and payment sheet state -- with persistence middleware for offline access.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         WalletState                                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│  DATA                                                                    │
-│  ├── cards: Card[]           (id, last4, network, status, isDefault)    │
-│  ├── transactions: Transaction[] (merchantName, amount, status, cardId) │
-│  └── selectedCardId: string | null                                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│  PAYMENT SHEET                                                           │
-│  ├── isPaymentSheetOpen: boolean                                         │
-│  └── paymentRequest: { amount, currency, merchantId, merchantName }      │
-├─────────────────────────────────────────────────────────────────────────┤
-│  LOADING STATES                                                          │
-│  ├── isLoading: boolean                                                  │
-│  └── isSyncing: boolean                                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ACTIONS                                                                 │
-│  ├── setCards()      addCard()        removeCard()                       │
-│  ├── setDefaultCard()     suspendCard()                                  │
-│  ├── openPaymentSheet()   closePaymentSheet()                            │
-│  └── selectCard()                                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│  COMPUTED                                                                │
-│  ├── getDefaultCard()          ──▶ finds active default card             │
-│  ├── getCardById(id)           ──▶ lookup by ID                          │
-│  └── getTransactionsForCard()  ──▶ filter by cardId                      │
-└─────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                           WalletStore                                     │
+├───────────────────────────────────────────────────────────────────────────┤
+│  DATA SLICES                                                              │
+│  ├── cards: Card[]              id, last4, network, cardType, status,    │
+│  │                              isDefault, cardArtUrl                     │
+│  ├── transactions: Transaction[]  merchantName, amount, currency,        │
+│  │                              status, cardId, createdAt                │
+│  └── selectedCardId             currently focused card in carousel       │
+├───────────────────────────────────────────────────────────────────────────┤
+│  PAYMENT SHEET STATE                                                      │
+│  ├── isPaymentSheetOpen         controls modal visibility                │
+│  └── paymentRequest             amount, currency, merchantId, name       │
+├───────────────────────────────────────────────────────────────────────────┤
+│  ACTIONS                                                                  │
+│  ├── setCards / addCard / removeCard                                      │
+│  ├── setDefaultCard / suspendCard                                         │
+│  ├── openPaymentSheet / closePaymentSheet                                 │
+│  └── selectCard                                                           │
+├───────────────────────────────────────────────────────────────────────────┤
+│  COMPUTED SELECTORS                                                       │
+│  ├── getDefaultCard()          finds first active + isDefault card        │
+│  ├── getCardById(id)           single card lookup                        │
+│  └── getTransactionsForCard()  filters transactions by cardId            │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Persistence Strategy
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    Zustand Persist Middleware                         │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  partialize: (state) =>                                               │
-│    ├── cards: state.cards          (full card data)                   │
-│    └── transactions: state.transactions.slice(0, 50)  (last 50 only) │
-│                                                                       │
-│  storage: localStorage                                                │
-│  name: 'wallet-storage'                                               │
-│                                                                       │
-└──────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│  Benefits:                                                            │
-│  • Offline access to cards and recent transactions                   │
-│  • Instant load on app start (no spinner)                            │
-│  • Graceful degradation when network unavailable                     │
-└──────────────────────────────────────────────────────────────────────┘
-```
+The store uses Zustand's persist middleware with a partialize function. Full card metadata is persisted (typically 3-8 cards at roughly 500 bytes each), but only the 50 most recent transactions are cached. This keeps storage well under localStorage's 5MB limit while providing instant app load without a loading spinner.
 
-### Why Zustand with Persistence?
+> "Wallet apps have a unique requirement: users pull out their phone to pay and expect cards to be visible immediately. The persist middleware gives us synchronous reads on app start, meaning cards render in the first frame -- no async loading state needed."
 
-| Factor | Zustand + Persist | React Query | Redux Toolkit |
-|--------|-------------------|-------------|---------------|
-| Offline support | Built-in persist | Manual | Redux Persist |
-| Boilerplate | Minimal | Minimal | Moderate |
-| Re-renders | Selective | Automatic | Selective |
-| Cache invalidation | Manual | Automatic | Manual |
-
-> "Zustand with persist middleware provides offline-first experience essential for a wallet app. Users need to see their cards even without network connectivity."
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Zustand + localStorage persist | Synchronous reads, instant load, offline cards | Manual cache invalidation, 5MB limit |
+| ❌ React Query with IndexedDB | Automatic refetch, large storage | Async reads require loading states |
+| ❌ Redux Toolkit + Redux Persist | Mature ecosystem, middleware | Heavy boilerplate for small data |
 
 ---
 
 ## 🎴 Card Stack Component
 
-### 3D Card Carousel Architecture
+### 3D Card Carousel
+
+The card stack uses a physics-based carousel where cards fan out with perspective transforms. The active card sits at full scale in the center, while neighboring cards recede with reduced opacity, scale, and a Y-axis rotation.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         CardStack Component                              │
-├─────────────────────────────────────────────────────────────────────────┤
+┌───────────────────────────────────────────────────────────────────────────┐
+│                        CardStack Layout                                   │
 │                                                                          │
-│  Props: cards (from store), selectedCardId, selectCard()                 │
+│       offset=-2       offset=-1       offset=0        offset=1           │
+│          │                │              │               │               │
+│     ┌────▼────┐      ┌────▼────┐    ┌────▼────┐     ┌────▼────┐         │
+│     │░░░░░░░░░│      │░░░░░░░░░│    │█████████│     │░░░░░░░░░│         │
+│     │░ Card 3 │      │░ Card 2 │    │█ Card 1 █│     │░ Card 4 │         │
+│     │░░░░░░░░░│      │░░░░░░░░░│    │█ ACTIVE █│     │░░░░░░░░░│         │
+│     └─────────┘      └─────────┘    │█████████│     └─────────┘         │
+│                                     └─────────┘                          │
+│     scale: 0.8        scale: 0.9    scale: 1.0      scale: 0.9          │
+│     opacity: 0.4      opacity: 0.7  opacity: 1.0    opacity: 0.7        │
+│     rotateY: 30deg    rotateY: 15deg rotateY: 0deg   rotateY: -15deg    │
 │                                                                          │
-│  Local State:                                                            │
-│  ├── currentIndex: number (which card is front)                          │
-│  └── x: MotionValue (drag position)                                      │
-│                                                                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                      Visual Layout                                       │
-│                                                                          │
-│         offset=-2       offset=-1       offset=0        offset=1         │
-│            │                │              │               │             │
-│       ┌────▼────┐      ┌────▼────┐    ┌────▼────┐     ┌────▼────┐       │
-│       │░░░░░░░░░│      │░░░░░░░░░│    │█████████│     │░░░░░░░░░│       │
-│       │░ Card 3 │      │░ Card 2 │    │█ Card 1 █│     │░ Card 4 │       │
-│       │░░░░░░░░░│      │░░░░░░░░░│    │█ ACTIVE █│     │░░░░░░░░░│       │
-│       └─────────┘      └─────────┘    │█████████│     └─────────┘       │
-│                                       └─────────┘                        │
-│       scale: 0.8        scale: 0.9    scale: 1.0      scale: 0.9        │
-│       opacity: 0.4      opacity: 0.7  opacity: 1.0    opacity: 0.7      │
-│       rotateY: 30°      rotateY: 15°  rotateY: 0°     rotateY: -15°     │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Drag Gesture Handling
+The carousel tracks drag position via a motion value. When the user releases, a swipe threshold of 100 pixels determines whether to advance to the next card or spring back to center. Spring physics (stiffness 300, damping 30) create the natural deceleration users expect from a native wallet app.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      handleDragEnd Logic                                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  Swipe Threshold: 100px                                                  │
-│                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  if offset.x > 100 && currentIndex > 0:                           │  │
-│  │      setCurrentIndex(currentIndex - 1)  ──▶ Show previous card    │  │
-│  │                                                                    │  │
-│  │  if offset.x < -100 && currentIndex < cards.length - 1:           │  │
-│  │      setCurrentIndex(currentIndex + 1)  ──▶ Show next card        │  │
-│  │                                                                    │  │
-│  │  else:                                                             │  │
-│  │      spring back to center                                         │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  Animation Config:                                                       │
-│  • type: 'spring'                                                        │
-│  • stiffness: 300                                                        │
-│  • damping: 30                                                           │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+### Payment Card Visual
 
-### Payment Card Component
+Each card renders as a 320 by 192 pixel rounded rectangle with a gradient background determined by network -- blue for Visa, orange-to-red for Mastercard, slate for Amex. The card displays the network logo, last four digits in monospace, card type label, and an optional status badge when suspended. Card art images load lazily with a skeleton placeholder that pulses during load.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         PaymentCard Layout                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  w-80 h-48 rounded-2xl (320px × 192px)                            │  │
-│  │                                                                    │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │  Card Art Background (img, opacity-30)                      │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                    │  │
-│  │  ┌────────────────────────────────┬────────────────────────────┐  │  │
-│  │  │  NetworkLogo (Visa/MC/Amex)    │  Status Badge (if suspended)│  │  │
-│  │  └────────────────────────────────┴────────────────────────────┘  │  │
-│  │                                                                    │  │
-│  │                                                                    │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │  •••• •••• •••• 4242    (last 4 digits, monospace)          │  │  │
-│  │  │  CREDIT                 (card type, uppercase)              │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                    │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  Network Gradients:                                                      │
-│  • visa       ──▶ from-blue-600 to-blue-800                              │
-│  • mastercard ──▶ from-orange-500 to-red-600                             │
-│  • amex       ──▶ from-slate-600 to-slate-800                            │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+> "The card dimensions and aspect ratio match a standard credit card (85.6mm x 53.98mm). Users intuitively recognize their cards by color and network logo -- these visual cues need to match the physical card in their wallet."
 
 ---
 
@@ -243,295 +153,133 @@ The wallet store manages cards, transactions, and payment sheet state with offli
 
 ### Payment Flow State Machine
 
+The payment sheet follows a strict state machine to prevent users from seeing premature success or triggering duplicate payments.
+
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Payment Sheet State Flow                              │
-├─────────────────────────────────────────────────────────────────────────┤
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    Payment Sheet State Machine                             │
 │                                                                          │
-│  ┌──────┐       ┌────────────────┐       ┌─────────┐       ┌───────┐   │
-│  │ idle │──────▶│ authenticating │──────▶│ success │──────▶│ close │   │
-│  └──────┘       └────────────────┘       └─────────┘       └───────┘   │
+│  ┌──────┐       ┌────────────────┐       ┌─────────┐       ┌───────┐    │
+│  │ idle │──────▶│ authenticating │──────▶│ success │──────▶│ close │    │
+│  └──────┘       └────────────────┘       └─────────┘       └───────┘    │
 │      │                  │                                                │
-│      │                  │ auth fails                                     │
+│      │                  │ auth fails or network error                    │
 │      │                  ▼                                                │
 │      │          ┌───────────┐                                            │
-│      └─────────▶│   error   │───▶ (can retry)                            │
+│      └─────────▶│   error   │───▶ user can retry                        │
 │                 └───────────┘                                            │
 │                                                                          │
-│  State Types: 'idle' | 'authenticating' | 'success' | 'error'            │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+│  Transitions:                                                            │
+│  idle ──▶ authenticating    user taps "Pay with Face ID"                 │
+│  authenticating ──▶ success biometric passes + API confirms              │
+│  authenticating ──▶ error   biometric fails or API declines              │
+│  success ──▶ close          auto-close after 1.5 second delay            │
+│  error ──▶ idle             user taps "Try Again"                        │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Payment Sheet Layout
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      Payment Sheet Component                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  bg-black/50 overlay (fixed inset-0)                              │  │
-│  │                                                                    │  │
-│  │                                                                    │  │
-│  │                                                                    │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │  bg-white rounded-t-3xl (slides up from bottom)             │  │  │
-│  │  │                                                              │  │  │
-│  │  │  ┌────────────────────────────────────────────────────────┐ │  │  │
-│  │  │  │  [Cancel]    Pay with Apple Pay    [spacer]            │ │  │  │
-│  │  │  │              Merchant Name                              │ │  │  │
-│  │  │  └────────────────────────────────────────────────────────┘ │  │  │
-│  │  │                                                              │  │  │
-│  │  │                      $49.99                                  │  │  │
-│  │  │                   (4xl font-bold)                            │  │  │
-│  │  │                                                              │  │  │
-│  │  │  ┌────────────────────────────────────────────────────────┐ │  │  │
-│  │  │  │  Pay with: [CardSelector dropdown]                     │ │  │  │
-│  │  │  │            •••• 4242 (Visa)                            │ │  │  │
-│  │  │  └────────────────────────────────────────────────────────┘ │  │  │
-│  │  │                                                              │  │  │
-│  │  │  ┌────────────────────────────────────────────────────────┐ │  │  │
-│  │  │  │  [FaceID Icon]  Pay with Face ID                       │ │  │  │
-│  │  │  │         (bg-black rounded-2xl)                          │ │  │  │
-│  │  │  └────────────────────────────────────────────────────────┘ │  │  │
-│  │  │                                                              │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                    │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+The sheet slides up from the bottom over a semi-transparent overlay. It contains a header with the merchant name, a large amount display, a card selector dropdown defaulting to the user's default card, and a full-width payment button. The button visually transforms through each state: black with Face ID icon for idle, spinning loader during authentication, green checkmark on success, red X on error.
 
-### Payment Button States
+> "I deliberately avoid optimistic updates for the payment confirmation. Unlike card selection where we can safely roll back, showing 'Payment Successful' before the backend confirms could cause a user to leave a store believing they paid when the transaction actually failed. The 1.5-second success display matches the mental model from physical card terminals."
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      PaymentButton Visual States                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  IDLE:                                                                   │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  bg-black │ [FaceID Icon] │ "Pay with Face ID"                    │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  AUTHENTICATING:                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  bg-black │ [Spinning Loader] │ "Authenticating..."               │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  SUCCESS:                                                                │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  bg-green-500 │ [Check Icon] │ "Payment Successful"               │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  ERROR:                                                                  │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  bg-red-500 │ [X Icon] │ "Try Again"                              │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+### Card Selector Behavior
+
+The card selector shows only active cards, with the default card pre-selected. Each option displays the network icon, masked card number, and card type. When the user changes selection, the store updates immediately (optimistic) while the payment button remains in idle state awaiting user action. Suspended cards appear grayed out with an explanatory label.
 
 ---
 
 ## 📜 Transaction History
 
-### Virtualized Transaction List
+### Virtualized List
+
+Transaction history uses TanStack Virtual to efficiently render potentially thousands of transactions. Only items visible in the viewport (plus 5 overscan rows above and below) are rendered to the DOM.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    TransactionList Architecture                          │
-├─────────────────────────────────────────────────────────────────────────┤
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    Virtualized Transaction List                           │
 │                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  parentRef (h-[calc(100vh-200px)] overflow-auto)                  │  │
-│  │                                                                    │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │  Virtual Container (height: totalSize px, position: relative)│  │  │
-│  │  │                                                              │  │  │
-│  │  │  ┌───────────────────────────────────────────────────────┐  │  │  │
-│  │  │  │  virtualRow.start = 0px    ──▶ Transaction 1          │  │  │  │
-│  │  │  ├───────────────────────────────────────────────────────┤  │  │  │
-│  │  │  │  virtualRow.start = 72px   ──▶ Transaction 2          │  │  │  │
-│  │  │  ├───────────────────────────────────────────────────────┤  │  │  │
-│  │  │  │  virtualRow.start = 144px  ──▶ Transaction 3          │  │  │  │
-│  │  │  ├───────────────────────────────────────────────────────┤  │  │  │
-│  │  │  │  ... (only visible + overscan rendered)               │  │  │  │
-│  │  │  └───────────────────────────────────────────────────────┘  │  │  │
-│  │  │                                                              │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                                                                    │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │  Scroll Container (viewport height minus header)                    │ │
+│  │                                                                     │ │
+│  │  ┌───────────────────────────────────────────────────────────────┐  │ │
+│  │  │  Virtual Container (height = totalSize, position: relative)   │  │ │
+│  │  │                                                               │  │ │
+│  │  │    Row 0px    ──▶  "Today" date header                        │  │ │
+│  │  │    Row 32px   ──▶  Starbucks          -$5.45                  │  │ │
+│  │  │    Row 104px  ──▶  Target             -$47.99                 │  │ │
+│  │  │    Row 176px  ──▶  Uber               -$12.30                 │  │ │
+│  │  │    Row 248px  ──▶  "Yesterday" date header                    │  │ │
+│  │  │    ...        ──▶  (only visible + overscan rendered)          │  │ │
+│  │  └───────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                     │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
-│  Virtualizer Config:                                                     │
-│  • estimateSize: () => 72 (row height)                                   │
-│  • overscan: 5 (render 5 extra rows above/below viewport)                │
+│  Virtualizer: estimateSize = 72px, overscan = 5 rows                     │
+│  Dynamic measurement enabled for mixed row heights (headers vs items)    │
 │                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Transaction Row Layout
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      TransactionRow Layout                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────┬──────────────────────────────────────────────────┬──────────┐  │
-│  │     │                                                  │          │  │
-│  │ [i] │  Merchant Name                                   │  $49.99  │  │
-│  │     │  Dec 15, 2:30 PM • ••••4242                      │          │  │
-│  │     │                                                  │          │  │
-│  └─────┴──────────────────────────────────────────────────┴──────────┘  │
-│                                                                          │
-│  [i] = MerchantIcon (w-12 h-12 rounded-full bg-gray-100)                │
-│        Icon varies by merchantCategory (food, retail, transport, etc.)  │
-│                                                                          │
-│  Status styling:                                                         │
-│  • approved ──▶ normal black text                                        │
-│  • declined ──▶ text-red-500 line-through                                │
-│  • pending  ──▶ "Pending" badge in orange, then amount                   │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+Each row shows a merchant category icon (food, retail, transport, etc.) on the left, merchant name and timestamp with masked card number in the center, and amount on the right. Status styling differs: approved transactions show in normal text, declined in red with strikethrough, and pending shows an orange "Pending" badge before the amount.
 
 ---
 
 ## ➕ Card Provisioning Flow
 
-### Multi-Step Form Architecture
+### Multi-Step Form
+
+Card provisioning walks the user through four steps, with a progress indicator showing completed, current, and pending stages.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     AddCardFlow State Machine                            │
-├─────────────────────────────────────────────────────────────────────────┤
+┌───────────────────────────────────────────────────────────────────────────┐
+│                     AddCardFlow Steps                                     │
+│                                                                          │
+│       Scan          Details         Verify         Complete               │
+│        ●──────────────●──────────────○──────────────○                     │
+│                       ▲                                                   │
+│                  current step                                             │
 │                                                                          │
 │  ┌────────┐      ┌─────────┐      ┌────────┐      ┌──────────┐          │
 │  │  scan  │─────▶│ details │─────▶│ verify │─────▶│ complete │          │
 │  └────────┘      └─────────┘      └────────┘      └──────────┘          │
 │      │                │                │                │                │
 │      ▼                ▼                ▼                ▼                │
-│  CardScanner    CardDetailsForm   VerifyStep     CompletionScreen        │
+│  CardScanner    CardDetailsForm   VerifyStep     SuccessScreen           │
+│  (camera or     (confirm name,    (SMS/email/    (animated check,       │
+│   manual)       network auto-      bank app      "Card Added")          │
+│                 detected)          verification)                         │
 │                                                                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                      Data Flow                                           │
-│                                                                          │
-│  CardScanner                                                             │
-│      │ onComplete(scannedData)                                           │
-│      ▼                                                                   │
-│  setCardData({ pan, expiry, network: identifyNetwork(pan) })             │
-│      │                                                                   │
-│      ▼                                                                   │
-│  CardDetailsForm                                                         │
-│      │ onSubmit(details) ──▶ api.provisionCard()                         │
-│      ▼                                                                   │
-│  if (result.status === 'verification_required')                          │
-│      │ setVerificationMethods(result.methods)                            │
-│      ▼                                                                   │
-│  VerifyStep                                                              │
-│      │ onComplete() ──▶ step = 'complete'                                │
-│      ▼                                                                   │
-│  CompletionScreen                                                        │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Progress Indicator
+**Step transitions:**
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      ProgressSteps Component                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│        Scan          Details         Verify         Complete             │
-│         ●──────────────●──────────────○──────────────○                   │
-│                        ▲                                                 │
-│                   current step                                           │
-│                                                                          │
-│  Legend:  ● = completed    ◉ = current    ○ = pending                    │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+1. **Scan** -- User enters or scans card number. The network is auto-detected from the first six digits (BIN). On completion, card data flows to the details step.
+2. **Details** -- Confirms detected card type and network. User verifies name and expiry. On submit, the frontend calls the provisioning API.
+3. **Verify** -- If the network requires additional verification (yellow-path provisioning), the API returns available methods (SMS, email, bank app). User completes one.
+4. **Complete** -- Animated success screen. New card is added to the store and appears in the card stack.
+
+> "Green-path provisioning skips the verify step entirely -- high-confidence cards activate immediately. Yellow-path adds one step but provides stronger identity verification through the issuing bank. The frontend handles both paths through the same state machine."
 
 ---
 
 ## ⚡ Performance Optimizations
 
-### 1. Image Optimization for Card Art
+### Hardware-Accelerated Animations
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      CardArt Component                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  Initial State:                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  bg-gradient-to-br from-gray-200 to-gray-300 animate-pulse        │  │
-│  │  (skeleton placeholder)                                            │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  After Load:                                                             │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  <img loading="lazy" onLoad={() => setLoaded(true)} />            │  │
-│  │  transition-opacity from opacity-0 to opacity-100                  │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+All card carousel animations use GPU-accelerated properties exclusively: transform (translate, scale, rotate) and opacity. Layout-triggering properties like width, height, and position offsets are never animated. The Framer Motion spring configuration (stiffness 300, damping 25) provides natural deceleration without overdamping.
 
-### 2. Selective Store Subscriptions
+### Selective Store Subscriptions
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Zustand Selector Pattern                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  BAD: Subscribe to entire store                                          │
-│  ────────────────────────────────────────────────────────────────────   │
-│  const store = useWalletStore();  ──▶ Re-renders on ANY state change     │
-│                                                                          │
-│                                                                          │
-│  GOOD: Subscribe to specific slice                                       │
-│  ────────────────────────────────────────────────────────────────────   │
-│  const count = useWalletStore(state => state.cards.length);              │
-│      ──▶ Only re-renders when cards.length changes                       │
-│                                                                          │
-│  const defaultCard = useWalletStore(state =>                             │
-│      state.cards.find(c => c.isDefault && c.status === 'active')         │
-│  );                                                                       │
-│      ──▶ Only re-renders when default card changes                       │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+Components subscribe to specific store slices rather than the entire state object. The transaction list subscribes only to the transactions array length; the card stack subscribes only to the cards array and selectedCardId. This prevents unnecessary re-renders -- updating transaction history never re-renders the card carousel.
 
-### 3. Animation Performance
+### Image Optimization
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Hardware-Accelerated Animations                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  CSS Classes:                                                            │
-│  • transform-gpu        ──▶ Enable GPU acceleration                      │
-│  • will-change-transform ──▶ Hint to browser                             │
-│                                                                          │
-│  Animation Properties (use these for 60fps):                             │
-│  • transform: translate, scale, rotate                                   │
-│  • opacity                                                               │
-│                                                                          │
-│  AVOID (triggers layout/paint):                                          │
-│  • width, height                                                         │
-│  • top, left, right, bottom                                              │
-│  • margin, padding                                                       │
-│                                                                          │
-│  Framer Motion Config:                                                   │
-│  • type: 'spring'                                                        │
-│  • stiffness: 300                                                        │
-│  • damping: 25                                                           │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+Card art images use lazy loading with a gradient skeleton placeholder that animates during load. Once loaded, the image fades in via an opacity transition. Network logos are inline SVG components (not external images) to eliminate additional HTTP requests for these small, frequently-displayed assets.
 
 ---
 
@@ -539,125 +287,105 @@ The wallet store manages cards, transactions, and payment sheet state with offli
 
 ### Screen Reader Support
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Card List Accessibility                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  <div role="listbox" aria-label="Payment cards"                         │
-│       aria-activedescendant={selectedCardId}>                            │
-│                                                                          │
-│      <div role="option"                                                  │
-│           aria-selected={isSelected}                                     │
-│           aria-label="Visa credit ending in 4242, default"               │
-│           tabIndex={0}                                                   │
-│           onKeyDown={handleKeyPress}>                                    │
-│          ...                                                             │
-│      </div>                                                              │
-│                                                                          │
-│  </div>                                                                  │
-│                                                                          │
-│  Keyboard Navigation:                                                    │
-│  • Enter or Space ──▶ Select card                                        │
-│  • Arrow keys     ──▶ Navigate between cards                             │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+The card stack uses listbox and option ARIA roles, with aria-activedescendant tracking the currently selected card. Each card option receives a descriptive label combining network, card type, masked number, and status (for example, "Visa credit ending in 4242, default card"). Arrow keys navigate between cards; Enter or Space selects.
 
-### Focus Management
+### Payment Sheet Focus Management
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Payment Sheet Focus                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  On Open:                                                                │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  closeButtonRef.current?.focus()  ──▶ Focus cancel button         │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  Focus Trap:                                                             │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  useFocusTrap(isPaymentSheetOpen)                                 │  │
-│  │  ──▶ Tab cycles within modal only                                  │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  Modal Attributes:                                                       │
-│  • role="dialog"                                                         │
-│  • aria-modal="true"                                                     │
-│  • aria-label="Payment"                                                  │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+When the payment sheet opens, focus moves to the cancel button. A focus trap keeps Tab cycling within the modal. The sheet uses role="dialog" with aria-modal="true" and aria-label="Payment". On close, focus returns to the element that triggered the sheet.
+
+### Status Announcements
+
+Payment state transitions trigger aria-live announcements. When authentication begins, the screen reader announces "Authenticating payment." On success: "Payment of $49.99 approved." On error: "Payment declined. Try again button available." These announcements ensure non-sighted users receive the same feedback as sighted users watching the button state changes.
 
 ---
 
-## ⚖️ Deep Trade-off Analysis
+## 🔧 Deep Dive: Framer Motion vs CSS Animations
 
-### Trade-off 1: Framer Motion vs CSS Animations
+**The decision:** Use Framer Motion for the card carousel and payment sheet animations.
 
-**Why Framer Motion Works for Payment UI:**
+**Why Framer Motion works for this UI:**
 
-The payment card stack requires gesture-driven animations - detecting drag velocity, handling spring physics, and coordinating multiple animated elements simultaneously. Framer Motion provides a declarative API where animation variants can respond to state changes, and the drag gesture system includes built-in handling for momentum and boundaries. When a user swipes through cards, Framer's spring physics create the natural feel users expect from a native wallet app.
+The card carousel requires gesture-driven animations that respond to real-time finger position. As the user drags, each card's rotation, scale, and opacity must update based on its distance from center. When released, velocity-dependent spring physics determine whether the carousel advances or springs back. Framer Motion's useMotionValue and useTransform hooks enable these derived animations declaratively -- each card computes its properties from a single drag offset value, and spring physics handle the release behavior automatically.
 
-The useMotionValue and useTransform hooks enable derived animations - as the user drags, we calculate rotation, scale, and opacity for each card based on its offset from center. This would require substantial manual JavaScript with CSS animations, computing each value on requestAnimationFrame and updating inline styles.
+The payment sheet's slide-up entrance and the success checkmark animation also benefit from Framer Motion's AnimatePresence, which handles exit animations before DOM removal. CSS alone cannot animate elements being removed from the tree.
 
-**Why CSS Animations Would Struggle:**
+**Why CSS animations would struggle here:**
 
-CSS animations excel at predefined transitions between states (hover effects, loading spinners) but falter with gesture-driven, physics-based interactions. The 3D card carousel needs to track finger position in real-time, apply velocity-based momentum when released, and animate neighboring cards with coordinated spring physics. CSS keyframe animations can't respond to dynamic values - you'd need JavaScript to compute positions anyway, losing the performance benefits of CSS-only animations.
+CSS animations excel at predefined transitions between discrete states (hover effects, loading spinners, page transitions). The card carousel needs continuous response to a dynamic drag value -- you cannot express "rotate this card by 15 degrees times its offset from center, where offset updates at 60fps as the user's finger moves" in CSS keyframes. You would end up computing positions in JavaScript and setting inline styles on requestAnimationFrame anyway, losing CSS animation's performance benefits while keeping its limited API.
 
-The trade-off: Framer Motion adds ~40KB to the bundle. For a wallet app where animation quality directly impacts perceived trustworthiness, this weight is justified. Users spending money expect Apple-quality interactions - jerky animations would undermine confidence in the payment process itself.
+The gesture system is the critical differentiator. CSS has no concept of drag velocity, swipe thresholds, or spring physics. Building these from scratch in JavaScript would require 200+ lines of pointer event handling, momentum calculation, and animation scheduling -- essentially reimplementing what Framer Motion provides.
 
----
-
-### Trade-off 2: LocalStorage Persistence vs IndexedDB
-
-**Why LocalStorage Persistence Works:**
-
-Wallet data is compact - a user typically has 3-8 cards at ~500 bytes each, plus cached transaction summaries. Zustand's persist middleware with localStorage handles this elegantly: synchronous reads mean cards display instantly on app load (no loading spinner), and the simple string-based API avoids IndexedDB's async complexity. For offline-first access to payment methods, this immediate availability matters.
-
-The partialize function limits what's persisted - we store full card data but only the last 50 transactions. This keeps storage under 100KB, well within localStorage's ~5MB limit across all browsers. The data is also naturally scoped to the origin, providing basic security isolation.
-
-**Why IndexedDB Would Be Overkill:**
-
-IndexedDB excels at storing large datasets (photos, offline documents) with query capabilities and structured data. For wallet data, this power introduces unnecessary complexity: async-only access means showing a loading state while cards are retrieved from IndexedDB, asynchronous writes complicate store updates, and the API requires more error handling code.
-
-IndexedDB's advantages (gigabytes of storage, indexes, transactions) aren't needed when storing kilobytes of card metadata. The async nature actually works against the core requirement: users opening their wallet to tap-and-pay need cards visible immediately, not after an IndexedDB query resolves. LocalStorage's synchronous nature, often criticized for blocking the main thread, is actually beneficial here - the blocking is measured in microseconds for this data size.
+**What we give up:** Framer Motion adds approximately 40KB to the bundle. For a wallet app where animation quality directly impacts perceived trustworthiness -- users spending money expect Apple-quality interactions -- this weight is justified. Jerky card transitions would undermine confidence in the payment process itself.
 
 ---
 
-### Trade-off 3: Optimistic Updates vs Confirmation-Based Updates
+## 🔧 Deep Dive: LocalStorage vs IndexedDB for Wallet Persistence
 
-**Why Optimistic Updates Work for Card Selection:**
+**The decision:** Use Zustand persist middleware with localStorage for offline card and transaction caching.
 
-When a user taps a card to set it as default, the UI should respond instantly - the selected state updates immediately while the API call happens in background. Users expect sub-100ms responsiveness; waiting for a network round-trip (200-500ms) creates perceptible lag that makes the app feel sluggish. The happy path (API succeeds) covers 99%+ of cases, so designing for instant feedback with rare rollbacks makes sense.
+**Why localStorage works for wallet data:**
 
-Card selection is also safely reversible - if the API call fails, we can revert the selection and show an error toast. The user simply taps again to retry. There's no data loss risk because we're updating a preference, not initiating an irreversible payment.
+Wallet data is compact. A user typically has 3-8 cards at roughly 500 bytes each, plus we cache only the 50 most recent transaction summaries. Total persisted data stays under 100KB, well within localStorage's 5MB limit. The critical advantage is synchronous reads: when the user opens the app, cards render in the first paint frame without any loading spinner or async resolution. For a tap-to-pay scenario where the user is standing at a checkout terminal, this instant availability is essential.
 
-**Why Confirmation-Based Updates Are Needed for Payments:**
+The persist middleware's partialize function controls exactly what gets stored. Full card metadata (last4, network, status, cardArtUrl) is persisted; sensitive fields like tokenRef never enter the frontend state at all. Transaction data is truncated to the 50 most recent entries, with full history fetched on demand from the API.
 
-The payment flow deliberately does NOT use optimistic updates. We wait for biometric authentication to complete, then for API confirmation, before showing success. Optimistic payment confirmation would be dangerous - telling users "Payment Successful" before the transaction actually processes could lead to real-world problems (leaving a store without paying, double-purchasing).
+**Why IndexedDB would add complexity without benefit:**
 
-The loading and success states in the payment button serve a purpose: users need to know payment is processing (the authentication spinner) and that it definitively succeeded (the green checkmark that persists for 1.5 seconds). This confirmation latency is acceptable because it matches user expectations from physical card terminals. Optimistic updates make sense for preferences and UI state; explicit confirmation is required for financial transactions.
+IndexedDB provides gigabytes of structured storage with indexes and query capabilities -- power designed for offline-first applications storing documents, photos, or large datasets. For wallet data measured in kilobytes, this power introduces pure overhead. IndexedDB's async-only API means every read requires an await and a loading state, which directly contradicts the "instant card visibility" requirement. The async nature, often touted as non-blocking, means the first render shows an empty wallet while IndexedDB resolves -- exactly the experience we need to avoid.
+
+IndexedDB also requires more error handling: transaction abort recovery, version upgrade migrations, and storage quota negotiation. localStorage's simple string get/set API matches the simplicity of our data. The blocking concern with localStorage is valid for large datasets, but reading 100KB of JSON takes microseconds -- imperceptible on any modern device.
+
+**What we give up:** localStorage is limited to roughly 5MB per origin and stores only strings. If the app evolved to cache merchant logos, full transaction receipts, or offline maps of nearby NFC terminals, we would need to migrate to IndexedDB. For card metadata and transaction summaries, this limitation does not apply.
 
 ---
 
-## ✅ Trade-offs Summary
+## 🔧 Deep Dive: Optimistic Updates vs Confirmation-Based Updates
+
+**The decision:** Use optimistic updates for card preferences (default selection, reordering) but confirmation-based updates for payments and destructive actions.
+
+**Why optimistic updates work for card selection:**
+
+When a user taps a card to set it as default, the UI should respond instantly. The selected state updates immediately in the Zustand store while the API call proceeds in the background. The happy path (API succeeds) covers over 99 percent of cases, so designing for instant feedback with rare rollbacks is the right trade-off. Card selection is also safely reversible -- if the API fails, we revert the selection in the store and show an error toast. The user simply taps again. There is no data loss because we are updating a preference, not initiating an irreversible financial operation.
+
+**Why confirmation-based updates are required for payments:**
+
+The payment flow deliberately does not use optimistic updates. The state machine enforces a strict sequence: idle, authenticating, success, close. We wait for biometric authentication to complete, then for the API to confirm the transaction, before showing the green success checkmark. Telling users "Payment Successful" before the backend processes the charge could cause real-world harm -- a user might leave a store believing they paid when the transaction actually failed.
+
+The 1.5-second success display before auto-closing serves a deliberate purpose: users need visible confirmation that the transaction completed. This matches the mental model from physical card terminals, where the "Approved" message stays on screen briefly. The authentication spinner similarly sets expectations -- the user knows something is happening and waits for the result rather than tapping repeatedly.
+
+**What we give up:** Card selection has a potential flicker if the API fails. The user sees the card become default, then 200-500ms later it reverts with an error toast. This brief inconsistency is acceptable because it happens rarely and involves no financial risk. Payment confirmation has perceptible latency (200-500ms for biometric + API round trip), but users accept this because it matches expectations from physical payment terminals.
+
+---
+
+## ⚖️ Trade-offs Summary
 
 | Decision | Pros | Cons |
 |----------|------|------|
-| Zustand + persist | Offline support | Manual cache invalidation |
-| Framer Motion | Smooth animations | Bundle size (+40KB) |
-| CSS gradients | Fast, no images | Limited design options |
-| Virtualized list | Handles 1000s of txns | Setup complexity |
-| Optimistic updates | Instant feedback | Rollback complexity |
+| ✅ Zustand + persist | Offline cards, instant load, minimal boilerplate | Manual cache invalidation on reconnect |
+| ✅ Framer Motion | Gesture-driven physics, exit animations | Bundle size (+40KB) |
+| ✅ CSS gradients for cards | Fast rendering, no image requests | Limited to approximating real card art |
+| ✅ Virtualized transaction list | Handles thousands of transactions smoothly | Setup complexity, dynamic height measurement |
+| ✅ Optimistic updates for preferences | Instant feedback on card selection | Rollback logic for rare failures |
+| ✅ Confirmation-based payments | Financial safety, user confidence | Perceptible latency during checkout |
+
+---
+
+## 📈 Scalability Considerations
+
+**What breaks first:** Transaction history grows unboundedly. The virtualized list handles rendering, but fetching thousands of transactions on page load would be slow. Cursor-based pagination (keyed on created_at) loads pages of 50 transactions, with the virtualizer triggering fetches as the user scrolls near the bottom.
+
+**Card art images:** With network-specific gradients, card art is currently CSS-only. If issuers provide custom card images, these should load from a CDN with aggressive caching (24-hour browser cache, 7-day edge cache) and lazy loading. A Service Worker could pre-cache card art for offline access.
+
+**Multi-device sync:** When a user adds a card on their iPhone, it should appear on their Apple Watch. This requires either WebSocket push notifications or polling the cards endpoint. For the web implementation, polling every 30 seconds is sufficient. Native apps would use push notifications via APNs.
+
+**State migration:** The localStorage persistence schema will evolve. Zustand's persist middleware supports version numbers and migration functions, allowing schema changes without losing cached data. Each version bump includes a migration that transforms old state shape to new.
 
 ---
 
 ## 🚀 Future Enhancements
 
-1. **Card Scanning**: Camera-based OCR for card details
-2. **Haptic Feedback**: Simulate tactile response on payment
-3. **Widget Support**: iOS widget for quick payments
-4. **Watch App**: Companion app for Apple Watch
-5. **NFC Simulation**: Visual feedback during tap-to-pay
+1. **Haptic Feedback Simulation** -- Vibration API integration during payment confirmation for tactile response on web
+2. **NFC Visual Feedback** -- Animated ripple effect showing radio communication progress during tap-to-pay
+3. **Card Scanning** -- Camera-based OCR for card number entry using device camera API
+4. **Spending Analytics** -- Charts and category breakdowns derived from transaction history
+5. **Widget Support** -- Quick-access payment card widget for iOS home screen

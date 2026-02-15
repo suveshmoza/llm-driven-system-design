@@ -2,326 +2,271 @@
 
 *45-minute system design interview format - Frontend Engineer Position*
 
-## Introduction (2 minutes)
+## 🎯 Introduction (2 minutes)
 
-"Thanks for this problem. I'll be designing a rate limiter dashboard that allows developers to configure rate limiting rules, visualize usage metrics, and test their API limits interactively. As a frontend engineer, I'll focus on the dashboard UI, real-time metrics visualization, interactive testing interface, and responsive design. Let me clarify the requirements."
+"Thanks for this problem. I will be designing a rate limiter dashboard that allows developers to configure rate limiting rules, visualize all five rate limiting algorithms interactively, send test requests to observe limiting behavior, and monitor real-time metrics. As a frontend engineer, I will focus on component architecture, state management, algorithm visualization with animation, chart performance, and responsive layout. Let me clarify the requirements."
 
 ---
 
-## 1. Requirements Clarification (4 minutes)
+## 📋 Requirements Clarification (4 minutes)
 
 ### Functional Requirements
 
-1. **Algorithm Visualization** - Interactive demo of all 5 rate limiting algorithms
-2. **Metrics Dashboard** - Real-time charts showing allowed/denied requests
-3. **Testing Interface** - Send test requests and observe rate limiting behavior
-4. **Configuration Panel** - Set limits, window sizes, burst capacity
-5. **Response Headers Display** - Show X-RateLimit-* headers in real-time
+1. **Algorithm Visualization** - Interactive animated demos of all five rate limiting algorithms (fixed window, sliding window, sliding log, token bucket, leaky bucket)
+2. **Metrics Dashboard** - Real-time charts showing allowed versus denied requests, latency percentiles, and success rate gauges
+3. **Testing Interface** - Send individual or batch test requests and observe rate limiting behavior with response header display
+4. **Configuration Panel** - Select algorithm, set limits, window sizes, burst capacity, refill and leak rates
+5. **Response Headers Display** - Show X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, and Retry-After in real time
 
 ### Non-Functional Requirements
 
-- **Real-time Updates** - Metrics refresh within 1 second
-- **Responsive Design** - Work on desktop and tablet
-- **Performance** - Handle 1000+ data points in charts smoothly
-- **Accessibility** - Keyboard navigation, screen reader support
+- **Real-time Updates** - Metrics refresh within 5 seconds via polling
+- **Responsive Design** - Full functionality on desktop and tablet viewports
+- **Chart Performance** - Render 1000+ data points smoothly at 60 fps
+- **Accessibility** - Full keyboard navigation, ARIA attributes, screen reader announcements for test results
 
 ### Frontend-Specific Considerations
 
-- State management for complex form state and API responses
-- Chart library selection for time-series visualization
-- WebSocket vs polling for real-time updates
-- Error handling and loading states
+- State management for complex form state, algorithm selection, and test result history
+- Chart library selection for time-series visualization with multiple series
+- Polling versus WebSocket for real-time metric updates
+- Animation strategy for algorithm visualizations (CSS transitions versus requestAnimationFrame)
 
 ---
 
-## 2. High-Level Architecture (5 minutes)
+## 🏗️ High-Level Architecture (5 minutes)
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         React Application                             │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
-│  │ Algorithm Panel  │  │  Metrics Charts  │  │  Request Tester  │   │
-│  │ - Algorithm pick │  │  - Line chart    │  │  - Send requests │   │
-│  │ - Configuration  │  │  - Success/deny  │  │  - View headers  │   │
-│  │ - Visual demo    │  │  - Latency hist  │  │  - Batch test    │   │
-│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘   │
-│           │                     │                     │              │
-│           └─────────────────────┼─────────────────────┘              │
-│                                 │                                     │
-│                    ┌────────────▼────────────┐                       │
-│                    │     Zustand Store       │                       │
-│                    │  - selectedAlgorithm    │                       │
-│                    │  - config (limit, win)  │                       │
-│                    │  - metrics[]            │                       │
-│                    │  - testResults[]        │                       │
-│                    └────────────┬────────────┘                       │
-│                                 │                                     │
-│                    ┌────────────▼────────────┐                       │
-│                    │    API Service Layer    │                       │
-│                    │  - fetchMetrics()       │                       │
-│                    │  - testRateLimit()      │                       │
-│                    │  - batchTest()          │                       │
-│                    └─────────────────────────┘                       │
-│                                                                       │
-└──────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-                    ┌────────────────────────┐
-                    │    Backend API         │
-                    │    /api/ratelimit/*    │
-                    └────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         React Application                                │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────┐  ┌───────────────────┐  ┌──────────────────────┐ │
+│  │  Algorithm Panel   │  │  Metrics Charts   │  │   Request Tester    │ │
+│  │  - Algorithm grid  │  │  - Area chart     │  │   - Send requests   │ │
+│  │  - Config fields   │  │  - Latency lines  │  │   - View headers    │ │
+│  │  - Animated visual │  │  - Success gauge  │  │   - Batch testing   │ │
+│  └────────┬──────────┘  └────────┬──────────┘  └──────────┬───────────┘ │
+│           │                      │                        │              │
+│           └──────────────────────┼────────────────────────┘              │
+│                                  │                                       │
+│                     ┌────────────▼────────────┐                          │
+│                     │      Zustand Store      │                          │
+│                     │  - selectedAlgorithm    │                          │
+│                     │  - config (limit, win)  │                          │
+│                     │  - metrics[]            │                          │
+│                     │  - testResults[]        │                          │
+│                     └────────────┬────────────┘                          │
+│                                  │                                       │
+│                     ┌────────────▼────────────┐                          │
+│                     │   API Service Layer     │                          │
+│                     │  - checkRateLimit()     │                          │
+│                     │  - fetchMetrics()       │                          │
+│                     │  - batchCheck()         │                          │
+│                     └─────────────────────────┘                          │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                     ┌─────────────────────────┐
+                     │    Backend API          │
+                     │    /api/ratelimit/*     │
+                     └─────────────────────────┘
 ```
+
+> "The application follows a clean three-layer pattern: presentation components at the top, a Zustand store for shared state in the middle, and an API service layer that abstracts fetch calls to the backend. Each of the three main panels -- algorithm configuration, metrics charts, and request tester -- reads from and writes to the same store, keeping the UI synchronized without prop drilling."
 
 ---
 
-## 3. Deep Dive: Zustand State Management (8 minutes)
+## 🔍 Deep Dive: Zustand State Management (8 minutes)
 
-### State Architecture
+### Why Zustand Over Alternatives
 
-"I chose Zustand over Redux for its simpler API, excellent TypeScript support, and minimal boilerplate. The store centralizes algorithm selection, configuration, test results, and metrics data."
+> "I chose Zustand over Redux for three reasons. First, it requires no providers or context wrappers, which means I can access the store from any component without a wrapper hierarchy. Second, its TypeScript support is excellent with minimal boilerplate -- no action types, no reducers, no switch statements. Third, its subscriptions are selector-based by default, which prevents unnecessary re-renders when unrelated state changes. For a dashboard of this complexity, Redux would add ceremony without benefit."
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      RateLimiterState Store                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Algorithm Selection                                                 │
-│  ├── selectedAlgorithm: 'fixed' | 'sliding' | 'token' | 'leaky'    │
-│  └── algorithms: Algorithm[]                                        │
-│      ├── id, name, description                                      │
-│      └── configFields: ConfigField[]                                │
-│                                                                      │
-│  Configuration                                                       │
-│  └── config                                                         │
-│      ├── identifier: string (e.g., 'test-user')                    │
-│      ├── limit: number                                              │
-│      ├── windowSeconds: number                                      │
-│      ├── burstCapacity: number                                      │
-│      ├── refillRate: number                                         │
-│      └── leakRate: number                                           │
-│                                                                      │
-│  Test Results                                                        │
-│  ├── testResults: TestResult[] (max 100)                            │
-│  └── isTestRunning: boolean                                         │
-│                                                                      │
-│  Metrics                                                             │
-│  ├── metrics: MetricPoint[]                                         │
-│  └── metricsLoading: boolean                                        │
-│                                                                      │
-│  Connection                                                          │
-│  └── isConnected: boolean                                           │
-│                                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│  Actions                                                             │
-│  ├── setAlgorithm(id) ──▶ Update selectedAlgorithm                 │
-│  ├── updateConfig(partial) ──▶ Merge config changes                │
-│  ├── runTest() ──▶ POST /api/ratelimit/check, record result        │
-│  ├── runBatchTest(count, intervalMs) ──▶ Sequential test loop      │
-│  ├── clearResults() ──▶ Empty testResults array                    │
-│  └── fetchMetrics() ──▶ GET /api/metrics, update metrics[]         │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+### Store Shape
+
+The store manages four domains of state.
+
+**Algorithm Selection** contains the currently selected algorithm identifier (one of fixed, sliding, sliding_log, token, or leaky) along with metadata for each algorithm including its name, description, and which configuration fields it requires.
+
+**Configuration** holds the current form values: identifier string for the API key or user being tested, numeric limit (requests per window), window size in seconds, burst capacity, refill rate (tokens per second), and leak rate (requests per second). Different algorithms use different subsets of these fields.
+
+**Test Results** is a capped array of up to 100 results, each recording a UUID, timestamp, allowed or denied boolean, remaining count, limit, reset time, and round-trip latency in milliseconds. A boolean flag tracks whether a batch test is currently running.
+
+**Metrics** stores time-series data points with allowed count, denied count, p50 latency, and p99 latency per time bucket, plus summary statistics including total checks, allowed percentage, and average latency.
 
 ### Algorithm Definitions
 
-| Algorithm | Name | Description | Config Fields |
-|-----------|------|-------------|---------------|
-| fixed | Fixed Window | Simple counter that resets at fixed intervals | limit, windowSeconds |
-| sliding | Sliding Window | Weighted average of current and previous window | limit, windowSeconds |
-| sliding_log | Sliding Log | Exact count using timestamp log | limit, windowSeconds |
-| token | Token Bucket | Tokens refill over time, requests consume tokens | burstCapacity, refillRate |
-| leaky | Leaky Bucket | Requests queue and drain at fixed rate | burstCapacity, leakRate |
+| Algorithm | Display Name | Config Fields | Description |
+|-----------|-------------|---------------|-------------|
+| fixed | Fixed Window | limit, windowSeconds | Simple counter that resets at fixed intervals |
+| sliding | Sliding Window | limit, windowSeconds | Weighted average of current and previous window counts |
+| sliding_log | Sliding Log | limit, windowSeconds | Exact count using sorted timestamp log |
+| token | Token Bucket | burstCapacity, refillRate | Tokens refill over time; each request consumes one token |
+| leaky | Leaky Bucket | burstCapacity, leakRate | Requests fill a bucket that drains at a fixed rate |
 
-### Test Result Data Model
+### Store Actions
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         TestResult                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  TestResult                                                          │
-│  ├── id: string (UUID)                                              │
-│  ├── timestamp: number (ms since epoch)                             │
-│  ├── allowed: boolean                                               │
-│  ├── remaining: number                                              │
-│  ├── limit: number                                                  │
-│  ├── resetAt: number (ms since epoch)                               │
-│  └── latencyMs: number                                              │
-│                                                                      │
-│  MetricPoint                                                         │
-│  ├── timestamp: number                                              │
-│  ├── allowed: number (count in period)                              │
-│  ├── denied: number (count in period)                               │
-│  ├── p50Latency: number                                             │
-│  └── p99Latency: number                                             │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Action | Behavior |
+|--------|----------|
+| setAlgorithm(id) | Updates selected algorithm and resets config fields to defaults for that algorithm |
+| updateConfig(partial) | Merges partial config values into current config |
+| runTest() | Posts to /api/ratelimit/check with current config, prepends result to testResults, caps at 100 |
+| runBatchTest(count, interval) | Runs runTest() in a loop with a delay between each, setting isTestRunning flag |
+| clearResults() | Empties the testResults array |
+| fetchMetrics() | Gets /api/metrics, updates metrics data points and summary statistics |
 
 ---
 
-## 4. Deep Dive: Algorithm Visualization Panel (8 minutes)
+## 🎨 Deep Dive: Algorithm Visualization Panel (8 minutes)
 
-### Component Structure
+### Component Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      AlgorithmPanel Component                        │
+│                    Algorithm Panel                                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                  Algorithm Selection Grid (2x2)                │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐                     │  │
-│  │  │ Fixed Window    │  │ Sliding Window  │                     │  │
-│  │  │ [description]   │  │ [description]   │                     │  │
-│  │  └─────────────────┘  └─────────────────┘                     │  │
-│  │  ┌─────────────────┐  ┌─────────────────┐                     │  │
-│  │  │ Token Bucket    │  │ Leaky Bucket    │                     │  │
-│  │  │ [description]   │  │ [description]   │                     │  │
-│  │  └─────────────────┘  └─────────────────┘                     │  │
-│  └───────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │               Algorithm Selection Grid (2x3)                 │   │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐ │   │
+│  │  │ Fixed Window   │  │ Sliding Window │  │ Sliding Log    │ │   │
+│  │  │ [description]  │  │ [description]  │  │ [description]  │ │   │
+│  │  └────────────────┘  └────────────────┘  └────────────────┘ │   │
+│  │  ┌────────────────┐  ┌────────────────┐                     │   │
+│  │  │ Token Bucket   │  │ Leaky Bucket   │                     │   │
+│  │  │ [description]  │  │ [description]  │                     │   │
+│  │  └────────────────┘  └────────────────┘                     │   │
+│  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                  Configuration Fields                          │  │
-│  │  ┌─────────────────────────────────────────────────────────┐  │  │
-│  │  │ Identifier: [test-user____________]                     │  │  │
-│  │  └─────────────────────────────────────────────────────────┘  │  │
-│  │  ┌─────────────────────────────────────────────────────────┐  │  │
-│  │  │ {Dynamic fields based on selected algorithm}            │  │  │
-│  │  │ - Requests per window / Bucket capacity                 │  │  │
-│  │  │ - Window (seconds) / Tokens per second                  │  │  │
-│  │  └─────────────────────────────────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │               Dynamic Configuration Fields                   │   │
+│  │  Identifier: [test-user______________]                       │   │
+│  │  Limit / Capacity: [10___]    Window / Rate: [60__]          │   │
+│  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                  Algorithm Visualization                       │  │
-│  │  [Animated visual based on algorithm type]                    │  │
-│  └───────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │               Animated Algorithm Visualization               │   │
+│  │  [Content depends on selected algorithm -- see below]        │   │
+│  └──────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Algorithm Visualizations
-
-"Each algorithm gets a unique animated visualization that helps developers understand the underlying mechanism."
+### Token Bucket Visualization
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                Token Bucket Visualization                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │    Token Bucket                                               │   │
-│  │    ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌ ┐ ┌ ┐ ┌ ┐                 │   │
-│  │    │█│ │█│ │█│ │█│ │█│ │█│ │█│ │ │ │ │ │ │                 │   │
-│  │    └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └ ┘ └ ┘ └ ┘                 │   │
-│  │    filled ██████████████████████░░░░░░░░░░░ empty            │   │
-│  │                    7 / 10 tokens                              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Animation: Tokens refill at refillRate per second                  │
-│  On request: One token disappears (if available)                    │
-│                                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│                Leaky Bucket Visualization                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │    Leaky Bucket                                               │   │
-│  │         ┌────────┐                                            │   │
-│  │         │        │                                            │   │
-│  │         │ ░░░░░░ │ ◀── Water level (queued requests)         │   │
-│  │         │ ██████ │                                            │   │
-│  │         │ ██████ │                                            │   │
-│  │         └───┬────┘                                            │   │
-│  │             │ ◀── Leak (requests drain at fixed rate)        │   │
-│  │             ▼                                                 │   │
-│  │          3.5 / 10 queued                                      │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Animation: Water level drops at leakRate per second                │
-│  On request: Water level rises (if not overflowing)                 │
-│                                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│             Fixed/Sliding Window Visualization                       │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │    Progress Bar                                               │   │
-│  │    ┌──────────────────────────────────────────────────────┐  │   │
-│  │    │████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│  │   │
-│  │    └──────────────────────────────────────────────────────┘  │   │
-│  │                    6 / 10 requests in window                  │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Fixed: Resets to 0 at window boundary                              │
-│  Sliding: Smoothly transitions based on time position               │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│    Token Bucket                                               │
+│    ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌ ┐ ┌ ┐ ┌ ┐               │
+│    │█│ │█│ │█│ │█│ │█│ │█│ │█│ │ │ │ │ │ │               │
+│    └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └ ┘ └ ┘ └ ┘               │
+│    filled ██████████████████████░░░░░░░░░░░ empty            │
+│                    7 / 10 tokens                              │
+│                                                               │
+│    Tokens refill at refillRate per second                     │
+│    Each request consumes one token                            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Animation Implementation
+### Leaky Bucket Visualization
 
-"I use a useEffect hook with setInterval to animate the visualizations. Token buckets refill, leaky buckets drain, and window counters update in real-time. The animation rate is 100ms for smooth visual feedback."
+```
+┌──────────────────────────────────────────────────────────────┐
+│    Leaky Bucket                                               │
+│         ┌────────┐                                            │
+│         │        │                                            │
+│         │ ░░░░░░ │ ◀── Empty space (remaining capacity)      │
+│         │ ██████ │                                            │
+│         │ ██████ │ ◀── Water level (queued requests)         │
+│         └───┬────┘                                            │
+│             │ ◀── Leak (requests drain at fixed rate)        │
+│             ▼                                                 │
+│          3.5 / 10 queued                                      │
+│                                                               │
+│    Water drops at leakRate per second                         │
+│    New request adds 1 unit of water                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Fixed and Sliding Window Visualization
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│    Window Progress                                            │
+│    ┌──────────────────────────────────────────────────────┐   │
+│    │████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│   │
+│    └──────────────────────────────────────────────────────┘   │
+│                    6 / 10 requests used                       │
+│                                                               │
+│    Fixed: Counter resets to 0 at window boundary             │
+│    Sliding: Weighted blend of current and previous window    │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Animation Strategy
+
+> "Each visualization animates at 100ms intervals using a useEffect with setInterval. For the token bucket, tokens visually refill one by one at the configured refillRate. For the leaky bucket, the water level drops smoothly. For window counters, the progress bar fills as requests arrive and resets when the window expires. I use CSS transitions for smooth interpolation between discrete state updates, which keeps the CPU cost low compared to canvas-based rendering."
 
 ---
 
-## 5. Deep Dive: Metrics Charts (8 minutes)
+## 📊 Deep Dive: Metrics Dashboard (8 minutes)
 
 ### Chart Library Selection
 
-"I chose Recharts for its React-first design, declarative API, and responsive container support. It handles 1000+ data points smoothly with proper optimization."
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Recharts | React-first declarative API, responsive containers, good TypeScript types | Larger bundle than lightweight alternatives |
+| ❌ Chart.js | Smaller bundle, simple API | Imperative DOM manipulation, less React-idiomatic |
+| ❌ D3 direct | Maximum flexibility | Steep learning curve, manual React integration |
 
-### Metrics Dashboard Layout
+> "I chose Recharts because its declarative component model fits naturally into React. Each chart is composed from JSX components like AreaChart, LineChart, and ResponsiveContainer. It handles 1000+ data points without performance issues when I provide stable keys and memoize the data array. Chart.js would require refs and imperative updates, which creates friction with React's rendering model."
+
+### Dashboard Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      MetricsDashboard Component                      │
+│                      Metrics Dashboard                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                  Request Volume (AreaChart)                    │  │
+│  │              Request Volume (Stacked Area Chart)               │  │
 │  │                                                                │  │
 │  │  allowed ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓                                  │  │
 │  │  denied  ░░░░░░░░░                                             │  │
-│  │          ────────────────────────────────────▶ time           │  │
+│  │          ────────────────────────────────────▶ time            │  │
 │  │                                                                │  │
-│  │  Stacked area chart showing allowed (green) and denied (red)  │  │
+│  │  Green area = allowed requests, Red area = denied requests     │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                  Latency (LineChart)                           │  │
+│  │              Latency Percentiles (Line Chart)                  │  │
 │  │                                                                │  │
 │  │  p99 ─────┐   ┌─────                                          │  │
 │  │           └───┘        (orange)                                │  │
 │  │  p50 ─────────────────── (blue)                               │  │
-│  │          ────────────────────────────────────▶ time           │  │
+│  │          ────────────────────────────────────▶ time            │  │
 │  │                                                                │  │
-│  │  Two lines: P50 (blue) and P99 (orange) latency in ms         │  │
+│  │  Two lines showing P50 and P99 latency in milliseconds         │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                  Success Rate Gauge                            │  │
+│  │              Success Rate Gauge                                │  │
 │  │                                                                │  │
 │  │                      ╭───────╮                                 │  │
 │  │                    ╱    │    ╲                                │  │
-│  │                   ╱     │     ╲                               │  │
-│  │                  │    87.5%    │                               │  │
-│  │                   ╲           ╱                               │  │
+│  │                   │   87.5%   │                                │  │
 │  │                    ╲         ╱                                │  │
 │  │                      ╰─────╯                                   │  │
 │  │                                                                │  │
-│  │  Circular gauge with color coding:                            │  │
-│  │  - Green (>=90%), Yellow (70-89%), Red (<70%)                 │  │
+│  │  Green >= 90%   Yellow 70-89%   Red < 70%                     │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Real-time Update Strategy
+### Real-Time Polling Strategy
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -331,50 +276,37 @@
 │  Component Mount                                                     │
 │       │                                                              │
 │       ▼                                                              │
-│  ┌────────────────┐                                                 │
-│  │ fetchMetrics() │ ◀── Initial fetch                              │
-│  └───────┬────────┘                                                 │
-│          │                                                           │
-│          ▼                                                           │
-│  ┌────────────────┐                                                 │
-│  │ setInterval    │                                                 │
-│  │ (5 seconds)    │                                                 │
-│  └───────┬────────┘                                                 │
-│          │                                                           │
-│          ├──────────────────────────────────────────┐               │
-│          ▼                                          │               │
-│  ┌────────────────┐                                 │               │
-│  │ fetchMetrics() │ ◀── Poll every 5s              │               │
-│  └───────┬────────┘                                 │               │
-│          │                                          │               │
-│          ▼                                          │               │
-│  ┌────────────────┐                                 │               │
-│  │ Update store   │                                 │               │
-│  │ with new data  │                                 │               │
-│  └───────┬────────┘                                 │               │
-│          │                                          │               │
-│          ▼                                          ▼               │
-│  ┌────────────────┐                        Component Unmount        │
-│  │ Charts re-render│                               │                │
-│  │ with animations │                               ▼                │
-│  └─────────────────┘                       clearInterval()          │
+│  ┌─────────────────┐                                                │
+│  │ fetchMetrics()  │ ◀── Initial fetch on mount                    │
+│  └────────┬────────┘                                                │
+│           │                                                          │
+│           ▼                                                          │
+│  ┌─────────────────┐        ┌──────────────────┐                    │
+│  │  setInterval    │───────▶│  fetchMetrics()  │                    │
+│  │  (5 seconds)    │ repeat │  Update store    │                    │
+│  └─────────────────┘        │  Re-render charts│                    │
+│                              └──────────────────┘                    │
+│                                       │                              │
+│  Component Unmount ──────▶ clearInterval()                          │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+> "The useMetricsPolling hook calls fetchMetrics immediately on mount, then starts a 5-second interval. It exposes an isPolling toggle so users can pause auto-refresh during configuration changes. The interval is cleaned up on unmount. I chose polling over WebSocket because the metrics endpoint already aggregates data into 1-minute buckets -- sub-second freshness would not add meaningful value, and polling is dramatically simpler to implement, debug, and recover from network errors."
+
 ---
 
-## 6. Deep Dive: Request Tester (6 minutes)
+## 🧪 Deep Dive: Request Tester Interface (6 minutes)
 
 ### Test Interface Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      RequestTester Component                         │
+│                      Request Tester                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                     Action Buttons                             │  │
+│  │                    Action Buttons                              │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │  │
 │  │  │ Send Request │  │ Batch Test   │  │    Clear     │        │  │
 │  │  │   (blue)     │  │   (green)    │  │   (border)   │        │  │
@@ -382,12 +314,12 @@
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                     Batch Settings                             │  │
+│  │                    Batch Settings                              │  │
 │  │  Count: [20____]     Interval (ms): [100___]                  │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                     Results List (scrollable)                  │  │
+│  │                    Results List (scrollable, max 100)          │  │
 │  │  ┌─────────────────────────────────────────────────────────┐  │  │
 │  │  │ ✓ Allowed                                      2.3ms    │  │  │
 │  │  │   X-RateLimit-Remaining: 8                              │  │  │
@@ -397,27 +329,25 @@
 │  │  ┌─────────────────────────────────────────────────────────┐  │  │
 │  │  │ ✗ Denied                                       1.8ms    │  │  │
 │  │  │   X-RateLimit-Remaining: 0                              │  │  │
-│  │  │   X-RateLimit-Limit: 10                                 │  │  │
-│  │  │   X-RateLimit-Reset: 12:35:00                           │  │  │
+│  │  │   Retry-After: 4s                                       │  │  │
 │  │  └─────────────────────────────────────────────────────────┘  │  │
-│  │  [... more results ...]                                       │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Test Result Card Styling
+### Result Card Styling
 
-| State | Background | Border | Icon |
-|-------|------------|--------|------|
-| Allowed | Light green (green-50) | Green left border | Checkmark |
-| Denied | Light red (red-50) | Red left border | X mark |
+| State | Background | Left Border | Icon |
+|-------|------------|-------------|------|
+| Allowed | green-50 | 4px solid green-500 | Checkmark |
+| Denied | red-50 | 4px solid red-500 | X mark |
 
-### Batch Test Flow
+### Batch Test Execution Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                       Batch Test Execution                           │
+│                       Batch Test Flow                                │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  User clicks "Batch Test"                                            │
@@ -428,18 +358,17 @@
 │  └─────────┬──────────┘                                             │
 │            │                                                         │
 │            ▼                                                         │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  Loop: i = 0 to count-1                                       │   │
-│  │       │                                                        │   │
-│  │       ├──▶ runTest() ──▶ POST /api/ratelimit/check           │   │
-│  │       │                      │                                 │   │
-│  │       │                      ▼                                 │   │
-│  │       │              Append to testResults                     │   │
-│  │       │              (keep max 100)                            │   │
-│  │       │                                                        │   │
-│  │       └──▶ await setTimeout(intervalMs)                       │   │
-│  │                                                                │   │
-│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────┐                   │
+│  │  Loop: i = 0 to count-1                       │                   │
+│  │       │                                       │                   │
+│  │       ├──▶ runTest() ──▶ POST /check         │                   │
+│  │       │         │                              │                   │
+│  │       │         ▼                              │                   │
+│  │       │  Prepend result to testResults        │                   │
+│  │       │  (cap at 100 entries)                  │                   │
+│  │       │                                       │                   │
+│  │       └──▶ await delay(intervalMs)            │                   │
+│  └──────────────────────────────────────────────┘                   │
 │            │                                                         │
 │            ▼                                                         │
 │  ┌─────────────────────┐                                            │
@@ -449,78 +378,84 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## 7. Trade-offs Summary
-
-| Decision | Choice | Trade-off | Alternative |
-|----------|--------|-----------|-------------|
-| State management | Zustand | Less tooling than Redux | Redux (more ecosystem) |
-| Charts | Recharts | Learning curve | Chart.js (simpler) |
-| Styling | Tailwind CSS | Utility classes everywhere | CSS Modules (scoped) |
-| Updates | Polling (5s) | Not truly real-time | WebSocket (complexity) |
-| Animations | CSS transitions | Limited control | Framer Motion (heavier) |
+> "The batch test sends requests sequentially with a configurable delay between each. This lets developers see the transition from allowed to denied as they exhaust their quota. Each result appears in the scrollable list immediately, creating a live feed effect. I cap the results at 100 to prevent memory and rendering issues -- older results are discarded as new ones arrive."
 
 ---
 
-## 8. Accessibility Considerations
+## 🔀 Deep Trade-off: Polling vs WebSocket for Metrics (Deep Dive 1)
+
+**Decision**: I chose polling at a 5-second interval over WebSocket for metrics updates.
+
+**Why polling works for this problem**: The metrics endpoint aggregates data into 1-minute time buckets. Even if we polled every second, the chart would only show new data points once per minute. A 5-second poll interval means at most 5 seconds of staleness, which is imperceptible on a chart with minute-granularity data. Polling is stateless -- each request is independent, so network interruptions resolve automatically on the next interval. There is no reconnection logic, no heartbeat management, no server-side connection tracking.
+
+**Why WebSocket fails here**: WebSocket adds bidirectional communication overhead that this use case does not need. The server would need to track connected dashboard clients, manage connection lifecycle (heartbeats, reconnection, buffering missed messages), and push data that the client may not even be rendering if the metrics tab is not visible. For a developer tool dashboard with typically 1-5 concurrent users, the engineering cost of WebSocket infrastructure far outweighs the benefit of saving a few HTTP requests per minute.
+
+**What I am giving up**: True real-time push for the test results panel. When a developer sends a batch of 20 requests at 100ms intervals, the metrics chart will not reflect those results until the next poll cycle. This is acceptable because the test results themselves appear instantly in the results list -- the charts serve as an aggregate view, not a live feed.
+
+---
+
+## 🔀 Deep Trade-off: Recharts vs Canvas-Based Rendering (Deep Dive 2)
+
+**Decision**: I chose Recharts (SVG-based) over a Canvas-based chart library like uPlot.
+
+**Why Recharts works**: SVG elements are part of the DOM, which means they get standard browser accessibility support, CSS styling, and React event handling for free. Tooltips, click handlers, and hover effects work the same way as any other React component. With 1000 data points (roughly 16 hours of 1-minute buckets), SVG rendering stays well under the performance threshold. Recharts components compose declaratively in JSX, which makes the chart code readable and maintainable.
+
+**Why Canvas fails here**: Canvas renders pixels, not DOM elements. This means tooltips require custom hit-testing logic, accessibility requires a parallel hidden DOM structure, and styling cannot use Tailwind CSS classes. Canvas shines when rendering 100,000+ data points (financial tick data, scientific visualizations), but our metrics dashboard will rarely exceed a few thousand points. The development cost of reimplementing DOM features in Canvas is not justified.
+
+**What I am giving up**: Raw rendering performance at extreme scale. If the dashboard ever needed to display months of per-second metrics (millions of points), SVG would choke and I would need to switch to Canvas with data downsampling. For this application, that scenario is unlikely -- the backend already aggregates into 1-minute buckets.
+
+---
+
+## 🔀 Deep Trade-off: Zustand vs Redux for State Management (Deep Dive 3)
+
+**Decision**: I chose Zustand over Redux Toolkit for application state.
+
+**Why Zustand works**: The rate limiter dashboard has moderate state complexity -- five algorithm configs, test results, and metrics data. Zustand handles this with a single flat store and direct mutation functions. There are no action types to define, no reducers to compose, no Provider to wrap the app in, and no middleware to configure for async operations. TypeScript inference works out of the box. Zustand selectors prevent unnecessary re-renders by default -- the metrics chart only re-renders when metrics data changes, not when algorithm selection changes.
+
+**Why Redux fails here**: Redux Toolkit would require creating slices for each domain (algorithms, config, tests, metrics), composing them into a root store, wrapping the application in a Provider, and using createAsyncThunk for every API call. For a dashboard with under 10 async actions and 4 state domains, this structure adds ceremony that slows development without improving maintainability. Redux DevTools are powerful, but Zustand has its own devtools middleware that provides adequate debugging.
+
+**What I am giving up**: The Redux ecosystem -- middleware like redux-saga for complex side effects, redux-persist for offline storage, and the large community of Redux patterns. If this dashboard grew to manage dozens of rate limiting rules across multiple environments with undo/redo support, Redux's structured approach would become worthwhile. For the current scope, Zustand's simplicity is the right choice.
+
+---
+
+## ♿ Accessibility Considerations
 
 ### Keyboard Navigation
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Algorithm Selector A11y                           │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ARIA Attributes                                                     │
-│  ├── role="radiogroup" on container                                 │
-│  ├── aria-label="Select rate limiting algorithm"                    │
-│  └── Each button:                                                   │
-│      ├── role="radio"                                               │
-│      ├── aria-checked={isSelected}                                  │
-│      └── tabIndex={isFocused ? 0 : -1}                             │
-│                                                                      │
-│  Keyboard Handlers                                                   │
-│  ├── ArrowRight ──▶ Focus next algorithm                           │
-│  ├── ArrowLeft ──▶ Focus previous algorithm                        │
-│  ├── Enter ──▶ Select focused algorithm                            │
-│  └── Space ──▶ Select focused algorithm                            │
-│                                                                      │
-│  Focus Management                                                    │
-│  ├── Roving tabindex pattern                                        │
-│  ├── Only focused item is tabbable                                  │
-│  └── Arrow keys move focus within group                             │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+The algorithm selection grid uses a radiogroup pattern. The container has role="radiogroup" with an aria-label. Each algorithm card has role="radio" with aria-checked reflecting selection state. Arrow keys move focus within the group using a roving tabindex pattern -- only the focused item is tabbable, and arrow keys cycle through options. Enter and Space select the focused algorithm.
 
-### Screen Reader Support
+### Live Announcements
 
-- All interactive elements have descriptive labels
-- Status changes (allowed/denied) announced via aria-live regions
-- Charts include accessible descriptions of data trends
+Test results are announced via an aria-live="polite" region. When a request is allowed, the screen reader announces "Request allowed, 8 remaining." When denied, it announces "Request denied, retry after 4 seconds." This provides immediate auditory feedback without interrupting other content.
+
+### Chart Accessibility
+
+Each chart includes a visually hidden table alternative with the same data. Screen readers can navigate the table to understand trends. The chart itself has role="img" with an aria-label summarizing the current state, such as "Request volume chart showing 87 percent success rate over the last hour."
 
 ---
 
-## 9. Future Enhancements
+## ⚖️ Trade-offs Summary
 
-1. **WebSocket Updates** - Real-time metrics without polling
-2. **Dark Mode** - Theme toggle with system preference detection
-3. **Export Data** - Download test results as CSV/JSON
-4. **Comparison Mode** - Run same test with different algorithms
-5. **Mobile App** - React Native version for on-the-go monitoring
+| Decision | Chosen | Alternative | Rationale |
+|----------|--------|-------------|-----------|
+| ✅ State management | Zustand | ❌ Redux | Minimal boilerplate, sufficient for dashboard complexity |
+| ✅ Charts | Recharts (SVG) | ❌ uPlot (Canvas) | DOM-based accessibility, React-idiomatic composition |
+| ✅ Styling | Tailwind CSS | ❌ CSS Modules | Utility-first speeds iteration, consistent with project stack |
+| ✅ Metric updates | Polling (5s) | ❌ WebSocket | Simpler, stateless, adequate for minute-granularity data |
+| ✅ Animations | CSS transitions | ❌ Framer Motion | Lightweight, no additional dependency for simple fills and drains |
 
 ---
 
-## Summary
+## 🔮 Future Enhancements
 
-"To summarize, I've designed a rate limiter dashboard with:
+1. **WebSocket for test results** - Push individual test outcomes in real time for multi-user testing scenarios
+2. **Algorithm comparison mode** - Run the same batch test against multiple algorithms simultaneously and display results side by side
+3. **Dark mode** - Theme toggle with system preference detection using prefers-color-scheme
+4. **Export data** - Download test results and metrics as CSV or JSON for offline analysis
+5. **Virtualized result list** - Replace the capped 100-item list with TanStack Virtual for unlimited scrollback
 
-1. **Algorithm visualization panel** with interactive animations showing token refill, water leak, and window counters
-2. **Zustand state management** for clean, TypeScript-friendly state with minimal boilerplate
-3. **Recharts-based metrics** showing request volume, latency percentiles, and success rates
-4. **Interactive request tester** with batch testing and real-time header display
-5. **Responsive design** with Tailwind CSS working on desktop and tablet
-6. **Accessibility support** with keyboard navigation and ARIA attributes
+---
 
-The key insight is that rate limiting concepts can be abstract and confusing. Visual animations of token buckets filling and leaking, combined with immediate feedback from test requests, make the system behavior intuitive and helps developers choose the right algorithm for their use case."
+## 📝 Summary
+
+> "To summarize, I have designed a rate limiter dashboard with five key aspects. First, an algorithm visualization panel with animated demos of token refill, water leak, and window counter mechanics that make abstract rate limiting concepts concrete. Second, a Zustand-based state architecture that keeps algorithm selection, configuration, test results, and metrics synchronized across three panels without prop drilling. Third, a Recharts metrics dashboard showing request volume as stacked areas, latency as dual percentile lines, and success rate as a color-coded gauge. Fourth, an interactive request tester with batch testing that lets developers watch the transition from allowed to denied in real time, with full response header display. Fifth, accessibility support with keyboard navigation, ARIA live regions for result announcements, and hidden data tables for chart content. The key insight is that rate limiting algorithms are abstract and hard to reason about. Visual animations of tokens filling and leaking, combined with immediate feedback from live test requests, make the behavior intuitive and help developers choose the right algorithm for their specific use case."

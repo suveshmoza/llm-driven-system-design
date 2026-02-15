@@ -25,7 +25,12 @@ vi.mock('./services/logger.js', () => ({
     warn: vi.fn(),
     debug: vi.fn(),
     child: vi.fn().mockReturnThis(),
+    level: 'info',
   },
+}));
+
+vi.mock('pino-http', () => ({
+  default: vi.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
 }));
 
 vi.mock('./services/metrics.js', () => ({
@@ -54,10 +59,12 @@ vi.mock('./services/rateLimiter.js', () => ({
 vi.mock('connect-redis', () => {
   return {
     default: vi.fn().mockImplementation(() => ({
-      get: vi.fn(),
-      set: vi.fn(),
-      destroy: vi.fn(),
-      touch: vi.fn(),
+      get: vi.fn((_sid: string, cb: (err: null, session: null) => void) => cb(null, null)),
+      set: vi.fn((_sid: string, _session: unknown, cb: (err: null) => void) => cb(null)),
+      destroy: vi.fn((_sid: string, cb: (err: null) => void) => cb(null)),
+      touch: vi.fn((_sid: string, _session: unknown, cb: (err: null) => void) => cb(null)),
+      on: vi.fn(),
+      emit: vi.fn(),
     })),
   };
 });
