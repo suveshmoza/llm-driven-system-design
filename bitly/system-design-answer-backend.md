@@ -68,71 +68,13 @@ Design the backend infrastructure for a URL shortening service that:
 
 ### Core Tables
 
-```sql
--- Users table
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Pre-generated key pool for unique short codes
-CREATE TABLE key_pool (
-    short_code VARCHAR(7) PRIMARY KEY,
-    is_used BOOLEAN DEFAULT FALSE,
-    allocated_to VARCHAR(50),  -- Server instance ID
-    allocated_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Main URLs table
-CREATE TABLE urls (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    short_code VARCHAR(7) UNIQUE NOT NULL,
-    long_url TEXT NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    is_custom BOOLEAN DEFAULT FALSE,
-    is_active BOOLEAN DEFAULT TRUE,
-    expires_at TIMESTAMPTZ,
-    click_count BIGINT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Click events for analytics
-CREATE TABLE click_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    url_id UUID REFERENCES urls(id) ON DELETE CASCADE,
-    short_code VARCHAR(7) NOT NULL,
-    referrer TEXT,
-    user_agent TEXT,
-    device_type VARCHAR(20),  -- mobile, tablet, desktop
-    country_code VARCHAR(2),
-    ip_hash VARCHAR(64),  -- SHA-256 for privacy
-    clicked_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Sessions for authentication
-CREATE TABLE sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    token VARCHAR(255) UNIQUE NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes for performance
-CREATE INDEX idx_key_pool_unused ON key_pool(is_used) WHERE is_used = FALSE;
-CREATE INDEX idx_urls_short_code ON urls(short_code);
-CREATE INDEX idx_urls_user_id ON urls(user_id);
-CREATE INDEX idx_urls_expires ON urls(expires_at) WHERE expires_at IS NOT NULL;
-CREATE INDEX idx_clicks_short_code ON click_events(short_code);
-CREATE INDEX idx_clicks_time ON click_events(clicked_at);
-CREATE INDEX idx_sessions_token ON sessions(token);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), email (unique), password_hash, role (user/admin) | — | Standard user table with role-based access |
+| **key_pool** | short_code (VARCHAR(7) PK), is_used (boolean), allocated_to (server instance ID), allocated_at | idx_key_pool_unused (partial: WHERE is_used = FALSE) | Pre-generated short codes for allocation to server instances |
+| **urls** | id (UUID PK), short_code (unique VARCHAR(7)), long_url (text), user_id (FK), is_custom, is_active, expires_at, click_count (bigint) | idx_urls_short_code, idx_urls_user_id, idx_urls_expires (partial: WHERE expires_at IS NOT NULL) | Main URL mapping table with optional expiration |
+| **click_events** | id (UUID PK), url_id (FK cascade), short_code, referrer, user_agent, device_type (mobile/tablet/desktop), country_code, ip_hash (SHA-256) | idx_clicks_short_code, idx_clicks_time (clicked_at) | Click tracking for analytics, IP hashed for privacy |
+| **sessions** | id (UUID PK), user_id (FK cascade), token (unique), expires_at | idx_sessions_token | Session-based authentication |
 
 ### Why PostgreSQL?
 
@@ -149,69 +91,11 @@ CREATE INDEX idx_sessions_token ON sessions(token);
 
 ### Pre-generated Key Pool Service
 
-```typescript
-class KeyPoolService {
-    private localCache: string[] = [];
-    private readonly BATCH_SIZE = 100;
-    private readonly MIN_CACHE_SIZE = 20;
-    private readonly CODE_LENGTH = 7;
-    private readonly ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+Each API server maintains a local in-memory cache of pre-allocated short codes. The process works as follows:
 
-    async getShortCode(): Promise<string> {
-        if (this.localCache.length < this.MIN_CACHE_SIZE) {
-            await this.refillCache();
-        }
-
-        const code = this.localCache.pop();
-        if (!code) {
-            throw new Error('Key pool exhausted');
-        }
-        return code;
-    }
-
-    private async refillCache(): Promise<void> {
-        const serverId = process.env.SERVER_ID || 'default';
-
-        // Atomic fetch and mark allocated
-        const result = await db.query(`
-            WITH available_keys AS (
-                SELECT short_code
-                FROM key_pool
-                WHERE is_used = FALSE AND allocated_to IS NULL
-                LIMIT $1
-                FOR UPDATE SKIP LOCKED
-            )
-            UPDATE key_pool k
-            SET allocated_to = $2, allocated_at = NOW()
-            FROM available_keys a
-            WHERE k.short_code = a.short_code
-            RETURNING k.short_code
-        `, [this.BATCH_SIZE, serverId]);
-
-        this.localCache.push(...result.rows.map(r => r.short_code));
-    }
-
-    async generateKeys(count: number): Promise<void> {
-        const codes = new Set<string>();
-
-        while (codes.size < count) {
-            let code = '';
-            for (let i = 0; i < this.CODE_LENGTH; i++) {
-                code += this.ALPHABET[Math.floor(Math.random() * this.ALPHABET.length)];
-            }
-            codes.add(code);
-        }
-
-        // Batch insert, ignore duplicates
-        const values = [...codes].map(c => `('${c}')`).join(',');
-        await db.query(`
-            INSERT INTO key_pool (short_code)
-            VALUES ${values}
-            ON CONFLICT (short_code) DO NOTHING
-        `);
-    }
-}
-```
+1. **Get a short code** - Pop a code from the local cache. If the cache drops below 20 entries, trigger a background refill.
+2. **Refill the cache** - Atomically fetch a batch of 100 unused, unallocated codes from the key_pool table using a CTE with `FOR UPDATE SKIP LOCKED` to avoid contention between servers. Mark the fetched codes as allocated to this server instance.
+3. **Generate new keys** - A background process generates random 7-character codes from a base-62 alphabet (a-z, A-Z, 0-9), batch-inserts them into the key_pool table, and uses `ON CONFLICT DO NOTHING` to skip any collisions with existing codes.
 
 ### Why Pre-generated Pool?
 
@@ -227,113 +111,25 @@ class KeyPoolService {
 
 ### Cache-Aside Pattern with Fallback
 
-```typescript
-class RedirectService {
-    private localCache: LRUCache<string, string>;
-    private redis: Redis;
-    private circuitBreaker: CircuitBreaker;
+The redirect service uses a three-tier lookup strategy to resolve short codes to long URLs:
 
-    constructor() {
-        this.localCache = new LRUCache({
-            max: 10000,
-            ttl: 60000  // 60 seconds
-        });
+1. **Tier 1 - Local LRU cache** (in-memory, 10K entries max, 60-second TTL): Check the local in-process cache first. This avoids any network call for hot URLs and provides sub-millisecond lookups.
 
-        this.circuitBreaker = new CircuitBreaker({
-            timeout: 5000,
-            errorThresholdPercentage: 50,
-            resetTimeout: 30000
-        });
-    }
+2. **Tier 2 - Redis cache** (shared across servers, 24-hour TTL): On local cache miss, check Redis. If found, populate the local cache and return. Redis errors are caught and treated as cache misses (the system continues to the database).
 
-    async getLongUrl(shortCode: string): Promise<string | null> {
-        // Tier 1: Local in-memory cache
-        const localHit = this.localCache.get(shortCode);
-        if (localHit) {
-            metrics.cacheHits.inc({ tier: 'local' });
-            return localHit;
-        }
+3. **Tier 3 - PostgreSQL** (source of truth, wrapped in a circuit breaker): Query the urls table by short_code. Check that the URL is active and not expired. On success, populate both Redis (24-hour TTL) and local cache.
 
-        // Tier 2: Redis cache
-        try {
-            const redisHit = await this.redis.get(`url:${shortCode}`);
-            if (redisHit) {
-                metrics.cacheHits.inc({ tier: 'redis' });
-                this.localCache.set(shortCode, redisHit);
-                return redisHit;
-            }
-        } catch (error) {
-            metrics.cacheErrors.inc({ tier: 'redis' });
-            // Continue to database
-        }
-
-        metrics.cacheMisses.inc();
-
-        // Tier 3: Database with circuit breaker
-        const longUrl = await this.circuitBreaker.execute(async () => {
-            const result = await db.query(`
-                SELECT long_url, expires_at, is_active
-                FROM urls
-                WHERE short_code = $1
-            `, [shortCode]);
-
-            if (result.rows.length === 0) return null;
-
-            const { long_url, expires_at, is_active } = result.rows[0];
-
-            if (!is_active) return null;
-            if (expires_at && new Date(expires_at) < new Date()) return null;
-
-            return long_url;
-        });
-
-        if (longUrl) {
-            // Populate caches
-            await this.redis.setex(`url:${shortCode}`, 86400, longUrl);
-            this.localCache.set(shortCode, longUrl);
-        }
-
-        return longUrl;
-    }
-}
-```
+If the URL is not found at any tier, return null. The circuit breaker prevents cascading database failures from overwhelming the system.
 
 ### Redirect Endpoint
 
-```typescript
-router.get('/:shortCode', async (req, res) => {
-    const { shortCode } = req.params;
-    const startTime = Date.now();
+The redirect handler at `GET /:shortCode` works as follows:
 
-    try {
-        const longUrl = await redirectService.getLongUrl(shortCode);
-
-        if (!longUrl) {
-            return res.status(404).json({ error: 'URL not found' });
-        }
-
-        // Return redirect immediately
-        res.redirect(302, longUrl);
-
-        // Track analytics asynchronously (non-blocking)
-        setImmediate(() => {
-            analyticsService.trackClick({
-                shortCode,
-                referrer: req.headers.referer,
-                userAgent: req.headers['user-agent'],
-                ip: req.ip
-            }).catch(err => logger.error('Analytics error', err));
-        });
-
-        metrics.redirectLatency.observe(Date.now() - startTime);
-        metrics.redirectsTotal.inc({ cached: longUrl ? 'hit' : 'miss' });
-
-    } catch (error) {
-        logger.error('Redirect error', { shortCode, error });
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-```
+1. Look up the long URL via the three-tier cache (local, Redis, database).
+2. If not found, return 404.
+3. If found, immediately return a **302 redirect** to the long URL.
+4. **After** sending the response, asynchronously (non-blocking) track the click by publishing an analytics event with the short code, referrer, user agent, and IP address. Analytics errors are logged but never block the redirect.
+5. Record redirect latency and cache hit/miss metrics.
 
 ### Why 302 vs 301?
 
@@ -348,94 +144,18 @@ router.get('/:shortCode', async (req, res) => {
 
 ### Async Processing with RabbitMQ
 
-```typescript
-class AnalyticsService {
-    private producer: RabbitMQProducer;
-    private batchSize = 100;
-    private flushInterval = 5000;
-    private buffer: ClickEvent[] = [];
+**Analytics Producer:** When a click occurs, the service enriches the raw event with a UUID, parsed device type (mobile/tablet/desktop based on user-agent regex), geolocated country code from the IP address, and a SHA-256 hash of the IP (for privacy). The enriched event is published to the "click_events" routing key on the "analytics" exchange in RabbitMQ.
 
-    async trackClick(event: ClickEventInput): Promise<void> {
-        const enrichedEvent = {
-            ...event,
-            id: crypto.randomUUID(),
-            deviceType: this.parseDeviceType(event.userAgent),
-            countryCode: await this.geolocate(event.ip),
-            ipHash: this.hashIP(event.ip),
-            clickedAt: new Date()
-        };
-
-        await this.producer.publish('analytics', 'click_events', enrichedEvent);
-    }
-
-    private parseDeviceType(userAgent: string): string {
-        if (/mobile/i.test(userAgent)) return 'mobile';
-        if (/tablet/i.test(userAgent)) return 'tablet';
-        return 'desktop';
-    }
-
-    private hashIP(ip: string): string {
-        return crypto.createHash('sha256').update(ip).digest('hex');
-    }
-}
-
-// Analytics Worker
-class AnalyticsWorker {
-    async processClick(event: ClickEvent): Promise<void> {
-        await db.query(`
-            INSERT INTO click_events (
-                id, url_id, short_code, referrer, user_agent,
-                device_type, country_code, ip_hash, clicked_at
-            )
-            SELECT $1, id, $2, $3, $4, $5, $6, $7, $8
-            FROM urls WHERE short_code = $2
-        `, [
-            event.id,
-            event.shortCode,
-            event.referrer,
-            event.userAgent,
-            event.deviceType,
-            event.countryCode,
-            event.ipHash,
-            event.clickedAt
-        ]);
-
-        // Update click count (denormalized for fast reads)
-        await db.query(`
-            UPDATE urls SET click_count = click_count + 1
-            WHERE short_code = $1
-        `, [event.shortCode]);
-    }
-}
-```
+**Analytics Worker:** The worker consumes click events from the queue and performs two database operations: (1) Insert the click event into the click_events table, joining with the urls table to resolve the url_id from the short_code. (2) Increment the denormalized click_count on the urls table for fast read access.
 
 ### ClickHouse for Analytics (Production)
 
-```sql
--- ClickHouse schema for high-volume analytics
-CREATE TABLE click_events (
-    short_code String,
-    clicked_at DateTime,
-    referrer String,
-    device_type LowCardinality(String),
-    country_code LowCardinality(String),
-    url_id UUID
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(clicked_at)
-ORDER BY (short_code, clicked_at);
+At production scale, click events are stored in ClickHouse for high-volume analytical queries.
 
--- Materialized view for daily aggregates
-CREATE MATERIALIZED VIEW clicks_daily_mv
-ENGINE = SummingMergeTree()
-ORDER BY (short_code, date)
-AS SELECT
-    short_code,
-    toDate(clicked_at) AS date,
-    count() AS clicks,
-    uniqExact(ip_hash) AS unique_visitors
-FROM click_events
-GROUP BY short_code, date;
-```
+| Table | Key Columns | Engine | Notes |
+|-------|-------------|--------|-------|
+| **click_events** | short_code (String), clicked_at (DateTime), referrer (String), device_type (LowCardinality String), country_code (LowCardinality String), url_id (UUID) | MergeTree, partitioned by month (toYYYYMM), ordered by (short_code, clicked_at) | Raw click events optimized for time-range queries |
+| **clicks_daily_mv** (materialized view) | short_code, date, clicks (count), unique_visitors (uniqExact of ip_hash) | SummingMergeTree, ordered by (short_code, date) | Pre-aggregated daily summaries that update automatically as new events arrive |
 
 ## Deep Dive: Caching Strategy
 
@@ -454,124 +174,56 @@ GROUP BY short_code, date;
 
 ### Cache Key Design
 
-```typescript
-const CACHE_KEYS = {
-    // URL lookup (hot path)
-    url: (shortCode: string) => `url:${shortCode}`,
-
-    // Session storage
-    session: (token: string) => `session:${token}`,
-
-    // Rate limiting
-    rateLimit: (ip: string, endpoint: string) => `rate:${ip}:${endpoint}`,
-
-    // Idempotency for URL creation
-    idempotency: (fingerprint: string) => `idempotency:${fingerprint}`
-};
-```
+| Cache Key Pattern | Purpose | TTL |
+|-------------------|---------|-----|
+| `url:{shortCode}` | URL lookup (hot path) | 24h |
+| `session:{token}` | Session storage | 7d |
+| `rate:{ip}:{endpoint}` | Rate limiting | 1 min |
+| `idempotency:{fingerprint}` | Idempotency for URL creation | 24h |
 
 ### Cache Invalidation
 
-```typescript
-class CacheInvalidationService {
-    async onUrlDeactivated(shortCode: string): Promise<void> {
-        await Promise.all([
-            this.redis.del(`url:${shortCode}`),
-            this.localCache.delete(shortCode)
-        ]);
-    }
+Cache invalidation follows three patterns:
 
-    async onUrlExpired(shortCode: string): Promise<void> {
-        // Same as deactivation
-        await this.onUrlDeactivated(shortCode);
-    }
-
-    async onUrlUpdated(shortCode: string, newLongUrl: string): Promise<void> {
-        // Write-through: update cache immediately
-        await this.redis.setex(`url:${shortCode}`, 86400, newLongUrl);
-        this.localCache.set(shortCode, newLongUrl);
-    }
-}
-```
+- **URL deactivated or expired**: Delete the key from both Redis and the local LRU cache immediately.
+- **URL updated** (long URL changed): Write-through update -- set the new value in Redis with a fresh 24-hour TTL and update the local cache simultaneously.
 
 ## Deep Dive: Rate Limiting
 
 ### Sliding Window Counter in Redis
 
-```typescript
-class RateLimiter {
-    async isAllowed(
-        key: string,
-        limit: number,
-        windowMs: number
-    ): Promise<{ allowed: boolean; remaining: number }> {
-        const now = Date.now();
-        const windowStart = now - windowMs;
+The rate limiter uses a Redis sorted set to implement a sliding window counter:
 
-        const pipeline = this.redis.pipeline();
+1. **Remove old entries** - Use ZREMRANGEBYSCORE to remove all entries with timestamps before the window start (current time minus window duration).
+2. **Add current request** - ZADD the current timestamp with a unique member (timestamp + UUID to avoid collisions).
+3. **Count requests in window** - ZCOUNT entries between the window start and now.
+4. **Set key expiry** - Set the sorted set TTL to the window duration to auto-clean up.
 
-        // Remove old entries
-        pipeline.zremrangebyscore(key, 0, windowStart);
+All four operations run in a single Redis pipeline for atomicity.
 
-        // Add current request
-        pipeline.zadd(key, now, `${now}:${crypto.randomUUID()}`);
+**Rate limit configuration:**
 
-        // Count requests in window
-        pipeline.zcount(key, windowStart, now);
-
-        // Set expiry
-        pipeline.expire(key, Math.ceil(windowMs / 1000));
-
-        const results = await pipeline.exec();
-        const count = results[2][1] as number;
-
-        return {
-            allowed: count <= limit,
-            remaining: Math.max(0, limit - count)
-        };
-    }
-}
-
-// Rate limit configuration
-const RATE_LIMITS = {
-    createUrl: { limit: 10, windowMs: 60000 },      // 10/minute
-    redirect: { limit: 1000, windowMs: 60000 },     // 1000/minute
-    auth: { limit: 5, windowMs: 60000 }             // 5/minute (brute force)
-};
-```
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| Create URL | 10 requests | 60 seconds |
+| Redirect | 1,000 requests | 60 seconds |
+| Auth (login) | 5 requests | 60 seconds |
 
 ## Deep Dive: Database Sharding
 
 ### Sharding Strategy by Short Code Prefix
 
-```typescript
-class ShardRouter {
-    private shards: Map<string, Pool> = new Map();
+The shard router maintains a pool of PostgreSQL connections for each shard. Routing is determined by the first character of the short code:
 
-    constructor() {
-        // Configure 5 shards based on first character
-        this.shards.set('shard_0', createPool('postgres://shard0...')); // 0-9, a-f
-        this.shards.set('shard_1', createPool('postgres://shard1...')); // g-m
-        this.shards.set('shard_2', createPool('postgres://shard2...')); // n-t
-        this.shards.set('shard_3', createPool('postgres://shard3...')); // u-z
-        this.shards.set('shard_4', createPool('postgres://shard4...')); // A-Z
-    }
+| Shard | Character Range |
+|-------|----------------|
+| shard_0 | 0-9, a-f |
+| shard_1 | g-m |
+| shard_2 | n-t |
+| shard_3 | u-z |
+| shard_4 | A-Z |
 
-    getShardForCode(shortCode: string): Pool {
-        const firstChar = shortCode[0];
-        const shardId = this.getShardId(firstChar);
-        return this.shards.get(shardId)!;
-    }
-
-    private getShardId(char: string): string {
-        if (/[0-9a-f]/.test(char)) return 'shard_0';
-        if (/[g-m]/.test(char)) return 'shard_1';
-        if (/[n-t]/.test(char)) return 'shard_2';
-        if (/[u-z]/.test(char)) return 'shard_3';
-        return 'shard_4';  // A-Z
-    }
-}
-```
+Given a short code, the router extracts the first character, maps it to the appropriate shard, and returns the corresponding database connection pool.
 
 ### Why Shard by Short Code?
 
@@ -608,69 +260,17 @@ POST   /api/v1/admin/key-pool       Repopulate key pool
 
 **Create Short URL**:
 
-```http
-POST /api/v1/shorten
-Idempotency-Key: client-uuid-12345
-Content-Type: application/json
-
-{
-    "long_url": "https://example.com/very/long/path?with=params",
-    "custom_code": "mylink",
-    "expires_at": "2025-12-31T00:00:00Z"
-}
-```
-
-Response (201 Created):
-```json
-{
-    "short_url": "https://bit.ly/mylink",
-    "short_code": "mylink",
-    "long_url": "https://example.com/very/long/path?with=params",
-    "expires_at": "2025-12-31T00:00:00Z",
-    "created_at": "2025-01-15T10:30:00Z"
-}
-```
+A POST request to `/api/v1/shorten` with an Idempotency-Key header accepts a JSON body containing the long_url, an optional custom_code, and an optional expires_at timestamp. On success (201 Created), the response includes the full short_url, the short_code, the original long_url, expiration time, and creation timestamp.
 
 ## Monitoring and Observability
 
 ### Key Metrics
 
-```yaml
-# Application metrics (Prometheus)
-http_requests_total{method, endpoint, status}
-http_request_duration_seconds{method, endpoint}
-url_shortening_total{status}
-url_redirects_total{cached}
-cache_hits_total{tier}
-cache_misses_total
-key_pool_available
-queue_messages_pending
-circuit_breaker_state{service}
-```
+Application metrics exposed via Prometheus include: total HTTP requests (by method, endpoint, status), request duration histogram (by method, endpoint), URL shortening operations (by status), redirect counts (by cache tier), cache hits and misses (by tier), available keys in the key pool, pending queue messages, and circuit breaker state (by service).
 
 ### Health Checks
 
-```typescript
-app.get('/health/detailed', async (req, res) => {
-    const health = {
-        status: 'healthy',
-        dependencies: {
-            database: await checkDatabase(),
-            redis: await checkRedis(),
-            rabbitmq: await checkRabbitMQ()
-        },
-        keyPool: {
-            localCache: keyPoolService.getCacheSize(),
-            circuitBreaker: circuitBreaker.getState()
-        }
-    };
-
-    const isHealthy = Object.values(health.dependencies)
-        .every(d => d.status === 'connected');
-
-    res.status(isHealthy ? 200 : 503).json(health);
-});
-```
+The detailed health endpoint at `GET /health/detailed` checks connectivity to all dependencies (database, Redis, RabbitMQ) and reports the key pool local cache size and circuit breaker state. It returns 200 if all dependencies are connected, or 503 if any dependency is unhealthy.
 
 ## Trade-offs Summary
 

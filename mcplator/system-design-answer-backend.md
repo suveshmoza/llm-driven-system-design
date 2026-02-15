@@ -70,61 +70,13 @@ Total: ~400ms first token
 
 **Edge Function Implementation:**
 
-```typescript
-// api/chat.ts
-export const config = { runtime: 'edge' };
+The chat endpoint runs on the edge runtime and processes requests through five stages:
 
-export default async function handler(req: Request) {
-  // 1. Rate limiting check
-  const ip = req.headers.get('x-forwarded-for') || 'unknown';
-  const rateLimitResult = await checkRateLimit(ip);
-
-  if (!rateLimitResult.allowed) {
-    return new Response(
-      JSON.stringify({
-        error: 'Rate limited',
-        retryAfter: rateLimitResult.resetIn
-      }),
-      { status: 429 }
-    );
-  }
-
-  // 2. Parse and validate input
-  const { message, requestId } = await req.json();
-
-  if (!message || message.length > 500) {
-    return new Response(
-      JSON.stringify({ error: 'Invalid message' }),
-      { status: 400 }
-    );
-  }
-
-  // 3. Check idempotency (prevent duplicate processing)
-  const cached = await kv.get(`request:${requestId}`);
-  if (cached) {
-    return new Response(cached, {
-      headers: { 'Content-Type': 'text/event-stream' }
-    });
-  }
-
-  // 4. Stream from Claude
-  const stream = await anthropic.messages.stream({
-    model: 'claude-3-haiku-20240307',
-    max_tokens: 150,
-    messages: [{ role: 'user', content: message }],
-    system: CALCULATOR_SYSTEM_PROMPT
-  });
-
-  // 5. Return SSE stream
-  return new Response(stream.toReadableStream(), {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    }
-  });
-}
-```
+1. **Rate limiting**: Extract the client IP from headers, check against the rate limiter. If rejected, return HTTP 429 with a retryAfter value
+2. **Input validation**: Parse the JSON body for message and requestId fields. Reject messages that are empty or exceed 500 characters with HTTP 400
+3. **Idempotency check**: Look up the requestId in the KV store. If a cached response exists, return it directly with the SSE content type
+4. **Claude API call**: Send the message to Claude Haiku with the calculator system prompt, requesting a streaming response with a 150-token max
+5. **Stream return**: Convert the Claude stream to a ReadableStream and return it as an SSE response with no-cache headers
 
 **Edge Runtime Constraints:**
 
@@ -140,201 +92,39 @@ export default async function handler(req: Request) {
 
 **Token Bucket Implementation with Vercel KV:**
 
-```typescript
-interface RateLimitConfig {
-  tokensPerMinute: number;
-  tokensPerDay: number;
-  refillRatePerSecond: number;
-}
+The rate limiter uses a token bucket algorithm stored in Vercel KV. Configuration defines tokens per minute (10 for anonymous users), tokens per day (100), and a refill rate (0.17 tokens/second, which replenishes 10 per minute).
 
-const RATE_LIMITS: Record<string, RateLimitConfig> = {
-  anonymous: {
-    tokensPerMinute: 10,
-    tokensPerDay: 100,
-    refillRatePerSecond: 0.17  // 10 per minute
-  }
-};
+The check proceeds as follows:
 
-async function checkRateLimit(ip: string): Promise<{
-  allowed: boolean;
-  remaining: number;
-  resetIn: number;
-}> {
-  const hashedIp = await hashIP(ip);  // Privacy
-  const key = `ratelimit:${hashedIp}`;
+1. Hash the client IP for privacy and construct the KV key `ratelimit:{hashedIp}`
+2. Retrieve the existing bucket state (tokens remaining, last refill timestamp, daily count, day start) or create a fresh bucket
+3. **Daily limit check**: If more than 24 hours have passed since dayStart, reset the daily counter. If dailyCount exceeds the daily limit (100), reject with the time remaining until reset
+4. **Token refill**: Calculate elapsed time since lastRefill, multiply by the refill rate, and add tokens (capped at the per-minute maximum)
+5. **Token consumption**: If fewer than 1 token remains, reject with an estimate of when the next token will be available. Otherwise, decrement tokens by 1, increment dailyCount, and persist the bucket with a 24-hour TTL
 
-  const now = Date.now();
-  const bucket = await kv.get<TokenBucket>(key) || {
-    tokens: RATE_LIMITS.anonymous.tokensPerMinute,
-    lastRefill: now,
-    dailyCount: 0,
-    dayStart: now
-  };
-
-  // Check daily limit
-  if (now - bucket.dayStart > 86400000) {
-    bucket.dailyCount = 0;
-    bucket.dayStart = now;
-  }
-
-  if (bucket.dailyCount >= RATE_LIMITS.anonymous.tokensPerDay) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetIn: 86400000 - (now - bucket.dayStart)
-    };
-  }
-
-  // Refill tokens based on elapsed time
-  const elapsed = (now - bucket.lastRefill) / 1000;
-  const refill = elapsed * RATE_LIMITS.anonymous.refillRatePerSecond;
-  bucket.tokens = Math.min(
-    RATE_LIMITS.anonymous.tokensPerMinute,
-    bucket.tokens + refill
-  );
-  bucket.lastRefill = now;
-
-  // Check and consume token
-  if (bucket.tokens < 1) {
-    return {
-      allowed: false,
-      remaining: Math.floor(bucket.tokens),
-      resetIn: Math.ceil((1 - bucket.tokens) / RATE_LIMITS.anonymous.refillRatePerSecond * 1000)
-    };
-  }
-
-  bucket.tokens -= 1;
-  bucket.dailyCount += 1;
-
-  await kv.set(key, bucket, { ex: 86400 });  // 24h expiry
-
-  return {
-    allowed: true,
-    remaining: Math.floor(bucket.tokens),
-    resetIn: 0
-  };
-}
-```
-
-**Rate Limit Headers:**
-
-```typescript
-function addRateLimitHeaders(response: Response, result: RateLimitResult): Response {
-  response.headers.set('X-RateLimit-Remaining', String(result.remaining));
-  response.headers.set('X-RateLimit-Reset', String(result.resetIn));
-  return response;
-}
-```
+The response includes remaining token count and resetIn duration, which are added to the HTTP response as `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers.
 
 ### 3. SSE Streaming Implementation
 
 **Server-Side Stream Transformation:**
 
-```typescript
-function createSSEStream(anthropicStream: AsyncIterable<MessageStreamEvent>) {
-  const encoder = new TextEncoder();
+The SSE stream transformer wraps the Anthropic streaming response into a ReadableStream that formats each chunk as an SSE event:
 
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        let fullResponse = '';
-
-        for await (const event of anthropicStream) {
-          if (event.type === 'content_block_delta') {
-            const text = event.delta.text;
-            fullResponse += text;
-
-            // Format as SSE event
-            const sseEvent = `data: ${JSON.stringify({
-              type: 'delta',
-              text: text
-            })}\n\n`;
-
-            controller.enqueue(encoder.encode(sseEvent));
-          }
-        }
-
-        // Parse final response for key sequences
-        const parsed = parseCalculatorResponse(fullResponse);
-
-        // Send completion event with parsed keys
-        controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({
-            type: 'complete',
-            keys: parsed.keys,
-            explanation: parsed.explanation
-          })}\n\n`
-        ));
-
-        controller.close();
-      } catch (error) {
-        controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({
-            type: 'error',
-            message: 'Stream processing failed'
-          })}\n\n`
-        ));
-        controller.close();
-      }
-    }
-  });
-}
-```
+1. Create a ReadableStream with an async start function
+2. Iterate over the Anthropic stream events. For each `content_block_delta` event, extract the text and accumulate it into a full response buffer. Encode each delta as an SSE event: `data: {"type": "delta", "text": "..."}\n\n`
+3. After the stream completes, parse the full accumulated response to extract calculator key sequences
+4. Send a final SSE completion event containing the parsed keys array and explanation text
+5. If any error occurs during processing, send an SSE error event and close the stream
 
 **Response Parsing:**
 
-```typescript
-interface CalculatorResponse {
-  keys: string[];
-  explanation: string;
-}
-
-function parseCalculatorResponse(response: string): CalculatorResponse {
-  // Try to extract JSON from response
-  const jsonMatch = response.match(/\{[\s\S]*\}/);
-
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        keys: Array.isArray(parsed.keys) ? parsed.keys : [],
-        explanation: parsed.explanation || ''
-      };
-    } catch {
-      // Fall through to fallback
-    }
-  }
-
-  // Fallback: extract numbers and operators from text
-  return {
-    keys: extractKeysFromText(response),
-    explanation: response
-  };
-}
-```
+The parser attempts to extract a JSON object from the LLM's response text using a regex match for `{...}`. If valid JSON with a `keys` array is found, it returns that directly. Otherwise, a fallback function extracts numbers and operators from the raw text to construct a best-effort key sequence.
 
 ### 4. Prompt Engineering for Structured Output
 
 **System Prompt Design:**
 
-```typescript
-const CALCULATOR_SYSTEM_PROMPT = `You control a Casio calculator. Convert math requests to key sequences.
-
-Available keys: 0-9, +, -, ×, ÷, %, √, =, C, AC, M+, M-, MR, MC, ±, .
-
-Rules:
-- Numbers as individual digits: ["1", "2", "3"] not ["123"]
-- Always end calculations with "="
-- Use "C" for clear current, "AC" for all-clear
-- Percentage: "15% of 80" = ["8", "0", "×", "1", "5", "%", "="]
-- Square root: "sqrt of 16" = ["1", "6", "√"]
-
-Output ONLY valid JSON:
-{
-  "keys": ["8", "0", "×", "1", "5", "%", "="],
-  "explanation": "80 × 15% = 12"
-}`;
-```
+The system prompt assigns a role ("You control a Casio calculator"), lists all available keys (0-9, operators, memory, clear), provides explicit formatting rules (individual digits, always end with "="), includes examples for edge cases (percentage, square root), and constrains output to JSON-only with a keys array and explanation string.
 
 **Why This Prompt Works:**
 
@@ -349,138 +139,33 @@ Output ONLY valid JSON:
 
 **Idempotency Key Handling:**
 
-```typescript
-interface ChatRequest {
-  message: string;
-  requestId: string;      // Client-generated UUID
-  timestamp: number;
-}
+Each chat request includes a message, a client-generated requestId (UUID), and a timestamp. The handler follows this flow:
 
-async function handleWithIdempotency(
-  req: ChatRequest
-): Promise<Response> {
-  const cacheKey = `request:${req.requestId}`;
-
-  // Check for cached response
-  const cached = await kv.get<string>(cacheKey);
-  if (cached) {
-    // Return cached response (replay)
-    return new Response(cached, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Idempotent-Replay': 'true'
-      }
-    });
-  }
-
-  // Process request
-  const response = await processChat(req.message);
-
-  // Cache response for 5 minutes
-  await kv.set(cacheKey, JSON.stringify(response), { ex: 300 });
-
-  return new Response(JSON.stringify(response), {
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-```
+1. Construct a cache key: `request:{requestId}`
+2. Check KV for a cached response. If found, return it immediately with an `X-Idempotent-Replay: true` header
+3. If no cache hit, process the chat request through the Claude API
+4. Cache the response in KV with a 5-minute TTL
+5. Return the fresh response
 
 **Client-Side Key Generation:**
 
-```typescript
-function generateIdempotencyKey(message: string): string {
-  const sessionId = getSessionId();
-  const timestamp = Date.now();
-  const messageHash = simpleHash(message);
-  return `${sessionId}-${timestamp}-${messageHash}`;
-}
-```
+The client generates an idempotency key by combining the session ID, current timestamp, and a hash of the message text. This ensures that the same message sent twice within a session produces the same key, while different messages produce different keys.
 
 ### 6. Circuit Breaker for Claude API
 
 **Implementation:**
 
-```typescript
-enum CircuitState {
-  CLOSED = 'closed',      // Normal operation
-  OPEN = 'open',          // Failing, reject requests
-  HALF_OPEN = 'half_open' // Testing recovery
-}
+The circuit breaker maintains three states (Closed, Open, Half-Open), a failure counter, and a last failure timestamp. Configuration includes a failure threshold (5), reset timeout (30 seconds), and a half-open request allowance (3).
 
-class CircuitBreaker {
-  private state = CircuitState.CLOSED;
-  private failures = 0;
-  private lastFailureTime = 0;
+The execution flow works as follows:
 
-  private readonly config = {
-    failureThreshold: 5,
-    resetTimeoutMs: 30000,
-    halfOpenRequests: 3
-  };
-
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
-    // Check if circuit should transition from OPEN to HALF_OPEN
-    if (this.state === CircuitState.OPEN) {
-      if (Date.now() - this.lastFailureTime > this.config.resetTimeoutMs) {
-        this.state = CircuitState.HALF_OPEN;
-      } else {
-        throw new CircuitOpenError('Circuit breaker is open');
-      }
-    }
-
-    try {
-      const result = await fn();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      throw error;
-    }
-  }
-
-  private onSuccess() {
-    this.failures = 0;
-    this.state = CircuitState.CLOSED;
-  }
-
-  private onFailure() {
-    this.failures++;
-    this.lastFailureTime = Date.now();
-
-    if (this.failures >= this.config.failureThreshold) {
-      this.state = CircuitState.OPEN;
-      console.log(`Circuit breaker OPEN after ${this.failures} failures`);
-    }
-  }
-
-  getState(): CircuitState {
-    return this.state;
-  }
-}
-
-const claudeCircuitBreaker = new CircuitBreaker();
-```
+1. **In CLOSED state**: Execute the wrapped function normally. On success, reset the failure counter. On failure, increment the counter. If failures reach the threshold, transition to OPEN
+2. **In OPEN state**: Check if the reset timeout has elapsed since the last failure. If not, throw a CircuitOpenError immediately (no API call made). If the timeout has elapsed, transition to HALF_OPEN
+3. **In HALF_OPEN state**: Allow the request through. On success, transition back to CLOSED and reset counters. On failure, transition back to OPEN
 
 **Graceful Degradation:**
 
-```typescript
-async function getAIResponse(message: string): Promise<AIResponse> {
-  try {
-    return await claudeCircuitBreaker.execute(
-      () => callClaudeAPI(message)
-    );
-  } catch (error) {
-    if (error instanceof CircuitOpenError) {
-      return {
-        message: 'AI assistant temporarily unavailable. Calculator still works!',
-        keys: [],
-        explanation: 'Circuit breaker active - try again in 30 seconds'
-      };
-    }
-    throw error;
-  }
-}
-```
+When the circuit breaker catches a CircuitOpenError, the AI response handler returns a friendly fallback message: "AI assistant temporarily unavailable. Calculator still works!" with an empty keys array. This ensures the calculator remains functional even when the Claude API is down -- users can still press buttons manually.
 
 ### 7. Observability
 
@@ -496,36 +181,9 @@ async function getAIResponse(message: string): Promise<AIResponse> {
 
 **Structured Logging:**
 
-```typescript
-interface LogEntry {
-  timestamp: string;
-  level: 'info' | 'warn' | 'error';
-  service: 'edge-function';
-  requestId: string;
-  event: string;
-  metadata: Record<string, unknown>;
-}
+Each log entry contains: timestamp (ISO 8601), level (info/warn/error), service name ('edge-function'), requestId, event name, and a metadata object with arbitrary key-value pairs. Entries are serialized as single-line JSON and written to stdout.
 
-function log(entry: Omit<LogEntry, 'timestamp'>): void {
-  console.log(JSON.stringify({
-    ...entry,
-    timestamp: new Date().toISOString()
-  }));
-}
-
-// Usage
-log({
-  level: 'info',
-  service: 'edge-function',
-  requestId: req.requestId,
-  event: 'ai_request_complete',
-  metadata: {
-    duration_ms: Date.now() - startTime,
-    tokens_used: response.usage?.total_tokens,
-    model: 'claude-3-haiku'
-  }
-});
-```
+Example metadata for an `ai_request_complete` event includes: duration_ms, tokens_used, and model name. This structured format enables querying logs by requestId for tracing and by event type for monitoring dashboards.
 
 ## Trade-offs Summary
 

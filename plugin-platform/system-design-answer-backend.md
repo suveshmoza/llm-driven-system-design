@@ -67,91 +67,14 @@ Design a web-based plugin platform that enables developers to build, publish, an
 
 ### Core Tables
 
-```sql
--- Users table
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  username VARCHAR(50) UNIQUE NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  is_developer BOOLEAN DEFAULT false,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Plugins table (core registry)
-CREATE TABLE plugins (
-  id VARCHAR(100) PRIMARY KEY,  -- e.g., 'font-selector'
-  author_id UUID REFERENCES users(id),
-  name VARCHAR(100) NOT NULL,
-  description TEXT,
-  category VARCHAR(50),
-  license VARCHAR(50) DEFAULT 'MIT',
-  repository_url TEXT,
-  homepage_url TEXT,
-  icon_url TEXT,
-  status VARCHAR(20) DEFAULT 'draft',  -- draft, published, suspended
-  install_count INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Plugin versions (immutable releases)
-CREATE TABLE plugin_versions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  plugin_id VARCHAR(100) REFERENCES plugins(id) ON DELETE CASCADE,
-  version VARCHAR(20) NOT NULL,
-  bundle_url TEXT NOT NULL,
-  manifest JSONB NOT NULL,
-  changelog TEXT,
-  min_platform_version VARCHAR(20),
-  file_size INTEGER,
-  checksum VARCHAR(64),
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(plugin_id, version)
-);
-
--- User installed plugins (authenticated users)
-CREATE TABLE user_plugins (
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  plugin_id VARCHAR(100) REFERENCES plugins(id) ON DELETE CASCADE,
-  version_installed VARCHAR(20),
-  is_enabled BOOLEAN DEFAULT true,
-  settings JSONB DEFAULT '{}',
-  installed_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, plugin_id)
-);
-
--- Anonymous user installs (tracked by session)
-CREATE TABLE anonymous_installs (
-  session_id VARCHAR(255) NOT NULL,
-  plugin_id VARCHAR(100) REFERENCES plugins(id) ON DELETE CASCADE,
-  version_installed VARCHAR(20),
-  is_enabled BOOLEAN DEFAULT true,
-  settings JSONB DEFAULT '{}',
-  installed_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (session_id, plugin_id)
-);
-
--- Plugin reviews
-CREATE TABLE plugin_reviews (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  plugin_id VARCHAR(100) REFERENCES plugins(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-  title VARCHAR(200),
-  content TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(plugin_id, user_id)
-);
-
--- Indexes for common queries
-CREATE INDEX idx_plugins_status ON plugins(status);
-CREATE INDEX idx_plugins_category ON plugins(category);
-CREATE INDEX idx_plugins_install_count ON plugins(install_count DESC);
-CREATE INDEX idx_plugin_versions_plugin ON plugin_versions(plugin_id);
-CREATE INDEX idx_user_plugins_user ON user_plugins(user_id);
-CREATE INDEX idx_plugin_reviews_plugin ON plugin_reviews(plugin_id);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), username (unique), email (unique), password_hash, is_developer, created_at | — | Tracks whether user has developer privileges |
+| **plugins** | id (VARCHAR PK, slug like 'font-selector'), author_id (FK users), name, description, category, license, repository_url, homepage_url, icon_url, status (draft/published/suspended), install_count, created_at, updated_at | status, category, install_count DESC | Human-readable string slug as PK for easier debugging |
+| **plugin_versions** | id (UUID PK), plugin_id (FK plugins, CASCADE), version, bundle_url, manifest (JSONB), changelog, min_platform_version, file_size, checksum, created_at | plugin_id; UNIQUE(plugin_id, version) | Immutable release records — each version is a separate row |
+| **user_plugins** | user_id + plugin_id (composite PK, both FK with CASCADE), version_installed, is_enabled, settings (JSONB), installed_at | user_id | One installation per user per plugin enforced by composite PK |
+| **anonymous_installs** | session_id + plugin_id (composite PK), version_installed, is_enabled, settings (JSONB), installed_at | — | Separate table for session-based anonymous installs; can be migrated to user_plugins on registration |
+| **plugin_reviews** | id (UUID PK), plugin_id (FK plugins), user_id (FK users), rating (1-5), title, content, created_at | plugin_id; UNIQUE(plugin_id, user_id) | One review per user per plugin |
 
 ### Design Decisions
 
@@ -183,348 +106,71 @@ CREATE INDEX idx_plugin_reviews_plugin ON plugin_reviews(plugin_id);
 
 ### Extension Publishing Service
 
-```typescript
-class MarketplaceService {
-  async publishExtension(authorId: string, manifest: PluginManifest, bundle: Buffer) {
-    // 1. Validate manifest structure
-    this.validateManifest(manifest);
+The publish flow works as follows:
 
-    // 2. Basic code review (for bundled plugins)
-    const reviewResult = await this.codeReview.analyze(bundle);
-    if (reviewResult.hasIssues) {
-      throw new Error(`Review issues: ${reviewResult.issues.join(', ')}`);
-    }
-
-    // 3. Upload bundle to MinIO (S3-compatible)
-    const bundleUrl = await this.storage.upload(
-      `extensions/${manifest.id}/${manifest.version}/bundle.js`,
-      bundle
-    );
-
-    // 4. Create or update extension record
-    const extension = await db.query(`
-      INSERT INTO plugins (id, author_id, name, description, category, icon_url)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (id) DO UPDATE SET
-        name = $3, description = $4, updated_at = NOW()
-      RETURNING *
-    `, [manifest.id, authorId, manifest.name, manifest.description,
-        manifest.category, manifest.icon]);
-
-    // 5. Add version record
-    await db.query(`
-      INSERT INTO plugin_versions
-        (plugin_id, version, bundle_url, manifest, changelog, min_platform_version)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `, [manifest.id, manifest.version, bundleUrl, manifest,
-        manifest.changelog, manifest.minPlatformVersion]);
-
-    // 6. Invalidate cache
-    await this.cache.invalidatePattern(`plugins:*`);
-
-    // 7. Update search index
-    await this.updateSearchIndex(extension.rows[0]);
-
-    return extension.rows[0];
-  }
-}
-```
+1. **Validate manifest** — check required fields (id, name, version, entry point)
+2. **Run basic code review** — static analysis of the bundle for security issues; reject if flagged
+3. **Upload bundle to MinIO** — store at path `extensions/{id}/{version}/bundle.js`
+4. **Upsert plugin record** — insert into plugins table or update name/description if the plugin already exists
+5. **Create version record** — insert into plugin_versions with bundle URL, manifest JSONB, changelog, and minimum platform version
+6. **Invalidate cache** — clear all `plugins:*` keys in Redis so marketplace listings reflect the new version
+7. **Update search index** — push the new plugin data to Elasticsearch for discoverability
 
 ### Search with Elasticsearch
 
-```typescript
-async searchExtensions(query: string, options = {}) {
-  const { category, sortBy = 'popularity', limit = 20 } = options;
-
-  // Elasticsearch query for full-text search
-  const esQuery = {
-    bool: {
-      must: [
-        { match: { status: 'published' } },
-        query ? {
-          multi_match: {
-            query,
-            fields: ['name^3', 'description', 'tags^2']
-          }
-        } : { match_all: {} }
-      ]
-    }
-  };
-
-  if (category) {
-    esQuery.bool.must.push({ term: { category } });
-  }
-
-  const sortOptions = {
-    popularity: [{ install_count: 'desc' }],
-    rating: [{ average_rating: 'desc' }],
-    recent: [{ published_at: 'desc' }]
-  };
-
-  return elasticsearch.search({
-    index: 'extensions',
-    body: {
-      query: esQuery,
-      sort: sortOptions[sortBy],
-      size: limit
-    }
-  });
-}
-```
+Search uses Elasticsearch with a `bool` query. The `must` clause requires `status = 'published'` and, if a query string is provided, a `multi_match` against the `name` (boosted 3x), `description`, and `tags` (boosted 2x) fields. An optional category filter is appended as a `term` clause. Results can be sorted by popularity (install_count DESC), rating (average_rating DESC), or recency (published_at DESC). The default page size is 20.
 
 ## Deep Dive 3: Session Management and Authentication (6 minutes)
 
 ### Session-Based Auth with Anonymous Support
 
-```typescript
-import session from 'express-session';
-import RedisStore from 'connect-redis';
+We use `express-session` backed by a Redis store. The key configuration choices:
 
-const sessionMiddleware = session({
-  store: new RedisStore({ client: redisClient }),
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: true, // Create session for anonymous users
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  }
-});
+- `saveUninitialized: true` — creates a session for every visitor, enabling anonymous plugin usage
+- Cookies are `httpOnly` and `secure` in production, with a 7-day max age
+- An `optionalAuth` middleware passes all requests through; `req.session.userId` is populated only for logged-in users
 
-// Middleware to handle both authenticated and anonymous users
-function optionalAuth(req, res, next) {
-  // Session always exists (for anonymous users)
-  // req.session.userId may or may not exist
-  next();
-}
-
-// Migrate anonymous installs when user logs in
-async function migrateAnonymousInstalls(sessionId: string, userId: string) {
-  await db.query(`
-    INSERT INTO user_plugins (user_id, plugin_id, version_installed, is_enabled, settings, installed_at)
-    SELECT $1, plugin_id, version_installed, is_enabled, settings, installed_at
-    FROM anonymous_installs
-    WHERE session_id = $2
-    ON CONFLICT (user_id, plugin_id) DO NOTHING
-  `, [userId, sessionId]);
-
-  await db.query(`DELETE FROM anonymous_installs WHERE session_id = $1`, [sessionId]);
-}
-```
+**Migrating anonymous installs on login**: When a user logs in, we copy all rows from `anonymous_installs` matching their session ID into `user_plugins`, using `ON CONFLICT DO NOTHING` to avoid duplicating any plugins already installed under the authenticated account. Then we delete the anonymous rows.
 
 ### Install Flow for Both User Types
 
-```typescript
-async function installPlugin(req, res) {
-  const { pluginId, version } = req.body;
-  const userId = req.session.userId;
-  const sessionId = req.session.id;
+The install endpoint handles both authenticated and anonymous users:
 
-  // Verify plugin exists and is published
-  const plugin = await db.query(`
-    SELECT p.*, pv.bundle_url
-    FROM plugins p
-    JOIN plugin_versions pv ON p.id = pv.plugin_id
-    WHERE p.id = $1 AND p.status = 'published' AND pv.version = $2
-  `, [pluginId, version]);
-
-  if (plugin.rows.length === 0) {
-    return res.status(404).json({ error: 'Plugin not found' });
-  }
-
-  if (userId) {
-    // Authenticated user - store in user_plugins
-    await db.query(`
-      INSERT INTO user_plugins (user_id, plugin_id, version_installed)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (user_id, plugin_id) DO UPDATE SET
-        version_installed = $3, installed_at = NOW()
-    `, [userId, pluginId, version]);
-  } else {
-    // Anonymous user - store in anonymous_installs
-    await db.query(`
-      INSERT INTO anonymous_installs (session_id, plugin_id, version_installed)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (session_id, plugin_id) DO UPDATE SET
-        version_installed = $3, installed_at = NOW()
-    `, [sessionId, pluginId, version]);
-  }
-
-  // Increment install count
-  await db.query(`
-    UPDATE plugins SET install_count = install_count + 1 WHERE id = $1
-  `, [pluginId]);
-
-  res.json({ success: true, bundleUrl: plugin.rows[0].bundle_url });
-}
-```
+1. **Verify plugin exists** — join plugins with plugin_versions to confirm the requested plugin ID and version exist and the plugin status is `published`; return 404 otherwise
+2. **Store installation** — if the user is authenticated, upsert into `user_plugins` (keyed on user_id + plugin_id); if anonymous, upsert into `anonymous_installs` (keyed on session_id + plugin_id). In both cases, a conflict updates the version and timestamp.
+3. **Increment install count** — update the denormalized `install_count` on the plugins table
+4. **Return bundle URL** — respond with the CDN URL for the plugin bundle so the frontend can load it
 
 ## Deep Dive 4: Caching Strategy (5 minutes)
 
 ### Redis Cache Architecture
 
-```typescript
-// Redis cache key patterns
-const CACHE_KEYS = {
-  PLUGIN_LIST: 'plugins:list',
-  PLUGIN_DETAIL: (id: string) => `plugins:detail:${id}`,
-  CATEGORIES: 'plugins:categories',
-  USER_PLUGINS: (userId: string) => `user:${userId}:plugins`,
-};
+Redis cache keys follow a namespace pattern:
 
-const CACHE_TTL = {
-  PLUGIN_LIST: 300,      // 5 minutes
-  PLUGIN_DETAIL: 600,    // 10 minutes
-  CATEGORIES: 1800,      // 30 minutes
-  USER_PLUGINS: 300,     // 5 minutes
-};
+| Key Pattern | TTL | Purpose |
+|-------------|-----|---------|
+| `plugins:list:{query_hash}` | 5 minutes | Browse/search results |
+| `plugins:detail:{id}` | 10 minutes | Individual plugin with versions and ratings |
+| `plugins:categories` | 30 minutes | Category list (rarely changes) |
+| `user:{userId}:plugins` | 5 minutes | User's installed plugins |
 
-class CacheService {
-  async getPluginList(query: string, category?: string) {
-    const cacheKey = `${CACHE_KEYS.PLUGIN_LIST}:${hashQuery(query, category)}`;
+The cache service follows the **cache-aside** pattern: check local cache first, then Redis, then database. On a cache miss, the database result is stored in Redis with the appropriate TTL.
 
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached);
-    }
+**Invalidation triggers**: When a plugin is published, all list cache keys are cleared and the specific detail key is deleted. When a plugin is installed, only its detail key is invalidated (to update install count) without a full list refresh.
 
-    const plugins = await this.fetchPluginsFromDb(query, category);
-    await redis.setex(cacheKey, CACHE_TTL.PLUGIN_LIST, JSON.stringify(plugins));
-
-    return plugins;
-  }
-
-  async invalidatePattern(pattern: string) {
-    const keys = await redis.keys(pattern);
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
-  }
-
-  // Invalidation triggers
-  async onPluginPublished(pluginId: string) {
-    await this.invalidatePattern('plugins:list:*');
-    await redis.del(CACHE_KEYS.PLUGIN_DETAIL(pluginId));
-  }
-
-  async onPluginInstalled(pluginId: string) {
-    // Update install count without full invalidation
-    await redis.del(CACHE_KEYS.PLUGIN_DETAIL(pluginId));
-  }
-}
-```
-
-### Cache-Aside Pattern
-
-```typescript
-async function getPluginDetails(pluginId: string) {
-  const cacheKey = CACHE_KEYS.PLUGIN_DETAIL(pluginId);
-
-  // Try cache first
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
-  }
-
-  // Cache miss - fetch from database
-  const result = await db.query(`
-    SELECT p.*,
-           json_agg(DISTINCT pv.*) as versions,
-           AVG(pr.rating) as average_rating,
-           COUNT(pr.id) as review_count
-    FROM plugins p
-    LEFT JOIN plugin_versions pv ON p.id = pv.plugin_id
-    LEFT JOIN plugin_reviews pr ON p.id = pr.plugin_id
-    WHERE p.id = $1
-    GROUP BY p.id
-  `, [pluginId]);
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  // Store in cache
-  await redis.setex(cacheKey, CACHE_TTL.PLUGIN_DETAIL, JSON.stringify(result.rows[0]));
-
-  return result.rows[0];
-}
-```
+**Plugin detail query**: The detail lookup joins plugins with plugin_versions and plugin_reviews in a single query, aggregating versions as a JSON array and computing the average rating and review count. This result is cached for 10 minutes.
 
 ## Deep Dive 5: Object Storage for Plugin Bundles (5 minutes)
 
 ### MinIO Storage Service
 
-```typescript
-import { Client as MinioClient } from 'minio';
+Plugin bundles are stored in a MinIO bucket called `plugin-bundles`. The storage service provides three operations:
 
-const minio = new MinioClient({
-  endPoint: process.env.MINIO_ENDPOINT,
-  port: parseInt(process.env.MINIO_PORT),
-  useSSL: process.env.NODE_ENV === 'production',
-  accessKey: process.env.MINIO_ACCESS_KEY,
-  secretKey: process.env.MINIO_SECRET_KEY,
-});
+1. **Upload bundle** — stores the file at `{pluginId}/{version}/bundle.js` with `Content-Type: application/javascript` and `Cache-Control: public, max-age=31536000, immutable`. Returns the CDN-backed public URL.
+2. **Upload source map** — stores the debug map at `{pluginId}/{version}/bundle.js.map` with `Content-Type: application/json`, available for developer debugging.
+3. **Delete version** — lists all objects under the `{pluginId}/{version}/` prefix and removes them in batch.
 
-const BUCKET_NAME = 'plugin-bundles';
-
-class StorageService {
-  async uploadBundle(pluginId: string, version: string, bundle: Buffer) {
-    const objectName = `${pluginId}/${version}/bundle.js`;
-
-    // Upload with public-read policy
-    await minio.putObject(BUCKET_NAME, objectName, bundle, {
-      'Content-Type': 'application/javascript',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    });
-
-    // Generate public URL
-    return `${process.env.CDN_URL}/${BUCKET_NAME}/${objectName}`;
-  }
-
-  async uploadSourceMap(pluginId: string, version: string, sourceMap: Buffer) {
-    const objectName = `${pluginId}/${version}/bundle.js.map`;
-
-    await minio.putObject(BUCKET_NAME, objectName, sourceMap, {
-      'Content-Type': 'application/json',
-    });
-  }
-
-  async deleteVersion(pluginId: string, version: string) {
-    const objects = await this.listVersionFiles(pluginId, version);
-
-    if (objects.length > 0) {
-      await minio.removeObjects(BUCKET_NAME, objects);
-    }
-  }
-
-  private async listVersionFiles(pluginId: string, version: string) {
-    const prefix = `${pluginId}/${version}/`;
-    const objects: string[] = [];
-
-    const stream = minio.listObjects(BUCKET_NAME, prefix, true);
-
-    return new Promise((resolve) => {
-      stream.on('data', (obj) => objects.push(obj.name));
-      stream.on('end', () => resolve(objects));
-    });
-  }
-}
-```
-
-### CDN Configuration
-
-```typescript
-// Plugin bundles are served through CDN for optimal performance
-// Immutable versioning - each version has unique URL
-
-// Example URLs:
-// https://cdn.example.com/plugin-bundles/font-selector/1.0.0/bundle.js
-// https://cdn.example.com/plugin-bundles/font-selector/1.0.1/bundle.js
-
-// Browser caching headers (set during upload):
-// Cache-Control: public, max-age=31536000, immutable
-```
+Because each version gets a unique URL path, bundles are immutable and cache-friendly. Example URL: `https://cdn.example.com/plugin-bundles/font-selector/1.0.0/bundle.js`
 
 ## Trade-offs Summary
 

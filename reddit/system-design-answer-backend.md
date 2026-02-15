@@ -96,111 +96,30 @@
 
 ### The Contention Problem
 
-Naive approach:
-```sql
-UPDATE posts SET score = score + 1 WHERE id = ?
-```
-
-**Problem**: Row-level locks under high contention. A viral post could receive 1000 votes/second, causing lock waits and timeouts.
+Naive approach: directly updating `score = score + 1` on the posts table causes row-level locks under high contention. A viral post could receive 1000 votes/second, causing lock waits and timeouts.
 
 ### Solution: Vote Table + Async Aggregation
 
-```sql
--- Store individual votes (no contention)
-CREATE TABLE votes (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  post_id INTEGER REFERENCES posts(id),
-  comment_id INTEGER REFERENCES comments(id),
-  direction SMALLINT NOT NULL,  -- 1 = up, -1 = down
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(user_id, post_id),
-  UNIQUE(user_id, comment_id)
-);
-
--- XOR constraint: exactly one target
-ALTER TABLE votes ADD CONSTRAINT vote_target CHECK (
-  (post_id IS NOT NULL AND comment_id IS NULL) OR
-  (post_id IS NULL AND comment_id IS NOT NULL)
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **votes** | id (SERIAL PK), user_id (FK users), post_id (FK posts), comment_id (FK comments), direction (SMALLINT: 1 = up, -1 = down), created_at | UNIQUE(user_id, post_id), UNIQUE(user_id, comment_id) | XOR constraint ensures exactly one target: either post_id or comment_id must be non-null, but not both |
 
 ### Vote Casting Implementation
 
-```typescript
-async function castVote(
-  userId: number,
-  targetType: 'post' | 'comment',
-  targetId: number,
-  direction: 1 | -1 | 0
-): Promise<VoteResult> {
-  const column = targetType === 'post' ? 'post_id' : 'comment_id';
+Vote casting works as follows:
 
-  if (direction === 0) {
-    // Remove vote
-    await pool.query(
-      `DELETE FROM votes WHERE user_id = $1 AND ${column} = $2`,
-      [userId, targetId]
-    );
-  } else {
-    // Upsert vote (handles vote changes)
-    await pool.query(`
-      INSERT INTO votes (user_id, ${column}, direction)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (user_id, ${column})
-      DO UPDATE SET direction = $3, created_at = NOW()
-    `, [userId, targetId, direction]);
-  }
-
-  // Optimistic update in cache for instant UI feedback
-  const cacheKey = `${targetType}:${targetId}:votes`;
-  await redis.hincrby(cacheKey, direction > 0 ? 'up' : 'down', 1);
-
-  return { success: true, direction };
-}
-```
+1. **Remove vote** (direction = 0): Delete the row from votes matching the user and target
+2. **Cast or change vote** (direction = 1 or -1): Upsert into votes — insert a new row, or on conflict update the direction and timestamp
+3. **Optimistic cache update**: Immediately increment the appropriate counter (up or down) in the Redis hash `{targetType}:{targetId}:votes` for instant UI feedback, even though the authoritative count will be updated by the background worker
 
 ### Background Aggregation Worker
 
-```typescript
-// Runs every 5-30 seconds
-async function aggregateVotes(): Promise<void> {
-  // Find posts with recent votes
-  const recentlyVoted = await pool.query(`
-    SELECT DISTINCT post_id FROM votes
-    WHERE post_id IS NOT NULL
-      AND created_at > NOW() - INTERVAL '1 minute'
-  `);
+The aggregation worker runs every 5-30 seconds and performs these steps:
 
-  for (const { post_id } of recentlyVoted.rows) {
-    // Aggregate all votes for this post
-    const result = await pool.query(`
-      SELECT
-        COUNT(*) FILTER (WHERE direction = 1) as upvotes,
-        COUNT(*) FILTER (WHERE direction = -1) as downvotes
-      FROM votes
-      WHERE post_id = $1
-    `, [post_id]);
-
-    const { upvotes, downvotes } = result.rows[0];
-    const score = upvotes - downvotes;
-
-    // Update denormalized counts
-    await pool.query(`
-      UPDATE posts
-      SET upvotes = $1, downvotes = $2, score = $3
-      WHERE id = $4
-    `, [upvotes, downvotes, score, post_id]);
-
-    // Update cache
-    await redis.hmset(`post:${post_id}:votes`, {
-      up: upvotes,
-      down: downvotes,
-      score: score
-    });
-  }
-}
-```
+1. **Find recently voted posts** — query for distinct post IDs from votes created in the last minute
+2. **Aggregate votes per post** — count upvotes (direction = 1) and downvotes (direction = -1) using filtered aggregation
+3. **Update denormalized counts** — write the computed upvotes, downvotes, and score (upvotes - downvotes) back to the posts table
+4. **Refresh cache** — update the Redis hash `post:{id}:votes` with the authoritative counts
 
 ### Why This Approach?
 
@@ -227,116 +146,24 @@ We get the best of both worlds: no contention + cached real-time display.
 
 ### Materialized Path Schema
 
-```sql
-CREATE TABLE comments (
-  id SERIAL PRIMARY KEY,
-  post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-  author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
-  path VARCHAR(255) NOT NULL,  -- "1.5.23.102"
-  depth INTEGER NOT NULL,
-  content TEXT NOT NULL,
-  score INTEGER DEFAULT 0,
-  upvotes INTEGER DEFAULT 0,
-  downvotes INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Critical index for subtree queries
-CREATE INDEX idx_comments_path ON comments(path varchar_pattern_ops);
-CREATE INDEX idx_comments_post ON comments(post_id);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **comments** | id (SERIAL PK), post_id (FK posts, CASCADE), author_id (FK users, SET NULL), parent_id (FK comments, CASCADE), path (VARCHAR 255), depth (INT), content (TEXT), score, upvotes, downvotes, created_at | path (varchar_pattern_ops) for LIKE queries; post_id | Path stores dot-separated ancestry like "1.5.23.102" |
 
 ### Creating a Comment
 
-```typescript
-async function createComment(
-  postId: number,
-  parentId: number | null,
-  authorId: number,
-  content: string
-): Promise<Comment> {
-  let path: string;
-  let depth: number;
+Creating a comment:
 
-  if (parentId) {
-    const parent = await pool.query(
-      'SELECT path, depth FROM comments WHERE id = $1',
-      [parentId]
-    );
-
-    if (parent.rows.length === 0) {
-      throw new Error('Parent comment not found');
-    }
-
-    // Generate unique path segment (using timestamp for uniqueness)
-    const segment = Date.now().toString(36);
-    path = `${parent.rows[0].path}.${segment}`;
-    depth = parent.rows[0].depth + 1;
-  } else {
-    // Top-level comment
-    path = Date.now().toString(36);
-    depth = 0;
-  }
-
-  const result = await pool.query(`
-    INSERT INTO comments (post_id, parent_id, author_id, path, depth, content)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    RETURNING *
-  `, [postId, parentId, authorId, path, depth, content]);
-
-  // Increment comment count on post
-  await pool.query(
-    'UPDATE posts SET comment_count = comment_count + 1 WHERE id = $1',
-    [postId]
-  );
-
-  return result.rows[0];
-}
-```
+1. **If replying to a parent**: Look up the parent's path and depth. Generate a unique path segment (using a base-36 timestamp), then set `path = parentPath + "." + segment` and `depth = parentDepth + 1`.
+2. **If top-level**: Set path to a base-36 timestamp and depth to 0.
+3. **Insert the comment** into the comments table with post_id, parent_id, author_id, path, depth, and content.
+4. **Increment the comment count** on the posts table.
 
 ### Fetching Comment Trees
 
-```typescript
-// Get all comments for a post in tree order
-async function getCommentTree(
-  postId: number,
-  sortBy: 'best' | 'top' | 'new' = 'best'
-): Promise<Comment[]> {
-  const orderClause = {
-    best: 'path, score DESC',
-    top: 'score DESC, path',
-    new: 'created_at DESC, path'
-  }[sortBy];
+**Fetching the full comment tree**: Query all comments for a post, joining with users for the author name. Order depends on the sort mode: "best" sorts by path then score descending, "top" sorts by score descending then path, and "new" sorts by created_at descending then path.
 
-  const result = await pool.query(`
-    SELECT c.*, u.username as author_name
-    FROM comments c
-    LEFT JOIN users u ON c.author_id = u.id
-    WHERE c.post_id = $1
-    ORDER BY ${orderClause}
-  `, [postId]);
-
-  return result.rows;
-}
-
-// Get subtree for "load more" functionality
-async function getCommentSubtree(
-  parentPath: string,
-  limit: number = 100
-): Promise<Comment[]> {
-  const result = await pool.query(`
-    SELECT c.*, u.username as author_name
-    FROM comments c
-    LEFT JOIN users u ON c.author_id = u.id
-    WHERE c.path LIKE $1
-    ORDER BY c.path
-    LIMIT $2
-  `, [`${parentPath}.%`, limit]);
-
-  return result.rows;
-}
-```
+**Fetching a subtree** (for "load more"): Query comments whose path starts with the parent's path using a LIKE pattern (`parentPath.%`), ordered by path, with a limit parameter for pagination.
 
 ### Why Materialized Path?
 
@@ -353,25 +180,13 @@ async function getCommentSubtree(
 
 Reddit's classic hot algorithm balances recency with popularity:
 
-```typescript
-function calculateHotScore(
-  upvotes: number,
-  downvotes: number,
-  createdAt: Date
-): number {
-  const score = upvotes - downvotes;
-  const order = Math.log10(Math.max(Math.abs(score), 1));
-  const sign = score > 0 ? 1 : score < 0 ? -1 : 0;
+1. Compute the net score (upvotes - downvotes)
+2. Take the log base 10 of the absolute score (minimum 1) to get the "order of magnitude"
+3. Determine the sign (+1, -1, or 0)
+4. Compute seconds since the Reddit epoch (December 8, 2005)
+5. Final formula: `sign * order + seconds / 45000`
 
-  // Reddit epoch: December 8, 2005
-  const epochSeconds = 1134028003;
-  const seconds = Math.floor(createdAt.getTime() / 1000) - epochSeconds;
-
-  // 45000 seconds = 12.5 hours
-  // An older post needs exponentially more votes to compete
-  return sign * order + seconds / 45000;
-}
-```
+The divisor of 45000 (12.5 hours) means an older post needs exponentially more votes to compete.
 
 **Key insight**: A 12-hour-old post with 10 upvotes has the same hot score as a brand new post with 1 upvote.
 
@@ -379,94 +194,25 @@ function calculateHotScore(
 
 Surfaces content with high engagement but balanced votes:
 
-```typescript
-function calculateControversialScore(
-  upvotes: number,
-  downvotes: number
-): number {
-  if (upvotes <= 0 || downvotes <= 0) return 0;
-
-  const magnitude = upvotes + downvotes;
-  const balance = Math.min(upvotes, downvotes) / Math.max(upvotes, downvotes);
-
-  return magnitude * balance;
-}
-```
+1. If either upvotes or downvotes is zero, return 0 (no controversy)
+2. Compute magnitude as total votes (upvotes + downvotes)
+3. Compute balance as the ratio of the smaller count to the larger count
+4. Final score: `magnitude * balance`
 
 A post with 100 up / 100 down scores higher than 1000 up / 10 down.
 
 ### Precomputation Strategy with Redis Sorted Sets
 
-```typescript
-// Background job runs every 5 minutes
-async function computeHotScores(): Promise<void> {
-  // Only process recent posts (hot algorithm naturally deprioritizes old)
-  const posts = await pool.query(`
-    SELECT id, subreddit_id, upvotes, downvotes, created_at
-    FROM posts
-    WHERE created_at > NOW() - INTERVAL '7 days'
-      AND is_archived = FALSE
-  `);
+A background job runs every 5 minutes to precompute hot scores:
 
-  const pipeline = redis.pipeline();
+1. **Select recent posts** — query posts created in the last 7 days that are not archived
+2. **Calculate hot score** for each post using the algorithm above
+3. **Store in Redis sorted sets** — add each post ID with its hot score to a subreddit-specific sorted set (`r:{subredditId}:hot`) using a Redis pipeline for efficiency
+4. **Persist scores** — also store individual scores in Redis string keys for reference
 
-  for (const post of posts.rows) {
-    const hotScore = calculateHotScore(
-      post.upvotes,
-      post.downvotes,
-      post.created_at
-    );
+**Retrieving hot posts** is then an O(log N) operation: use `ZREVRANGE` on the subreddit's sorted set with offset and limit for pagination.
 
-    // Store in subreddit-specific sorted set
-    pipeline.zadd(
-      `r:${post.subreddit_id}:hot`,
-      hotScore,
-      post.id.toString()
-    );
-
-    // Update database for persistence
-    pipeline.set(`post:${post.id}:hot`, hotScore.toString());
-  }
-
-  await pipeline.exec();
-}
-
-// Getting hot posts is O(log N) with sorted sets
-async function getHotPosts(
-  subredditId: number,
-  page: number = 0,
-  limit: number = 25
-): Promise<number[]> {
-  const start = page * limit;
-  const postIds = await redis.zrevrange(
-    `r:${subredditId}:hot`,
-    start,
-    start + limit - 1
-  );
-
-  return postIds.map(id => parseInt(id));
-}
-```
-
-### TTL for Sorted Sets
-
-```typescript
-// Clean up old entries after 7 days
-async function cleanupOldHotScores(): Promise<void> {
-  const subreddits = await pool.query('SELECT id FROM subreddits');
-
-  for (const sub of subreddits.rows) {
-    const key = `r:${sub.id}:hot`;
-
-    // Remove posts older than 7 days
-    const cutoff = calculateHotScore(0, 0,
-      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    );
-
-    await redis.zremrangebyscore(key, '-inf', cutoff.toString());
-  }
-}
-```
+**Cleanup**: Old entries are removed from sorted sets by computing the hot score for a 7-day-old post with zero votes and using `ZREMRANGEBYSCORE` to remove everything below that threshold.
 
 ---
 
@@ -474,53 +220,9 @@ async function cleanupOldHotScores(): Promise<void> {
 
 ### Karma Calculation
 
-```typescript
-async function updateUserKarma(userId: number): Promise<void> {
-  // Calculate post karma (sum of votes on user's posts)
-  const postKarma = await pool.query(`
-    SELECT COALESCE(SUM(v.direction), 0) as karma
-    FROM votes v
-    JOIN posts p ON v.post_id = p.id
-    WHERE p.author_id = $1
-  `, [userId]);
+Karma is calculated per user by summing the direction values of all votes on their posts (post karma) and all votes on their comments (comment karma). These are written to denormalized columns on the users table.
 
-  // Calculate comment karma
-  const commentKarma = await pool.query(`
-    SELECT COALESCE(SUM(v.direction), 0) as karma
-    FROM votes v
-    JOIN comments c ON v.comment_id = c.id
-    WHERE c.author_id = $1
-  `, [userId]);
-
-  await pool.query(`
-    UPDATE users
-    SET karma_post = $1, karma_comment = $2
-    WHERE id = $3
-  `, [postKarma.rows[0].karma, commentKarma.rows[0].karma, userId]);
-}
-
-// Batch update karma for all affected users
-async function batchUpdateKarma(): Promise<void> {
-  // Find users with recent votes on their content
-  const affectedUsers = await pool.query(`
-    SELECT DISTINCT p.author_id as user_id
-    FROM votes v
-    JOIN posts p ON v.post_id = p.id
-    WHERE v.created_at > NOW() - INTERVAL '5 minutes'
-      AND p.author_id IS NOT NULL
-    UNION
-    SELECT DISTINCT c.author_id as user_id
-    FROM votes v
-    JOIN comments c ON v.comment_id = c.id
-    WHERE v.created_at > NOW() - INTERVAL '5 minutes'
-      AND c.author_id IS NOT NULL
-  `);
-
-  for (const { user_id } of affectedUsers.rows) {
-    await updateUserKarma(user_id);
-  }
-}
-```
+A **batch update job** runs every 5 minutes: it identifies users whose content received votes in the last 5 minutes by joining the votes table with posts and comments, then recalculates their karma from the authoritative vote data.
 
 ---
 
@@ -540,82 +242,27 @@ async function batchUpdateKarma(): Promise<void> {
 
 ### Vote Table Partitioning
 
-```sql
--- Partition votes by month for easy archival
-CREATE TABLE votes (
-  id SERIAL,
-  user_id INTEGER NOT NULL,
-  post_id INTEGER,
-  comment_id INTEGER,
-  direction SMALLINT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-) PARTITION BY RANGE (created_at);
-
--- Create monthly partitions
-CREATE TABLE votes_2024_01 PARTITION OF votes
-  FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
-
-CREATE TABLE votes_2024_02 PARTITION OF votes
-  FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
-```
+The votes table is range-partitioned by `created_at` with monthly partitions (e.g., `votes_2024_01` for January 2024, `votes_2024_02` for February). This enables efficient archival: the entire partition can be exported to cold storage (MinIO) as compressed JSON and then dropped, without affecting active partitions.
 
 ### Archival Worker
 
-```typescript
-async function archiveOldVotes(monthsAgo: number = 12): Promise<void> {
-  const cutoffDate = new Date();
-  cutoffDate.setMonth(cutoffDate.getMonth() - monthsAgo);
+The archival worker handles partitions older than a configurable threshold (default 12 months):
 
-  const partitionName = `votes_${cutoffDate.getFullYear()}_${
-    String(cutoffDate.getMonth() + 1).padStart(2, '0')
-  }`;
-
-  // Export to cold storage before dropping
-  const votes = await pool.query(`SELECT * FROM ${partitionName}`);
-
-  await minioClient.putObject(
-    'reddit-archive',
-    `archives/votes/${partitionName}.json.gz`,
-    zlib.gzipSync(JSON.stringify(votes.rows))
-  );
-
-  // Drop partition after confirming upload
-  await pool.query(`DROP TABLE IF EXISTS ${partitionName}`);
-}
-```
+1. Determine the partition name from the cutoff date (e.g., `votes_2024_01`)
+2. Export all rows from that partition
+3. Compress and upload to MinIO cold storage at `archives/votes/{partitionName}.json.gz`
+4. Drop the partition after confirming the upload succeeded
 
 ---
 
 ## 9. Metrics and Observability
 
-```typescript
-import { Counter, Histogram, Gauge } from 'prom-client';
+We track four Prometheus metrics:
 
-const metrics = {
-  votes: new Counter({
-    name: 'reddit_votes_total',
-    help: 'Total votes cast',
-    labelNames: ['direction', 'target_type']
-  }),
-
-  aggregationLag: new Gauge({
-    name: 'reddit_vote_aggregation_lag_seconds',
-    help: 'Time since last vote aggregation'
-  }),
-
-  hotScoreCalculation: new Histogram({
-    name: 'reddit_hot_score_calculation_duration_seconds',
-    help: 'Time to calculate hot scores',
-    buckets: [0.1, 0.5, 1, 5, 10, 30]
-  }),
-
-  commentTreeDepth: new Histogram({
-    name: 'reddit_comment_tree_depth',
-    help: 'Comment nesting depth',
-    buckets: [1, 2, 3, 5, 10, 20, 50]
-  })
-};
-```
+- **reddit_votes_total** (Counter) — total votes cast, labeled by direction (up/down) and target type (post/comment)
+- **reddit_vote_aggregation_lag_seconds** (Gauge) — time since the last vote aggregation completed, for monitoring freshness
+- **reddit_hot_score_calculation_duration_seconds** (Histogram) — time to compute hot scores for all recent posts, with buckets from 0.1s to 30s
+- **reddit_comment_tree_depth** (Histogram) — observed nesting depth of comments, with buckets from 1 to 50
 
 ---
 

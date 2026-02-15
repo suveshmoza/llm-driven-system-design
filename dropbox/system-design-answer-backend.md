@@ -85,125 +85,26 @@ Files are split into fixed-size chunks (4MB default) for several benefits:
 
 ### Database Schema
 
-```sql
--- Users with storage quota
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    storage_quota_bytes BIGINT DEFAULT 10737418240, -- 10GB
-    storage_used_bytes BIGINT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Folders with hierarchical structure
-CREATE TABLE folders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID NOT NULL REFERENCES users(id),
-    parent_id UUID REFERENCES folders(id),
-    name VARCHAR(255) NOT NULL,
-    path TEXT NOT NULL, -- Materialized path for queries
-    deleted_at TIMESTAMPTZ,
-
-    UNIQUE(owner_id, parent_id, name) WHERE deleted_at IS NULL
-);
-CREATE INDEX idx_folders_path ON folders(path);
-
--- Files (metadata only)
-CREATE TABLE files (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID NOT NULL REFERENCES users(id),
-    folder_id UUID REFERENCES folders(id),
-    name VARCHAR(255) NOT NULL,
-    size_bytes BIGINT NOT NULL,
-    current_version INTEGER DEFAULT 1,
-    deleted_at TIMESTAMPTZ,
-
-    UNIQUE(owner_id, folder_id, name) WHERE deleted_at IS NULL
-);
-
--- Content-addressed chunk storage
-CREATE TABLE chunks (
-    hash VARCHAR(64) PRIMARY KEY, -- SHA-256
-    size_bytes INTEGER NOT NULL,
-    reference_count INTEGER DEFAULT 1,
-    storage_location TEXT NOT NULL, -- S3 bucket/key
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- File versions reference ordered chunks
-CREATE TABLE file_versions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    file_id UUID REFERENCES files(id) ON DELETE CASCADE,
-    version_number INTEGER NOT NULL,
-    size_bytes BIGINT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-
-    UNIQUE(file_id, version_number)
-);
-
--- Version to chunk mapping
-CREATE TABLE version_chunks (
-    version_id UUID REFERENCES file_versions(id) ON DELETE CASCADE,
-    chunk_hash VARCHAR(64) REFERENCES chunks(hash),
-    chunk_index INTEGER NOT NULL,
-
-    PRIMARY KEY(version_id, chunk_index)
-);
-
--- Resumable upload sessions
-CREATE TABLE upload_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id),
-    folder_id UUID REFERENCES folders(id),
-    filename VARCHAR(255) NOT NULL,
-    total_size BIGINT NOT NULL,
-    chunk_size INTEGER DEFAULT 4194304, -- 4MB
-    total_chunks INTEGER NOT NULL,
-    received_chunks INTEGER[] DEFAULT '{}',
-    status VARCHAR(20) DEFAULT 'pending',
-    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '24 hours'
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), email (unique), password_hash, storage_quota_bytes (default 10GB), storage_used_bytes | — | Users with storage quota tracking |
+| **folders** | id (UUID PK), owner_id (FK), parent_id (self-ref FK), name, path (materialized path), deleted_at (soft delete) | idx_folders_path (path) | Hierarchical folder structure; unique constraint on (owner_id, parent_id, name) where not deleted |
+| **files** | id (UUID PK), owner_id (FK), folder_id (FK), name, size_bytes, current_version (default 1), deleted_at | — | File metadata only; unique constraint on (owner_id, folder_id, name) where not deleted |
+| **chunks** | hash (SHA-256, VARCHAR(64) PK), size_bytes, reference_count (default 1), storage_location (S3 bucket/key) | — | Content-addressed chunk storage; reference counting enables garbage collection |
+| **file_versions** | id (UUID PK), file_id (FK cascade), version_number, size_bytes | — | Each version references an ordered list of chunks; unique on (file_id, version_number) |
+| **version_chunks** | version_id + chunk_index (composite PK), chunk_hash (FK to chunks) | — | Maps versions to their ordered chunks |
+| **upload_sessions** | id (UUID PK), user_id (FK), folder_id (FK), filename, total_size, chunk_size (default 4MB), total_chunks, received_chunks (integer array), status (default 'pending'), expires_at (24 hours) | — | Tracks resumable upload progress |
 
 ### Deduplication Algorithm
 
-```typescript
-// Upload initiation with deduplication check
-async function initiateUpload(
-    userId: string,
-    folderId: string,
-    filename: string,
-    size: number,
-    chunkHashes: string[]
-): Promise<UploadSession> {
-    // Check which chunks already exist in storage
-    const existingChunks = await pool.query(`
-        SELECT hash FROM chunks WHERE hash = ANY($1)
-    `, [chunkHashes]);
+When a client initiates an upload, it sends the filename, size, folder ID, and an array of SHA-256 hashes for all chunks (computed client-side). The server then:
 
-    const existingSet = new Set(existingChunks.rows.map(r => r.hash));
-    const neededChunks = chunkHashes
-        .map((hash, index) => ({ hash, index }))
-        .filter(c => !existingSet.has(c.hash));
+1. **Check which chunks already exist** - Query the chunks table for any matching hashes from the provided list.
+2. **Determine needed chunks** - Build a set of existing hashes and filter the chunk list to identify only those that need uploading, preserving their index positions.
+3. **Create an upload session** - Insert a new upload_sessions row with the file metadata and total chunk count, using the default 4MB chunk size.
+4. **Return the session** - Respond with the upload ID, chunk size, the list of chunk indices that need uploading, and the count of chunks that were deduplicated (already exist in storage).
 
-    // Create upload session
-    const session = await pool.query(`
-        INSERT INTO upload_sessions (
-            user_id, folder_id, filename, total_size,
-            total_chunks, chunk_size
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, chunk_size
-    `, [userId, folderId, filename, size, chunkHashes.length, 4194304]);
-
-    return {
-        uploadId: session.rows[0].id,
-        chunkSize: session.rows[0].chunk_size,
-        chunksNeeded: neededChunks.map(c => c.index),
-        chunksExisting: chunkHashes.length - neededChunks.length
-    };
-}
-```
+> "This approach saves significant bandwidth. If the user uploads a file that is 50% identical to existing content, we skip half the chunks entirely. The client only transfers what is genuinely new."
 
 ### Why Content-Addressed Storage?
 
@@ -242,82 +143,18 @@ async function initiateUpload(
 
 ### Chunk Upload with Verification
 
-```typescript
-async function uploadChunk(
-    uploadId: string,
-    chunkIndex: number,
-    data: Buffer,
-    declaredHash: string
-): Promise<ChunkResult> {
-    // Verify hash matches
-    const computedHash = crypto
-        .createHash('sha256')
-        .update(data)
-        .digest('hex');
+Each chunk upload follows this process:
 
-    if (computedHash !== declaredHash) {
-        throw new Error('Chunk hash mismatch');
-    }
-
-    // Check if chunk already exists (dedup)
-    const existing = await pool.query(
-        'SELECT hash FROM chunks WHERE hash = $1',
-        [computedHash]
-    );
-
-    if (existing.rows.length > 0) {
-        // Increment reference count
-        await pool.query(
-            'UPDATE chunks SET reference_count = reference_count + 1 WHERE hash = $1',
-            [computedHash]
-        );
-    } else {
-        // Upload to MinIO
-        await minioClient.putObject(
-            'dropbox-chunks',
-            `chunks/${computedHash}`,
-            data
-        );
-
-        // Record chunk metadata
-        await pool.query(`
-            INSERT INTO chunks (hash, size_bytes, storage_location)
-            VALUES ($1, $2, $3)
-        `, [computedHash, data.length, `chunks/${computedHash}`]);
-    }
-
-    // Update upload session
-    await pool.query(`
-        UPDATE upload_sessions
-        SET received_chunks = array_append(received_chunks, $1)
-        WHERE id = $2
-    `, [chunkIndex, uploadId]);
-
-    return { hash: computedHash, deduplicated: existing.rows.length > 0 };
-}
-```
+1. **Verify hash integrity** - Compute the SHA-256 hash of the received data and compare it against the hash declared by the client. If they do not match, reject the chunk with a hash mismatch error.
+2. **Check for deduplication** - Query the chunks table to see if this hash already exists in storage.
+3. **If chunk exists** - Increment the reference_count on the existing chunk row (no data upload needed).
+4. **If chunk is new** - Upload the raw data to MinIO at the path `chunks/{hash}` in the "dropbox-chunks" bucket, then insert a new row into the chunks table with the hash, size, and storage location.
+5. **Update upload session** - Append the chunk index to the received_chunks array in the upload_sessions table.
+6. **Return result** - Indicate the hash and whether this chunk was deduplicated.
 
 ### Circuit Breaker for Storage
 
-```typescript
-import { CircuitBreaker, ConsecutiveBreaker } from 'cockatiel';
-
-const storageBreaker = new CircuitBreaker({
-    breaker: new ConsecutiveBreaker(5),  // Open after 5 failures
-    halfOpenAfter: 30000,                 // Try again after 30s
-});
-
-async function uploadToStorage(hash: string, data: Buffer) {
-    return storageBreaker.execute(async () => {
-        return minioClient.putObject('dropbox-chunks', `chunks/${hash}`, data);
-    });
-}
-
-storageBreaker.onBreak(() => {
-    logger.error('MinIO circuit breaker opened');
-    metrics.circuitBreakerState.set({ service: 'minio' }, 1);
-});
-```
+MinIO upload operations are wrapped in a circuit breaker (using the consecutive breaker pattern). After 5 consecutive failures, the breaker opens and rejects all requests immediately. After 30 seconds, it transitions to half-open and allows a single test request through. If that succeeds, the breaker closes and normal traffic resumes. When the breaker opens, the event is logged and a Prometheus metric is updated.
 
 ## Deep Dive: Sync Protocol
 
@@ -348,117 +185,30 @@ storageBreaker.onBreak(() => {
 
 ### RabbitMQ Topology
 
-```typescript
-// Exchange and queue setup
-await channel.assertExchange('sync.events', 'topic', { durable: true });
-await channel.assertQueue('sync.notifications', {
-    durable: true,
-    arguments: {
-        'x-dead-letter-exchange': 'dlx',
-        'x-message-ttl': 300000 // 5 min
-    }
-});
-await channel.bindQueue('sync.notifications', 'sync.events', 'user.*.change');
+The sync system uses a topic exchange called "sync.events" with durable queues. The "sync.notifications" queue is bound with the routing pattern `user.*.change`, has a dead-letter exchange for failed messages, and a 5-minute message TTL.
 
-// Publishing sync event
-async function publishSyncEvent(userId: string, event: SyncEvent) {
-    const message = {
-        type: event.type,
-        userId,
-        fileId: event.fileId,
-        action: event.action,
-        timestamp: new Date().toISOString()
-    };
-
-    channel.publish(
-        'sync.events',
-        `user.${userId}.change`,
-        Buffer.from(JSON.stringify(message)),
-        { persistent: true }
-    );
-}
-```
+When a file change occurs, the API server publishes a persistent message to the exchange with routing key `user.{userId}.change`. The message payload contains the event type, user ID, file ID, action performed, and ISO timestamp.
 
 ### WebSocket Connection Management
 
-```typescript
-const userConnections = new Map<string, Set<WebSocket>>();
+The server maintains an in-memory map of user IDs to their active WebSocket connections (a user may have multiple devices connected simultaneously). When a new WebSocket connects, it is registered in the user's connection set. On disconnect, it is removed.
 
-function handleWebSocketConnection(ws: WebSocket, userId: string) {
-    // Register connection
-    if (!userConnections.has(userId)) {
-        userConnections.set(userId, new Set());
-    }
-    userConnections.get(userId)!.add(ws);
-
-    ws.on('close', () => {
-        userConnections.get(userId)?.delete(ws);
-    });
-}
-
-// Sync worker broadcasts to connected clients
-async function processSyncMessage(message: SyncEvent) {
-    const connections = userConnections.get(message.userId);
-    if (!connections) return;
-
-    const payload = JSON.stringify(message);
-    for (const ws of connections) {
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(payload);
-        }
-    }
-}
-```
+The sync worker consumes messages from RabbitMQ and broadcasts them to all active WebSocket connections for the target user. Only connections in the OPEN state receive the message. This ensures all of a user's devices receive real-time file change notifications.
 
 ## Deep Dive: Version History and Garbage Collection
 
 ### Version Storage Strategy
 
-```sql
--- Versions share chunks through deduplication
--- Only new/changed chunks consume additional storage
-
--- Get all chunks for a specific version
-SELECT vc.chunk_index, vc.chunk_hash, c.size_bytes
-FROM version_chunks vc
-JOIN chunks c ON vc.chunk_hash = c.hash
-WHERE vc.version_id = $1
-ORDER BY vc.chunk_index;
-
--- Restore a previous version
-UPDATE files
-SET current_version = $2
-WHERE id = $1;
-```
+Versions share chunks through deduplication -- only new or changed chunks consume additional storage. To retrieve all chunks for a specific version, the system joins version_chunks with chunks on the hash, filtered by version ID, and orders by chunk_index. Restoring a previous version is a simple update to the files table, setting current_version to the desired version number.
 
 ### Garbage Collection
 
-```typescript
-async function garbageCollectChunks() {
-    // Find chunks with zero references
-    const orphanedChunks = await pool.query(`
-        SELECT hash, storage_location
-        FROM chunks
-        WHERE reference_count <= 0
-        AND created_at < NOW() - INTERVAL '1 day'
-    `);
+A periodic garbage collection process runs every hour to clean up orphaned chunks:
 
-    for (const chunk of orphanedChunks.rows) {
-        // Delete from MinIO
-        await minioClient.removeObject('dropbox-chunks', chunk.storage_location);
-
-        // Delete metadata
-        await pool.query('DELETE FROM chunks WHERE hash = $1', [chunk.hash]);
-
-        logger.info('Garbage collected chunk', { hash: chunk.hash });
-    }
-}
-
-// Run garbage collection periodically
-async function scheduleGarbageCollection() {
-    setInterval(garbageCollectChunks, 60 * 60 * 1000); // Every hour
-}
-```
+1. **Find orphaned chunks** - Query for chunks with reference_count <= 0 that were created more than 1 day ago (the delay prevents race conditions with in-progress uploads).
+2. **Delete from object storage** - Remove the chunk data from MinIO using the stored storage_location path.
+3. **Delete metadata** - Remove the chunk row from the database.
+4. **Log** - Record each garbage-collected chunk hash for auditing.
 
 ## API Design
 
@@ -498,90 +248,24 @@ WS     /api/v1/sync/ws           WebSocket for sync events
 
 **Upload Init with Deduplication**:
 
-```http
-POST /api/v1/upload/init
-Content-Type: application/json
-
-{
-    "filename": "report.pdf",
-    "size": 15728640,
-    "folderId": "550e8400-...",
-    "chunkHashes": [
-        "a1b2c3d4e5f6...",
-        "b2c3d4e5f6a1...",
-        "c3d4e5f6a1b2...",
-        "d4e5f6a1b2c3..."
-    ]
-}
-```
-
-Response (201 Created):
-```json
-{
-    "uploadId": "660e8400-...",
-    "chunkSize": 4194304,
-    "totalChunks": 4,
-    "chunksNeeded": [0, 2],
-    "chunksExisting": 2,
-    "expiresAt": "2025-01-22T12:00:00Z"
-}
-```
+A POST request to `/api/v1/upload/init` sends the filename, file size, folder ID, and an array of chunk hashes (computed client-side). The server responds (201 Created) with an upload ID, chunk size (4MB), total chunk count, the list of chunk indices that actually need uploading (chunks not already stored), the count of deduplicated chunks, and a session expiration timestamp.
 
 ## Caching Strategy
 
 ### Cache Layers
 
-```typescript
-const CACHE_KEYS = {
-    // Folder listing cache (5 min TTL)
-    folderListing: (folderId: string) => `folder:${folderId}:listing`,
-
-    // File metadata cache (10 min TTL)
-    fileMetadata: (fileId: string) => `file:${fileId}:meta`,
-
-    // User storage quota (1 min TTL)
-    userQuota: (userId: string) => `user:${userId}:quota`,
-
-    // Upload session (25 hour TTL)
-    uploadSession: (uploadId: string) => `upload:${uploadId}:session`
-};
-```
+| Cache Key Pattern | Purpose | TTL |
+|-------------------|---------|-----|
+| `folder:{folderId}:listing` | Folder listing cache | 5 min |
+| `file:{fileId}:meta` | File metadata cache | 10 min |
+| `user:{userId}:quota` | User storage quota | 1 min |
+| `upload:{uploadId}:session` | Upload session state | 25 hours |
 
 ### Cache-Aside Pattern
 
-```typescript
-async function getFolderListing(folderId: string): Promise<FolderContents> {
-    const cacheKey = CACHE_KEYS.folderListing(folderId);
+**Folder listing read path:** Check Redis for the cached folder listing. On cache miss, query PostgreSQL for all files and subfolders in the folder (excluding soft-deleted items), ordered by type (folders first) then name. Cache the result in Redis with a 300-second TTL.
 
-    // Check cache
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-        return JSON.parse(cached);
-    }
-
-    // Query database
-    const contents = await pool.query(`
-        SELECT 'file' as type, id, name, size_bytes, updated_at
-        FROM files WHERE folder_id = $1 AND deleted_at IS NULL
-        UNION ALL
-        SELECT 'folder' as type, id, name, NULL, updated_at
-        FROM folders WHERE parent_id = $1 AND deleted_at IS NULL
-        ORDER BY type DESC, name
-    `, [folderId]);
-
-    // Cache result
-    await redis.setex(cacheKey, 300, JSON.stringify(contents.rows));
-
-    return contents.rows;
-}
-
-// Invalidate on write
-async function createFile(file: FileInput): Promise<File> {
-    const result = await pool.query(/*...*/);
-    await redis.del(CACHE_KEYS.folderListing(file.folder_id));
-    return result.rows[0];
-}
-```
+**Cache invalidation on write:** When a file is created or modified in a folder, delete the folder listing cache key for that folder, forcing the next read to fetch fresh data from the database.
 
 ## Scalability Considerations
 
@@ -592,19 +276,7 @@ async function createFile(file: FileInput): Promise<File> {
 3. **Sharding by user_id**: All user's files on same shard
 4. **Partition chunks table**: By hash prefix
 
-```sql
--- Hash-based partitioning for chunks
-CREATE TABLE chunks (
-    hash VARCHAR(64) PRIMARY KEY,
-    ...
-) PARTITION BY HASH (hash);
-
-CREATE TABLE chunks_p0 PARTITION OF chunks
-    FOR VALUES WITH (MODULUS 4, REMAINDER 0);
-CREATE TABLE chunks_p1 PARTITION OF chunks
-    FOR VALUES WITH (MODULUS 4, REMAINDER 1);
--- etc.
-```
+The chunks table can be hash-partitioned for horizontal scaling. Using PostgreSQL declarative partitioning with HASH on the hash column, the table is split into N partitions (e.g., 4 partitions using MODULUS 4, REMAINDER 0-3). This distributes chunks evenly across partitions since SHA-256 hashes are uniformly distributed.
 
 ### Estimated Capacity
 

@@ -62,106 +62,28 @@ Design the backend infrastructure for a team messaging platform that allows:
 
 ### Database Schema
 
-```sql
--- Users with workspace-agnostic identity
-CREATE TABLE users (
-    id UUID PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    username VARCHAR(100) NOT NULL,
-    display_name VARCHAR(200) NOT NULL,
-    avatar_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Workspaces for tenant isolation
-CREATE TABLE workspaces (
-    id UUID PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,
-    domain VARCHAR(100) UNIQUE,
-    settings JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Workspace membership with roles
-CREATE TABLE workspace_members (
-    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    role VARCHAR(20) DEFAULT 'member'
-        CHECK (role IN ('owner', 'admin', 'member', 'guest')),
-    joined_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (workspace_id, user_id)
-);
-
--- Channels within workspaces
-CREATE TABLE channels (
-    id UUID PRIMARY KEY,
-    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    topic TEXT,
-    is_private BOOLEAN DEFAULT FALSE,
-    is_archived BOOLEAN DEFAULT FALSE,
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(workspace_id, name)
-);
-
--- Channel membership
-CREATE TABLE channel_members (
-    channel_id UUID REFERENCES channels(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    joined_at TIMESTAMPTZ DEFAULT NOW(),
-    last_read_at TIMESTAMPTZ,
-    PRIMARY KEY (channel_id, user_id)
-);
-
--- Messages with threading support
-CREATE TABLE messages (
-    id BIGSERIAL PRIMARY KEY,
-    workspace_id UUID NOT NULL REFERENCES workspaces(id),
-    channel_id UUID REFERENCES channels(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id),
-    thread_ts BIGINT REFERENCES messages(id),  -- NULL for top-level
-    content TEXT NOT NULL,
-    attachments JSONB,
-    reply_count INTEGER DEFAULT 0,
-    edited_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Reactions
-CREATE TABLE reactions (
-    message_id BIGINT REFERENCES messages(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    emoji VARCHAR(50) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (message_id, user_id, emoji)
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), email (unique), password_hash, username, display_name, avatar_url, created_at | Unique on email | Workspace-agnostic identity |
+| **workspaces** | id (UUID PK), name, domain (unique), settings (JSONB), created_at | Unique on domain | Tenant isolation boundary |
+| **workspace_members** | workspace_id + user_id (composite PK), role (owner/admin/member/guest), joined_at | PK serves as index | Role-based access per workspace |
+| **channels** | id (UUID PK), workspace_id (FK), name, topic, is_private, is_archived, created_by, created_at | Unique on (workspace_id, name) | Public and private channels |
+| **channel_members** | channel_id + user_id (composite PK), joined_at, last_read_at | PK serves as index | Tracks membership and read position |
+| **messages** | id (BIGSERIAL PK), workspace_id (FK), channel_id (FK), user_id (FK), thread_ts (self-ref FK, NULL for top-level), content, attachments (JSONB), reply_count, edited_at, created_at | See index strategy below | Threading via self-referential thread_ts |
+| **reactions** | message_id + user_id + emoji (composite PK), created_at | PK serves as index | One reaction per user per emoji per message |
 
 ### Index Strategy
 
-```sql
--- Primary index for channel message queries
-CREATE INDEX idx_messages_channel ON messages(channel_id, created_at DESC);
+Key indexes on the messages table:
 
--- Thread replies lookup
-CREATE INDEX idx_messages_thread ON messages(thread_ts)
-    WHERE thread_ts IS NOT NULL;
-
--- Workspace-level queries
-CREATE INDEX idx_messages_workspace ON messages(workspace_id);
-
--- Channel membership lookups
-CREATE INDEX idx_channel_members_user ON channel_members(user_id);
-
--- Workspace membership lookups
-CREATE INDEX idx_workspace_members_user ON workspace_members(user_id);
-
--- Full-text search fallback (when Elasticsearch unavailable)
-CREATE INDEX idx_messages_content_fts
-    ON messages USING gin(to_tsvector('english', content));
-```
+| Index | Columns | Notes |
+|-------|---------|-------|
+| idx_messages_channel | channel_id, created_at DESC | Primary query path for channel message history |
+| idx_messages_thread | thread_ts (partial: WHERE thread_ts IS NOT NULL) | Thread replies lookup, partial index saves space |
+| idx_messages_workspace | workspace_id | Workspace-level queries |
+| idx_channel_members_user | user_id on channel_members | Find channels a user belongs to |
+| idx_workspace_members_user | user_id on workspace_members | Find workspaces a user belongs to |
+| idx_messages_content_fts | GIN index on to_tsvector('english', content) | Full-text search fallback when Elasticsearch unavailable |
 
 ### Why PostgreSQL + Elasticsearch?
 
@@ -183,56 +105,18 @@ When a user sends a message to a channel with 1000 members, we need to deliver t
 
 ### User-Level Pub/Sub Architecture
 
-```javascript
-// Message send flow
-async function sendMessage(workspaceId, channelId, userId, content) {
-    // 1. Persist the message
-    const message = await db('messages').insert({
-        workspace_id: workspaceId,
-        channel_id: channelId,
-        user_id: userId,
-        content
-    }).returning('*');
+The message send flow works in four steps:
 
-    // 2. Get channel members
-    const members = await db('channel_members')
-        .where({ channel_id: channelId })
-        .pluck('user_id');
+1. **Persist the message** - Insert into the messages table with workspace_id, channel_id, user_id, and content
+2. **Get channel members** - Query channel_members for all user_ids in the target channel
+3. **Publish to each member's subscription channel** - For each member, publish the serialized message to their personal Redis pub/sub channel (keyed as `user:{memberId}:messages`)
+4. **Queue for search indexing** - Enqueue the message for async Elasticsearch indexing
 
-    // 3. Publish to each member's subscription channel
-    for (const memberId of members) {
-        await redis.publish(
-            `user:${memberId}:messages`,
-            JSON.stringify(message)
-        );
-    }
-
-    // 4. Queue for search indexing (async)
-    await searchQueue.add({ type: 'index_message', message });
-
-    return message;
-}
-```
+This fan-out happens at the message service level, keeping gateway logic simple.
 
 ### Gateway Subscription
 
-```javascript
-// Gateway handles WebSocket connections
-gateway.on('connection', async (ws, userId) => {
-    // Create dedicated subscriber for this user
-    const subscriber = redis.duplicate();
-    await subscriber.subscribe(`user:${userId}:messages`);
-
-    subscriber.on('message', (channel, data) => {
-        ws.send(data);
-    });
-
-    ws.on('close', () => {
-        subscriber.unsubscribe();
-        subscriber.quit();
-    });
-});
-```
+When a WebSocket connection is established, the gateway creates a dedicated Redis subscriber for that user's personal channel (`user:{userId}:messages`). Every message received on that channel is forwarded directly to the WebSocket. When the WebSocket closes, the subscriber unsubscribes and disconnects. This keeps gateways stateless - they don't need to know about channel membership.
 
 ### Why User-Level vs Channel-Level Pub/Sub?
 
@@ -245,57 +129,19 @@ gateway.on('connection', async (ws, userId) => {
 
 ### Connection State Management
 
-```javascript
-// Track which gateway handles which user
-async function registerConnection(userId, gatewayId) {
-    await redis.hset('connections', userId, gatewayId);
-    await redis.expire('connections', 3600);  // 1 hour cleanup
-}
-
-// Find gateway for a specific user
-async function getGatewayForUser(userId) {
-    return await redis.hget('connections', userId);
-}
-```
+We track which gateway handles which user using a Redis hash (`connections`). When a user connects, we store the mapping of user_id to gateway_id with a 1-hour TTL for automatic cleanup. To find the gateway serving a specific user, we perform a simple hash get operation. This enables targeted delivery when needed.
 
 ## Deep Dive: Threading Model
 
 ### Design Decision: Thread as Message Attribute
 
-```javascript
-// Thread reply is just a message with thread_ts set
-async function replyToThread(parentId, content, userId) {
-    return await db.transaction(async (trx) => {
-        // Insert reply
-        const [reply] = await trx('messages').insert({
-            channel_id: parentMessage.channel_id,
-            user_id: userId,
-            thread_ts: parentId,
-            content
-        }).returning('*');
+A thread reply is simply a message with the `thread_ts` field set to the parent message's ID. The reply flow works as follows:
 
-        // Update parent reply count atomically
-        await trx('messages')
-            .where({ id: parentId })
-            .increment('reply_count', 1);
+1. **Within a database transaction**, insert the reply as a new message with `thread_ts` pointing to the parent
+2. **Atomically increment** the parent message's `reply_count` by 1
+3. To **retrieve a thread**, fetch the parent message by its ID, then query all messages where `thread_ts` equals that ID, ordered by `created_at` ascending
 
-        return reply;
-    });
-}
-
-// Get thread with all replies
-async function getThread(messageTs) {
-    const parent = await db('messages')
-        .where({ id: messageTs })
-        .first();
-
-    const replies = await db('messages')
-        .where({ thread_ts: messageTs })
-        .orderBy('created_at', 'asc');
-
-    return { parent, replies };
-}
-```
+This approach keeps threads on the same delivery path as regular messages - no special handling needed.
 
 ### Why Not a Separate Threads Table?
 
@@ -310,141 +156,37 @@ async function getThread(messageTs) {
 
 ### TTL-Based Presence
 
-```javascript
-// Client sends heartbeat every 30 seconds
-async function heartbeat(userId, workspaceId) {
-    // Set presence with 60-second TTL
-    await redis.setex(
-        `presence:${workspaceId}:${userId}`,
-        60,
-        JSON.stringify({ status: 'online', lastSeen: Date.now() })
-    );
+The presence system uses Redis keys with a 60-second TTL for automatic cleanup:
 
-    // Broadcast presence change to relevant users
-    await broadcastPresence(workspaceId, userId, 'online');
-}
-
-// Check if user is online
-async function isOnline(workspaceId, userId) {
-    const presence = await redis.get(`presence:${workspaceId}:${userId}`);
-    return presence !== null;
-}
-
-// Get all online users (use SCAN for large workspaces)
-async function getOnlineUsers(workspaceId) {
-    const keys = [];
-    let cursor = '0';
-
-    do {
-        const [newCursor, matchedKeys] = await redis.scan(
-            cursor,
-            'MATCH', `presence:${workspaceId}:*`,
-            'COUNT', 100
-        );
-        cursor = newCursor;
-        keys.push(...matchedKeys);
-    } while (cursor !== '0');
-
-    return keys.map(k => k.split(':')[2]);
-}
-```
+1. **Heartbeat** (every 30 seconds): The client sends a heartbeat which sets a Redis key `presence:{workspaceId}:{userId}` with a 60-second TTL containing the status and last seen timestamp. It then broadcasts the presence change to relevant users.
+2. **Online check**: Simply check if the Redis key exists - if it does, the user is online.
+3. **List online users**: Use Redis SCAN with pattern `presence:{workspaceId}:*` to iterate through keys in batches of 100, extracting user IDs from the key names. SCAN is used instead of KEYS to avoid blocking on large workspaces.
 
 ### Presence Optimization for Large Workspaces
 
 For workspaces with 100,000+ users, broadcasting every presence change is expensive.
 
-```javascript
-// Only broadcast to users who can see the person
-async function broadcastPresence(workspaceId, userId, status) {
-    // Get channels the user is in
-    const userChannels = await db('channel_members')
-        .where({ user_id: userId })
-        .pluck('channel_id');
+For workspaces with 100,000+ users, broadcasting every presence change is expensive. The optimization is to only broadcast to users who can actually see the person:
 
-    // Get unique users in those channels
-    const visibleUsers = await db('channel_members')
-        .whereIn('channel_id', userChannels)
-        .distinct('user_id')
-        .pluck('user_id');
+1. **Find the user's channels** - Query channel_members for all channels the user belongs to
+2. **Find visible users** - Query for distinct user_ids across those channels
+3. **Batch presence updates** - Publish presence changes only to those visible users' personal pub/sub channels (`user:{targetUserId}:presence`)
 
-    // Batch presence updates
-    const batch = [];
-    for (const targetUserId of visibleUsers) {
-        batch.push(redis.publish(
-            `user:${targetUserId}:presence`,
-            JSON.stringify({ userId, status })
-        ));
-    }
-    await Promise.all(batch);
-}
-```
+This dramatically reduces the fan-out for large workspaces where most users don't share channels.
 
 ## Deep Dive: Search Architecture
 
 ### Elasticsearch Indexing
 
-```javascript
-// Async message indexing via queue
-async function indexMessage(message) {
-    await es.index({
-        index: 'messages',
-        id: message.id.toString(),
-        body: {
-            workspace_id: message.workspace_id,
-            channel_id: message.channel_id,
-            user_id: message.user_id,
-            content: message.content,
-            created_at: message.created_at
-        }
-    });
-}
+Messages are indexed asynchronously via a queue consumer:
 
-// Search with filters
-async function searchMessages(workspaceId, query, filters) {
-    return await es.search({
-        index: 'messages',
-        body: {
-            query: {
-                bool: {
-                    must: [
-                        { term: { workspace_id: workspaceId } },
-                        { match: { content: query } }
-                    ],
-                    filter: [
-                        filters.channelId && { term: { channel_id: filters.channelId } },
-                        filters.userId && { term: { user_id: filters.userId } },
-                        filters.dateRange && {
-                            range: {
-                                created_at: {
-                                    gte: filters.from,
-                                    lte: filters.to
-                                }
-                            }
-                        }
-                    ].filter(Boolean)
-                }
-            },
-            highlight: { fields: { content: {} } }
-        }
-    });
-}
-```
+**Indexing**: Each message is indexed into Elasticsearch with fields for workspace_id, channel_id, user_id, content, and created_at. The message ID serves as the document ID.
+
+**Search**: Queries use a bool query structure with a mandatory workspace_id term filter (for tenant isolation) and a full-text match on content. Optional filters include channel_id, user_id, and date range. Results include highlighted content snippets to show matching terms in context.
 
 ### PostgreSQL Fallback
 
-```javascript
-// Fallback when Elasticsearch is unavailable
-async function searchMessagesFallback(workspaceId, query) {
-    return await db('messages')
-        .where({ workspace_id: workspaceId })
-        .whereRaw(
-            "to_tsvector('english', content) @@ plainto_tsquery('english', ?)",
-            [query]
-        )
-        .orderBy('created_at', 'desc')
-        .limit(100);
-}
-```
+When Elasticsearch is unavailable, search falls back to PostgreSQL's built-in full-text search using `to_tsvector('english', content)` with `plainto_tsquery`. Results are ordered by created_at descending with a limit of 100. The GIN index on the content column makes this viable for moderate query volumes.
 
 ## Caching Strategy
 
@@ -468,86 +210,27 @@ async function searchMessagesFallback(workspaceId, query) {
 
 ### Cache-Aside Pattern
 
-```javascript
-// Cache-aside for channel members (frequently accessed)
-async function getChannelMembers(channelId) {
-    const cacheKey = `channel:${channelId}:members`;
+For frequently accessed data like channel members, we use a cache-aside pattern:
 
-    // Check cache first
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-        return JSON.parse(cached);
-    }
+1. **Read path**: Check Redis cache first (key: `channel:{channelId}:members`, TTL: 2 minutes). On hit, return the cached member list. On miss, query the database joining channel_members with users to get id, username, and avatar_url, then populate the cache.
+2. **Write path (invalidation)**: When a member is added or removed from a channel, delete the cache key immediately. The next read will repopulate from the database.
 
-    // Cache miss - fetch from database
-    const members = await db('channel_members')
-        .where({ channel_id: channelId })
-        .join('users', 'users.id', 'channel_members.user_id')
-        .select('users.id', 'users.username', 'users.avatar_url');
-
-    // Populate cache
-    await redis.setex(cacheKey, 120, JSON.stringify(members));
-
-    return members;
-}
-
-// Invalidate on membership change
-async function addChannelMember(channelId, userId) {
-    await db('channel_members').insert({ channel_id: channelId, user_id: userId });
-    await redis.del(`channel:${channelId}:members`);
-}
-```
+This pattern is applied consistently across user profiles (5-min TTL), channel metadata (2-min TTL), and workspace settings (10-min TTL).
 
 ## Idempotency for Message Sending
 
-```javascript
-// Prevent duplicate messages on client retry
-async function sendMessageIdempotent(idempotencyKey, workspaceId, channelId, userId, content) {
-    // Check for existing request
-    const existing = await redis.get(`idem:${idempotencyKey}`);
-    if (existing) {
-        return JSON.parse(existing);  // Return cached response
-    }
-
-    // Process the message
-    const message = await db.transaction(async (trx) => {
-        const [msg] = await trx('messages').insert({
-            workspace_id: workspaceId,
-            channel_id: channelId,
-            user_id: userId,
-            content
-        }).returning('*');
-
-        return msg;
-    });
-
-    // Cache response for 24 hours
-    await redis.setex(`idem:${idempotencyKey}`, 86400, JSON.stringify(message));
-
-    return message;
-}
-```
+To prevent duplicate messages on client retry, the send function accepts an idempotency key. It first checks Redis for an existing response cached under `idem:{idempotencyKey}`. If found, it returns the cached response. Otherwise, it processes the message within a database transaction, then caches the response in Redis with a 24-hour TTL. Subsequent retries with the same key return the cached result without creating duplicate messages.
 
 ## Rate Limiting
 
-```javascript
-// Sliding window rate limiter
-async function checkRateLimit(key, limit, windowSec) {
-    const now = Date.now();
-    const windowStart = now - (windowSec * 1000);
+We use a sliding window rate limiter backed by Redis sorted sets. The algorithm works as follows:
 
-    const multi = redis.multi();
-    multi.zremrangebyscore(key, 0, windowStart);  // Remove old entries
-    multi.zadd(key, now, `${now}:${Math.random()}`);  // Add current
-    multi.zcard(key);  // Count in window
-    multi.expire(key, windowSec);
+1. Remove all entries outside the current time window using ZREMRANGEBYSCORE
+2. Add the current request timestamp as a new entry with ZADD
+3. Count remaining entries with ZCARD to determine if the limit is exceeded
+4. Set an expiry on the key equal to the window duration
 
-    const results = await multi.exec();
-    const count = results[2][1];
-
-    return { allowed: count <= limit, remaining: Math.max(0, limit - count) };
-}
-```
+All four operations execute atomically via a Redis MULTI/EXEC pipeline.
 
 | Endpoint | Limit | Window |
 |----------|-------|--------|
@@ -566,11 +249,7 @@ async function checkRateLimit(key, limit, windowSec) {
 
 ### Write Scaling
 
-1. **Partitioning by Workspace**: Shard messages table by workspace_id
-   ```sql
-   CREATE TABLE messages_p0 PARTITION OF messages
-       FOR VALUES WITH (MODULUS 4, REMAINDER 0);
-   ```
+1. **Partitioning by Workspace**: Shard the messages table by workspace_id using hash-based partitioning (e.g., modulus 4) so each partition handles a subset of workspaces
 
 2. **Async Indexing**: Search indexing via background queue
 

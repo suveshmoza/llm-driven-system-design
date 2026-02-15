@@ -87,29 +87,12 @@ Requests: [x x x x x x x x x x]      [x x x x x x]
 Count:           10                        6
 ```
 
-```typescript
-async function fixedWindowCheck(
-  identifier: string,
-  limit: number,
-  windowSeconds: number
-): Promise<RateLimitResult> {
-  const windowStart = Math.floor(Date.now() / 1000 / windowSeconds) * windowSeconds;
-  const key = `ratelimit:fixed:${identifier}:${windowStart}`;
+The fixed window algorithm works as follows:
 
-  // Atomic increment
-  const current = await redis.incr(key);
-
-  if (current === 1) {
-    await redis.expire(key, windowSeconds + 1);
-  }
-
-  if (current > limit) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  return { allowed: true, remaining: limit - current };
-}
-```
+1. Compute the window start by rounding the current timestamp down to the nearest window boundary
+2. Construct a Redis key as `ratelimit:fixed:{identifier}:{windowStart}`
+3. Atomically increment the counter with INCR; if the result is 1, set an expiry of `windowSeconds + 1`
+4. If the counter exceeds the limit, deny the request with remaining = 0; otherwise, allow with remaining = limit - current
 
 **Pros**: Simple, memory efficient (one counter per window)
 **Cons**: Burst at window boundaries (can allow 2x limit briefly)
@@ -127,43 +110,15 @@ Previous Window    Current Window
 Weighted count = 100 * 0.70 + 40 = 110
 ```
 
-```typescript
-async function slidingWindowCheck(
-  identifier: string,
-  limit: number,
-  windowSeconds: number
-): Promise<RateLimitResult> {
-  const now = Date.now() / 1000;
-  const currentWindow = Math.floor(now / windowSeconds);
-  const previousWindow = currentWindow - 1;
+The sliding window algorithm works as follows:
 
-  // Position within current window (0.0 to 1.0)
-  const position = (now % windowSeconds) / windowSeconds;
-
-  const currentKey = `ratelimit:sliding:${identifier}:${currentWindow}`;
-  const previousKey = `ratelimit:sliding:${identifier}:${previousWindow}`;
-
-  // Get both counts
-  const [currentCount, previousCount] = await redis.mget(currentKey, previousKey);
-
-  // Weighted count
-  const weightedCount =
-    parseInt(previousCount || '0') * (1 - position) +
-    parseInt(currentCount || '0');
-
-  if (weightedCount >= limit) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  // Increment current window
-  await redis.multi()
-    .incr(currentKey)
-    .expire(currentKey, windowSeconds * 2)
-    .exec();
-
-  return { allowed: true, remaining: Math.floor(limit - weightedCount - 1) };
-}
-```
+1. Determine the current and previous window numbers by dividing the current timestamp by the window size
+2. Calculate the position within the current window as a fraction from 0.0 to 1.0
+3. Fetch both the current and previous window counters from Redis using MGET
+4. Compute a weighted count: `previousCount * (1 - position) + currentCount`
+5. If the weighted count exceeds the limit, deny the request
+6. Otherwise, atomically increment the current window counter and set an expiry of `2 * windowSeconds`
+7. Return remaining = limit - weightedCount - 1
 
 **Pros**: Smooth limiting, memory efficient, ~98% accuracy
 **Cons**: Approximate (1-2% error tolerance)
@@ -180,56 +135,14 @@ Bucket: [* * * * * * * * * *]  capacity = 10
         [* * * * * * * * *]    after refill
 ```
 
-```typescript
-const tokenBucketScript = `
-  local key = KEYS[1]
-  local capacity = tonumber(ARGV[1])
-  local refillRate = tonumber(ARGV[2])
-  local now = tonumber(ARGV[3])
+Token bucket is implemented as an atomic Lua script on Redis. The script performs the following steps:
 
-  local bucket = redis.call('HMGET', key, 'tokens', 'last_refill')
-  local tokens = tonumber(bucket[1]) or capacity
-  local lastRefill = tonumber(bucket[2]) or now
+1. Read the hash fields `tokens` and `last_refill` from the bucket key (defaulting to full capacity if the key does not exist)
+2. Calculate how many tokens to add based on elapsed time since the last refill: `elapsed * refillRate`, capped at the bucket capacity
+3. If at least 1 token is available, consume it by decrementing and update the hash with the new token count and refill timestamp; set an expiry of `capacity / refillRate + 10` seconds
+4. Return `{1, remaining_tokens}` if allowed, or `{0, 0}` if denied
 
-  -- Calculate refill
-  local elapsed = now - lastRefill
-  local refill = elapsed * refillRate
-  tokens = math.min(capacity, tokens + refill)
-
-  -- Try to consume token
-  if tokens >= 1 then
-    tokens = tokens - 1
-    redis.call('HMSET', key, 'tokens', tokens, 'last_refill', now)
-    redis.call('EXPIRE', key, capacity / refillRate + 10)
-    return {1, math.floor(tokens)}  -- allowed, remaining
-  else
-    return {0, 0}  -- denied
-  end
-`;
-
-async function tokenBucketCheck(
-  identifier: string,
-  capacity: number,
-  refillRate: number
-): Promise<RateLimitResult> {
-  const key = `ratelimit:token:${identifier}`;
-  const now = Date.now() / 1000;
-
-  const result = await redis.eval(
-    tokenBucketScript,
-    1,
-    key,
-    capacity,
-    refillRate,
-    now
-  );
-
-  return {
-    allowed: result[0] === 1,
-    remaining: result[1]
-  };
-}
-```
+The calling function passes the key, capacity, refill rate, and current timestamp as arguments. The Lua script ensures atomicity — without it, the read-modify-write sequence across multiple API servers would lead to race conditions and inaccurate token counts.
 
 **Why Lua Script?** Token bucket requires read-modify-write atomicity. Without Lua, race conditions between multiple API servers could cause inaccurate token counts.
 
@@ -237,33 +150,12 @@ async function tokenBucketCheck(
 
 ### Algorithm 4: Leaky Bucket
 
-```typescript
-const leakyBucketScript = `
-  local key = KEYS[1]
-  local bucketSize = tonumber(ARGV[1])
-  local leakRate = tonumber(ARGV[2])
-  local now = tonumber(ARGV[3])
+Leaky bucket is also implemented as a Lua script on Redis, similar in structure to token bucket but with inverted semantics:
 
-  local bucket = redis.call('HMGET', key, 'water', 'last_leak')
-  local water = tonumber(bucket[1]) or 0
-  local lastLeak = tonumber(bucket[2]) or now
-
-  -- Leak water based on time passed
-  local elapsed = now - lastLeak
-  local leaked = elapsed * leakRate
-  water = math.max(0, water - leaked)
-
-  -- Try to add water (new request)
-  if water < bucketSize then
-    water = water + 1
-    redis.call('HMSET', key, 'water', water, 'last_leak', now)
-    redis.call('EXPIRE', key, bucketSize / leakRate + 10)
-    return {1, math.floor(bucketSize - water)}
-  else
-    return {0, 0}
-  end
-`;
-```
+1. Read the hash fields `water` and `last_leak` from the bucket key (defaulting to 0 water if the key does not exist)
+2. Calculate how much water has "leaked" based on elapsed time: `elapsed * leakRate`, and reduce the current water level accordingly (minimum 0)
+3. If the current water level is below the bucket size, add 1 unit of water (representing the new request), update the hash, and set an expiry of `bucketSize / leakRate + 10` seconds
+4. Return `{1, remaining_capacity}` if allowed, or `{0, 0}` if the bucket is full
 
 **Pros**: Smoothest output rate, prevents bursts entirely
 **Cons**: Requests may queue, adding latency
@@ -281,29 +173,14 @@ Without a circuit breaker, Redis failures cause:
 
 ### Implementation
 
-```typescript
-import CircuitBreaker from 'opossum';
+We use the `opossum` circuit breaker library wrapping all Redis operations. Configuration:
 
-const redisBreaker = new CircuitBreaker(redisOperation, {
-  timeout: 3000,                    // 3s operation timeout
-  errorThresholdPercentage: 50,     // Open after 50% failures
-  resetTimeout: 10000,              // 10s before testing recovery
-  volumeThreshold: 5                // Min requests before opening
-});
+- **Timeout**: 3 seconds per operation
+- **Error threshold**: Open after 50% of requests fail
+- **Reset timeout**: 10 seconds before testing recovery (half-open state)
+- **Volume threshold**: Minimum 5 requests before the breaker can open
 
-redisBreaker.on('open', () => {
-  logger.warn('Redis circuit opened - failing open for rate checks');
-  metrics.increment('circuit_breaker.redis.open');
-});
-
-// Fallback: fail-open (allow requests)
-redisBreaker.fallback(() => ({
-  allowed: true,
-  fallback: true,
-  remaining: -1,
-  resetAt: Date.now() + 60000
-}));
-```
+When the circuit opens, a warning is logged and a metric is incremented. The **fallback** returns a fail-open result: the request is allowed, but the response includes a `fallback: true` flag and `remaining: -1` to indicate the rate limit check was skipped.
 
 ### State Machine
 
@@ -350,14 +227,7 @@ ratelimit:leaky:{identifier} -> hash {water, last_leak}
 | `ratelimit:token:*` | 24 hours | Reset daily inactive |
 | `ratelimit:leaky:*` | 24 hours | Reset daily inactive |
 
-```typescript
-function calculateKeyTtl(windowSeconds: number): number {
-  return Math.ceil(windowSeconds * 2);  // 2x window size
-}
-
-// Why 2x? Sliding window needs previous window data
-// At 12:01:30, we're 50% into Window 2 but need Window 1 for weighted calc
-```
+TTL is calculated as 2x the window size. This is necessary because sliding window needs data from the previous window — for example, at 12:01:30 we are 50% into Window 2 but still need the Window 1 counter for the weighted calculation.
 
 ### Memory Estimation
 
@@ -373,61 +243,14 @@ Safely fits in Redis with room for growth
 
 ### Express Middleware Implementation
 
-```typescript
-interface RateLimitRule {
-  algorithm: 'fixed' | 'sliding' | 'token' | 'leaky';
-  limit: number;
-  windowSeconds: number;
-  burstCapacity?: number;
-  refillRate?: number;
-}
+The rate limit middleware follows this flow:
 
-export function rateLimitMiddleware(
-  getRule: (req: Request) => Promise<RateLimitRule>
-) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const identifier = extractIdentifier(req);
-    const rule = await getRule(req);
-
-    let result: RateLimitResult;
-
-    try {
-      result = await circuitBreaker.fire(() =>
-        checkRateLimit(identifier, rule)
-      );
-    } catch (error) {
-      // Circuit breaker fallback
-      result = { allowed: true, fallback: true, remaining: -1 };
-      logger.warn('Rate limit check failed, allowing request', { identifier });
-    }
-
-    // Set response headers
-    res.set({
-      'X-RateLimit-Limit': rule.limit,
-      'X-RateLimit-Remaining': result.remaining,
-      'X-RateLimit-Reset': result.resetAt,
-      'X-RateLimit-Algorithm': rule.algorithm
-    });
-
-    if (!result.allowed) {
-      res.set('Retry-After', Math.ceil((result.resetAt - Date.now()) / 1000));
-      return res.status(429).json({
-        error: 'Rate limit exceeded',
-        retryAfter: result.resetAt
-      });
-    }
-
-    next();
-  };
-}
-
-function extractIdentifier(req: Request): string {
-  // Priority: API key > User ID > IP address
-  return req.headers['x-api-key'] as string
-    || req.user?.id
-    || req.ip;
-}
-```
+1. **Extract identifier** — priority order: API key header, authenticated user ID, then IP address
+2. **Look up the applicable rule** — each rule specifies the algorithm (fixed/sliding/token/leaky), limit, window size, and optional burst parameters
+3. **Execute the rate check** through the circuit breaker; if the circuit is open or the check fails, fall open with a warning log
+4. **Set response headers** — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `X-RateLimit-Algorithm` on every response
+5. **If denied** — add a `Retry-After` header and return 429 with the reset timestamp
+6. **If allowed** — call `next()` to continue to the route handler
 
 ---
 
@@ -445,31 +268,13 @@ function extractIdentifier(req: Request): string {
 
 ## 8. Metrics and Observability
 
-```typescript
-// Prometheus metrics
-const metrics = {
-  checks: new Counter({
-    name: 'ratelimiter_checks_total',
-    help: 'Total rate limit checks',
-    labelNames: ['result', 'algorithm']
-  }),
+We track three Prometheus metrics:
 
-  latency: new Histogram({
-    name: 'ratelimiter_check_duration_seconds',
-    help: 'Rate limit check latency',
-    buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1]
-  }),
+- **ratelimiter_checks_total** (Counter) — total rate limit checks, labeled by result (allowed/denied) and algorithm
+- **ratelimiter_check_duration_seconds** (Histogram) — latency of each rate check, with buckets at 1ms, 5ms, 10ms, 25ms, 50ms, and 100ms
+- **ratelimiter_circuit_breaker_state** (Gauge) — current circuit breaker state (0 = closed, 1 = open, 2 = half-open)
 
-  circuitState: new Gauge({
-    name: 'ratelimiter_circuit_breaker_state',
-    help: 'Circuit breaker state (0=closed, 1=open, 2=half-open)'
-  })
-};
-
-// Alert on high denial rate
-// expr: sum(rate(ratelimiter_checks_total{result="denied"}[5m])) /
-//       sum(rate(ratelimiter_checks_total[5m])) > 0.1
-```
+An alerting rule fires when the denial rate exceeds 10% over a 5-minute window, calculated as the ratio of denied checks to total checks.
 
 ---
 

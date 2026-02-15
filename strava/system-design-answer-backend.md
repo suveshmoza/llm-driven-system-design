@@ -109,129 +109,29 @@
 
 ### PostgreSQL Schema (Relational Data)
 
-```sql
--- Users table with authentication
-CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username        VARCHAR(50) UNIQUE NOT NULL,
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    password_hash   VARCHAR(255) NOT NULL,
-    profile_photo   VARCHAR(512),
-    weight_kg       DECIMAL(5,2),
-    role            VARCHAR(20) DEFAULT 'user',
-    created_at      TIMESTAMP DEFAULT NOW(),
-    updated_at      TIMESTAMP DEFAULT NOW()
-);
-
--- Activities table with geospatial metadata
-CREATE TABLE activities (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type            VARCHAR(20) NOT NULL,           -- 'run', 'ride', 'hike'
-    name            VARCHAR(255),
-    start_time      TIMESTAMP NOT NULL,
-    elapsed_time    INTEGER NOT NULL,               -- seconds
-    moving_time     INTEGER NOT NULL,
-    distance        DECIMAL(12,2),                  -- meters
-    elevation_gain  DECIMAL(8,2),
-    avg_speed       DECIMAL(8,2),
-    max_speed       DECIMAL(8,2),
-    avg_heart_rate  INTEGER,
-    max_heart_rate  INTEGER,
-    privacy         VARCHAR(20) DEFAULT 'followers',
-    polyline        TEXT,                           -- Encoded route for display
-    start_lat       DECIMAL(10,7),
-    start_lng       DECIMAL(10,7),
-    end_lat         DECIMAL(10,7),
-    end_lng         DECIMAL(10,7),
-    kudos_count     INTEGER DEFAULT 0,              -- Denormalized for performance
-    comment_count   INTEGER DEFAULT 0,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-
--- Segments with bounding box for fast filtering
-CREATE TABLE segments (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    creator_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,
-    activity_type   VARCHAR(20) NOT NULL,
-    distance        DECIMAL(12,2) NOT NULL,
-    elevation_gain  DECIMAL(8,2),
-    polyline        TEXT NOT NULL,
-    start_lat       DECIMAL(10,7) NOT NULL,
-    start_lng       DECIMAL(10,7) NOT NULL,
-    end_lat         DECIMAL(10,7) NOT NULL,
-    end_lng         DECIMAL(10,7) NOT NULL,
-    min_lat         DECIMAL(10,7) NOT NULL,         -- Bounding box
-    min_lng         DECIMAL(10,7) NOT NULL,
-    max_lat         DECIMAL(10,7) NOT NULL,
-    max_lng         DECIMAL(10,7) NOT NULL,
-    effort_count    INTEGER DEFAULT 0,
-    athlete_count   INTEGER DEFAULT 0,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-
--- Segment efforts with composite indexes
-CREATE TABLE segment_efforts (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    segment_id      UUID NOT NULL REFERENCES segments(id) ON DELETE CASCADE,
-    activity_id     UUID NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    elapsed_time    INTEGER NOT NULL,
-    moving_time     INTEGER NOT NULL,
-    start_index     INTEGER,                        -- GPS point start
-    end_index       INTEGER,                        -- GPS point end
-    pr_rank         INTEGER,                        -- 1, 2, 3 for podium
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-
--- Privacy zones for GPS filtering
-CREATE TABLE privacy_zones (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name            VARCHAR(100),
-    center_lat      DECIMAL(10,7) NOT NULL,
-    center_lng      DECIMAL(10,7) NOT NULL,
-    radius_meters   INTEGER NOT NULL DEFAULT 500,
-    created_at      TIMESTAMP DEFAULT NOW()
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), username (unique), email (unique), password_hash, profile_photo, weight_kg, role, created_at, updated_at | Unique on username and email | Standard auth with role-based access |
+| **activities** | id (UUID PK), user_id (FK), type (run/ride/hike), name, start_time, elapsed_time, moving_time, distance (meters), elevation_gain, avg_speed, max_speed, avg_heart_rate, max_heart_rate, privacy, polyline (encoded route), start_lat/lng, end_lat/lng, kudos_count (denormalized), comment_count (denormalized), created_at | See critical indexes below | Polyline stores compressed route for display; denormalized counts avoid joins |
+| **segments** | id (UUID PK), creator_id (FK), name, activity_type, distance, elevation_gain, polyline, start_lat/lng, end_lat/lng, min_lat/min_lng/max_lat/max_lng (bounding box), effort_count (denormalized), athlete_count (denormalized), created_at | Bounding box index for spatial queries | Bounding box enables fast Phase 1 filtering |
+| **segment_efforts** | id (UUID PK), segment_id (FK), activity_id (FK), user_id (FK), elapsed_time, moving_time, start_index, end_index (GPS point range), pr_rank (1/2/3 for podium), created_at | Composite indexes for leaderboard and PR queries | Links activities to segments with timing data |
+| **privacy_zones** | id (UUID PK), user_id (FK), name, center_lat, center_lng, radius_meters (default 500), created_at | By user_id | Circular zones for GPS point filtering |
 
 ### Critical Indexes
 
-```sql
--- GPS point retrieval in order
-CREATE INDEX idx_gps_points_activity ON gps_points(activity_id, point_index);
-
--- Phase 1 segment matching (bounding box intersection)
-CREATE INDEX idx_segments_bbox ON segments(min_lat, max_lat, min_lng, max_lng);
-CREATE INDEX idx_segments_type ON segments(activity_type);
-
--- Leaderboard queries with sorting
-CREATE INDEX idx_segment_efforts_segment ON segment_efforts(segment_id, elapsed_time);
-
--- Personal records lookup
-CREATE INDEX idx_segment_efforts_user ON segment_efforts(user_id, segment_id);
-```
+| Index | Table | Columns | Purpose |
+|-------|-------|---------|---------|
+| idx_gps_points_activity | gps_points | activity_id, point_index | Retrieve GPS points in order for an activity |
+| idx_segments_bbox | segments | min_lat, max_lat, min_lng, max_lng | Phase 1 bounding box intersection query |
+| idx_segments_type | segments | activity_type | Filter segments by sport type |
+| idx_segment_efforts_segment | segment_efforts | segment_id, elapsed_time | Leaderboard queries sorted by time |
+| idx_segment_efforts_user | segment_efforts | user_id, segment_id | Personal records lookup |
 
 ### Cassandra Schema (GPS Time-Series)
 
-```sql
--- Optimized for high-volume GPS writes
-CREATE TABLE gps_points (
-    activity_id     UUID,
-    point_index     INT,
-    timestamp       TIMESTAMP,
-    latitude        DOUBLE,
-    longitude       DOUBLE,
-    altitude        DOUBLE,
-    speed           DOUBLE,
-    heart_rate      INT,
-    cadence         INT,
-    power           INT,
-    PRIMARY KEY (activity_id, point_index)
-) WITH CLUSTERING ORDER BY (point_index ASC);
-```
+| Table | Partition Key | Clustering Key | Columns | Notes |
+|-------|---------------|----------------|---------|-------|
+| **gps_points** | activity_id (UUID) | point_index (INT, ASC) | timestamp, latitude (DOUBLE), longitude (DOUBLE), altitude (DOUBLE), speed (DOUBLE), heart_rate (INT), cadence (INT), power (INT) | Optimized for sequential reads of all points in an activity; clustering order ensures points are stored and retrieved in order |
 
 ### Redis Data Structures
 
@@ -280,147 +180,34 @@ idem:activity:{sha256_hash} -> activity_id (TTL: 24h)
 
 ### GPX Parsing Implementation
 
-```javascript
-async function parseGPX(gpxContent) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(gpxContent, 'text/xml');
-  const trackpoints = doc.querySelectorAll('trkpt');
+The GPX parser extracts trackpoints from XML and computes derived metrics:
 
-  const points = [];
-  let prevPoint = null;
-  let totalDistance = 0;
-  let totalElevationGain = 0;
+1. **Parse each trackpoint** - Extract latitude, longitude, altitude, timestamp, and heart rate from the GPX XML structure
+2. **Calculate inter-point metrics** - For each consecutive pair of points, compute the Haversine distance, accumulate total distance and positive elevation gain, and derive instantaneous speed from distance/time
+3. **Aggregate activity metrics** - Total distance, total elevation gain, elapsed time (last timestamp minus first), moving time (excluding stopped periods), and average speed
 
-  for (let i = 0; i < trackpoints.length; i++) {
-    const trkpt = trackpoints[i];
-    const point = {
-      index: i,
-      latitude: parseFloat(trkpt.getAttribute('lat')),
-      longitude: parseFloat(trkpt.getAttribute('lon')),
-      altitude: parseFloat(trkpt.querySelector('ele')?.textContent || 0),
-      timestamp: new Date(trkpt.querySelector('time')?.textContent),
-      heartRate: parseInt(trkpt.querySelector('hr')?.textContent || 0),
-    };
-
-    if (prevPoint) {
-      const distance = haversineDistance(prevPoint, point);
-      totalDistance += distance;
-
-      const elevationChange = point.altitude - prevPoint.altitude;
-      if (elevationChange > 0) {
-        totalElevationGain += elevationChange;
-      }
-
-      const timeDelta = (point.timestamp - prevPoint.timestamp) / 1000;
-      point.speed = timeDelta > 0 ? distance / timeDelta : 0;
-    }
-
-    points.push(point);
-    prevPoint = point;
-  }
-
-  return {
-    points,
-    metrics: {
-      distance: totalDistance,
-      elevationGain: totalElevationGain,
-      elapsedTime: (points[points.length - 1].timestamp - points[0].timestamp) / 1000,
-      movingTime: calculateMovingTime(points),
-      avgSpeed: totalDistance / calculateMovingTime(points),
-    }
-  };
-}
-```
+The parser returns both the array of GPS points and the computed summary metrics.
 
 ### Privacy Zone Filtering
 
-```javascript
-function applyPrivacyZones(gpsPoints, privacyZones) {
-  const filtered = [];
-  let inPrivacyZone = false;
+Privacy zone filtering removes GPS points that fall within user-defined circular zones:
 
-  for (const point of gpsPoints) {
-    const insideAnyZone = privacyZones.some(zone =>
-      haversineDistance(
-        { lat: point.latitude, lng: point.longitude },
-        { lat: zone.center_lat, lng: zone.center_lng }
-      ) < zone.radius_meters
-    );
+1. For each GPS point, check if it falls within any privacy zone by computing the Haversine distance from the point to each zone's center and comparing against the zone's radius
+2. Points inside any zone are omitted from the output
+3. When entering a privacy zone, the last visible point is marked with a transition flag so the frontend can indicate a gap in the route
+4. When exiting the zone, recording resumes normally
 
-    if (insideAnyZone) {
-      if (!inPrivacyZone) {
-        // Entering privacy zone - mark transition
-        inPrivacyZone = true;
-        if (filtered.length > 0) {
-          filtered[filtered.length - 1].privacyTransition = true;
-        }
-      }
-      // Skip points inside privacy zone
-    } else {
-      inPrivacyZone = false;
-      filtered.push(point);
-    }
-  }
-
-  return filtered;
-}
-```
+This ensures home/work locations are never exposed in shared activities while maintaining route continuity outside protected areas.
 
 ### Idempotent Upload Handling
 
-```javascript
-async function handleActivityUpload(userId, gpxContent, idempotencyKey) {
-  // Generate content-based hash for deduplication
-  const contentHash = crypto
-    .createHash('sha256')
-    .update(`${userId}:${gpxContent}`)
-    .digest('hex');
+The upload handler prevents duplicate activities from retry-prone mobile uploads:
 
-  const cacheKey = `idem:activity:${idempotencyKey || contentHash}`;
-
-  // Check for existing upload
-  const existingActivityId = await redis.get(cacheKey);
-  if (existingActivityId) {
-    const activity = await db.getActivity(existingActivityId);
-    return { activity, duplicate: true };
-  }
-
-  // Process new upload
-  const { points, metrics } = await parseGPX(gpxContent);
-  const privacyZones = await db.getPrivacyZones(userId);
-  const filteredPoints = applyPrivacyZones(points, privacyZones);
-
-  // Create activity record
-  const activity = await db.createActivity({
-    userId,
-    ...metrics,
-    polyline: encodePolyline(filteredPoints),
-    startLat: filteredPoints[0].latitude,
-    startLng: filteredPoints[0].longitude,
-  });
-
-  // Batch insert GPS points to Cassandra
-  await cassandra.batchInsert('gps_points',
-    filteredPoints.map(p => ({
-      activity_id: activity.id,
-      point_index: p.index,
-      ...p
-    }))
-  );
-
-  // Cache for idempotency (24 hour TTL)
-  await redis.setex(cacheKey, 86400, activity.id);
-
-  // Publish for async processing
-  await kafka.publish('activity.created', {
-    activityId: activity.id,
-    userId,
-    boundingBox: calculateBoundingBox(filteredPoints),
-  });
-
-  return { activity, duplicate: false };
-}
-```
+1. **Content-based deduplication** - Generate a SHA-256 hash of the user ID concatenated with the GPX content. Use either the client-provided idempotency key or this content hash as the cache key
+2. **Check Redis** for an existing activity ID under `idem:activity:{key}`. If found, return the existing activity with a `duplicate: true` flag
+3. **Process new upload** - Parse the GPX file, apply privacy zone filtering, create the activity record in PostgreSQL, and batch-insert filtered GPS points to Cassandra
+4. **Cache the result** - Store the new activity ID in Redis with a 24-hour TTL
+5. **Publish event** - Send an `activity.created` event to Kafka with the activity ID, user ID, and bounding box for async segment matching and feed generation
 
 ---
 
@@ -447,110 +234,26 @@ Only Segment A and C actually traversed by activity
 
 ### Phase 1: Bounding Box Query
 
-```javascript
-async function findCandidateSegments(activity) {
-  const { minLat, maxLat, minLng, maxLng, type } = activity;
-
-  // PostGIS spatial query using bounding box intersection
-  const candidates = await db.query(`
-    SELECT id, polyline, start_lat, start_lng, end_lat, end_lng
-    FROM segments
-    WHERE activity_type = $1
-      AND min_lat <= $2 AND max_lat >= $3
-      AND min_lng <= $4 AND max_lng >= $5
-  `, [type, maxLat, minLat, maxLng, minLng]);
-
-  return candidates.rows;
-}
-```
+The first phase uses a spatial query to find candidate segments whose bounding boxes intersect with the activity's bounding box. The query filters by activity type and checks that each segment's min/max latitude and longitude coordinates overlap with the activity's extent. This eliminates approximately 99% of segments, leaving only those geographically near the activity route.
 
 ### Phase 2: GPS Point Matching
 
-```javascript
-const DISTANCE_THRESHOLD = 25; // meters
+The fine matching algorithm uses a 25-meter distance threshold and works as follows:
 
-function matchSegmentToActivity(segmentPolyline, activityPoints) {
-  const segmentPoints = decodePolyline(segmentPolyline);
-  const segmentStart = segmentPoints[0];
+1. **Decode the segment polyline** into GPS points
+2. **Find entry candidates** - Scan the activity's GPS points for any that fall within 25 meters of the segment's start point
+3. **Attempt matching from each candidate** - Starting from each entry point, walk through both the segment and activity point sequences simultaneously:
+   - At each step, compute the Haversine distance between the current segment point and activity point
+   - If the distance exceeds 25 meters, the match fails
+   - Track maximum deviation for quality reporting
+   - Advance whichever pointer (activity or segment) is behind to handle differences in sampling rate
+4. **Match succeeds** when all segment points have been traversed within the threshold. The result includes start/end GPS point indexes and elapsed time for the effort.
 
-  // Find activity points near segment start
-  const startCandidates = findPointsNear(
-    activityPoints,
-    segmentStart,
-    DISTANCE_THRESHOLD
-  );
-
-  for (const startIdx of startCandidates) {
-    const matchResult = tryMatchFromPoint(
-      activityPoints.slice(startIdx),
-      segmentPoints
-    );
-
-    if (matchResult.isMatch) {
-      return {
-        startIndex: startIdx,
-        endIndex: startIdx + matchResult.pointsUsed,
-        elapsedTime: calculateElapsedTime(
-          activityPoints.slice(startIdx, startIdx + matchResult.pointsUsed)
-        )
-      };
-    }
-  }
-
-  return null;
-}
-
-function tryMatchFromPoint(activityPoints, segmentPoints) {
-  let activityIdx = 0;
-  let segmentIdx = 0;
-  let maxDeviation = 0;
-
-  while (segmentIdx < segmentPoints.length && activityIdx < activityPoints.length) {
-    const segPoint = segmentPoints[segmentIdx];
-    const actPoint = activityPoints[activityIdx];
-
-    const distance = haversineDistance(segPoint, actPoint);
-
-    if (distance > DISTANCE_THRESHOLD) {
-      return { isMatch: false };
-    }
-
-    maxDeviation = Math.max(maxDeviation, distance);
-
-    // Advance pointer that's behind
-    if (shouldAdvanceActivity(activityPoints, segmentPoints, activityIdx, segmentIdx)) {
-      activityIdx++;
-    } else {
-      segmentIdx++;
-    }
-  }
-
-  // Check if we completed the segment
-  if (segmentIdx >= segmentPoints.length - 1) {
-    return { isMatch: true, pointsUsed: activityIdx, maxDeviation };
-  }
-
-  return { isMatch: false };
-}
-```
+If no entry candidate produces a complete match, the segment was not traversed by this activity.
 
 ### Haversine Distance Calculation
 
-```javascript
-function haversineDistance(point1, point2) {
-  const R = 6371000; // Earth's radius in meters
-  const lat1 = toRadians(point1.latitude || point1.lat);
-  const lat2 = toRadians(point2.latitude || point2.lat);
-  const deltaLat = toRadians((point2.latitude || point2.lat) - (point1.latitude || point1.lat));
-  const deltaLng = toRadians((point2.longitude || point2.lng) - (point1.longitude || point1.lng));
-
-  const a = Math.sin(deltaLat / 2) ** 2 +
-            Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-}
-```
+The Haversine formula computes the great-circle distance between two GPS coordinates on Earth's surface (radius = 6,371,000 meters). It converts latitude and longitude differences to radians, applies the Haversine formula (using sin^2 of half-angles and cosine products), and returns the distance in meters. This is the core distance function used throughout segment matching and privacy zone filtering.
 
 ---
 
@@ -558,76 +261,23 @@ function haversineDistance(point1, point2) {
 
 ### Redis Sorted Set Operations
 
-```javascript
-async function updateLeaderboard(effort) {
-  const { segmentId, oderId, elapsedTime } = effort;
+The leaderboard update flow for each segment effort:
 
-  // Check personal record
-  const prKey = `pr:${userId}:${segmentId}`;
-  const currentPr = await redis.get(prKey);
-
-  if (!currentPr || elapsedTime < parseInt(currentPr)) {
-    // New personal record
-    await redis.set(prKey, elapsedTime);
-
-    // Update leaderboard (sorted set: lower score = better rank)
-    const lbKey = `leaderboard:${segmentId}`;
-    await redis.zadd(lbKey, elapsedTime, oderId);
-
-    // Get new rank (0-indexed)
-    const rank = await redis.zrank(lbKey, oderId);
-
-    // Mark PR rank if podium finish
-    if (rank !== null && rank < 3) {
-      await db.updateEffort(effort.id, { prRank: rank + 1 });
-    }
-
-    return { isPr: true, rank: rank + 1 };
-  }
-
-  return { isPr: false };
-}
-```
+1. **Check personal record** - Read the current PR from Redis key `pr:{userId}:{segmentId}`
+2. **Compare times** - If no existing PR or the new elapsed time is faster, update the PR value
+3. **Update leaderboard** - Add or update the user's entry in the sorted set `leaderboard:{segmentId}` with elapsed time as the score (lower = better)
+4. **Check rank** - Use ZRANK to get the 0-indexed position. If rank < 3, update the segment effort record with the podium position (1st, 2nd, or 3rd)
+5. **Return result** - Indicate whether this was a new PR and the user's current rank
 
 ### Leaderboard Query with Filters
 
-```javascript
-async function getSegmentLeaderboard(segmentId, options = {}) {
-  const { limit = 10, filterType = 'overall', userId } = options;
-  const lbKey = `leaderboard:${segmentId}`;
+Two query modes are supported:
 
-  let entries;
+**Overall leaderboard**: Use ZRANGE on `leaderboard:{segmentId}` to get the top N entries with scores. This is O(log N + M) where M is the limit.
 
-  if (filterType === 'overall') {
-    // Overall top N: O(log N + M) where M = limit
-    entries = await redis.zrange(lbKey, 0, limit - 1, 'WITHSCORES');
-  } else if (filterType === 'friends') {
-    // Friends leaderboard: intersection with following set
-    const following = await redis.smembers(`following:${userId}`);
-    const friendScores = await redis.zmscore(lbKey, ...following);
-    entries = following
-      .map((id, i) => ({ userId: id, time: friendScores[i] }))
-      .filter(e => e.time !== null)
-      .sort((a, b) => a.time - b.time)
-      .slice(0, limit);
-  }
+**Friends leaderboard**: Retrieve the user's following set from Redis, then use ZMSCORE to batch-fetch scores for all followed users from the segment's sorted set. Filter out users with no score (never attempted the segment), sort by time, and take the top N.
 
-  // Enrich with user details
-  const leaderboard = await Promise.all(
-    entries.map(async (entry, idx) => {
-      const user = await getCachedUser(entry.userId || entry[0]);
-      return {
-        rank: idx + 1,
-        user: { id: user.id, username: user.username, profilePhoto: user.profilePhoto },
-        elapsedTime: parseInt(entry.time || entry[1]),
-        formattedTime: formatDuration(parseInt(entry.time || entry[1])),
-      };
-    })
-  );
-
-  return leaderboard;
-}
-```
+Both modes enrich results with cached user details (id, username, profile photo) and format elapsed times for display.
 
 ---
 
@@ -635,76 +285,21 @@ async function getSegmentLeaderboard(segmentId, options = {}) {
 
 ### Fan-Out on Write
 
-```javascript
-async function generateFeedEntries(activity) {
-  const { id: activityId, userId, startTime } = activity;
-  const timestamp = startTime.getTime();
+When a new activity is created, the feed generator writes it to every follower's feed:
 
-  // Get all followers
-  const followers = await db.query(
-    'SELECT follower_id FROM follows WHERE following_id = $1',
-    [userId]
-  );
-
-  // Batch add to follower feeds
-  const pipeline = redis.pipeline();
-
-  for (const { follower_id } of followers.rows) {
-    const feedKey = `feed:${follower_id}`;
-
-    // Add to sorted set (score = timestamp for ordering)
-    pipeline.zadd(feedKey, timestamp, activityId);
-
-    // Trim to keep last 1000 items
-    pipeline.zremrangebyrank(feedKey, 0, -1001);
-  }
-
-  await pipeline.exec();
-}
-```
+1. **Query followers** - Get all follower_ids from the follows table
+2. **Pipeline writes** - Use a Redis pipeline to batch two operations per follower: ZADD the activity_id to `feed:{follower_id}` with the start timestamp as score, then ZREMRANGEBYRANK to trim the feed to the most recent 1000 entries
+3. **Execute atomically** - The pipeline executes all operations in a single round trip
 
 ### Feed Retrieval with Pagination
 
-```javascript
-async function getActivityFeed(userId, cursor = null, limit = 20) {
-  const feedKey = `feed:${userId}`;
+Feed retrieval uses cursor-based pagination with Redis sorted sets:
 
-  let activityIds;
-  if (cursor) {
-    // Cursor-based pagination
-    activityIds = await redis.zrevrangebyscore(
-      feedKey,
-      cursor - 1,  // exclusive of cursor
-      '-inf',
-      'LIMIT', 0, limit
-    );
-  } else {
-    // First page
-    activityIds = await redis.zrevrange(feedKey, 0, limit - 1);
-  }
-
-  if (activityIds.length === 0) {
-    return { activities: [], nextCursor: null };
-  }
-
-  // Batch fetch activities
-  const activities = await db.query(
-    'SELECT * FROM activities WHERE id = ANY($1)',
-    [activityIds]
-  );
-
-  // Enrich with user data, kudos status, comments preview
-  const enriched = await enrichActivities(activities.rows, userId);
-
-  // Get timestamp of last activity for next cursor
-  const lastTimestamp = await redis.zscore(feedKey, activityIds[activityIds.length - 1]);
-
-  return {
-    activities: enriched,
-    nextCursor: activityIds.length === limit ? lastTimestamp : null,
-  };
-}
-```
+1. **First page**: Use ZREVRANGE to get the most recent N activity IDs from `feed:{userId}`
+2. **Subsequent pages**: Use ZREVRANGEBYSCORE with the previous page's last timestamp as the upper bound (exclusive) to fetch the next batch
+3. **Batch fetch** - Load all activity records from PostgreSQL in a single query using `WHERE id = ANY(ids)`
+4. **Enrich** - Attach user data, kudos status, and comment previews
+5. **Cursor** - Return the timestamp of the last activity as the next cursor; return null when fewer than `limit` results indicate the end of the feed
 
 ---
 

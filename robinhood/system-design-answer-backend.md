@@ -98,138 +98,31 @@
 
 The feed handler connects to exchange data feeds, parses proprietary protocols, and publishes normalized quotes to Kafka.
 
-```typescript
-class FeedHandler {
-  private kafkaProducer: KafkaProducer;
-  private circuitBreaker: CircuitBreaker;
-
-  async connectToExchange(exchangeUrl: string): Promise<void> {
-    const socket = await createExchangeConnection(exchangeUrl);
-
-    socket.on('data', async (rawData: Buffer) => {
-      const quote = this.parseExchangeFormat(rawData);
-
-      // Partition by symbol for ordered processing
-      await this.circuitBreaker.fire(() =>
-        this.kafkaProducer.send({
-          topic: 'quotes',
-          messages: [{
-            key: quote.symbol,
-            value: JSON.stringify(quote),
-            timestamp: Date.now().toString()
-          }]
-        })
-      );
-    });
-  }
-
-  private parseExchangeFormat(data: Buffer): Quote {
-    // FIX protocol or binary format parsing
-    return {
-      symbol: data.slice(0, 10).toString().trim(),
-      bid: parseFloat(data.slice(10, 20).toString()),
-      ask: parseFloat(data.slice(20, 30).toString()),
-      last: parseFloat(data.slice(30, 40).toString()),
-      volume: parseInt(data.slice(40, 50).toString()),
-      timestamp: Date.now()
-    };
-  }
-}
-```
+The handler establishes a socket connection to the exchange. As raw binary data arrives, it parses fields (symbol, bid, ask, last price, volume) from the proprietary format (e.g., FIX protocol). Each parsed quote is published to the Kafka `quotes` topic, keyed by symbol to ensure ordered processing per security. A circuit breaker wraps the Kafka publish to handle producer failures gracefully.
 
 ### Quote Cache Consumer
 
 Consumes from Kafka and updates Redis cache with latest prices.
 
-```typescript
-class QuoteCacheConsumer {
-  private redis: Redis;
-  private batchBuffer: Map<string, Quote> = new Map();
-  private flushInterval = 50; // 50ms batching
+The consumer subscribes to the `quotes` topic and buffers incoming quotes in a map keyed by symbol (last write wins). Every 50ms, the buffer is flushed in a single Redis pipeline:
 
-  async run(): Promise<void> {
-    const consumer = kafka.consumer({ groupId: 'quote-cache' });
-    await consumer.subscribe({ topic: 'quotes' });
+1. For each symbol, `HSET` the quote fields (bid, ask, last, volume, timestamp) into a hash at `quote:{symbol}`
+2. Publish the entire batch of updated quotes to a Redis Pub/Sub channel (`quote_updates`) so WebSocket servers receive them
+3. Clear the buffer
 
-    // Batch flush timer
-    setInterval(() => this.flushBatch(), this.flushInterval);
-
-    await consumer.run({
-      eachMessage: async ({ message }) => {
-        const quote = JSON.parse(message.value.toString());
-        // Buffer updates - last write wins per symbol
-        this.batchBuffer.set(quote.symbol, quote);
-      }
-    });
-  }
-
-  private async flushBatch(): Promise<void> {
-    if (this.batchBuffer.size === 0) return;
-
-    const pipeline = this.redis.pipeline();
-    const quotesArray: Quote[] = [];
-
-    for (const [symbol, quote] of this.batchBuffer) {
-      pipeline.hset(`quote:${symbol}`, {
-        bid: quote.bid.toString(),
-        ask: quote.ask.toString(),
-        last: quote.last.toString(),
-        volume: quote.volume.toString(),
-        timestamp: quote.timestamp.toString()
-      });
-      quotesArray.push(quote);
-    }
-
-    // Publish batch for WebSocket servers
-    pipeline.publish('quote_updates', JSON.stringify(quotesArray));
-
-    await pipeline.exec();
-    this.batchBuffer.clear();
-  }
-}
-```
+This 50ms batching reduces Redis round-trips while keeping quotes fresh.
 
 ### Redis Pub/Sub for WebSocket Distribution
 
 Each WebSocket server subscribes to Redis and filters quotes by client subscriptions.
 
-```typescript
-class WebSocketQuoteDistributor {
-  private subscriptions: Map<string, Set<WebSocket>> = new Map(); // symbol -> clients
-  private redis: Redis;
+The distributor maintains a map of symbol to connected WebSocket clients. When a batch of quote updates arrives via Redis Pub/Sub on the `quote_updates` channel, the server:
 
-  async startDistributionLoop(): Promise<void> {
-    const subscriber = this.redis.duplicate();
-    await subscriber.subscribe('quote_updates');
+1. Groups the quotes by subscribing clients (each client only receives quotes for symbols they are watching)
+2. Batches all relevant quotes per client into a single message
+3. Sends the batch to each client whose WebSocket connection is still open
 
-    subscriber.on('message', (channel, message) => {
-      const quotes: Quote[] = JSON.parse(message);
-
-      // Group quotes by subscribing clients
-      const clientUpdates: Map<WebSocket, Quote[]> = new Map();
-
-      for (const quote of quotes) {
-        const subscribers = this.subscriptions.get(quote.symbol);
-        if (!subscribers) continue;
-
-        for (const ws of subscribers) {
-          if (!clientUpdates.has(ws)) {
-            clientUpdates.set(ws, []);
-          }
-          clientUpdates.get(ws)!.push(quote);
-        }
-      }
-
-      // Send batched updates to each client
-      for (const [ws, clientQuotes] of clientUpdates) {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'quote_batch', data: clientQuotes }));
-        }
-      }
-    });
-  }
-}
-```
+This avoids sending every quote to every client, reducing bandwidth and client-side processing.
 
 ---
 
@@ -250,114 +143,17 @@ class WebSocketQuoteDistributor {
 
 ### Transactional Order Placement with Idempotency
 
-```typescript
-class OrderService {
-  private redis: Redis;
-  private pool: Pool;
-  private metrics: PrometheusMetrics;
+The order placement flow ensures ACID guarantees with idempotency:
 
-  async placeOrder(userId: string, request: OrderRequest, idempotencyKey: string): Promise<Order> {
-    const timer = this.metrics.orderExecutionDuration.startTimer();
-
-    // Check idempotency - prevent duplicate orders
-    const existingResult = await this.redis.get(`idem:${idempotencyKey}`);
-    if (existingResult) {
-      const cached = JSON.parse(existingResult);
-      if (cached.status === 'completed') {
-        return cached.order;
-      }
-      throw new ConflictError('Order already in progress');
-    }
-
-    // Acquire idempotency lock
-    const lockAcquired = await this.redis.set(
-      `idem:${idempotencyKey}`,
-      JSON.stringify({ status: 'pending', timestamp: Date.now() }),
-      'EX', 86400, // 24 hour TTL
-      'NX'
-    );
-    if (!lockAcquired) {
-      throw new ConflictError('Duplicate request');
-    }
-
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      // Reserve funds/shares with FOR UPDATE lock
-      if (request.side === 'buy') {
-        const { rows } = await client.query(
-          'SELECT buying_power FROM users WHERE id = $1 FOR UPDATE',
-          [userId]
-        );
-        const estimatedCost = await this.estimateCost(request);
-        if (rows[0].buying_power < estimatedCost) {
-          throw new InsufficientFundsError();
-        }
-        await client.query(
-          'UPDATE users SET buying_power = buying_power - $1 WHERE id = $2',
-          [estimatedCost, userId]
-        );
-      } else {
-        const { rows } = await client.query(
-          `SELECT quantity, reserved_quantity FROM positions
-           WHERE user_id = $1 AND symbol = $2 FOR UPDATE`,
-          [userId, request.symbol]
-        );
-        const available = rows[0]?.quantity - (rows[0]?.reserved_quantity || 0);
-        if (!available || available < request.quantity) {
-          throw new InsufficientSharesError();
-        }
-        await client.query(
-          `UPDATE positions SET reserved_quantity = reserved_quantity + $1
-           WHERE user_id = $2 AND symbol = $3`,
-          [request.quantity, userId, request.symbol]
-        );
-      }
-
-      // Create order record
-      const { rows: [order] } = await client.query(
-        `INSERT INTO orders (user_id, symbol, side, order_type, quantity, limit_price, stop_price, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-         RETURNING *`,
-        [userId, request.symbol, request.side, request.orderType,
-         request.quantity, request.limitPrice, request.stopPrice]
-      );
-
-      // Audit log
-      await client.query(
-        `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, idempotency_key, status)
-         VALUES ($1, 'ORDER_PLACED', 'order', $2, $3, $4, 'success')`,
-        [userId, order.id, JSON.stringify(request), idempotencyKey]
-      );
-
-      await client.query('COMMIT');
-
-      // Store result for idempotency
-      await this.redis.set(
-        `idem:${idempotencyKey}`,
-        JSON.stringify({ status: 'completed', order }),
-        'EX', 86400
-      );
-
-      // Execute market orders immediately, queue limit orders
-      if (request.orderType === 'market') {
-        await this.executeMarketOrder(order);
-      }
-
-      timer({ order_type: request.orderType, side: request.side });
-      return order;
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      await this.redis.del(`idem:${idempotencyKey}`);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-}
-```
+1. **Check idempotency** — look up the idempotency key in Redis. If a completed result exists, return it immediately. If a pending entry exists, reject as a duplicate.
+2. **Acquire idempotency lock** — set the key in Redis with `NX` (only if not exists) and a 24-hour TTL, storing a "pending" status.
+3. **Begin database transaction** — all subsequent steps happen within a single PostgreSQL transaction.
+4. **Reserve funds or shares** — for buys, `SELECT ... FOR UPDATE` on the user's buying power row, verify sufficient funds, then deduct the estimated cost. For sells, lock the position row, verify available (non-reserved) shares, then increment reserved_quantity.
+5. **Create order record** — insert into the orders table with status "pending", returning the new order.
+6. **Write audit log** — insert into audit_logs with the idempotency key, user ID, and order details.
+7. **Commit transaction** — if any step fails, rollback and delete the idempotency key from Redis.
+8. **Store result for idempotency** — on success, update the Redis key with "completed" status and the order data.
+9. **Execute or queue** — market orders are executed immediately; limit orders are queued for matching.
 
 ### Smart Order Routing
 

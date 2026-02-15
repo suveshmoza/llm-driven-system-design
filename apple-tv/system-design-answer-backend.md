@@ -68,500 +68,136 @@ Design the backend infrastructure for a premium video streaming service that:
 
 ### Database Schema
 
-```sql
--- Content catalog
-CREATE TABLE content (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(500) NOT NULL,
-    description TEXT,
-    duration INTEGER NOT NULL,  -- seconds
-    content_type VARCHAR(20),   -- movie, series, episode
-    series_id UUID REFERENCES content(id),
-    season_number INTEGER,
-    episode_number INTEGER,
-    master_resolution VARCHAR(20),
-    hdr_format VARCHAR(20),
-    status VARCHAR(20) DEFAULT 'processing',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Encoded variants
-CREATE TABLE encoded_variants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    content_id UUID NOT NULL REFERENCES content(id),
-    resolution INTEGER NOT NULL,
-    codec VARCHAR(20) NOT NULL,
-    hdr BOOLEAN DEFAULT FALSE,
-    bitrate INTEGER NOT NULL,
-    file_path VARCHAR(500),
-    file_size BIGINT,
-    encoding_time INTEGER,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Video segments (HLS)
-CREATE TABLE video_segments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    content_id UUID NOT NULL REFERENCES content(id),
-    variant_id UUID NOT NULL REFERENCES encoded_variants(id),
-    segment_number INTEGER NOT NULL,
-    duration DECIMAL NOT NULL,
-    segment_url VARCHAR(500),
-    byte_size INTEGER
-);
-
--- Watch progress
-CREATE TABLE watch_progress (
-    profile_id UUID NOT NULL,
-    content_id UUID NOT NULL REFERENCES content(id),
-    position INTEGER NOT NULL,
-    duration INTEGER NOT NULL,
-    client_timestamp BIGINT,
-    completed BOOLEAN DEFAULT FALSE,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (profile_id, content_id)
-);
-
--- DRM license grants
-CREATE TABLE license_grants (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL,
-    content_id UUID NOT NULL REFERENCES content(id),
-    device_id VARCHAR(100) NOT NULL,
-    granted_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL
-);
-
-CREATE INDEX idx_variants_content ON encoded_variants(content_id);
-CREATE INDEX idx_segments_variant ON video_segments(content_id, variant_id);
-CREATE INDEX idx_progress_profile ON watch_progress(profile_id, updated_at DESC);
-CREATE INDEX idx_license_user ON license_grants(user_id, content_id);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **content** | id (UUID PK), title, description, duration (seconds), content_type (movie/series/episode), series_id (self-ref FK), season_number, episode_number, master_resolution, hdr_format, status (default 'processing') | — | Content catalog with hierarchical series/episode support |
+| **encoded_variants** | id (UUID PK), content_id (FK), resolution, codec, hdr (boolean), bitrate, file_path, file_size, encoding_time | idx_variants_content (content_id) | One row per encoded quality variant |
+| **video_segments** | id (UUID PK), content_id (FK), variant_id (FK), segment_number, duration, segment_url, byte_size | idx_segments_variant (content_id, variant_id) | HLS segments for each variant |
+| **watch_progress** | profile_id + content_id (composite PK), position, duration, client_timestamp, completed (boolean) | idx_progress_profile (profile_id, updated_at DESC) | Tracks playback position per profile per content |
+| **license_grants** | id (UUID PK), user_id, content_id (FK), device_id, granted_at, expires_at | idx_license_user (user_id, content_id) | DRM license grants with expiration |
 
 ### Ingestion Service
 
-```typescript
-class IngestionService {
-    async ingestContent(contentId: string, masterFiles: MasterFiles) {
-        const { videoFile, audioStems, subtitles, metadata } = masterFiles;
+The ingestion service processes master files through a multi-step pipeline:
 
-        // Step 1: Validate master file quality
-        const videoInfo = await this.analyzeVideo(videoFile);
-        if (videoInfo.resolution < 3840 || videoInfo.bitDepth < 10) {
-            throw new Error('Master must be 4K HDR minimum');
-        }
+1. **Validate master file quality** - Analyze the video file to confirm it meets the 4K HDR minimum requirement (resolution >= 3840, bit depth >= 10). Reject files that do not meet the quality bar.
 
-        // Step 2: Create content record
-        await db.query(`
-            INSERT INTO content
-                (id, title, duration, master_resolution, hdr_format, status)
-            VALUES ($1, $2, $3, $4, $5, 'ingesting')
-        `, [
-            contentId,
-            metadata.title,
-            videoInfo.duration,
-            `${videoInfo.width}x${videoInfo.height}`,
-            videoInfo.hdrFormat
-        ]);
+2. **Create content record** - Insert a new row into the content table with status "ingesting", recording the title, duration, resolution, and HDR format from the master file metadata.
 
-        // Step 3: Queue transcoding jobs
-        const profiles = this.getEncodingProfiles(videoInfo);
-        for (const profile of profiles) {
-            await this.queue.publish('transcode', {
-                contentId,
-                profile,
-                sourceFile: videoFile,
-                priority: profile.resolution >= 2160 ? 'high' : 'normal'
-            });
-        }
+3. **Queue transcoding jobs** - Determine the encoding profiles based on the master resolution (see encoding ladder below), then publish a job to the "transcode" queue for each profile. Higher resolutions (2160p+) receive "high" priority; lower ones receive "normal" priority.
 
-        // Step 4: Process audio tracks
-        for (const audio of audioStems) {
-            await this.queue.publish('audio-encode', {
-                contentId,
-                sourceFile: audio.file,
-                language: audio.language,
-                formats: ['aac_stereo', 'aac_surround', 'atmos']
-            });
-        }
+4. **Process audio tracks** - For each audio stem (language), publish a job to the "audio-encode" queue requesting AAC stereo, AAC surround, and Dolby Atmos variants.
 
-        return { contentId, variantCount: profiles.length };
-    }
+**Encoding Ladder:**
 
-    getEncodingProfiles(videoInfo: VideoInfo): EncodingProfile[] {
-        return [
-            // 4K HDR (Apple TV 4K, high-end devices)
-            { resolution: 2160, codec: 'hevc', hdr: true, bitrate: 25000 },
-            { resolution: 2160, codec: 'hevc', hdr: true, bitrate: 15000 },
-            // 4K SDR fallback
-            { resolution: 2160, codec: 'hevc', hdr: false, bitrate: 12000 },
-            // 1080p (most common)
-            { resolution: 1080, codec: 'hevc', hdr: false, bitrate: 8000 },
-            { resolution: 1080, codec: 'h264', hdr: false, bitrate: 6000 },
-            { resolution: 1080, codec: 'h264', hdr: false, bitrate: 4500 },
-            // 720p (mobile, limited bandwidth)
-            { resolution: 720, codec: 'h264', hdr: false, bitrate: 3000 },
-            { resolution: 720, codec: 'h264', hdr: false, bitrate: 1500 },
-            // Low bandwidth
-            { resolution: 480, codec: 'h264', hdr: false, bitrate: 800 },
-            { resolution: 360, codec: 'h264', hdr: false, bitrate: 400 }
-        ].filter(p => p.resolution <= videoInfo.height);
-    }
-}
-```
+| Resolution | Codec | HDR | Bitrate (kbps) | Target Device |
+|------------|-------|-----|----------------|---------------|
+| 2160p | HEVC | Yes | 25,000 | Apple TV 4K, high-end |
+| 2160p | HEVC | Yes | 15,000 | Apple TV 4K |
+| 2160p | HEVC | No | 12,000 | 4K SDR fallback |
+| 1080p | HEVC | No | 8,000 | Most common |
+| 1080p | H.264 | No | 6,000 | Broad compatibility |
+| 1080p | H.264 | No | 4,500 | Moderate bandwidth |
+| 720p | H.264 | No | 3,000 | Mobile, limited bandwidth |
+| 720p | H.264 | No | 1,500 | Low bandwidth |
+| 480p | H.264 | No | 800 | Very low bandwidth |
+| 360p | H.264 | No | 400 | Minimum quality |
+
+Only profiles at or below the master resolution are generated.
 
 ### Transcoding Worker
 
-```typescript
-class TranscodingWorker {
-    async processJob(job: TranscodeJob) {
-        const { contentId, profile, sourceFile } = job;
-        const outputPath = `/tmp/${contentId}/${profile.resolution}_${profile.bitrate}.mp4`;
+Each transcoding worker consumes jobs from the queue and processes them through these steps:
 
-        // Build FFmpeg command
-        const ffmpegArgs = [
-            '-i', sourceFile,
-            '-c:v', profile.codec === 'hevc' ? 'libx265' : 'libx264',
-            '-preset', 'slow',
-            '-b:v', `${profile.bitrate}k`,
-            '-maxrate', `${profile.bitrate * 1.5}k`,
-            '-bufsize', `${profile.bitrate * 2}k`,
-            '-vf', `scale=-2:${profile.resolution}`
-        ];
+1. **Build FFmpeg encode** - Construct the FFmpeg command with the appropriate codec (libx265 for HEVC, libx264 for H.264), target bitrate, max rate at 1.5x target, buffer size at 2x target, and resolution scaling. For HDR profiles, include BT.2020 color primaries, SMPTE 2084 transfer characteristics, and BT.2020 non-constant luminance colorspace metadata.
 
-        // Add HDR metadata
-        if (profile.hdr) {
-            ffmpegArgs.push(
-                '-color_primaries', 'bt2020',
-                '-color_trc', 'smpte2084',
-                '-colorspace', 'bt2020nc'
-            );
-        }
+2. **Run the encode** - Execute FFmpeg against the source file to produce the encoded output. Audio is stripped (encoded separately).
 
-        ffmpegArgs.push('-an', outputPath);
-        await this.runFFmpeg(ffmpegArgs);
+3. **Create HLS segments** - Re-mux the encoded video into 6-second HLS segments using FFmpeg with VOD playlist type. Each segment is named sequentially (segment_0000.ts, segment_0001.ts, etc.) and a variant playlist (playlist.m3u8) is generated.
 
-        // Create HLS segments
-        await this.createHLSSegments(contentId, profile, outputPath);
+4. **Upload to origin storage** - Push all segments and the variant playlist to MinIO (S3-compatible object storage).
 
-        // Upload to origin storage (MinIO)
-        await this.uploadToOrigin(contentId, profile);
-
-        // Mark variant complete
-        await db.query(`
-            INSERT INTO encoded_variants
-                (content_id, resolution, codec, hdr, bitrate, file_path)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        `, [contentId, profile.resolution, profile.codec,
-            profile.hdr, profile.bitrate, outputPath]);
-    }
-
-    async createHLSSegments(contentId: string, profile: EncodingProfile,
-                            videoFile: string) {
-        const segmentDir = `/tmp/${contentId}/segments/${profile.resolution}`;
-
-        await this.runFFmpeg([
-            '-i', videoFile,
-            '-c', 'copy',
-            '-hls_time', '6',  // 6-second segments
-            '-hls_playlist_type', 'vod',
-            '-hls_segment_filename', `${segmentDir}/segment_%04d.ts`,
-            `${segmentDir}/playlist.m3u8`
-        ]);
-    }
-}
-```
+5. **Record completion** - Insert a row into the encoded_variants table with the content ID, resolution, codec, HDR flag, bitrate, and file path.
 
 ## Deep Dive: HLS Manifest Generation
 
 ### Master Manifest Service
 
-```typescript
-class ManifestService {
-    async generateMasterPlaylist(contentId: string): Promise<string> {
-        const variants = await db.query(`
-            SELECT * FROM encoded_variants
-            WHERE content_id = $1
-            ORDER BY resolution DESC, bitrate DESC
-        `, [contentId]);
+The manifest service generates an HLS master playlist (M3U8) for a given content ID:
 
-        const audioTracks = await db.query(`
-            SELECT * FROM audio_tracks WHERE content_id = $1
-        `, [contentId]);
+1. **Query all encoded variants** for the content, ordered by resolution descending and bitrate descending.
+2. **Query all audio tracks** for the content.
+3. **Build the manifest header** with the M3U8 version tag.
+4. **Add audio group entries** - For each audio track, add an EXT-X-MEDIA line specifying the language, name, and URI.
+5. **Add video variant entries** - For each encoded variant, add an EXT-X-STREAM-INF line with bandwidth (bitrate * 1000), resolution, codec string, and audio group reference, followed by the variant playlist URL.
 
-        let manifest = '#EXTM3U\n#EXT-X-VERSION:6\n\n';
-
-        // Audio groups
-        for (const audio of audioTracks.rows) {
-            manifest += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",`;
-            manifest += `LANGUAGE="${audio.language}",NAME="${audio.name}",`;
-            manifest += `URI="${this.getAudioUrl(contentId, audio)}"\n`;
-        }
-
-        manifest += '\n';
-
-        // Video variants (adaptive streams)
-        for (const variant of variants.rows) {
-            const bandwidth = variant.bitrate * 1000;
-            const resolution = `${this.getWidth(variant.resolution)}x${variant.resolution}`;
-            const codecs = this.getCodecs(variant);
-
-            manifest += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},`;
-            manifest += `RESOLUTION=${resolution},CODECS="${codecs}",`;
-            manifest += `AUDIO="audio"\n`;
-            manifest += `${this.getVariantUrl(contentId, variant)}\n`;
-        }
-
-        return manifest;
-    }
-
-    getCodecs(variant: Variant): string {
-        if (variant.codec === 'hevc' && variant.hdr) {
-            return 'hvc1.2.4.L150.B0,mp4a.40.2';
-        } else if (variant.codec === 'hevc') {
-            return 'hvc1.1.6.L150.90,mp4a.40.2';
-        }
-        return 'avc1.640029,mp4a.40.2';
-    }
-}
-```
+**Codec string mapping:**
+- HEVC + HDR: `hvc1.2.4.L150.B0,mp4a.40.2`
+- HEVC (SDR): `hvc1.1.6.L150.90,mp4a.40.2`
+- H.264: `avc1.640029,mp4a.40.2`
 
 ## Deep Dive: DRM License Service
 
 ### FairPlay Integration
 
-```typescript
-class DRMService {
-    async getPlaybackLicense(request: LicenseRequest): Promise<LicenseResponse> {
-        const { playbackToken, spcMessage, deviceId } = request;
+The DRM license service handles FairPlay Streaming requests through a six-step process:
 
-        // Step 1: Verify playback token
-        const tokenData = await this.verifyToken(playbackToken);
-        if (!tokenData) {
-            throw new UnauthorizedError('Invalid playback token');
-        }
+1. **Verify playback token** - Validate the token from the playback request. Reject with 401 if invalid.
+2. **Verify device authorization** - Confirm the requesting device is registered and authorized for this user account. Reject if the device is not recognized.
+3. **Process Server Playback Context (SPC)** - Decrypt the SPC message sent by the client's FairPlay module to extract the content key request.
+4. **Retrieve content key from HSM** - Fetch the content encryption key from the Hardware Security Module for the requested content ID.
+5. **Generate Content Key Context (CKC)** - Combine the SPC data with the content key to produce the CKC response, setting policies such as offline playback permission, HDCP requirement, and 24-hour expiration.
+6. **Log for compliance** - Insert a record into the license_grants table with the user ID, content ID, device ID, grant time, and expiration time (24 hours from now).
 
-        // Step 2: Verify device authorization
-        const authorized = await this.verifyDevice(tokenData.userId, deviceId);
-        if (!authorized) {
-            throw new UnauthorizedError('Device not authorized');
-        }
-
-        // Step 3: Process Server Playback Context
-        const spcData = await this.decryptSPC(spcMessage);
-
-        // Step 4: Get content key from HSM
-        const contentKey = await this.getContentKey(tokenData.contentId);
-
-        // Step 5: Generate Content Key Context
-        const ckc = await this.generateCKC(spcData, contentKey, {
-            offlineAllowed: tokenData.downloadPermission,
-            hdcpRequired: true,
-            expiresIn: 24 * 3600
-        });
-
-        // Step 6: Log for compliance
-        await db.query(`
-            INSERT INTO license_grants
-                (user_id, content_id, device_id, granted_at, expires_at)
-            VALUES ($1, $2, $3, NOW(), $4)
-        `, [
-            tokenData.userId,
-            tokenData.contentId,
-            deviceId,
-            new Date(Date.now() + 24 * 3600 * 1000)
-        ]);
-
-        return { ckc };
-    }
-}
-```
+The service returns the CKC to the client, which uses it to decrypt and play the protected content.
 
 ## Deep Dive: CDN and Edge Delivery
 
 ### Edge Selection Service
 
-```typescript
-class CDNService {
-    async getPlaybackUrl(contentId: string, userId: string,
-                         deviceInfo: DeviceInfo): Promise<PlaybackUrls> {
-        // Check content availability in user's region
-        const availability = await this.checkAvailability(contentId, userId);
-        if (!availability.available) {
-            throw new Error(`Not available in ${availability.region}`);
-        }
+The CDN service determines the optimal playback URLs for a given user and device:
 
-        // Select optimal edge
-        const edge = await this.selectEdge(userId, deviceInfo);
+1. **Check regional availability** - Verify the content is licensed for distribution in the user's region. Return an error if not available.
+2. **Select optimal edge** - Find CDN edge servers in the user's region with load below 80% (tracked in Valkey sorted sets). If no healthy edges are available, fall back to the origin server. Among available edges, select the one with the lowest historical latency for this user.
+3. **Generate signed playback token** - Create a time-limited token (24-hour expiry) containing the content ID, user ID, device ID, and maximum bitrate allowed for the device type.
+4. **Return playback URLs** - Provide the manifest URL, playback token, and license URL, all routed through the selected edge server.
 
-        // Generate signed playback token
-        const playbackToken = await this.generatePlaybackToken({
-            contentId,
-            userId,
-            deviceId: deviceInfo.deviceId,
-            expiresAt: Date.now() + 24 * 3600 * 1000,
-            maxBitrate: this.getMaxBitrate(deviceInfo)
-        });
+**Device bitrate limits:**
 
-        return {
-            manifestUrl: `${edge.baseUrl}/content/${contentId}/master.m3u8`,
-            playbackToken,
-            licenseUrl: `${edge.baseUrl}/drm/license`
-        };
-    }
-
-    async selectEdge(userId: string, deviceInfo: DeviceInfo): Promise<Edge> {
-        const location = await this.getLocation(userId);
-
-        // Find edges with capacity in region
-        const edges = await valkey.zrangebyscore(
-            `edges:${location.region}`,
-            0, 80  // Load < 80%
-        );
-
-        if (edges.length === 0) {
-            return { baseUrl: this.originUrl };  // Fallback to origin
-        }
-
-        // Select by latency history
-        return this.selectByLatency(edges, userId);
-    }
-
-    getMaxBitrate(deviceInfo: DeviceInfo): number {
-        const limits: Record<string, number> = {
-            'AppleTV4K': 25000,
-            'iPad': 15000,
-            'iPhone': 12000,
-            'Mac': 25000,
-            'Browser': 8000
-        };
-        return limits[deviceInfo.deviceType] || 6000;
-    }
-}
-```
+| Device Type | Max Bitrate (kbps) |
+|-------------|-------------------|
+| Apple TV 4K | 25,000 |
+| Mac | 25,000 |
+| iPad | 15,000 |
+| iPhone | 12,000 |
+| Browser | 8,000 |
+| Default | 6,000 |
 
 ## Deep Dive: Watch Progress Sync
 
 ### Last-Write-Wins Implementation
 
-```typescript
-class WatchProgressService {
-    async updateProgress(profileId: string, contentId: string,
-                        position: number, clientTimestamp: number) {
-        // Idempotency key from request header stored in Redis
-        const idempotencyKey = `progress:${profileId}:${contentId}`;
+**Updating progress:** The service uses an UPSERT with a client timestamp comparison. On conflict (same profile + content), the position is only updated if the incoming client timestamp is newer than the stored one, using a GREATEST function to always keep the latest timestamp. After updating, the continue-watching cache for that profile is invalidated.
 
-        // Last-write-wins with client timestamp
-        const result = await db.query(`
-            INSERT INTO watch_progress
-                (profile_id, content_id, position, duration,
-                 client_timestamp, updated_at)
-            VALUES ($1, $2, $3, $4, $5, NOW())
-            ON CONFLICT (profile_id, content_id)
-            DO UPDATE SET
-                position = CASE
-                    WHEN watch_progress.client_timestamp < $5 THEN $3
-                    ELSE watch_progress.position
-                END,
-                client_timestamp = GREATEST(
-                    watch_progress.client_timestamp, $5
-                ),
-                updated_at = NOW()
-            RETURNING
-                position,
-                (watch_progress.client_timestamp < $5) AS was_updated
-        `, [profileId, contentId, position, duration, clientTimestamp]);
-
-        // Invalidate continue-watching cache
-        await valkey.del(`continue:${profileId}`);
-
-        return {
-            position: result.rows[0].position,
-            wasUpdated: result.rows[0].was_updated
-        };
-    }
-
-    async getContinueWatching(profileId: string, limit = 10) {
-        const cacheKey = `continue:${profileId}`;
-        const cached = await valkey.get(cacheKey);
-        if (cached) return JSON.parse(cached);
-
-        const results = await db.query(`
-            SELECT
-                c.id, c.title, c.thumbnail_url, c.duration,
-                wp.position,
-                (wp.position::float / c.duration) AS progress_pct
-            FROM watch_progress wp
-            JOIN content c ON c.id = wp.content_id
-            WHERE wp.profile_id = $1
-              AND wp.position > 60
-              AND (wp.position::float / c.duration) < 0.9
-            ORDER BY wp.updated_at DESC
-            LIMIT $2
-        `, [profileId, limit]);
-
-        await valkey.setex(cacheKey, 300, JSON.stringify(results.rows));
-        return results.rows;
-    }
-}
-```
+**Continue watching list:** The service first checks Valkey for a cached result (5-minute TTL). On cache miss, it queries PostgreSQL for the profile's watch progress, joining with the content table to get titles and thumbnails. It filters to items where the user watched at least 60 seconds but less than 90% of the content, ordered by most recently updated, limited to 10 items. The result includes a progress percentage (position / duration). The query result is cached in Valkey for 300 seconds.
 
 ## Deep Dive: Circuit Breaker Pattern
 
-```typescript
-class CircuitBreaker {
-    private state: 'closed' | 'open' | 'half-open' = 'closed';
-    private failures = 0;
-    private lastFailureTime = 0;
-    private readonly threshold = 5;
-    private readonly timeout = 30000;
+The circuit breaker protects against cascading failures by wrapping external service calls in a state machine with three states:
 
-    async execute<T>(
-        operation: () => Promise<T>,
-        fallback?: () => T
-    ): Promise<T> {
-        if (this.state === 'open') {
-            if (Date.now() - this.lastFailureTime > this.timeout) {
-                this.state = 'half-open';
-            } else {
-                metrics.circuitBreakerRejection.inc();
-                if (fallback) return fallback();
-                throw new ServiceUnavailableError();
-            }
-        }
+- **Closed** (normal): Requests pass through. Failures are counted. After 5 consecutive failures, the breaker transitions to Open.
+- **Open** (blocking): All requests are immediately rejected (or routed to a fallback) without calling the downstream service. After a 30-second timeout, transitions to Half-Open.
+- **Half-Open** (probing): The next request is allowed through as a test. If it succeeds, the breaker resets to Closed. If it fails, it returns to Open.
 
-        try {
-            const result = await operation();
-            this.onSuccess();
-            return result;
-        } catch (error) {
-            this.onFailure();
-            if (fallback) return fallback();
-            throw error;
-        }
-    }
+On success, the failure counter resets and state returns to Closed. On failure, the counter increments and the last failure timestamp is recorded.
 
-    private onSuccess() {
-        this.failures = 0;
-        this.state = 'closed';
-    }
+Each external service gets its own circuit breaker instance with tuned thresholds:
 
-    private onFailure() {
-        this.failures++;
-        this.lastFailureTime = Date.now();
-        if (this.failures >= this.threshold) {
-            this.state = 'open';
-        }
-    }
-}
-
-// Separate circuit breakers per external service
-const circuitBreakers = {
-    cdn: new CircuitBreaker({ threshold: 5, timeout: 30000 }),
-    transcoding: new CircuitBreaker({ threshold: 10, timeout: 120000 }),
-    drm: new CircuitBreaker({ threshold: 3, timeout: 60000 })
-};
-```
+| Service | Failure Threshold | Timeout |
+|---------|------------------|---------|
+| CDN | 5 failures | 30 seconds |
+| Transcoding | 10 failures | 120 seconds |
+| DRM | 3 failures | 60 seconds |
 
 ## API Design
 
@@ -593,21 +229,7 @@ GET    /api/recommendations                 Get personalized recommendations
 
 **Get Master Manifest**:
 
-```http
-GET /api/stream/movie-123/master.m3u8
-Authorization: Bearer <playback-token>
-
-Response:
-#EXTM3U
-#EXT-X-VERSION:6
-
-#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="en",NAME="English",URI="audio_en.m3u8"
-
-#EXT-X-STREAM-INF:BANDWIDTH=25000000,RESOLUTION=3840x2160,CODECS="hvc1.2.4.L150.B0,mp4a.40.2",AUDIO="audio"
-2160_25000.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080,CODECS="avc1.640029,mp4a.40.2",AUDIO="audio"
-1080_8000.m3u8
-```
+A GET request to `/api/stream/movie-123/master.m3u8` with a Bearer playback-token returns an HLS master playlist. The response contains audio media entries (e.g., English audio track) and stream variant entries listing bandwidth, resolution, codecs, and audio group. For example, a 4K HDR variant at 25 Mbps with HEVC codec and a 1080p variant at 8 Mbps with H.264 codec, each pointing to their respective variant playlist files.
 
 ## Caching Strategy
 
@@ -626,24 +248,13 @@ Response:
 
 ### Cache Key Design
 
-```typescript
-const CACHE_KEYS = {
-    // Continue watching list
-    continueWatching: (profileId: string) => `continue:${profileId}`,
-
-    // Recommendations
-    recommendations: (profileId: string) => `recs:${profileId}`,
-
-    // Content metadata
-    content: (contentId: string) => `content:${contentId}`,
-
-    // Edge server health
-    edgeLoad: (edgeId: string) => `edge:load:${edgeId}`,
-
-    // Idempotency
-    idempotency: (key: string) => `idempotency:${key}`
-};
-```
+| Cache Key Pattern | Purpose | TTL |
+|-------------------|---------|-----|
+| `continue:{profileId}` | Continue watching list | 5 min |
+| `recs:{profileId}` | Personalized recommendations | varies |
+| `content:{contentId}` | Content metadata | varies |
+| `edge:load:{edgeId}` | Edge server health/load | real-time |
+| `idempotency:{key}` | Request idempotency | 24h |
 
 ## Scalability Considerations
 

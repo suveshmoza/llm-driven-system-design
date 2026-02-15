@@ -109,619 +109,102 @@ The profile page was refactored from a single 534-line component to focused sub-
 
 **Barrel Export Pattern:**
 
-```typescript
-// components/profile/index.ts
-export { ProfileHeader } from './ProfileHeader';
-export { EditProfileModal } from './EditProfileModal';
-export { ProfileAbout } from './ProfileAbout';
-export { ExperienceSection } from './ExperienceSection';
-export { EducationSection } from './EducationSection';
-export { SkillsSection } from './SkillsSection';
-export { ActivitySection } from './ActivitySection';
-
-// Usage in route
-import {
-  ProfileHeader,
-  EditProfileModal,
-  ExperienceSection,
-  SkillsSection,
-} from '../components/profile';
-```
+Each feature folder uses a barrel export file (index.ts) that re-exports all sub-components: ProfileHeader, EditProfileModal, ProfileAbout, ExperienceSection, EducationSection, SkillsSection, and ActivitySection. Consuming routes import the components they need from a single path (e.g., `from '../components/profile'`), keeping imports clean and decoupled from the internal folder structure.
 
 ### 2. State Management with Zustand
 
 **Auth Store:**
 
-```typescript
-interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  updateUser: (updates: Partial<User>) => void;
-  checkSession: () => Promise<void>;
-}
+The auth store manages global authentication state using Zustand. It holds the current user object, authentication status flags (isAuthenticated, isLoading), and exposes four actions:
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  isAuthenticated: false,
-  isLoading: true,
+- **login(email, password)**: Posts credentials to the API, then sets the user and marks isAuthenticated as true
+- **logout()**: Posts to the logout endpoint, then clears user and isAuthenticated
+- **updateUser(updates)**: Merges partial user updates into the current user object (used after profile edits)
+- **checkSession()**: Calls the `/auth/me` endpoint on app load to restore the session; sets isLoading to false regardless of success or failure
 
-  login: async (email, password) => {
-    const response = await api.post('/auth/login', { email, password });
-    set({ user: response.data.user, isAuthenticated: true });
-  },
-
-  logout: async () => {
-    await api.post('/auth/logout');
-    set({ user: null, isAuthenticated: false });
-  },
-
-  updateUser: (updates) => {
-    const currentUser = get().user;
-    if (currentUser) {
-      set({ user: { ...currentUser, ...updates } });
-    }
-  },
-
-  checkSession: async () => {
-    try {
-      const response = await api.get('/auth/me');
-      set({ user: response.data.user, isAuthenticated: true, isLoading: false });
-    } catch {
-      set({ user: null, isAuthenticated: false, isLoading: false });
-    }
-  },
-}));
-```
+> "Zustand keeps the auth store under 30 lines -- no reducers, no action types, no dispatch. The store is a single function call that returns state and actions, which any component can consume with a selector hook."
 
 **Local State for UI:**
 
-```typescript
-// Profile page local state
-const [profile, setProfile] = useState<User | null>(null);
-const [isOwnProfile, setIsOwnProfile] = useState(false);
-const [connectionDegree, setConnectionDegree] = useState<number | null>(null);
-const [mutualConnections, setMutualConnections] = useState<User[]>([]);
-const [showEditModal, setShowEditModal] = useState(false);
-const [loading, setLoading] = useState(true);
-```
+Page-level UI state (profile data, connection degree, mutual connections, modal visibility, loading flag) is managed with local React useState hooks since it does not need to be shared across routes.
 
 ### 3. Profile Page Layout
 
 **ProfileHeader Component:**
 
-```tsx
-interface ProfileHeaderProps {
-  profile: User;
-  isOwnProfile: boolean;
-  connectionDegree: number | null;
-  mutualConnections: User[];
-  onConnect: () => void;
-  onEdit: () => void;
-}
+The ProfileHeader component receives the profile data, ownership flag, connection degree, mutual connections list, and callback handlers for connect/edit actions. It renders:
 
-export function ProfileHeader({
-  profile,
-  isOwnProfile,
-  connectionDegree,
-  mutualConnections,
-  onConnect,
-  onEdit,
-}: ProfileHeaderProps) {
-  return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
-      {/* Banner */}
-      <div className="h-48 bg-gradient-to-r from-linkedin-blue to-linkedin-dark" />
+- A **banner area** with a gradient background (LinkedIn blue to dark)
+- A **circular avatar** overlapping the banner, 128px with a white border
+- **Name and headline** as prominent text, followed by location and connection count in smaller gray text
+- A **mutual connections badge** that appears only for 2nd-degree connections, showing the count in LinkedIn blue
+- **Action buttons**: If the viewer is the profile owner, an "Edit Profile" outlined button is shown. Otherwise, a "Connect" button appears (disabled and reading "Connected" if already a 1st-degree connection)
 
-      {/* Avatar and Info */}
-      <div className="px-6 pb-6 -mt-16 relative">
-        <img
-          src={profile.profileImageUrl || '/default-avatar.png'}
-          alt={`${profile.firstName} ${profile.lastName}`}
-          className="w-32 h-32 rounded-full border-4 border-white"
-        />
-
-        <div className="mt-4 flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {profile.firstName} {profile.lastName}
-            </h1>
-            <p className="text-lg text-gray-600">{profile.headline}</p>
-            <p className="text-sm text-gray-500 mt-1">
-              {profile.location} · {profile.connectionCount} connections
-            </p>
-
-            {/* Mutual connections badge */}
-            {connectionDegree === 2 && mutualConnections.length > 0 && (
-              <p className="text-sm text-linkedin-blue mt-2">
-                {mutualConnections.length} mutual connections
-              </p>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex gap-2">
-            {isOwnProfile ? (
-              <button
-                onClick={onEdit}
-                className="px-4 py-2 border border-linkedin-blue text-linkedin-blue rounded-full hover:bg-linkedin-light"
-              >
-                Edit Profile
-              </button>
-            ) : (
-              <button
-                onClick={onConnect}
-                disabled={connectionDegree === 1}
-                className="px-4 py-2 bg-linkedin-blue text-white rounded-full hover:bg-linkedin-dark disabled:opacity-50"
-              >
-                {connectionDegree === 1 ? 'Connected' : 'Connect'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-```
+> "The negative margin on the avatar (-mt-16) creates the overlapping effect seen on LinkedIn profiles. The connection degree drives both the CTA button state and whether the mutual connections badge is visible -- a single data point controlling two UI elements."
 
 ### 4. Skills Section with Endorsements
 
-```tsx
-interface SkillsSectionProps {
-  skills: Skill[];
-  isOwnProfile: boolean;
-  onAddSkill: (skillName: string) => void;
-  onRemoveSkill: (skillId: number) => void;
-  onEndorse: (skillId: number) => void;
-}
+The SkillsSection component displays a user's skills as a vertical list. Each skill row shows the skill name, endorsement count (if any), and contextual action buttons:
 
-export function SkillsSection({
-  skills,
-  isOwnProfile,
-  onAddSkill,
-  onRemoveSkill,
-  onEndorse,
-}: SkillsSectionProps) {
-  const [newSkill, setNewSkill] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
+- **For profile visitors**: An "Endorse" button appears next to each skill
+- **For the profile owner**: A remove button (X icon) appears next to each skill, plus a "+" button in the section header to add new skills
+- **Add skill form**: When the owner clicks "+", an inline form appears with a text input and "Add" submit button. On submit, the form calls the onAddSkill callback, clears the input, and hides itself
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (newSkill.trim()) {
-      onAddSkill(newSkill.trim());
-      setNewSkill('');
-      setShowAddForm(false);
-    }
-  };
+Each skill row uses a light gray background with rounded corners. The section is wrapped in a white card with padding and shadow, following the same visual pattern as other profile sections.
 
-  return (
-    <section className="bg-white rounded-lg shadow p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Skills</h2>
-        {isOwnProfile && (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="text-linkedin-blue hover:text-linkedin-dark"
-            aria-label="Add skill"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        )}
-      </div>
-
-      {showAddForm && (
-        <form onSubmit={handleSubmit} className="mb-4 flex gap-2">
-          <input
-            type="text"
-            value={newSkill}
-            onChange={(e) => setNewSkill(e.target.value)}
-            placeholder="Enter skill name"
-            className="flex-1 px-3 py-2 border rounded-md focus:ring-linkedin-blue focus:border-linkedin-blue"
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-linkedin-blue text-white rounded-md hover:bg-linkedin-dark"
-          >
-            Add
-          </button>
-        </form>
-      )}
-
-      <ul className="space-y-3">
-        {skills.map((skill) => (
-          <li
-            key={skill.id}
-            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-          >
-            <div>
-              <span className="font-medium">{skill.name}</span>
-              {skill.endorsementCount > 0 && (
-                <span className="ml-2 text-sm text-gray-500">
-                  {skill.endorsementCount} endorsements
-                </span>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              {!isOwnProfile && (
-                <button
-                  onClick={() => onEndorse(skill.id)}
-                  className="text-sm text-linkedin-blue hover:underline"
-                >
-                  Endorse
-                </button>
-              )}
-              {isOwnProfile && (
-                <button
-                  onClick={() => onRemoveSkill(skill.id)}
-                  className="text-gray-400 hover:text-red-500"
-                  aria-label={`Remove ${skill.name}`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-```
+> "Keeping the add-skill form inline rather than in a modal reduces friction -- the user stays in context and can add multiple skills without repeated open/close actions."
 
 ### 5. Feed with Ranking Display
 
-```tsx
-interface PostCardProps {
-  post: Post;
-  onLike: (postId: number) => void;
-  onComment: (postId: number, content: string) => void;
-}
+The PostCard component renders a single feed post as a white card with shadow. Its layout consists of four sections:
 
-export function PostCard({ post, onLike, onComment }: PostCardProps) {
-  const [showComments, setShowComments] = useState(false);
-  const [commentText, setCommentText] = useState('');
+1. **Author header**: Circular avatar linked to the author's profile, with name (bold, linked), headline (gray), and relative timestamp ("3 hours ago")
+2. **Content body**: Whitespace-preserving text block, followed by an optional full-width image
+3. **Engagement stats bar**: Like count and comment count separated by a dot, with the comment count acting as a toggle button for the comments section
+4. **Action buttons row**: Like (thumbs-up icon), Comment (message icon), and Share (share icon) -- evenly spaced horizontally
 
-  return (
-    <article className="bg-white rounded-lg shadow p-4">
-      {/* Author header */}
-      <div className="flex items-start gap-3 mb-3">
-        <Link to={`/profile/${post.author.id}`}>
-          <img
-            src={post.author.profileImageUrl || '/default-avatar.png'}
-            alt=""
-            className="w-12 h-12 rounded-full"
-          />
-        </Link>
-        <div className="flex-1">
-          <Link
-            to={`/profile/${post.author.id}`}
-            className="font-semibold hover:underline"
-          >
-            {post.author.firstName} {post.author.lastName}
-          </Link>
-          <p className="text-sm text-gray-500">{post.author.headline}</p>
-          <p className="text-xs text-gray-400">
-            {formatDistanceToNow(new Date(post.createdAt))} ago
-          </p>
-        </div>
-      </div>
+When the comments section is visible, it shows:
+- An **inline comment form** with a rounded text input and a "Post" submit button (disabled when empty)
+- A **comment list** where each comment displays a small avatar, author name (linked), and comment text inside a gray rounded container
 
-      {/* Content */}
-      <p className="text-gray-800 whitespace-pre-wrap mb-4">{post.content}</p>
-
-      {post.imageUrl && (
-        <img
-          src={post.imageUrl}
-          alt=""
-          className="w-full rounded-lg mb-4"
-        />
-      )}
-
-      {/* Engagement stats */}
-      <div className="flex items-center text-sm text-gray-500 pb-3 border-b">
-        <span>{post.likeCount} likes</span>
-        <span className="mx-2">·</span>
-        <button
-          onClick={() => setShowComments(!showComments)}
-          className="hover:text-linkedin-blue"
-        >
-          {post.commentCount} comments
-        </button>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex justify-around pt-2">
-        <button
-          onClick={() => onLike(post.id)}
-          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-        >
-          <ThumbsUp className="w-5 h-5" />
-          Like
-        </button>
-        <button
-          onClick={() => setShowComments(true)}
-          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-        >
-          <MessageSquare className="w-5 h-5" />
-          Comment
-        </button>
-        <button className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
-          <Share2 className="w-5 h-5" />
-          Share
-        </button>
-      </div>
-
-      {/* Comments section */}
-      {showComments && (
-        <div className="mt-4 pt-4 border-t">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (commentText.trim()) {
-                onComment(post.id, commentText);
-                setCommentText('');
-              }
-            }}
-            className="flex gap-2 mb-4"
-          >
-            <input
-              type="text"
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Add a comment..."
-              className="flex-1 px-3 py-2 border rounded-full focus:ring-linkedin-blue"
-            />
-            <button
-              type="submit"
-              disabled={!commentText.trim()}
-              className="px-4 py-2 bg-linkedin-blue text-white rounded-full disabled:opacity-50"
-            >
-              Post
-            </button>
-          </form>
-
-          {/* Comment list */}
-          <ul className="space-y-3">
-            {post.comments?.map((comment) => (
-              <li key={comment.id} className="flex gap-2">
-                <img
-                  src={comment.author.profileImageUrl || '/default-avatar.png'}
-                  alt=""
-                  className="w-8 h-8 rounded-full"
-                />
-                <div className="flex-1 bg-gray-100 rounded-lg p-3">
-                  <Link
-                    to={`/profile/${comment.author.id}`}
-                    className="font-semibold text-sm hover:underline"
-                  >
-                    {comment.author.firstName} {comment.author.lastName}
-                  </Link>
-                  <p className="text-sm">{comment.content}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </article>
-  );
-}
-```
+> "The post card is intentionally kept flat (no nesting beyond the comment list) to minimize re-renders. Likes and comments use callback props from the parent feed, which can batch API calls and apply optimistic updates at the list level."
 
 ### 6. PYMK (People You May Know) Display
 
-```tsx
-interface PYMKCardProps {
-  user: User;
-  mutualCount: number;
-  onConnect: (userId: number) => void;
-}
+**PYMKCard Component:**
 
-export function PYMKCard({ user, mutualCount, onConnect }: PYMKCardProps) {
-  return (
-    <div className="bg-white rounded-lg shadow p-4 text-center">
-      <Link to={`/profile/${user.id}`}>
-        <img
-          src={user.profileImageUrl || '/default-avatar.png'}
-          alt=""
-          className="w-20 h-20 rounded-full mx-auto mb-3"
-        />
-        <h3 className="font-semibold hover:underline">
-          {user.firstName} {user.lastName}
-        </h3>
-      </Link>
-      <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-        {user.headline}
-      </p>
-      <p className="text-xs text-gray-500 mb-3">
-        {mutualCount} mutual connections
-      </p>
-      <button
-        onClick={() => onConnect(user.id)}
-        className="w-full px-4 py-2 border border-linkedin-blue text-linkedin-blue rounded-full hover:bg-linkedin-light"
-      >
-        Connect
-      </button>
-    </div>
-  );
-}
+Each PYMK card is a centered white card with shadow showing: a circular avatar (80px, linked to profile), the user's full name (bold, linked), their headline (gray, clamped to 2 lines), mutual connection count (small gray text), and a full-width "Connect" outlined button in LinkedIn blue.
 
-// Network page with PYMK grid
-function NetworkPage() {
-  const [pymkList, setPymkList] = useState<PYMKUser[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<ConnectionRequest[]>([]);
+**Network Page Layout:**
 
-  return (
-    <div className="max-w-4xl mx-auto py-6 px-4">
-      {/* Pending requests */}
-      {pendingRequests.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xl font-bold mb-4">
-            Invitations ({pendingRequests.length})
-          </h2>
-          <div className="space-y-3">
-            {pendingRequests.map((request) => (
-              <ConnectionRequestCard
-                key={request.id}
-                request={request}
-                onAccept={() => handleAccept(request.id)}
-                onDecline={() => handleDecline(request.id)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+The network page is split into two sections:
 
-      {/* PYMK section */}
-      <section>
-        <h2 className="text-xl font-bold mb-4">People you may know</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {pymkList.map((pymk) => (
-            <PYMKCard
-              key={pymk.user.id}
-              user={pymk.user}
-              mutualCount={pymk.mutualCount}
-              onConnect={handleConnect}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-```
+1. **Invitations section** (conditional): Only renders when there are pending connection requests. Shows a heading with the count and a vertical list of ConnectionRequestCard components, each with Accept and Decline buttons.
+
+2. **PYMK section**: A heading "People you may know" followed by a responsive grid of PYMKCard components -- 2 columns on mobile, 4 on medium+ screens.
+
+> "The grid layout for PYMK cards mirrors LinkedIn's actual UI. Four columns on desktop provide enough density to encourage browsing without overwhelming the user. The card design prioritizes the avatar and mutual connection count since those are the two strongest signals driving connect decisions."
 
 ### 7. Accessibility Considerations
 
 **Key Accessibility Patterns:**
 
-```tsx
-// Icon-only buttons need aria-label
-<button
-  onClick={onEdit}
-  aria-label="Edit profile"
-  className="p-2 text-gray-500 hover:text-linkedin-blue"
->
-  <Pencil className="w-5 h-5" />
-</button>
-
-// Form inputs with labels
-<label htmlFor="headline" className="block text-sm font-medium mb-1">
-  Headline
-</label>
-<input
-  id="headline"
-  type="text"
-  value={headline}
-  onChange={(e) => setHeadline(e.target.value)}
-  className="w-full px-3 py-2 border rounded-md"
-/>
-
-// Focus management in modals
-useEffect(() => {
-  if (isOpen) {
-    // Save current focus
-    previousFocus.current = document.activeElement as HTMLElement;
-    // Focus first input
-    firstInputRef.current?.focus();
-  }
-  return () => {
-    // Restore focus on close
-    previousFocus.current?.focus();
-  };
-}, [isOpen]);
-
-// Keyboard navigation for skill list
-<ul role="list" aria-label="Skills">
-  {skills.map((skill) => (
-    <li key={skill.id} role="listitem">
-      {skill.name}
-    </li>
-  ))}
-</ul>
-```
+- **Icon-only buttons** always include an `aria-label` (e.g., "Edit profile") so screen readers can announce the action
+- **Form inputs** are paired with visible `<label>` elements using matching `htmlFor`/`id` attributes
+- **Focus management in modals**: When a modal opens, the previously focused element is saved and focus moves to the first input. On close, focus returns to the saved element
+- **Skill list** uses semantic `role="list"` and `role="listitem"` with an `aria-label` on the container ("Skills") for screen reader navigation
 
 ### 8. Loading and Error States
 
-```tsx
-function ProfilePage() {
-  const { userId } = Route.useParams();
-  const [profile, setProfile] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+The profile page follows a standard loading/error/empty/content pattern:
 
-  useEffect(() => {
-    async function loadProfile() {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await usersApi.getProfile(parseInt(userId));
-        setProfile(data);
-      } catch (err) {
-        setError('Failed to load profile. Please try again.');
-        console.error('Profile load error:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadProfile();
-  }, [userId]);
+1. **On mount**, the page sets loading=true and error=null, then fetches the profile by userId from the URL params
+2. **Loading state**: Renders a ProfileSkeleton component -- an animated pulse layout with gray placeholder shapes mimicking the banner (h-48), avatar (w-32 h-32 circle), and three text lines of decreasing width (1/3, 1/2, 1/4)
+3. **Error state**: Displays the error message in red centered text with a "Retry" button that reloads the page
+4. **Empty state**: Shows "Profile not found" in gray centered text if the API returned successfully but with no data
+5. **Success state**: Renders the full ProfileContent component with the loaded profile data
 
-  if (loading) {
-    return (
-      <div className="max-w-3xl mx-auto py-8">
-        <ProfileSkeleton />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-3xl mx-auto py-8 text-center">
-        <p className="text-red-600 mb-4">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-linkedin-blue text-white rounded-lg"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="max-w-3xl mx-auto py-8 text-center">
-        <p className="text-gray-600">Profile not found</p>
-      </div>
-    );
-  }
-
-  return <ProfileContent profile={profile} />;
-}
-
-// Skeleton component for loading state
-function ProfileSkeleton() {
-  return (
-    <div className="animate-pulse">
-      <div className="h-48 bg-gray-200 rounded-t-lg" />
-      <div className="bg-white rounded-b-lg p-6">
-        <div className="w-32 h-32 bg-gray-200 rounded-full -mt-20" />
-        <div className="mt-4 space-y-3">
-          <div className="h-6 bg-gray-200 rounded w-1/3" />
-          <div className="h-4 bg-gray-200 rounded w-1/2" />
-          <div className="h-4 bg-gray-200 rounded w-1/4" />
-        </div>
-      </div>
-    </div>
-  );
-}
-```
+> "The skeleton matches the actual profile layout dimensions so there's no layout shift when content loads. Using CSS animate-pulse on gray blocks is the standard approach -- it signals that content is loading without introducing a spinner that would feel out of place in a card-based layout."
 
 ## Trade-offs Summary
 

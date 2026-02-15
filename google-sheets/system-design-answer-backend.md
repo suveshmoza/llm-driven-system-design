@@ -75,126 +75,34 @@ The key backend challenges are managing WebSocket connections at scale, implemen
 
 ### Core Tables
 
-```sql
--- Users (session-based auth)
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id VARCHAR(100) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL DEFAULT 'Anonymous',
-    color VARCHAR(7) NOT NULL DEFAULT '#4ECDC4',
-    created_at TIMESTAMP DEFAULT NOW(),
-    last_seen TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_users_session ON users(session_id);
-
--- Spreadsheets (documents)
-CREATE TABLE spreadsheets (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title VARCHAR(255) NOT NULL DEFAULT 'Untitled Spreadsheet',
-    owner_id UUID REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Sheets (tabs within a spreadsheet)
-CREATE TABLE sheets (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    spreadsheet_id UUID REFERENCES spreadsheets(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL DEFAULT 'Sheet1',
-    sheet_index INTEGER NOT NULL DEFAULT 0,
-    frozen_rows INTEGER DEFAULT 0,
-    frozen_cols INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_sheets_spreadsheet ON sheets(spreadsheet_id);
-
--- Cells (SPARSE storage - only non-empty cells)
-CREATE TABLE cells (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sheet_id UUID REFERENCES sheets(id) ON DELETE CASCADE,
-    row_index INTEGER NOT NULL,
-    col_index INTEGER NOT NULL,
-    raw_value TEXT,           -- User input (formulas start with '=')
-    computed_value TEXT,      -- Calculated result
-    format JSONB DEFAULT '{}', -- Styling (bold, color, etc.)
-    updated_at TIMESTAMP DEFAULT NOW(),
-    updated_by UUID REFERENCES users(id),
-    UNIQUE(sheet_id, row_index, col_index)
-);
-
-CREATE INDEX idx_cells_sheet ON cells(sheet_id);
-CREATE INDEX idx_cells_position ON cells(sheet_id, row_index, col_index);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), session_id (unique), name (default 'Anonymous'), color (hex, default '#4ECDC4'), last_seen | idx_users_session (session_id) | Session-based auth with display color for cursor visibility |
+| **spreadsheets** | id (UUID PK), title (default 'Untitled Spreadsheet'), owner_id (FK to users) | — | Top-level document container |
+| **sheets** | id (UUID PK), spreadsheet_id (FK cascade), name (default 'Sheet1'), sheet_index, frozen_rows, frozen_cols | idx_sheets_spreadsheet (spreadsheet_id) | Tabs within a spreadsheet |
+| **cells** | id (UUID PK), sheet_id (FK cascade), row_index, col_index, raw_value (text, formulas start with '='), computed_value (text), format (JSONB for styling) | idx_cells_sheet (sheet_id), idx_cells_position (sheet_id, row_index, col_index) | SPARSE storage -- only non-empty cells are stored; unique constraint on (sheet_id, row_index, col_index) |
 
 ### Sparse Storage Pattern
 
 The key insight is that most cells in a spreadsheet are empty. Storing only non-empty cells provides massive efficiency:
 
-```sql
--- UPSERT pattern for cell updates
-INSERT INTO cells (sheet_id, row_index, col_index, raw_value, computed_value, updated_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (sheet_id, row_index, col_index)
-DO UPDATE SET
-    raw_value = EXCLUDED.raw_value,
-    computed_value = EXCLUDED.computed_value,
-    updated_by = EXCLUDED.updated_by,
-    updated_at = NOW();
+**Cell update** uses an UPSERT pattern: insert the cell with the new value, and on conflict (same sheet_id, row_index, col_index), update the raw_value, computed_value, updated_by, and updated_at timestamp.
 
--- Delete cell when cleared
-DELETE FROM cells WHERE sheet_id = $1 AND row_index = $2 AND col_index = $3;
+**Cell clear** simply deletes the row for that sheet_id, row_index, col_index combination.
 
--- Viewport loading (efficient range query)
-SELECT row_index, col_index, raw_value, computed_value, format
-FROM cells
-WHERE sheet_id = $1
-  AND row_index BETWEEN $2 AND $3
-  AND col_index BETWEEN $4 AND $5;
-```
+**Viewport loading** uses an efficient range query: select all cells for a given sheet where row_index and col_index fall within the requested viewport boundaries. This avoids loading the entire sheet and only fetches the cells visible on screen.
 
 ### Edit History for Undo/Redo
 
-```sql
-CREATE TABLE edit_history (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    sheet_id UUID REFERENCES sheets(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id),
-    operation_type VARCHAR(50) NOT NULL,
-    operation_data JSONB NOT NULL,   -- Forward operation
-    inverse_data JSONB NOT NULL,     -- For undo
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_edit_history_sheet ON edit_history(sheet_id, created_at DESC);
-
--- Example operation_data and inverse_data
--- {
---   "operation_data": { "row": 5, "col": 2, "newValue": "=SUM(A1:A5)" },
---   "inverse_data": { "row": 5, "col": 2, "oldValue": "100" }
--- }
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **edit_history** | id (UUID PK), sheet_id (FK cascade), user_id (FK), operation_type, operation_data (JSONB -- forward operation), inverse_data (JSONB -- for undo) | idx_edit_history_sheet (sheet_id, created_at DESC) | Each entry stores both the forward and inverse operation so undo/redo can be replayed. Example: operation_data stores the new value for a cell, inverse_data stores the old value. |
 
 ### Collaborators Presence Table
 
-```sql
-CREATE TABLE collaborators (
-    spreadsheet_id UUID REFERENCES spreadsheets(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    cursor_row INTEGER,
-    cursor_col INTEGER,
-    selection_start_row INTEGER,
-    selection_start_col INTEGER,
-    selection_end_row INTEGER,
-    selection_end_col INTEGER,
-    joined_at TIMESTAMP DEFAULT NOW(),
-    last_seen TIMESTAMP DEFAULT NOW(),
-    PRIMARY KEY (spreadsheet_id, user_id)
-);
-
-CREATE INDEX idx_collaborators_spreadsheet ON collaborators(spreadsheet_id);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **collaborators** | spreadsheet_id + user_id (composite PK, both FK cascade), cursor_row, cursor_col, selection_start_row, selection_start_col, selection_end_row, selection_end_col, joined_at, last_seen | idx_collaborators_spreadsheet (spreadsheet_id) | Tracks cursor positions and selection ranges for each active collaborator |
 
 ## Deep Dive: WebSocket Infrastructure (8 minutes)
 

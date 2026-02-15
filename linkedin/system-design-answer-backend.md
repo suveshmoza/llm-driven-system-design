@@ -65,44 +65,12 @@ The PostgreSQL schema is designed for efficient graph queries and professional d
 
 **Core Tables:**
 
-```sql
--- Users table with denormalized connection count
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
-  headline VARCHAR(200),
-  location VARCHAR(100),
-  industry VARCHAR(100),
-  connection_count INTEGER DEFAULT 0,
-  role VARCHAR(20) DEFAULT 'user',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Connections with CHECK constraint for single storage
-CREATE TABLE connections (
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  connected_to INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  connected_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, connected_to),
-  CHECK (user_id < connected_to)
-);
-
--- Normalized skills for matching
-CREATE TABLE skills (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(100) UNIQUE NOT NULL
-);
-
-CREATE TABLE user_skills (
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  skill_id INTEGER REFERENCES skills(id) ON DELETE CASCADE,
-  endorsement_count INTEGER DEFAULT 0,
-  PRIMARY KEY (user_id, skill_id)
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (PK), email (unique), password_hash, first_name, last_name, headline, location, industry, connection_count, role, created_at | Primary key on id, unique on email | Denormalized connection_count avoids COUNT queries; role defaults to 'user' |
+| **connections** | user_id (FK→users), connected_to (FK→users), connected_at | Composite PK (user_id, connected_to) | CHECK constraint: user_id < connected_to ensures each connection stored once |
+| **skills** | id (PK), name (unique) | Primary key on id, unique on name | Normalized skill catalog for standardized matching |
+| **user_skills** | user_id (FK→users), skill_id (FK→skills), endorsement_count | Composite PK (user_id, skill_id) | Junction table with endorsement tracking |
 
 **Why CHECK Constraint for Connections?**
 
@@ -113,110 +81,52 @@ The `CHECK (user_id < connected_to)` ensures each bidirectional connection is st
 
 **Indexes for Performance:**
 
-```sql
--- Connection queries
-CREATE INDEX idx_connections_user ON connections(user_id);
-CREATE INDEX idx_connections_connected ON connections(connected_to);
-
--- Feed queries
-CREATE INDEX idx_posts_user_created ON posts(user_id, created_at DESC);
-
--- Job search
-CREATE INDEX idx_jobs_status_created ON jobs(status, created_at DESC);
-CREATE INDEX idx_job_applications_user ON job_applications(user_id);
-```
+| Index | Target Column(s) | Purpose |
+|-------|-------------------|---------|
+| idx_connections_user | connections(user_id) | Fast lookup of a user's outgoing connections |
+| idx_connections_connected | connections(connected_to) | Fast lookup of incoming connections |
+| idx_posts_user_created | posts(user_id, created_at DESC) | Feed generation queries |
+| idx_jobs_status_created | jobs(status, created_at DESC) | Job search filtering |
+| idx_job_applications_user | job_applications(user_id) | User's application history |
 
 ### 2. Connection Degree Calculation
 
-**1st Degree** - Direct SQL lookup:
+**1st Degree** - Direct lookup: query the connections table for all rows where user_id or connected_to matches the target user, then union the results to get the complete set of direct connections.
 
-```sql
-SELECT connected_to FROM connections WHERE user_id = $1
-UNION
-SELECT user_id FROM connections WHERE connected_to = $1
-```
-
-**2nd Degree** - Friends of friends:
-
-```sql
-WITH first_degree AS (
-  SELECT connected_to AS conn_id FROM connections WHERE user_id = $1
-  UNION
-  SELECT user_id AS conn_id FROM connections WHERE connected_to = $1
-)
-SELECT DISTINCT c2.connected_to AS user_id, COUNT(*) as mutual_count
-FROM first_degree fd
-JOIN connections c2 ON (
-  (c2.user_id = fd.conn_id AND c2.connected_to != $1)
-  OR (c2.connected_to = fd.conn_id AND c2.user_id != $1)
-)
-WHERE c2.connected_to NOT IN (SELECT conn_id FROM first_degree)
-  AND c2.user_id NOT IN (SELECT conn_id FROM first_degree)
-GROUP BY c2.connected_to
-ORDER BY mutual_count DESC
-LIMIT 1000;
-```
+**2nd Degree** - Friends of friends: first compute the 1st-degree set, then for each connection, find their connections. Exclude the original user and anyone already in the 1st-degree set. Group by candidate and count mutual connections to rank results. Limit to top 1000 candidates ordered by mutual count descending.
 
 **At Scale Problem**: A user with 500 connections, each with 500 connections = 250,000 rows to process.
 
 **Precomputed Approach (Production):**
 
-```javascript
-// Nightly batch job computes 2nd-degree for all users
-async function computeSecondDegree(userId) {
-  const firstDegree = await getConnections(userId);
-  const secondDegree = new Map(); // candidateId -> mutual count
+A nightly batch job computes the 2nd-degree network for each user:
 
-  for (const friendId of firstDegree) {
-    const friendConnections = await getConnections(friendId);
-    for (const candidate of friendConnections) {
-      if (candidate === userId) continue;
-      if (firstDegree.has(candidate)) continue;
-      secondDegree.set(candidate, (secondDegree.get(candidate) || 0) + 1);
-    }
-  }
+1. Retrieve the user's 1st-degree connections
+2. For each friend, retrieve their connections
+3. For each candidate (friend-of-friend), skip the original user and anyone already a 1st-degree connection
+4. Accumulate a mutual connection count for each candidate in a map
+5. Select the top 1,000 candidates by mutual count
+6. Store the result in Valkey with a 24-hour TTL under the key `2nd-degree:{userId}`
 
-  // Store top 1000 with mutual counts in Valkey
-  await valkey.set(`2nd-degree:${userId}`, topK(secondDegree, 1000), 'EX', 86400);
-}
-```
+> "Pre-computing the 2nd-degree set avoids the fan-out problem at read time. A user with 500 connections, each having 500 connections, would require processing 250,000 rows in real-time. By shifting this to a batch job, we keep the API response under 200ms."
 
 ### 3. PYMK Scoring Algorithm
 
 Multi-factor scoring for connection recommendations:
 
-```javascript
-async function pymkScore(userId, candidateId) {
-  let score = 0;
+The PYMK scoring function computes a weighted score for each candidate by evaluating several signals:
 
-  // Mutual connections (strongest signal - 10 pts each)
-  const mutuals = await getMutualConnections(userId, candidateId);
-  score += mutuals.length * 10;
+| Signal | Points | Rationale |
+|--------|--------|-----------|
+| Mutual connections | 10 pts each | Strongest social signal |
+| Same current company | 8 pts | Professional proximity |
+| Same past company | 5 pts | Shared history |
+| Same school | 5 pts | Educational overlap |
+| Shared skills | 2 pts each | Professional interest alignment |
+| Same industry | 3 pts | Sector relevance |
+| Same location | 2 pts | Geographic proximity |
 
-  // Same current company (8 pts)
-  if (await sameCurrentCompany(userId, candidateId)) score += 8;
-
-  // Same past company (5 pts)
-  if (await samePastCompany(userId, candidateId)) score += 5;
-
-  // Same school (5 pts)
-  if (await sameSchool(userId, candidateId)) score += 5;
-
-  // Shared skills (2 pts each)
-  const sharedSkills = await getSharedSkills(userId, candidateId);
-  score += sharedSkills.length * 2;
-
-  // Same industry (3 pts)
-  if (await sameIndustry(userId, candidateId)) score += 3;
-
-  // Same location (2 pts)
-  if (await sameLocation(userId, candidateId)) score += 2;
-
-  return score;
-}
-```
-
-**Weights are tuned based on A/B testing** - connection accept rates determine optimal scoring.
+The function retrieves each signal for the (user, candidate) pair, applies the corresponding weight, and returns the cumulative score. These weights are tuned based on A/B testing -- connection accept rates determine the optimal scoring.
 
 **Caching Strategy:**
 
@@ -231,50 +141,19 @@ Valkey Structure:
 
 Two-sided matching: jobs need candidates, candidates need jobs.
 
-```javascript
-function jobMatchScore(job, candidate) {
-  let score = 0;
+The job-candidate matching function computes a normalized score (0-100) based on five weighted factors:
 
-  // Required skills match (40% weight)
-  const requiredSkills = job.requiredSkills;
-  const candidateSkills = candidate.skills;
-  const skillMatch = intersection(requiredSkills, candidateSkills).length;
-  score += (skillMatch / requiredSkills.length) * 40;
+1. **Required skills match (40% weight)**: Compute the intersection of required job skills and candidate skills, divide by total required skills, and multiply by 40
+2. **Experience level (25% weight)**: Start at 25 and subtract 5 for each year of experience gap (floored at 0)
+3. **Location compatibility (15% weight)**: Award full 15 points if the job is remote or the candidate is in the same location
+4. **Education match (10% weight)**: Award 10 points if the candidate meets the minimum education requirement
+5. **Network connection (10% weight)**: Award 10 points if the candidate has a connection at the hiring company (referral potential)
 
-  // Experience level (25% weight)
-  const expMatch = Math.abs(job.yearsRequired - candidate.yearsExperience);
-  score += Math.max(0, 25 - expMatch * 5);
+> "The skills weight at 40% dominates because skill-job fit is the strongest predictor of application success. Network connection at 10% may seem low, but it's a binary signal -- the mere existence of a referral path significantly boosts the candidate's visibility."
 
-  // Location compatibility (15% weight)
-  if (job.remote || sameLocation(job, candidate)) score += 15;
+**Elasticsearch Index for Jobs:**
 
-  // Education match (10% weight)
-  if (educationMeets(job.education, candidate.education)) score += 10;
-
-  // Network connection - referral potential (10% weight)
-  if (await hasConnectionAtCompany(candidate, job.companyId)) score += 10;
-
-  return score;
-}
-```
-
-**Elasticsearch Mapping for Jobs:**
-
-```json
-{
-  "mappings": {
-    "properties": {
-      "title": { "type": "text", "boost": 3 },
-      "description": { "type": "text" },
-      "required_skills": { "type": "keyword" },
-      "location": { "type": "geo_point" },
-      "salary_range": { "type": "integer_range" },
-      "remote": { "type": "boolean" },
-      "posted_at": { "type": "date" }
-    }
-  }
-}
-```
+Jobs are indexed in Elasticsearch with boosted title field (3x), text description, keyword array for required_skills, geo_point for location, integer_range for salary, boolean for remote flag, and date for posted_at. This enables compound queries combining full-text search, geo-distance filtering, salary range matching, and skill-based filtering in a single request.
 
 ### 5. Message Queue Architecture
 
@@ -301,50 +180,22 @@ RabbitMQ handles async operations with well-defined delivery semantics:
 
 **Message Schema with Idempotency:**
 
-```typescript
-interface ConnectionEvent {
-  type: 'connection.created' | 'connection.removed';
-  userId: string;
-  connectedUserId: string;
-  timestamp: string;
-  idempotencyKey: string; // UUID for deduplication
-}
-```
+Each connection event message contains: type (connection.created or connection.removed), userId, connectedUserId, timestamp, and an idempotencyKey (UUID for deduplication).
 
 **Idempotent Processing:**
 
-```typescript
-async function processMessage(message: ConnectionEvent) {
-  const key = `processed:${message.idempotencyKey}`;
+The message consumer follows a check-then-process pattern:
 
-  // Check if already processed
-  const alreadyProcessed = await valkey.get(key);
-  if (alreadyProcessed) return;
-
-  // Process the message
-  await recalculatePYMK(message.userId);
-
-  // Mark as processed (24-hour TTL)
-  await valkey.setex(key, 86400, 'true');
-}
-```
+1. Construct a cache key from the message's idempotency key: `processed:{idempotencyKey}`
+2. Check Valkey for this key -- if it exists, the message was already processed, so skip it
+3. Process the message (e.g., recalculate PYMK for the affected user)
+4. Write the key to Valkey with a 24-hour TTL to prevent reprocessing
 
 ### 6. Authentication and Rate Limiting
 
 **Session-Based Auth with Valkey:**
 
-```typescript
-interface Session {
-  userId: string;
-  email: string;
-  role: 'user' | 'recruiter' | 'admin';
-  permissions: string[];
-  createdAt: string;
-  lastAccessedAt: string;
-  ipAddress: string;
-}
-// TTL: 7 days with sliding expiration
-```
+Each session stores: userId, email, role (user/recruiter/admin), permissions array, createdAt, lastAccessedAt, and ipAddress. Sessions have a 7-day TTL with sliding expiration -- each access resets the timer.
 
 **Rate Limiting with Token Bucket:**
 
@@ -356,19 +207,7 @@ interface Session {
 | Connection requests | 20 req/min | Prevent mass-adding |
 | Search | 20 req/min | Protect Elasticsearch |
 
-```typescript
-async function checkRateLimit(userId: string, category: string): Promise<boolean> {
-  const key = `ratelimit:${category}:${userId}`;
-  const limit = RATE_LIMITS[category];
-
-  const current = await valkey.incr(key);
-  if (current === 1) {
-    await valkey.expire(key, 60);
-  }
-
-  return current <= limit.requestsPerMinute;
-}
-```
+The rate limiter uses a simple counter in Valkey with a 60-second TTL window. For each request, it increments the counter at key `ratelimit:{category}:{userId}`. On the first request (counter = 1), it sets the expiry to 60 seconds. If the counter exceeds the configured limit for that category, the request is rejected with a 429 response.
 
 ### 7. Observability
 

@@ -103,76 +103,29 @@ Unacceptable. Users expect tweets in seconds.
 
 **Push for Normal Users (< 10K followers)**:
 
-```javascript
-// Fanout worker processes tweet.created events from Kafka
-async function fanoutTweet(tweetId, authorId) {
-  const author = await getUser(authorId);
+The fanout worker consumes `tweet.created` events from Kafka and processes them as follows:
 
-  // Skip fanout for celebrities - handled at read time
-  if (author.is_celebrity) {
-    return;
-  }
+1. Look up the tweet author. If they are flagged as a celebrity, skip fanout entirely -- their tweets are handled at read time.
+2. Retrieve the author's full follower list.
+3. Use a Redis pipeline (batch operation) to push the tweet ID to the front of each follower's timeline list (`timeline:{followerId}`) and trim the list to a maximum of 800 entries.
+4. Execute the pipeline atomically.
 
-  const followers = await getFollowers(authorId);
-
-  // Pipeline for atomic batch writes
-  const pipeline = redis.pipeline();
-  for (const followerId of followers) {
-    pipeline.lpush(`timeline:${followerId}`, tweetId);
-    pipeline.ltrim(`timeline:${followerId}`, 0, 799); // Keep last 800
-  }
-
-  await pipeline.exec();
-}
-```
+For a normal user with 500 followers, this completes in under 1 second.
 
 **Timeline Read (Merge cached + celebrity tweets)**:
 
-```javascript
-async function getHomeTimeline(userId) {
-  // 1. Get cached timeline (pushed tweets from normal users)
-  const cachedIds = await redis.lrange(`timeline:${userId}`, 0, 100);
-  const cachedTweets = await getTweetsByIds(cachedIds);
+Reading the home timeline is a four-step merge process:
 
-  // 2. Get followed celebrities
-  const following = await getFollowing(userId);
-  const celebrities = following.filter(u => u.is_celebrity);
+1. **Fetch cached timeline**: Read the first 100 tweet IDs from the user's Redis timeline list (these were pushed by normal users' fanout workers), then batch-fetch the full tweet objects.
+2. **Identify followed celebrities**: From the user's following list, filter to those with the `is_celebrity` flag.
+3. **Pull celebrity tweets**: Query PostgreSQL for recent tweets (last 24 hours) from those celebrity authors, ordered by creation time, limited to 50.
+4. **Merge and sort**: Combine cached tweets and celebrity tweets into one list, sort chronologically (newest first), and return the top 100.
 
-  // 3. Pull recent tweets from celebrities (not fanned out)
-  const celebrityTweets = await db.query(`
-    SELECT * FROM tweets
-    WHERE author_id = ANY($1)
-    AND created_at > NOW() - INTERVAL '24 hours'
-    ORDER BY created_at DESC
-    LIMIT 50
-  `, [celebrities.map(c => c.id)]);
-
-  // 4. Merge and sort chronologically
-  const allTweets = [...cachedTweets, ...celebrityTweets.rows];
-  allTweets.sort((a, b) => b.createdAt - a.createdAt);
-
-  return allTweets.slice(0, 100);
-}
-```
+> "The merge step adds roughly 10ms since it happens in-memory. The key insight is that we only query the database for the small number of celebrities a user follows (typically 10-50), not for every followed account."
 
 ### Celebrity Detection via Triggers
 
-```sql
--- Automatically flag celebrities when they reach threshold
-CREATE OR REPLACE FUNCTION update_celebrity_status()
-RETURNS TRIGGER AS $$
-BEGIN
-  UPDATE users
-  SET is_celebrity = (follower_count >= 10000)
-  WHERE id = NEW.following_id;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_celebrity_check
-  AFTER INSERT OR DELETE ON follows
-  FOR EACH ROW EXECUTE FUNCTION update_celebrity_status();
-```
+Celebrity status is automatically managed via a database trigger on the follows table. After each insert or delete on follows, the trigger updates the `is_celebrity` flag on the followed user by checking whether their `follower_count` has reached or fallen below the 10,000 threshold. This keeps the celebrity flag consistent without requiring application-level logic.
 
 ### Why This Works
 
@@ -186,113 +139,28 @@ CREATE TRIGGER trigger_celebrity_check
 
 ### Core Tables
 
-```sql
--- Users with denormalized counts and celebrity flag
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  username VARCHAR(50) UNIQUE NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  display_name VARCHAR(100),
-  bio TEXT,
-  follower_count INTEGER DEFAULT 0,
-  following_count INTEGER DEFAULT 0,
-  tweet_count INTEGER DEFAULT 0,
-  is_celebrity BOOLEAN DEFAULT FALSE,  -- Auto-set via trigger at 10K followers
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Tweets with relationship references
-CREATE TABLE tweets (
-  id BIGSERIAL PRIMARY KEY,
-  author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  content VARCHAR(280) NOT NULL,
-  media_urls TEXT[],
-  hashtags TEXT[],           -- Extracted at write time
-  mentions INTEGER[],        -- User IDs mentioned
-  reply_to BIGINT REFERENCES tweets(id) ON DELETE SET NULL,
-  retweet_of BIGINT REFERENCES tweets(id) ON DELETE SET NULL,
-  like_count INTEGER DEFAULT 0,
-  retweet_count INTEGER DEFAULT 0,
-  reply_count INTEGER DEFAULT 0,
-  is_deleted BOOLEAN DEFAULT FALSE,
-  deleted_at TIMESTAMP DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Social graph: follow relationships
-CREATE TABLE follows (
-  follower_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  following_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (follower_id, following_id)
-);
-
--- Engagement tables
-CREATE TABLE likes (
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  tweet_id BIGINT REFERENCES tweets(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, tweet_id)
-);
-
-CREATE TABLE retweets (
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  tweet_id BIGINT REFERENCES tweets(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, tweet_id)
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (SERIAL PK), username (UNIQUE), email (UNIQUE), password_hash, display_name, bio, follower_count, following_count, tweet_count, is_celebrity (BOOLEAN, auto-set via trigger at 10K followers), created_at | -- | Counts are denormalized and maintained by triggers for O(1) reads |
+| **tweets** | id (BIGSERIAL PK), author_id (FK to users ON DELETE CASCADE), content (VARCHAR 280), media_urls (TEXT[]), hashtags (TEXT[], extracted at write time), mentions (INTEGER[]), reply_to (FK to tweets), retweet_of (FK to tweets), like_count, retweet_count, reply_count, is_deleted, deleted_at, created_at | (author_id, created_at DESC) for author timeline; GIN on hashtags for hashtag search; created_at DESC for explore/trending; partial index on deleted_at WHERE NOT NULL | Soft delete via is_deleted flag; engagement counts denormalized |
+| **follows** | follower_id + following_id (composite PK, both FK to users ON DELETE CASCADE), created_at | Index on following_id; index on follower_id | Social graph edges; triggers maintain user counts |
+| **likes** | user_id + tweet_id (composite PK, both FK with ON DELETE CASCADE), created_at | Index on tweet_id; index on user_id | Composite PK prevents duplicate likes |
+| **retweets** | user_id + tweet_id (composite PK, both FK with ON DELETE CASCADE), created_at | -- | Same structure as likes |
 
 ### Index Strategy
 
-```sql
--- Author timeline: user's own tweets
-CREATE INDEX idx_tweets_author ON tweets(author_id, created_at DESC);
+Key indexes beyond the primary keys:
 
--- Hashtag search: GIN index for array contains
-CREATE INDEX idx_tweets_hashtags ON tweets USING GIN(hashtags);
-
--- Global chronological: for explore/trending
-CREATE INDEX idx_tweets_created_at ON tweets(created_at DESC);
-
--- Soft delete filtering
-CREATE INDEX idx_tweets_deleted ON tweets(deleted_at) WHERE deleted_at IS NOT NULL;
-
--- Social graph: bidirectional lookups
-CREATE INDEX idx_follows_following ON follows(following_id);
-CREATE INDEX idx_follows_follower ON follows(follower_id);
-
--- Engagement lookups
-CREATE INDEX idx_likes_tweet ON likes(tweet_id);
-CREATE INDEX idx_likes_user ON likes(user_id);
-```
+- **Author timeline**: Composite index on tweets(author_id, created_at DESC) for fast retrieval of a user's own tweets
+- **Hashtag search**: GIN index on tweets(hashtags) for efficient array-contains queries
+- **Global chronological**: Index on tweets(created_at DESC) for explore and trending feeds
+- **Soft delete filtering**: Partial index on tweets(deleted_at) WHERE deleted_at IS NOT NULL for efficient cleanup queries
+- **Social graph bidirectional**: Indexes on follows(following_id) and follows(follower_id) for both "who follows me" and "who do I follow" lookups
+- **Engagement lookups**: Indexes on likes(tweet_id) and likes(user_id) for counting and checking if a user has liked a tweet
 
 ### Denormalized Count Triggers
 
-```sql
--- Maintain follower/following counts atomically
-CREATE OR REPLACE FUNCTION update_follow_counts()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF TG_OP = 'INSERT' THEN
-    UPDATE users SET following_count = following_count + 1 WHERE id = NEW.follower_id;
-    UPDATE users SET follower_count = follower_count + 1 WHERE id = NEW.following_id;
-    -- Check celebrity threshold
-    UPDATE users SET is_celebrity = (follower_count >= 10000) WHERE id = NEW.following_id;
-  ELSIF TG_OP = 'DELETE' THEN
-    UPDATE users SET following_count = following_count - 1 WHERE id = OLD.follower_id;
-    UPDATE users SET follower_count = follower_count - 1 WHERE id = OLD.following_id;
-    UPDATE users SET is_celebrity = (follower_count >= 10000) WHERE id = OLD.following_id;
-  END IF;
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_follow_counts
-  AFTER INSERT OR DELETE ON follows
-  FOR EACH ROW EXECUTE FUNCTION update_follow_counts();
-```
+A single trigger function fires after every INSERT or DELETE on the follows table. On INSERT, it increments `following_count` for the follower, increments `follower_count` for the followed user, and recalculates the `is_celebrity` flag (true when follower_count >= 10,000). On DELETE, it decrements both counts and recalculates celebrity status. This ensures counts are always consistent without requiring application-level coordination.
 
 ---
 
@@ -311,77 +179,15 @@ CREATE TRIGGER trigger_follow_counts
 
 ### Social Graph Cache
 
-```javascript
-// Sync follows to Redis on write
-async function followUser(followerId, followingId) {
-  // 1. Write to PostgreSQL
-  await db.query(
-    'INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)',
-    [followerId, followingId]
-  );
+When a user follows someone, we write to both PostgreSQL (source of truth) and Redis (cache for fast lookups). The follow relationship is stored in two Redis sets: `followers:{followingId}` gains the follower, and `following:{followerId}` gains the followed user.
 
-  // 2. Update Redis sets (for fast lookups)
-  await redis.sadd(`followers:${followingId}`, followerId);
-  await redis.sadd(`following:${followerId}`, followingId);
-}
-
-// Fast check without DB hit
-async function isFollowing(userA, userB) {
-  const cached = await redis.sismember(`following:${userA}`, userB);
-  if (cached !== null) return cached === 1;
-
-  // Fallback to database
-  const result = await db.query(
-    'SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2',
-    [userA, userB]
-  );
-  return result.rows.length > 0;
-}
-```
+To check if user A follows user B, we first check the Redis set `following:{userA}` for membership. If Redis is unavailable or returns no result, we fall back to a PostgreSQL query on the follows table. This gives us O(1) follow-check latency in the common case.
 
 ### Timeline Cache Management
 
-```javascript
-// On tweet creation, fanout to follower timelines
-async function pushToTimelines(tweetId, authorId) {
-  const followers = await redis.smembers(`followers:${authorId}`);
+**Fanout on tweet creation:** When a tweet is created, the fanout worker reads the author's follower set from Redis, then uses a Redis pipeline to push the tweet ID to the front of each follower's timeline list, trim each list to 800 entries, and set a 7-day expiry. The pipeline executes all operations in a single round trip.
 
-  const pipeline = redis.pipeline();
-  for (const followerId of followers) {
-    pipeline.lpush(`timeline:${followerId}`, tweetId);
-    pipeline.ltrim(`timeline:${followerId}`, 0, 799);
-    pipeline.expire(`timeline:${followerId}`, 7 * 24 * 60 * 60);
-  }
-
-  await pipeline.exec();
-}
-
-// Cache miss: rebuild timeline from database
-async function rebuildTimelineCache(userId) {
-  const following = await db.query(`
-    SELECT f.following_id, u.is_celebrity
-    FROM follows f
-    JOIN users u ON f.following_id = u.id
-    WHERE f.follower_id = $1 AND u.is_celebrity = FALSE
-  `, [userId]);
-
-  const followingIds = following.rows.map(r => r.following_id);
-  const tweets = await db.query(`
-    SELECT id FROM tweets
-    WHERE author_id = ANY($1)
-      AND deleted_at IS NULL
-    ORDER BY created_at DESC
-    LIMIT 800
-  `, [followingIds]);
-
-  const tweetIds = tweets.rows.map(t => t.id);
-  if (tweetIds.length > 0) {
-    await redis.del(`timeline:${userId}`);
-    await redis.rpush(`timeline:${userId}`, ...tweetIds);
-    await redis.expire(`timeline:${userId}`, 7 * 24 * 60 * 60);
-  }
-}
-```
+**Cache miss rebuild:** If a user's timeline cache has expired or is empty, we rebuild it by querying PostgreSQL: join follows with users to get all non-celebrity accounts the user follows, then fetch the most recent 800 tweet IDs from those authors (excluding deleted tweets). The result is written back to Redis with a 7-day TTL.
 
 ---
 
@@ -389,73 +195,17 @@ async function rebuildTimelineCache(userId) {
 
 ### Sliding Window Algorithm
 
-```javascript
-// Track hashtag counts in time buckets
-const BUCKET_SIZE = 60;  // 1 minute
-const WINDOW_SIZE = 60;  // 60 minutes
+Hashtag counts are tracked in 1-minute time buckets over a 60-minute sliding window:
 
-async function recordHashtag(hashtag) {
-  const bucket = Math.floor(Date.now() / 1000 / BUCKET_SIZE);
-  const key = `trend:${hashtag}:${bucket}`;
+1. **Recording**: When a hashtag appears in a tweet, increment a Redis counter at `trend:{hashtag}:{bucket}` where bucket is the current minute (Unix timestamp divided by 60). Each key gets a TTL equal to the window size (60 minutes) so old buckets expire automatically.
 
-  await redis.incr(key);
-  await redis.expire(key, WINDOW_SIZE * BUCKET_SIZE);
-}
-
-async function getTrendScore(hashtag) {
-  const now = Math.floor(Date.now() / 1000 / BUCKET_SIZE);
-  let score = 0;
-
-  const pipeline = redis.pipeline();
-  for (let i = 0; i < WINDOW_SIZE; i++) {
-    const bucket = now - i;
-    pipeline.get(`trend:${hashtag}:${bucket}`);
-  }
-
-  const results = await pipeline.exec();
-
-  for (let i = 0; i < results.length; i++) {
-    const count = parseInt(results[i][1] || 0);
-    // Exponential decay: recent buckets weighted more
-    score += count * Math.pow(0.95, i);
-  }
-
-  return score;
-}
-```
+2. **Scoring**: To compute a trend score, read the counters for all 60 buckets using a Redis pipeline. Apply exponential decay so recent buckets weigh more: `score = sum(count[i] * 0.95^i)` where i=0 is the current minute and i=59 is the oldest. This means a hashtag mentioned 100 times in the last minute scores higher than one mentioned 100 times an hour ago.
 
 ### Velocity Calculation
 
-```javascript
-function calculateVelocity(currentHourCount, previousHourCount) {
-  if (previousHourCount === 0) {
-    return currentHourCount > 10 ? Infinity : 0;
-  }
-  return (currentHourCount - previousHourCount) / previousHourCount;
-}
+Velocity measures the growth rate: `(currentHourCount - previousHourCount) / previousHourCount`. If the previous hour had zero mentions but the current hour has more than 10, we treat velocity as infinite (a new topic breaking through). Topics with velocity > 2 (200% growth) are considered "trending."
 
-// Topics with velocity > 2 (200% growth) are "trending"
-async function getTrendingHashtags(limit = 10) {
-  // Get all active hashtags from recent tweets
-  const recentHashtags = await db.query(`
-    SELECT DISTINCT unnest(hashtags) as hashtag
-    FROM tweets
-    WHERE created_at > NOW() - INTERVAL '2 hours'
-  `);
-
-  const scored = await Promise.all(
-    recentHashtags.rows.map(async ({ hashtag }) => ({
-      hashtag,
-      score: await getTrendScore(hashtag),
-    }))
-  );
-
-  return scored
-    .filter(t => t.score > 100)  // Minimum threshold
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-}
-```
+To generate the trending list, we query PostgreSQL for all distinct hashtags appearing in tweets from the last 2 hours, compute the trend score for each using the sliding window algorithm, filter to those with a score above 100 (minimum visibility threshold), sort by score descending, and return the top 10.
 
 ---
 
@@ -463,122 +213,25 @@ async function getTrendingHashtags(limit = 10) {
 
 ### Idempotency Keys for Tweet Creation
 
-```javascript
-async function createTweet(req, res) {
-  const idempotencyKey = req.headers['idempotency-key'];
-  const cacheKey = `idempotency:tweet:${req.user.id}:${idempotencyKey}`;
+Tweet creation uses idempotency keys to prevent duplicate posts from client retries:
 
-  // Check if already processed
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return res.json(JSON.parse(cached));
-  }
-
-  // Process the request
-  const tweet = await db.query(
-    'INSERT INTO tweets (author_id, content, hashtags) VALUES ($1, $2, $3) RETURNING *',
-    [req.user.id, req.body.content, extractHashtags(req.body.content)]
-  );
-
-  // Cache result for 24 hours
-  await redis.setex(cacheKey, 86400, JSON.stringify(tweet.rows[0]));
-
-  // Publish to Kafka for async fanout
-  await kafka.send('tweet.created', {
-    tweetId: tweet.rows[0].id,
-    authorId: req.user.id,
-  });
-
-  return res.json(tweet.rows[0]);
-}
-```
+1. Check Redis for a cached result under `idempotency:tweet:{userId}:{key}`. If found, return the cached tweet immediately.
+2. Insert the tweet into PostgreSQL with the extracted hashtags.
+3. Cache the result in Redis with a 24-hour TTL.
+4. Publish a `tweet.created` event to Kafka for async fanout processing.
+5. Return the new tweet to the client.
 
 ### Circuit Breaker for Fanout
 
-```javascript
-class CircuitBreaker {
-  constructor(name, options = {}) {
-    this.name = name;
-    this.failureThreshold = options.failureThreshold || 5;
-    this.resetTimeoutMs = options.resetTimeoutMs || 30000;
-    this.state = 'CLOSED';
-    this.failures = 0;
-    this.lastFailureTime = null;
-  }
+The fanout service uses a circuit breaker with three states: CLOSED (normal operation), OPEN (all requests fail fast), and HALF_OPEN (testing recovery). Configuration: failure threshold of 5, reset timeout of 30 seconds.
 
-  async call(operation) {
-    if (this.state === 'OPEN') {
-      if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
-        this.state = 'HALF_OPEN';
-      } else {
-        throw new Error(`Circuit breaker ${this.name} is OPEN`);
-      }
-    }
+In CLOSED state, each failure increments a counter. When 5 failures accumulate, the circuit transitions to OPEN. In OPEN state, all calls throw immediately without attempting the operation. After 30 seconds, the circuit moves to HALF_OPEN and allows one test request through. If it succeeds, the circuit returns to CLOSED and resets the failure counter. If it fails, the circuit returns to OPEN.
 
-    try {
-      const result = await operation();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      throw error;
-    }
-  }
-
-  onSuccess() {
-    this.failures = 0;
-    this.state = 'CLOSED';
-  }
-
-  onFailure() {
-    this.failures++;
-    this.lastFailureTime = Date.now();
-    if (this.failures >= this.failureThreshold) {
-      this.state = 'OPEN';
-    }
-  }
-}
-
-// Usage
-const fanoutCircuit = new CircuitBreaker('fanout-service');
-
-async function fanoutWithProtection(tweetId, authorId) {
-  return fanoutCircuit.call(() => fanoutTweet(tweetId, authorId));
-}
-```
+The fanout worker wraps all timeline push operations through this circuit breaker, so a Redis outage causes fast failure rather than blocking the entire fanout pipeline.
 
 ### Graceful Degradation
 
-```javascript
-async function getHomeTimeline(userId) {
-  try {
-    // Primary: Redis timeline cache
-    return await getTimelineFromRedis(userId);
-  } catch (redisError) {
-    console.warn('Redis unavailable, falling back to PostgreSQL', redisError);
-
-    // Fallback: Direct database query (slower but works)
-    return await getTimelineFromDatabase(userId);
-  }
-}
-
-async function getTimelineFromDatabase(userId) {
-  const following = await db.query(
-    'SELECT following_id FROM follows WHERE follower_id = $1',
-    [userId]
-  );
-
-  const followingIds = following.rows.map(r => r.following_id);
-
-  return db.query(`
-    SELECT * FROM tweets
-    WHERE author_id = ANY($1)
-    AND deleted_at IS NULL
-    ORDER BY created_at DESC
-    LIMIT 100
-  `, [followingIds]);
-}
-```
+The home timeline endpoint implements a fallback chain: it first attempts to read from the Redis timeline cache (fast path). If Redis is unavailable, it falls back to a direct PostgreSQL query -- fetching the user's following list from the follows table, then querying tweets by those authors (excluding deleted tweets), ordered chronologically, limited to 100. This is slower but functional, ensuring the timeline remains available even during a Redis outage.
 
 ---
 

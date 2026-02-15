@@ -80,75 +80,15 @@
 
 ### Endpoint Definitions
 
-```typescript
-// POST /api/ratelimit/check - Check and consume rate limit
-interface CheckRequest {
-  identifier: string;
-  algorithm: 'fixed' | 'sliding' | 'token' | 'leaky';
-  limit?: number;
-  windowSeconds?: number;
-  burstCapacity?: number;
-  refillRate?: number;
-  leakRate?: number;
-}
+The API exposes the following endpoints:
 
-interface CheckResponse {
-  allowed: boolean;
-  remaining: number;
-  limit: number;
-  resetAt: number;      // Unix timestamp
-  algorithm: string;
-  latencyMs: number;
-}
-
-// GET /api/ratelimit/state/:identifier - Get state without consuming
-interface StateResponse {
-  identifier: string;
-  algorithm: string;
-  currentCount: number;
-  limit: number;
-  remaining: number;
-  resetAt: number;
-  tokens?: number;      // For token bucket
-  water?: number;       // For leaky bucket
-}
-
-// DELETE /api/ratelimit/reset/:identifier - Reset rate limit
-interface ResetResponse {
-  success: boolean;
-  identifier: string;
-}
-
-// POST /api/ratelimit/batch-check - Check multiple identifiers
-interface BatchCheckRequest {
-  checks: CheckRequest[];
-}
-
-interface BatchCheckResponse {
-  results: CheckResponse[];
-  totalLatencyMs: number;
-}
-
-// GET /api/metrics - Get aggregated metrics
-interface MetricsResponse {
-  points: MetricPoint[];
-  summary: {
-    totalChecks: number;
-    allowedPercent: number;
-    deniedPercent: number;
-    avgLatencyMs: number;
-    p99LatencyMs: number;
-  };
-}
-
-interface MetricPoint {
-  timestamp: number;
-  allowed: number;
-  denied: number;
-  p50Latency: number;
-  p99Latency: number;
-}
-```
+| Method | Path | Description | Key Fields |
+|--------|------|-------------|------------|
+| POST | `/api/ratelimit/check` | Check and consume a rate limit token | Request: identifier, algorithm, limit, windowSeconds, burstCapacity, refillRate, leakRate. Response: allowed, remaining, limit, resetAt (Unix timestamp), algorithm, latencyMs |
+| GET | `/api/ratelimit/state/:identifier` | Get current state without consuming | Response: identifier, algorithm, currentCount, limit, remaining, resetAt, tokens (token bucket), water (leaky bucket) |
+| DELETE | `/api/ratelimit/reset/:identifier` | Reset rate limit for an identifier | Response: success, identifier |
+| POST | `/api/ratelimit/batch-check` | Check multiple identifiers at once | Request: array of check objects. Response: array of results, totalLatencyMs |
+| GET | `/api/metrics` | Get aggregated metrics | Response: metric data points with timestamps, plus summary (totalChecks, allowedPercent, deniedPercent, avgLatencyMs, p99LatencyMs) |
 
 ### Response Headers
 
@@ -196,214 +136,37 @@ Frontend                   Backend                    Redis
 
 ### Backend: Check Endpoint Implementation
 
-```typescript
-// routes/ratelimit.ts
-router.post('/check', async (req: Request, res: Response) => {
-  const start = performance.now();
+The POST `/check` endpoint follows this flow:
 
-  const {
-    identifier,
-    algorithm,
-    limit = 10,
-    windowSeconds = 60,
-    burstCapacity = 10,
-    refillRate = 1,
-    leakRate = 1
-  } = req.body;
-
-  // Validate input
-  if (!identifier || !algorithm) {
-    return res.status(400).json({
-      error: 'identifier and algorithm are required'
-    });
-  }
-
-  let result: RateLimitResult;
-
-  try {
-    // Select and execute algorithm
-    switch (algorithm) {
-      case 'fixed':
-        result = await fixedWindowCheck(identifier, limit, windowSeconds);
-        break;
-      case 'sliding':
-        result = await slidingWindowCheck(identifier, limit, windowSeconds);
-        break;
-      case 'token':
-        result = await tokenBucketCheck(identifier, burstCapacity, refillRate);
-        break;
-      case 'leaky':
-        result = await leakyBucketCheck(identifier, burstCapacity, leakRate);
-        break;
-      default:
-        return res.status(400).json({ error: 'Invalid algorithm' });
-    }
-  } catch (error) {
-    // Circuit breaker fallback
-    logger.warn('Rate limit check failed', { identifier, error });
-    result = { allowed: true, remaining: -1, resetAt: Date.now() + 60000 };
-  }
-
-  const latencyMs = performance.now() - start;
-
-  // Record metrics asynchronously
-  recordMetrics(algorithm, result.allowed, latencyMs);
-
-  // Set response headers
-  res.set({
-    'X-RateLimit-Limit': limit || burstCapacity,
-    'X-RateLimit-Remaining': Math.max(0, result.remaining),
-    'X-RateLimit-Reset': Math.ceil(result.resetAt / 1000),
-    'X-RateLimit-Algorithm': algorithm
-  });
-
-  if (!result.allowed) {
-    res.set('Retry-After', Math.ceil((result.resetAt - Date.now()) / 1000));
-  }
-
-  const status = result.allowed ? 200 : 429;
-
-  res.status(status).json({
-    allowed: result.allowed,
-    remaining: result.remaining,
-    limit: limit || burstCapacity,
-    resetAt: result.resetAt,
-    algorithm,
-    latencyMs
-  });
-});
-```
+1. **Start a performance timer** to measure server-side latency
+2. **Parse the request body** — extract identifier, algorithm, and optional configuration (limit defaults to 10, windowSeconds to 60, burstCapacity to 10, refillRate and leakRate to 1)
+3. **Validate input** — return 400 if identifier or algorithm is missing
+4. **Select and execute the algorithm** — dispatch to the appropriate algorithm handler (fixed, sliding, token, or leaky); return 400 for unknown algorithms
+5. **Handle failures gracefully** — if the rate check throws (e.g., Redis down), log a warning and allow the request with remaining = -1 (fail-open)
+6. **Record metrics asynchronously** — fire-and-forget the algorithm name, allowed/denied result, and latency
+7. **Set response headers** — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-RateLimit-Algorithm`; add `Retry-After` if denied
+8. **Return the response** — status 200 if allowed, 429 if denied, with a JSON body containing allowed, remaining, limit, resetAt, algorithm, and latencyMs
 
 ### Frontend: API Service Layer
 
-```typescript
-// services/rateLimitApi.ts
-const BASE_URL = '/api/ratelimit';
+The frontend API service layer provides five functions that wrap fetch calls to the backend:
 
-export async function checkRateLimit(
-  params: CheckRequest
-): Promise<CheckResponse> {
-  const start = performance.now();
-
-  const response = await fetch(`${BASE_URL}/check`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params)
-  });
-
-  const data = await response.json();
-
-  // Capture actual latency (includes network)
-  const clientLatencyMs = performance.now() - start;
-
-  return {
-    ...data,
-    clientLatencyMs,
-    // Extract headers
-    headers: {
-      limit: response.headers.get('X-RateLimit-Limit'),
-      remaining: response.headers.get('X-RateLimit-Remaining'),
-      reset: response.headers.get('X-RateLimit-Reset'),
-      algorithm: response.headers.get('X-RateLimit-Algorithm'),
-      retryAfter: response.headers.get('Retry-After')
-    }
-  };
-}
-
-export async function getState(identifier: string): Promise<StateResponse> {
-  const response = await fetch(`${BASE_URL}/state/${encodeURIComponent(identifier)}`);
-  return response.json();
-}
-
-export async function resetLimit(identifier: string): Promise<ResetResponse> {
-  const response = await fetch(`${BASE_URL}/reset/${encodeURIComponent(identifier)}`, {
-    method: 'DELETE'
-  });
-  return response.json();
-}
-
-export async function batchCheck(checks: CheckRequest[]): Promise<BatchCheckResponse> {
-  const response = await fetch(`${BASE_URL}/batch-check`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ checks })
-  });
-  return response.json();
-}
-
-export async function fetchMetrics(): Promise<MetricsResponse> {
-  const response = await fetch('/api/metrics');
-  return response.json();
-}
-```
+- **checkRateLimit(params)** — POSTs to `/api/ratelimit/check` with the algorithm configuration. Measures round-trip client latency and extracts rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-RateLimit-Algorithm`, `Retry-After`) from the response.
+- **getState(identifier)** — GETs `/api/ratelimit/state/{identifier}` to read current state without consuming a token.
+- **resetLimit(identifier)** — DELETEs `/api/ratelimit/reset/{identifier}` to clear the rate limit for testing.
+- **batchCheck(checks)** — POSTs an array of check requests to `/api/ratelimit/batch-check` for multi-identifier testing.
+- **fetchMetrics()** — GETs `/api/metrics` for dashboard visualization.
 
 ### Frontend: Store Integration
 
-```typescript
-// store/rateLimiterStore.ts
-export const useRateLimiterStore = create<RateLimiterState>((set, get) => ({
-  // ... state definition
+The Zustand store provides a `runTest` action that:
 
-  runTest: async () => {
-    const { selectedAlgorithm, config } = get();
+1. Reads the selected algorithm and config from the store
+2. Calls `checkRateLimit` with the current configuration
+3. On success, prepends the result (with a UUID, timestamp, allowed/denied status, remaining count, latency, and response headers) to the test results array, capping at 100 entries
+4. On failure, prepends an error entry with the error message
 
-    try {
-      const result = await checkRateLimit({
-        identifier: config.identifier,
-        algorithm: selectedAlgorithm,
-        limit: config.limit,
-        windowSeconds: config.windowSeconds,
-        burstCapacity: config.burstCapacity,
-        refillRate: config.refillRate,
-        leakRate: config.leakRate
-      });
-
-      const testResult: TestResult = {
-        id: crypto.randomUUID(),
-        timestamp: Date.now(),
-        allowed: result.allowed,
-        remaining: result.remaining,
-        limit: result.limit,
-        resetAt: result.resetAt,
-        latencyMs: result.latencyMs,
-        headers: result.headers
-      };
-
-      set((state) => ({
-        testResults: [testResult, ...state.testResults].slice(0, 100)
-      }));
-
-    } catch (error) {
-      set((state) => ({
-        testResults: [{
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          allowed: false,
-          error: error.message,
-          remaining: 0,
-          limit: 0,
-          resetAt: 0,
-          latencyMs: 0
-        }, ...state.testResults].slice(0, 100)
-      }));
-    }
-  },
-
-  fetchMetrics: async () => {
-    set({ metricsLoading: true });
-    try {
-      const response = await fetchMetrics();
-      set({
-        metrics: response.points,
-        metricsSummary: response.summary,
-        metricsLoading: false
-      });
-    } catch (error) {
-      set({ metricsLoading: false, metricsError: error.message });
-    }
-  }
-}));
-```
+A separate `fetchMetrics` action sets a loading flag, calls the metrics endpoint, and stores both the time-series data points and summary statistics (total checks, allowed/denied percentages, average and p99 latency).
 
 ---
 
@@ -411,102 +174,20 @@ export const useRateLimiterStore = create<RateLimiterState>((set, get) => ({
 
 ### Backend: Centralized Error Handling
 
-```typescript
-// middleware/errorHandler.ts
-export function errorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  // Log error
-  logger.error('Request error', {
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method
-  });
+The Express error handler middleware logs every error with its stack trace, request path, and method. It then classifies the error by type:
 
-  // Determine status code
-  let status = 500;
-  let code = 'INTERNAL_ERROR';
+- **ValidationError** returns 400 with code `VALIDATION_ERROR`
+- **NotFoundError** returns 404 with code `NOT_FOUND`
+- **RateLimitError** returns 429 with code `RATE_LIMITED`
+- All other errors return 500 with code `INTERNAL_ERROR`
 
-  if (err instanceof ValidationError) {
-    status = 400;
-    code = 'VALIDATION_ERROR';
-  } else if (err instanceof NotFoundError) {
-    status = 404;
-    code = 'NOT_FOUND';
-  } else if (err instanceof RateLimitError) {
-    status = 429;
-    code = 'RATE_LIMITED';
-  }
-
-  res.status(status).json({
-    error: code,
-    message: err.message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-}
-```
+In development mode, the stack trace is included in the response body for debugging.
 
 ### Frontend: Error Boundary and Toast
 
-```tsx
-// components/ErrorBoundary.tsx
-export function ErrorBoundary({ children }: { children: React.ReactNode }) {
-  const [error, setError] = useState<Error | null>(null);
+The frontend uses a React error boundary that catches render errors and displays a fallback UI with the error message and a "Try Again" button that resets the error state.
 
-  if (error) {
-    return (
-      <div className="p-8 text-center">
-        <h2 className="text-xl font-bold text-red-600 mb-2">
-          Something went wrong
-        </h2>
-        <p className="text-gray-600 mb-4">{error.message}</p>
-        <button
-          onClick={() => setError(null)}
-          className="px-4 py-2 bg-blue-500 text-white rounded"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <ErrorBoundaryReact
-      fallbackRender={({ error }) => {
-        setError(error);
-        return null;
-      }}
-    >
-      {children}
-    </ErrorBoundaryReact>
-  );
-}
-
-// hooks/useToast.ts
-export function useToast() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    const id = crypto.randomUUID();
-    setToasts(prev => [...prev, { id, message, type }]);
-
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
-  }, []);
-
-  const showError = useCallback((error: Error | string) => {
-    const message = typeof error === 'string' ? error : error.message;
-    showToast(message, 'error');
-  }, [showToast]);
-
-  return { toasts, showToast, showError };
-}
-```
+For transient errors (API failures, network issues), a toast notification system displays messages for 5 seconds before auto-dismissing. The `useToast` hook provides `showToast(message, type)` and `showError(error)` functions, where type can be 'success', 'error', or 'info'.
 
 ---
 
@@ -514,117 +195,18 @@ export function useToast() {
 
 ### Backend: Metrics Collection
 
-```typescript
-// services/metricsService.ts
-interface MetricsBucket {
-  timestamp: number;
-  allowed: number;
-  denied: number;
-  latencies: number[];
-}
+The metrics service aggregates rate limit check results into 1-minute time buckets. Each bucket tracks allowed count, denied count, and a list of latency values.
 
-class MetricsService {
-  private buckets = new Map<number, MetricsBucket>();
-  private readonly BUCKET_SIZE_MS = 60000; // 1 minute
+When the `/api/metrics` endpoint is called, the service:
 
-  record(allowed: boolean, latencyMs: number): void {
-    const bucketKey = Math.floor(Date.now() / this.BUCKET_SIZE_MS);
-
-    if (!this.buckets.has(bucketKey)) {
-      this.buckets.set(bucketKey, {
-        timestamp: bucketKey * this.BUCKET_SIZE_MS,
-        allowed: 0,
-        denied: 0,
-        latencies: []
-      });
-
-      // Clean old buckets
-      this.cleanup();
-    }
-
-    const bucket = this.buckets.get(bucketKey)!;
-    if (allowed) {
-      bucket.allowed++;
-    } else {
-      bucket.denied++;
-    }
-    bucket.latencies.push(latencyMs);
-  }
-
-  getMetrics(): MetricsResponse {
-    const points: MetricPoint[] = [];
-
-    for (const bucket of this.buckets.values()) {
-      const sortedLatencies = [...bucket.latencies].sort((a, b) => a - b);
-
-      points.push({
-        timestamp: bucket.timestamp,
-        allowed: bucket.allowed,
-        denied: bucket.denied,
-        p50Latency: this.percentile(sortedLatencies, 50),
-        p99Latency: this.percentile(sortedLatencies, 99)
-      });
-    }
-
-    points.sort((a, b) => a.timestamp - b.timestamp);
-
-    const totalAllowed = points.reduce((sum, p) => sum + p.allowed, 0);
-    const totalDenied = points.reduce((sum, p) => sum + p.denied, 0);
-    const total = totalAllowed + totalDenied;
-
-    return {
-      points,
-      summary: {
-        totalChecks: total,
-        allowedPercent: total > 0 ? (totalAllowed / total) * 100 : 100,
-        deniedPercent: total > 0 ? (totalDenied / total) * 100 : 0,
-        avgLatencyMs: this.calculateAvgLatency(points),
-        p99LatencyMs: Math.max(...points.map(p => p.p99Latency), 0)
-      }
-    };
-  }
-
-  private percentile(arr: number[], p: number): number {
-    if (arr.length === 0) return 0;
-    const index = Math.ceil((p / 100) * arr.length) - 1;
-    return arr[Math.max(0, index)];
-  }
-
-  private cleanup(): void {
-    const cutoff = Date.now() - (60 * 60 * 1000); // 1 hour
-    for (const [key, bucket] of this.buckets.entries()) {
-      if (bucket.timestamp < cutoff) {
-        this.buckets.delete(key);
-      }
-    }
-  }
-}
-
-export const metricsService = new MetricsService();
-```
+1. Iterates over all buckets, computing p50 and p99 latencies from the sorted latency arrays
+2. Sorts data points chronologically
+3. Computes summary statistics: total checks, allowed/denied percentages, average latency, and maximum p99 latency across all buckets
+4. Cleans up buckets older than 1 hour to bound memory usage
 
 ### Frontend: Polling with Auto-Refresh
 
-```typescript
-// hooks/useMetricsPolling.ts
-export function useMetricsPolling(intervalMs = 5000) {
-  const { fetchMetrics } = useRateLimiterStore();
-  const [isPolling, setIsPolling] = useState(true);
-
-  useEffect(() => {
-    if (!isPolling) return;
-
-    // Initial fetch
-    fetchMetrics();
-
-    const interval = setInterval(fetchMetrics, intervalMs);
-
-    return () => clearInterval(interval);
-  }, [fetchMetrics, intervalMs, isPolling]);
-
-  return { isPolling, setIsPolling };
-}
-```
+The dashboard uses a `useMetricsPolling` hook that calls `fetchMetrics` immediately on mount and then at a configurable interval (default 5 seconds). The hook exposes an `isPolling` toggle so users can pause the auto-refresh. The interval is cleaned up on unmount or when polling is disabled.
 
 ---
 
@@ -644,70 +226,14 @@ export function useMetricsPolling(intervalMs = 5000) {
 
 ### Backend Integration Tests
 
-```typescript
-// tests/ratelimit.test.ts
-describe('Rate Limit API', () => {
-  it('should allow requests under limit', async () => {
-    const response = await request(app)
-      .post('/api/ratelimit/check')
-      .send({
-        identifier: 'test-user',
-        algorithm: 'sliding',
-        limit: 10,
-        windowSeconds: 60
-      });
+The test suite verifies end-to-end behavior:
 
-    expect(response.status).toBe(200);
-    expect(response.body.allowed).toBe(true);
-    expect(response.body.remaining).toBe(9);
-    expect(response.headers['x-ratelimit-limit']).toBe('10');
-  });
-
-  it('should deny requests over limit', async () => {
-    // Exhaust limit
-    for (let i = 0; i < 10; i++) {
-      await request(app)
-        .post('/api/ratelimit/check')
-        .send({ identifier: 'test-user-2', algorithm: 'fixed', limit: 10 });
-    }
-
-    const response = await request(app)
-      .post('/api/ratelimit/check')
-      .send({ identifier: 'test-user-2', algorithm: 'fixed', limit: 10 });
-
-    expect(response.status).toBe(429);
-    expect(response.body.allowed).toBe(false);
-    expect(response.headers['retry-after']).toBeDefined();
-  });
-});
-```
+- **Under limit**: POST a check request with identifier "test-user", sliding algorithm, limit 10, window 60s. Assert status 200, `allowed = true`, `remaining = 9`, and `X-RateLimit-Limit` header equals "10".
+- **Over limit**: Exhaust the limit by sending 10 requests for "test-user-2" with fixed algorithm and limit 10. The 11th request should return status 429, `allowed = false`, and include a `Retry-After` header.
 
 ### Frontend Component Tests
 
-```typescript
-// tests/RequestTester.test.tsx
-describe('RequestTester', () => {
-  it('should display test results', async () => {
-    render(<RequestTester />);
-
-    // Mock API response
-    vi.mocked(checkRateLimit).mockResolvedValue({
-      allowed: true,
-      remaining: 9,
-      limit: 10,
-      resetAt: Date.now() + 60000,
-      latencyMs: 2.5
-    });
-
-    await userEvent.click(screen.getByText('Send Request'));
-
-    await waitFor(() => {
-      expect(screen.getByText('Allowed')).toBeInTheDocument();
-      expect(screen.getByText('X-RateLimit-Remaining: 9')).toBeInTheDocument();
-    });
-  });
-});
-```
+The RequestTester component test mocks the `checkRateLimit` API call to return an allowed response with 9 remaining. After clicking "Send Request", it waits for the UI to show "Allowed" and display the `X-RateLimit-Remaining: 9` header value.
 
 ---
 

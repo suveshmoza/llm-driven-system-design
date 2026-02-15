@@ -80,81 +80,13 @@
 
 ### PostgreSQL Schema
 
-```sql
--- Channels (streamers)
-CREATE TABLE channels (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  name VARCHAR(100) UNIQUE NOT NULL,
-  stream_key VARCHAR(100) UNIQUE NOT NULL,
-  title VARCHAR(200),
-  category_id INTEGER REFERENCES categories(id),
-  follower_count INTEGER DEFAULT 0,
-  subscriber_count INTEGER DEFAULT 0,
-  is_live BOOLEAN DEFAULT FALSE,
-  current_viewers INTEGER DEFAULT 0,
-  version INTEGER DEFAULT 1,  -- Optimistic locking
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_channels_live ON channels (is_live) WHERE is_live = TRUE;
-CREATE INDEX idx_channels_category ON channels (category_id, current_viewers DESC);
-
--- Each broadcast session
-CREATE TABLE streams (
-  id SERIAL PRIMARY KEY,
-  channel_id INTEGER REFERENCES channels(id),
-  title VARCHAR(200),
-  started_at TIMESTAMP DEFAULT NOW(),
-  ended_at TIMESTAMP,
-  peak_viewers INTEGER DEFAULT 0,
-  total_views INTEGER DEFAULT 0,
-  vod_url VARCHAR(500)
-);
-
-CREATE INDEX idx_streams_channel ON streams (channel_id, started_at DESC);
-
--- Paid subscriptions
-CREATE TABLE subscriptions (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  channel_id INTEGER REFERENCES channels(id),
-  tier INTEGER DEFAULT 1, -- Tier 1, 2, or 3
-  started_at TIMESTAMP DEFAULT NOW(),
-  expires_at TIMESTAMP,
-  is_gift BOOLEAN DEFAULT FALSE,
-  gifted_by INTEGER REFERENCES users(id),
-  idempotency_key VARCHAR(100) UNIQUE
-);
-
-CREATE UNIQUE INDEX idx_subscriptions_active
-  ON subscriptions (user_id, channel_id) WHERE expires_at > NOW();
-
--- Chat messages (partitioned by time for scale)
-CREATE TABLE chat_messages (
-  id BIGSERIAL,
-  channel_id INTEGER REFERENCES channels(id),
-  user_id INTEGER REFERENCES users(id),
-  message TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (id, created_at)
-) PARTITION BY RANGE (created_at);
-
--- Create monthly partitions
-CREATE TABLE chat_messages_2024_01 PARTITION OF chat_messages
-  FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
-
--- Channel bans for moderation
-CREATE TABLE channel_bans (
-  channel_id INTEGER REFERENCES channels(id),
-  user_id INTEGER REFERENCES users(id),
-  banned_by INTEGER REFERENCES users(id),
-  reason TEXT,
-  expires_at TIMESTAMP, -- NULL = permanent
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (channel_id, user_id)
-);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **channels** | id (SERIAL PK), user_id (FK to users), name (UNIQUE), stream_key (UNIQUE), title, category_id (FK), follower_count, subscriber_count, is_live (BOOLEAN), current_viewers, version (optimistic locking), created_at | Partial index on is_live WHERE is_live = TRUE; composite index on (category_id, current_viewers DESC) | Version column enables optimistic concurrency control for viewer count updates |
+| **streams** | id (SERIAL PK), channel_id (FK), title, started_at, ended_at, peak_viewers, total_views, vod_url | Composite index on (channel_id, started_at DESC) | Each row represents one broadcast session; ended_at is NULL while live |
+| **subscriptions** | id (SERIAL PK), user_id (FK), channel_id (FK), tier (1/2/3), started_at, expires_at, is_gift, gifted_by (FK), idempotency_key (UNIQUE) | Unique partial index on (user_id, channel_id) WHERE expires_at > NOW() | Idempotency key prevents duplicate subscription charges |
+| **chat_messages** | id (BIGSERIAL), channel_id (FK), user_id (FK), message (TEXT), created_at | Partitioned by RANGE on created_at (monthly partitions) | Composite PK on (id, created_at) to support partitioning; old partitions can be dropped for cleanup |
+| **channel_bans** | channel_id + user_id (composite PK), banned_by (FK), reason, expires_at (NULL = permanent), created_at | -- | expires_at being NULL means a permanent ban |
 
 ### Redis Data Structures
 
@@ -184,109 +116,31 @@ chat:{channelId}                 -> Pub/Sub for chat messages
 
 ### RTMP Server Flow
 
-```javascript
-const rtmpServer = new RTMPServer();
+The RTMP ingest server handles three key events:
 
-rtmpServer.on('connect', async (session) => {
-  const { streamKey } = session.connectCmdObj;
+**On Connect:**
+1. Extract the stream key from the RTMP connection command
+2. Validate the stream key against the database; reject the session if invalid
+3. Acquire a distributed lock in Redis (`stream_lock:{channelId}` with 10-second TTL) to prevent duplicate go-live events
+4. If the lock is already held, check whether the channel is already live -- if so, treat this as a reconnect and allow it without creating a new stream record. Otherwise, reject the session
+5. Create a new stream record in the database
+6. Update the channel to `is_live = TRUE` and reset `current_viewers` to 0
+7. Publish a "stream_start" event via Redis pub/sub to notify the chat system
+8. Release the lock
 
-  // Validate stream key against database
-  const channel = await validateStreamKey(streamKey);
+**On Publish:**
+1. Assign a transcoder instance to this stream based on the channel ID
+2. Pipe the incoming RTMP data to the assigned transcoder
 
-  if (!channel) {
-    session.reject();
-    return;
-  }
-
-  // Acquire lock to prevent duplicate go-live events
-  const lockKey = `stream_lock:${channel.id}`;
-  const acquired = await redis.set(lockKey, '1', 'NX', 'EX', 10);
-
-  if (!acquired) {
-    // Check if already live (reconnect scenario)
-    const existing = await getChannel(channel.id);
-    if (existing.is_live) {
-      session.channelId = channel.id;
-      session.isReconnect = true;
-      return; // Allow reconnect without creating new stream
-    }
-    session.reject();
-    return;
-  }
-
-  try {
-    // Create new stream record
-    const stream = await createStream(channel.id);
-
-    // Update channel status
-    await pool.query(
-      `UPDATE channels SET is_live = TRUE, current_viewers = 0 WHERE id = $1`,
-      [channel.id]
-    );
-
-    // Notify chat system
-    await redis.publish(`events:${channel.id}`, JSON.stringify({
-      type: 'stream_start',
-      channelId: channel.id,
-      streamId: stream.id
-    }));
-
-    session.channelId = channel.id;
-    session.streamId = stream.id;
-  } finally {
-    await redis.del(lockKey);
-  }
-});
-
-rtmpServer.on('publish', (session) => {
-  // Assign a transcoder for this stream
-  const transcoderUrl = assignTranscoder(session.channelId);
-
-  // Pipe RTMP stream to transcoder
-  session.pipe(transcoderUrl);
-});
-
-rtmpServer.on('disconnect', async (session) => {
-  if (session.isReconnect) return; // Don't end stream on reconnect disconnect
-
-  // Wait briefly for potential reconnect
-  await sleep(5000);
-
-  // Check if still connected via another session
-  const isStillLive = await checkActiveConnection(session.channelId);
-  if (isStillLive) return;
-
-  // End the stream
-  await pool.query(
-    `UPDATE streams SET ended_at = NOW() WHERE id = $1`,
-    [session.streamId]
-  );
-
-  await pool.query(
-    `UPDATE channels SET is_live = FALSE WHERE id = $1`,
-    [session.channelId]
-  );
-});
-```
+**On Disconnect:**
+1. If this was a reconnect session, do nothing (the original session handles cleanup)
+2. Wait 5 seconds to allow for potential reconnection (handles brief network drops)
+3. Check if the channel has reconnected via another session during that window
+4. If still disconnected, mark the stream's `ended_at` timestamp and set the channel to `is_live = FALSE`
 
 ### Transcoding Pipeline
 
-```bash
-# FFmpeg command for multi-quality HLS output
-ffmpeg -i rtmp://input \
-  -map 0:v -map 0:a -c:v libx264 -preset veryfast \
-    -b:v 6000k -s 1920x1080 -f hls \
-    -hls_time 2 -hls_list_size 5 -hls_flags delete_segments \
-    output_1080p.m3u8 \
-  -map 0:v -map 0:a -c:v libx264 -preset veryfast \
-    -b:v 3000k -s 1280x720 -f hls \
-    -hls_time 2 -hls_list_size 5 -hls_flags delete_segments \
-    output_720p.m3u8 \
-  -map 0:v -map 0:a -c:v libx264 -preset veryfast \
-    -b:v 1500k -s 854x480 -f hls \
-    -hls_time 2 -hls_list_size 5 -hls_flags delete_segments \
-    output_480p.m3u8
-```
+The transcoder takes the RTMP input and produces multi-quality HLS output using FFmpeg. It generates three quality tiers simultaneously from a single input stream: 1080p at 6000 kbps, 720p at 3000 kbps, and 480p at 1500 kbps. Each output uses the `veryfast` encoding preset for low latency, produces 2-second HLS segments, keeps only the 5 most recent segments in the playlist (sliding window), and deletes old segments to manage disk usage.
 
 ### HLS Master Manifest
 
@@ -333,74 +187,21 @@ ffmpeg -i rtmp://input \
 
 ### Message Flow with Deduplication
 
-```javascript
-async function handleChatMessage(userId, channelId, messageId, content) {
-  // 1. Check rate limit
-  const rateLimitKey = `ratelimit:chat:${channelId}:${userId}`;
-  const messageCount = await redis.incr(rateLimitKey);
+Each incoming chat message goes through a six-step pipeline:
 
-  if (messageCount === 1) {
-    await redis.expire(rateLimitKey, 1); // 1 message per second default
-  }
+1. **Rate limit check**: Increment a per-user counter in Redis (`ratelimit:chat:{channelId}:{userId}`) with a 1-second TTL. If the count exceeds 1 (or the channel's configured slow mode threshold), reject the message with a "RATE_LIMITED" error and tell the client how many seconds to wait.
 
-  const channel = await getChannel(channelId);
-  const cooldown = channel.slowModeSeconds || 1;
+2. **Ban check**: Look up whether the user is banned in this channel. If banned, return a "BANNED" error immediately.
 
-  if (messageCount > 1) {
-    return { error: 'RATE_LIMITED', waitSeconds: cooldown };
-  }
+3. **Deduplication**: Use a Redis set (`chat_dedup:{channelId}`) with a 5-minute expiry window. Attempt to add the message ID -- if it already exists, the message is a client retry and is silently dropped.
 
-  // 2. Check if banned
-  const isBanned = await checkBan(userId, channelId);
-  if (isBanned) {
-    return { error: 'BANNED' };
-  }
+4. **Enrich the message**: Build the full message object with the user's display name, subscriber/mod/admin badges, and a server-side timestamp.
 
-  // 3. Deduplicate (handle client retries)
-  const dedupKey = `chat_dedup:${channelId}`;
-  const isNew = await redis.sadd(dedupKey, messageId);
-  await redis.expire(dedupKey, 300); // 5 minute dedup window
+5. **Publish via Redis Pub/Sub**: Publish the enriched message to the `chat:{channelId}` channel. All chat pods subscribed to this channel receive it and broadcast to their local WebSocket connections.
 
-  if (!isNew) {
-    return { status: 'DUPLICATE', dropped: true };
-  }
+6. **Store asynchronously**: Write the message to PostgreSQL for moderation replay and chat history, but do this asynchronously so it does not block the real-time path.
 
-  // 4. Build enriched message
-  const chatMessage = {
-    id: messageId,
-    userId,
-    channelId,
-    username: await getUsername(userId),
-    message: content,
-    badges: await getBadges(userId, channelId), // subscriber, mod, etc.
-    timestamp: Date.now()
-  };
-
-  // 5. Publish to all chat pods via Redis Pub/Sub
-  await redis.publish(`chat:${channelId}`, JSON.stringify(chatMessage));
-
-  // 6. Store for moderation replay (async)
-  storeChatMessage(chatMessage);
-
-  return { status: 'SENT', message: chatMessage };
-}
-
-// Each chat pod subscribes and broadcasts to its WebSocket connections
-async function setupChatPod() {
-  const subscriber = redis.duplicate();
-
-  subscriber.on('message', (channel, data) => {
-    const channelId = channel.split(':')[1];
-    const message = JSON.parse(data);
-    broadcastToRoom(channelId, message);
-  });
-
-  // Subscribe to all active channels this pod handles
-  for (const channelId of activeChannels) {
-    await subscriber.subscribe(`chat:${channelId}`);
-  }
-}
-```
+**Chat Pod Setup**: Each chat pod creates a dedicated Redis subscriber connection. It subscribes to `chat:{channelId}` for every active channel it handles. When a message arrives on any subscribed channel, the pod parses it and broadcasts to all WebSocket connections in that channel's room.
 
 ### Rate Limiting Strategies
 
@@ -414,26 +215,7 @@ async function setupChatPod() {
 
 ### Chat Pod Scaling
 
-```javascript
-// Partition channels across chat pods
-function getTargetPod(channelId) {
-  const podCount = await redis.get('chat:pod_count');
-  return channelId % podCount;
-}
-
-// Large channels get dedicated pods
-async function assignChatPods(channelId) {
-  const channel = await getChannel(channelId);
-
-  if (channel.current_viewers > 50000) {
-    // Assign 3 dedicated pods
-    return ['chat-pod-large-1', 'chat-pod-large-2', 'chat-pod-large-3'];
-  }
-
-  // Use shared pod pool
-  return [`chat-pod-${channelId % 10}`];
-}
-```
+Channels are partitioned across chat pods using modular hashing: a channel is assigned to pod number `channelId % podCount`. However, large channels (over 50,000 concurrent viewers) get 3 dedicated pods to handle the WebSocket connection load and message fan-out volume. Smaller channels share pods from a pool of 10 shared instances.
 
 ---
 
@@ -441,52 +223,11 @@ async function assignChatPods(channelId) {
 
 ### Parallel Recording During Live Stream
 
-```javascript
-// As transcoder outputs HLS segments, also archive them
-async function handleSegment(channelId, streamId, segment) {
-  const segmentKey = `${channelId}/${streamId}/${segment.sequence}.ts`;
+As the transcoder outputs HLS segments, each segment is handled in parallel for both live delivery and VOD archival:
 
-  // 1. Send to CDN for live viewers (primary path)
-  await cdn.uploadSegment(segment);
-
-  // 2. Archive for VOD with retry and idempotency
-  await withRetry(
-    () => s3.putObject({
-      bucket: 'vods',
-      key: segmentKey,
-      body: segment.data,
-      contentType: 'video/mp2t'
-    }),
-    {
-      idempotencyKey: `segment:${streamId}:${segment.sequence}`,
-      maxRetries: 5
-    }
-  );
-
-  // 3. Update VOD manifest
-  await appendToVodManifest(channelId, streamId, segment);
-}
-
-async function appendToVodManifest(channelId, streamId, segment) {
-  const manifestKey = `${channelId}/${streamId}/vod.m3u8`;
-
-  // Get current manifest
-  let manifest = await s3.getObject({ bucket: 'vods', key: manifestKey })
-    .catch(() => initialManifest());
-
-  // Append segment
-  manifest += `#EXTINF:${segment.duration},\n`;
-  manifest += `${segment.sequence}.ts\n`;
-
-  // Upload updated manifest
-  await s3.putObject({
-    bucket: 'vods',
-    key: manifestKey,
-    body: manifest,
-    contentType: 'application/vnd.apple.mpegurl'
-  });
-}
-```
+1. **CDN upload (primary path)**: The segment is immediately pushed to the CDN for live viewers -- this is latency-critical and takes priority
+2. **S3 archival (secondary path)**: The same segment is uploaded to an S3 "vods" bucket at path `{channelId}/{streamId}/{sequence}.ts` with retry logic (up to 5 retries) and an idempotency key (`segment:{streamId}:{sequence}`) to prevent duplicate writes
+3. **VOD manifest update**: After archiving the segment, append its entry (duration and filename) to a running HLS manifest file at `{channelId}/{streamId}/vod.m3u8` in S3. If the manifest does not exist yet, create it with an initial header.
 
 ### Why Record Segments Directly?
 
@@ -501,133 +242,26 @@ async function appendToVodManifest(channelId, streamId, segment) {
 
 ### Circuit Breaker Pattern
 
-```javascript
-class CircuitBreaker {
-  constructor(name, options = {}) {
-    this.name = name;
-    this.failureThreshold = options.failureThreshold || 5;
-    this.resetTimeoutMs = options.resetTimeoutMs || 30000;
-    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
-    this.failures = 0;
-    this.lastFailureTime = null;
-  }
+We implement circuit breakers for each external dependency (Redis, database, S3) with configurable thresholds. The circuit breaker maintains three states:
 
-  async call(operation, fallback) {
-    if (this.state === 'OPEN') {
-      if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
-        this.state = 'HALF_OPEN';
-      } else if (fallback) {
-        return fallback();
-      } else {
-        throw new Error(`Circuit breaker ${this.name} is OPEN`);
-      }
-    }
+- **CLOSED** (normal): Requests pass through. On each failure, increment a failure counter. When failures reach the threshold (e.g., 5 for Redis, 3 for database), transition to OPEN.
+- **OPEN** (tripped): All requests immediately fail or invoke a fallback. After a reset timeout (e.g., 5 seconds for Redis, 10 seconds for database, 30 seconds for S3), transition to HALF_OPEN.
+- **HALF_OPEN** (testing): Allow one request through. If it succeeds, return to CLOSED and reset the failure counter. If it fails, return to OPEN.
 
-    try {
-      const result = await operation();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      if (fallback) return fallback();
-      throw error;
-    }
-  }
-
-  onSuccess() {
-    this.failures = 0;
-    if (this.state === 'HALF_OPEN') {
-      this.state = 'CLOSED';
-    }
-  }
-
-  onFailure() {
-    this.failures++;
-    this.lastFailureTime = Date.now();
-
-    if (this.failures >= this.failureThreshold) {
-      this.state = 'OPEN';
-    }
-  }
-}
-
-// Circuit breakers for dependencies
-const circuitBreakers = {
-  redis: new CircuitBreaker('redis', { failureThreshold: 5, resetTimeoutMs: 5000 }),
-  database: new CircuitBreaker('database', { failureThreshold: 3, resetTimeoutMs: 10000 }),
-  s3: new CircuitBreaker('s3', { failureThreshold: 5, resetTimeoutMs: 30000 })
-};
-
-// Usage with fallback
-async function broadcastChatMessage(channelId, message) {
-  await circuitBreakers.redis.call(
-    () => redis.publish(`chat:${channelId}`, JSON.stringify(message)),
-    () => localBroadcast(channelId, message) // Fallback to local-only
-  );
-}
-```
+Each circuit breaker accepts an optional fallback function. For example, the chat broadcast circuit breaker falls back to local-only broadcast (only reaching WebSocket connections on the current pod) when Redis pub/sub is unavailable. This means chat degrades to pod-local delivery rather than failing entirely.
 
 ### Idempotency for Subscriptions
 
-```javascript
-async function createSubscription(userId, channelId, tier, idempotencyKey) {
-  // Check if already processed
-  const cached = await redis.get(`idempotency:${idempotencyKey}`);
-  if (cached) {
-    return JSON.parse(cached); // Return cached result
-  }
+The subscription creation flow ensures exactly-once payment processing:
 
-  // Process subscription in transaction
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Check for existing active subscription
-    const existing = await client.query(
-      `SELECT id FROM subscriptions
-       WHERE user_id = $1 AND channel_id = $2 AND expires_at > NOW()`,
-      [userId, channelId]
-    );
-
-    if (existing.rows.length > 0) {
-      // Extend existing subscription
-      await client.query(
-        `UPDATE subscriptions
-         SET expires_at = expires_at + INTERVAL '1 month', tier = $3
-         WHERE id = $4`,
-        [tier, existing.rows[0].id]
-      );
-    } else {
-      // Create new subscription
-      await client.query(
-        `INSERT INTO subscriptions (user_id, channel_id, tier, expires_at, idempotency_key)
-         VALUES ($1, $2, $3, NOW() + INTERVAL '1 month', $4)`,
-        [userId, channelId, tier, idempotencyKey]
-      );
-    }
-
-    // Update channel subscriber count
-    await client.query(
-      `UPDATE channels SET subscriber_count = subscriber_count + 1 WHERE id = $1`,
-      [channelId]
-    );
-
-    await client.query('COMMIT');
-
-    const result = { success: true, tier, expiresAt: addMonths(new Date(), 1) };
-
-    // Cache result for 24 hours
-    await redis.setex(`idempotency:${idempotencyKey}`, 86400, JSON.stringify(result));
-
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-```
+1. **Check idempotency cache**: Look up the idempotency key in Redis. If a cached result exists, return it immediately -- this handles client retries safely.
+2. **Begin a database transaction**: All subscription changes happen atomically.
+3. **Check for existing active subscription**: Query subscriptions for this user and channel where `expires_at > NOW()`.
+4. **If already subscribed**: Extend the existing subscription by 1 month and update the tier.
+5. **If new subscription**: Insert a new row with the idempotency key, tier, and expiration set to 1 month from now.
+6. **Increment subscriber count**: Update the channel's `subscriber_count` within the same transaction.
+7. **Commit the transaction**: If anything fails, roll back entirely.
+8. **Cache the result**: Store the success response in Redis under the idempotency key with a 24-hour TTL, so retries within that window return the same result without re-processing.
 
 ---
 
@@ -635,47 +269,17 @@ async function createSubscription(userId, channelId, tier, idempotencyKey) {
 
 ### Prometheus Metrics
 
-```javascript
-import { Registry, Counter, Histogram, Gauge } from 'prom-client';
+We track both infrastructure and business metrics:
 
-const register = new Registry();
+**Infrastructure metrics:**
+- **HTTP request duration** (histogram): Labeled by method, route, and status code, with buckets at 10ms, 50ms, 100ms, 500ms, 1s, 2s, and 5s
 
-// HTTP request metrics
-const httpRequestDuration = new Histogram({
-  name: 'http_request_duration_seconds',
-  help: 'Duration of HTTP requests',
-  labelNames: ['method', 'route', 'status_code'],
-  buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5]
-});
-
-// Business metrics
-const activeStreams = new Gauge({
-  name: 'twitch_active_streams',
-  help: 'Number of currently live streams'
-});
-
-const chatMessagesTotal = new Counter({
-  name: 'twitch_chat_messages_total',
-  help: 'Total chat messages processed',
-  labelNames: ['channel_id']
-});
-
-const wsConnections = new Gauge({
-  name: 'twitch_websocket_connections',
-  help: 'Active WebSocket connections'
-});
-
-const viewerCount = new Gauge({
-  name: 'twitch_viewer_count',
-  help: 'Total viewers across all streams'
-});
-
-const circuitBreakerState = new Gauge({
-  name: 'twitch_circuit_breaker_state',
-  help: 'Circuit breaker state (0=closed, 1=open, 2=half-open)',
-  labelNames: ['circuit']
-});
-```
+**Business metrics:**
+- **Active streams** (gauge): Number of currently live streams
+- **Chat messages total** (counter): Total chat messages processed, labeled by channel ID
+- **WebSocket connections** (gauge): Current active WebSocket connections across all chat pods
+- **Viewer count** (gauge): Total viewers across all live streams
+- **Circuit breaker state** (gauge): Numeric state per circuit (0=closed, 1=open, 2=half-open), labeled by circuit name
 
 ### Alert Thresholds
 

@@ -90,108 +90,14 @@ The accuracy requirement is absolute. Unlike social media where losing a post is
 
 ### Database Schema
 
-```sql
--- Merchants with API credentials
-CREATE TABLE merchants (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(200) NOT NULL,
-  email VARCHAR(200) NOT NULL UNIQUE,
-  api_key_hash VARCHAR(100) NOT NULL,      -- bcrypt hashed
-  webhook_url VARCHAR(500),
-  webhook_secret VARCHAR(100),              -- For HMAC signatures
-  status VARCHAR(20) DEFAULT 'active',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_merchants_api_key ON merchants(api_key_hash);
-
--- Payment Intents (two-phase payment state machine)
-CREATE TABLE payment_intents (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  merchant_id UUID REFERENCES merchants(id),
-  amount INTEGER NOT NULL,                   -- In cents
-  currency VARCHAR(3) NOT NULL,
-  status VARCHAR(30) NOT NULL,               -- State machine
-  payment_method_id UUID,
-  auth_code VARCHAR(50),                     -- From card network
-  decline_code VARCHAR(50),
-  metadata JSONB,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Status values: requires_payment_method, requires_confirmation,
---                requires_action, processing, succeeded, failed, canceled
-
-CREATE INDEX idx_intents_merchant ON payment_intents(merchant_id);
-CREATE INDEX idx_intents_status ON payment_intents(status);
-CREATE INDEX idx_intents_created ON payment_intents(created_at DESC);
-
--- Tokenized payment methods
-CREATE TABLE payment_methods (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  customer_id UUID,
-  card_token VARCHAR(100) NOT NULL,          -- Encrypted
-  card_last4 VARCHAR(4) NOT NULL,
-  card_brand VARCHAR(20) NOT NULL,
-  card_exp_month INTEGER NOT NULL,
-  card_exp_year INTEGER NOT NULL,
-  card_country VARCHAR(2),
-  card_bin VARCHAR(6),                       -- For fraud detection
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Double-entry ledger (the heart of financial accuracy)
-CREATE TABLE ledger_entries (
-  id BIGSERIAL PRIMARY KEY,
-  account VARCHAR(100) NOT NULL,             -- Account identifier
-  debit INTEGER DEFAULT 0,                   -- Money going in
-  credit INTEGER DEFAULT 0,                  -- Money going out
-  intent_id UUID REFERENCES payment_intents(id),
-  description TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-
-  CONSTRAINT positive_amounts CHECK (debit >= 0 AND credit >= 0),
-  CONSTRAINT single_direction CHECK (
-    (debit > 0 AND credit = 0) OR (debit = 0 AND credit > 0)
-  )
-);
-
-CREATE INDEX idx_ledger_account ON ledger_entries(account);
-CREATE INDEX idx_ledger_intent ON ledger_entries(intent_id);
-CREATE INDEX idx_ledger_created ON ledger_entries(created_at);
-
--- Refunds
-CREATE TABLE refunds (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  payment_intent_id UUID REFERENCES payment_intents(id),
-  amount INTEGER NOT NULL,
-  reason VARCHAR(100),
-  status VARCHAR(20) DEFAULT 'pending',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Audit log for PCI compliance
-CREATE TABLE audit_log (
-  id BIGSERIAL PRIMARY KEY,
-  timestamp TIMESTAMP DEFAULT NOW(),
-  actor_type VARCHAR(20) NOT NULL,           -- merchant, admin, system
-  actor_id VARCHAR(100) NOT NULL,
-  action VARCHAR(50) NOT NULL,
-  resource_type VARCHAR(50) NOT NULL,
-  resource_id VARCHAR(100) NOT NULL,
-  old_value JSONB,
-  new_value JSONB,
-  ip_address VARCHAR(45),
-  trace_id VARCHAR(100),
-  metadata JSONB
-);
-
--- Append-only: No UPDATE or DELETE allowed
-CREATE INDEX idx_audit_timestamp ON audit_log(timestamp);
-CREATE INDEX idx_audit_actor ON audit_log(actor_type, actor_id);
-CREATE INDEX idx_audit_resource ON audit_log(resource_type, resource_id);
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **merchants** | id (UUID PK), name, email (unique), api_key_hash (bcrypt), webhook_url, webhook_secret (HMAC), status, created_at | idx_merchants_api_key (api_key_hash) | API key is hashed; webhook secret used for HMAC signatures |
+| **payment_intents** | id (UUID PK), merchant_id (FK), amount (cents), currency (3-char), status (state machine), payment_method_id (FK), auth_code, decline_code, metadata (JSONB), created_at, updated_at | idx_intents_merchant, idx_intents_status, idx_intents_created (DESC) | Status values: requires_payment_method, requires_confirmation, requires_action, processing, succeeded, failed, canceled |
+| **payment_methods** | id (UUID PK), customer_id, card_token (encrypted), card_last4, card_brand, card_exp_month/year, card_country, card_bin (for fraud), created_at | PK index | BIN stored for fraud velocity checks |
+| **ledger_entries** | id (BIGSERIAL PK), account, debit (>= 0), credit (>= 0), intent_id (FK), description, created_at | idx_ledger_account, idx_ledger_intent, idx_ledger_created | Constraints: amounts non-negative; exactly one of debit/credit must be > 0 (single_direction check). This is the heart of financial accuracy |
+| **refunds** | id (UUID PK), payment_intent_id (FK), amount (cents), reason, status, created_at | By payment_intent_id | Tracks partial and full refunds |
+| **audit_log** | id (BIGSERIAL PK), timestamp, actor_type (merchant/admin/system), actor_id, action, resource_type, resource_id, old_value (JSONB), new_value (JSONB), ip_address, trace_id, metadata (JSONB) | idx_audit_timestamp, idx_audit_actor (type + id), idx_audit_resource (type + id) | Append-only table - no UPDATE or DELETE allowed. Required for PCI DSS compliance |
 
 ---
 
@@ -211,140 +117,29 @@ Idempotency keys ensure: 'No matter how many times you call me with this key, th
 
 ### Implementation with Redis Locking
 
-```javascript
-class IdempotencyService {
-  constructor(redis, options = {}) {
-    this.redis = redis;
-    this.lockTTL = options.lockTTL || 60;       // 60 second lock
-    this.responseTTL = options.responseTTL || 86400; // 24 hour cache
-  }
+The idempotency service manages three concerns: preventing concurrent duplicate requests, caching successful responses, and replaying cached responses on retry.
 
-  async executeWithIdempotency(key, merchantId, operation) {
-    const fullKey = `idempotency:${merchantId}:${key}`;
-    const lockKey = `${fullKey}:lock`;
+**Execution flow:**
 
-    // 1. Try to acquire lock (prevents concurrent duplicate requests)
-    const lockAcquired = await this.redis.set(
-      lockKey,
-      process.pid.toString(),
-      'NX',  // Only set if not exists
-      'EX',
-      this.lockTTL
-    );
+1. **Acquire lock** - Use Redis SET NX EX to atomically acquire a lock key (`idempotency:{merchantId}:{key}:lock`) with a 60-second TTL. If the lock is not acquired, check for a cached response from a previous attempt. If no cached response exists either, return a 409 conflict telling the client to retry.
+2. **Check cache** - Even after acquiring the lock, check for a cached response in case the lock expired and was reacquired by another process.
+3. **Execute operation** - Run the actual payment operation.
+4. **Cache response** - Store the successful response in Redis with a 24-hour TTL for future replays.
+5. **Release lock** - Always release the lock in a finally block, regardless of success or failure.
 
-    if (!lockAcquired) {
-      // Check for cached response from previous attempt
-      const cached = await this.redis.get(fullKey);
-      if (cached) {
-        const { response, createdAt } = JSON.parse(cached);
-        return { cached: true, response, createdAt };
-      }
-      // Still processing - tell client to retry
-      throw new IdempotencyConflictError(
-        'Request with this idempotency key is currently being processed'
-      );
-    }
-
-    try {
-      // 2. Check for cached response (in case lock expired and reacquired)
-      const cached = await this.redis.get(fullKey);
-      if (cached) {
-        return { cached: true, ...JSON.parse(cached) };
-      }
-
-      // 3. Execute the actual operation
-      const response = await operation();
-
-      // 4. Cache successful response for replay
-      await this.redis.setex(fullKey, this.responseTTL, JSON.stringify({
-        response,
-        createdAt: Date.now()
-      }));
-
-      return { cached: false, response };
-
-    } finally {
-      // 5. Always release lock
-      await this.redis.del(lockKey);
-    }
-  }
-}
-```
+This guarantees that no matter how many times a client retries with the same idempotency key, the side effect (e.g., charging a card) happens exactly once.
 
 ### Express Middleware Integration
 
-```javascript
-function idempotencyMiddleware(idempotencyService) {
-  return async (req, res, next) => {
-    const idempotencyKey = req.headers['idempotency-key'];
+The idempotency middleware intercepts requests that include an `Idempotency-Key` header:
 
-    if (!idempotencyKey) {
-      // No key provided - process normally (for GET requests, etc.)
-      return next();
-    }
+1. **Validate the key** - Reject keys longer than 255 characters
+2. **Check cache** - Look up `idempotency:{merchantId}:{key}` in Redis. If found, replay the cached response with the original status code, body, and headers, plus an `Idempotency-Replayed: true` header
+3. **Acquire lock** - Use SET NX EX with a 60-second TTL. If the lock is not acquired (another request with the same key is in progress), return 409 Conflict
+4. **Capture response** - Override the response's JSON method to intercept the outgoing body. For successful responses (2xx), cache the status code, body, and headers in Redis with a 24-hour TTL
+5. **Release lock** - Delete the lock key after the response is sent or on error
 
-    // Validate key format
-    if (idempotencyKey.length > 255) {
-      return res.status(400).json({
-        error: 'idempotency_key_too_long',
-        message: 'Idempotency key must be 255 characters or less'
-      });
-    }
-
-    const cacheKey = `${req.merchantId}:${idempotencyKey}`;
-
-    try {
-      // Check for cached response
-      const cached = await redis.get(`idempotency:${cacheKey}`);
-      if (cached) {
-        const { statusCode, body, headers } = JSON.parse(cached);
-        res.set(headers);
-        res.set('Idempotency-Replayed', 'true');
-        return res.status(statusCode).json(body);
-      }
-
-      // Acquire lock
-      const lockAcquired = await redis.set(
-        `idempotency:${cacheKey}:lock`,
-        '1',
-        'NX',
-        'EX',
-        60
-      );
-
-      if (!lockAcquired) {
-        return res.status(409).json({
-          error: 'idempotency_conflict',
-          message: 'A request with this idempotency key is in progress'
-        });
-      }
-
-      // Capture response for caching
-      const originalJson = res.json.bind(res);
-      res.json = (body) => {
-        // Only cache successful responses
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          redis.setex(`idempotency:${cacheKey}`, 86400, JSON.stringify({
-            statusCode: res.statusCode,
-            body,
-            headers: res.getHeaders()
-          }));
-        }
-        // Release lock
-        redis.del(`idempotency:${cacheKey}:lock`);
-        return originalJson(body);
-      };
-
-      next();
-
-    } catch (error) {
-      // Release lock on error
-      await redis.del(`idempotency:${cacheKey}:lock`);
-      next(error);
-    }
-  };
-}
-```
+Requests without an idempotency key pass through normally (for GET requests, etc.).
 
 ---
 
@@ -368,143 +163,23 @@ Ledger entries:
 
 ### Ledger Service Implementation
 
-```javascript
-class LedgerService {
-  constructor(pool) {
-    this.pool = pool;
-  }
+The ledger service enforces double-entry bookkeeping invariants:
 
-  // Create ledger entries within a transaction
-  async createChargeEntries(tx, { intentId, amount, merchantId }) {
-    // Calculate fee: 2.9% + 30 cents
-    const feeAmount = Math.round(amount * 0.029 + 30);
-    const merchantAmount = amount - feeAmount;
+**Charge entries** (for a payment of amount A with 2.9% + 30c fee):
 
-    const entries = [
-      {
-        account: 'funds_receivable',
-        debit: amount,
-        credit: 0,
-        description: 'Card network receivable'
-      },
-      {
-        account: `merchant:${merchantId}:payable`,
-        debit: 0,
-        credit: merchantAmount,
-        description: 'Merchant payout pending'
-      },
-      {
-        account: 'revenue:transaction_fees',
-        debit: 0,
-        credit: feeAmount,
-        description: 'Transaction fee revenue'
-      }
-    ];
+| Account | Debit | Credit | Description |
+|---------|-------|--------|-------------|
+| funds_receivable | A | 0 | Card network receivable |
+| merchant:{id}:payable | 0 | A - fee | Merchant payout pending |
+| revenue:transaction_fees | 0 | fee | Transaction fee revenue |
 
-    // Verify balance before insert (defensive programming)
-    const totalDebit = entries.reduce((sum, e) => sum + e.debit, 0);
-    const totalCredit = entries.reduce((sum, e) => sum + e.credit, 0);
+Before inserting, the service programmatically verifies that total debits equal total credits. If they don't match, a LedgerImbalanceError is thrown and no entries are written. All entries for a single charge are inserted atomically within a database transaction.
 
-    if (totalDebit !== totalCredit) {
-      throw new LedgerImbalanceError(
-        `Ledger entries don't balance: debit=${totalDebit}, credit=${totalCredit}`
-      );
-    }
+**Refund entries** reverse the original charge with debits and credits swapped: credit funds_receivable, debit the merchant payable, and debit the fee revenue. The same balance verification runs before insertion.
 
-    // Insert all entries atomically
-    for (const entry of entries) {
-      await tx.query(`
-        INSERT INTO ledger_entries
-          (account, debit, credit, intent_id, description, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-      `, [entry.account, entry.debit, entry.credit, intentId, entry.description]);
-    }
+**Account balance query**: The balance for any account is computed as SUM(debit) - SUM(credit) across all ledger entries for that account.
 
-    return { feeAmount, merchantAmount };
-  }
-
-  // Create refund entries (reverse of charge)
-  async createRefundEntries(tx, { refundId, intentId, amount, merchantId }) {
-    const feeRefund = Math.round(amount * 0.029 + 30);
-    const merchantRefund = amount - feeRefund;
-
-    const entries = [
-      // Reverse the original entries
-      {
-        account: 'funds_receivable',
-        debit: 0,
-        credit: amount,
-        description: 'Refund to customer'
-      },
-      {
-        account: `merchant:${merchantId}:payable`,
-        debit: merchantRefund,
-        credit: 0,
-        description: 'Refund deduction from merchant'
-      },
-      {
-        account: 'revenue:transaction_fees',
-        debit: feeRefund,
-        credit: 0,
-        description: 'Fee reversal on refund'
-      }
-    ];
-
-    // Same balance check
-    const totalDebit = entries.reduce((sum, e) => sum + e.debit, 0);
-    const totalCredit = entries.reduce((sum, e) => sum + e.credit, 0);
-
-    if (totalDebit !== totalCredit) {
-      throw new LedgerImbalanceError('Refund entries imbalance');
-    }
-
-    for (const entry of entries) {
-      await tx.query(`
-        INSERT INTO ledger_entries
-          (account, debit, credit, intent_id, description)
-        VALUES ($1, $2, $3, $4, $5)
-      `, [entry.account, entry.debit, entry.credit, intentId, entry.description]);
-    }
-  }
-
-  // Get account balance
-  async getAccountBalance(account) {
-    const result = await this.pool.query(`
-      SELECT
-        COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) as balance
-      FROM ledger_entries
-      WHERE account = $1
-    `, [account]);
-
-    return result.rows[0].balance;
-  }
-
-  // Verify entire ledger balances (run daily)
-  async verifyLedgerIntegrity() {
-    const result = await this.pool.query(`
-      SELECT
-        SUM(debit) as total_debit,
-        SUM(credit) as total_credit
-      FROM ledger_entries
-    `);
-
-    const { total_debit, total_credit } = result.rows[0];
-
-    if (total_debit !== total_credit) {
-      // CRITICAL: Alert immediately
-      logger.fatal({
-        event: 'LEDGER_IMBALANCE',
-        total_debit,
-        total_credit,
-        difference: total_debit - total_credit
-      });
-      throw new LedgerImbalanceError('Global ledger imbalance detected');
-    }
-
-    return { balanced: true, total_debit, total_credit };
-  }
-}
-```
+**Integrity verification** (run daily): Query the global SUM of all debits and all credits across the entire ledger. If they don't match, trigger a FATAL alert immediately - this indicates a critical data integrity issue.
 
 ---
 
