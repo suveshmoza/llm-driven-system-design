@@ -1,0 +1,24 @@
+{
+  "name": "fb-live-comments",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "live_comments",
+  "dbUser": "postgres",
+  "auth": {
+    "enabled": false
+  },
+  "screens": [
+    {
+      "name": "01-live-stream",
+      "path": "/",
+      "waitFor": ".flex, .bg-gray-900",
+      "skipAuth": true,
+      "delay": 2000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

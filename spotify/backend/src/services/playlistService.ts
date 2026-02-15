@@ -89,6 +89,7 @@ export async function getPlaylistById(playlistId: string, userId: string | null 
 }
 
 // Update playlist
+/** Updates playlist metadata (name, description, visibility) after verifying ownership. */
 export async function updatePlaylist(playlistId: string, userId: string, updates: PlaylistUpdate) {
   // Verify ownership
   const ownerCheck = await pool.query(
@@ -124,6 +125,7 @@ export async function updatePlaylist(playlistId: string, userId: string, updates
 }
 
 // Delete playlist
+/** Deletes a playlist after verifying ownership. */
 export async function deletePlaylist(playlistId: string, userId: string) {
   const ownerCheck = await pool.query(
     'SELECT owner_id FROM playlists WHERE id = $1',
@@ -139,6 +141,7 @@ export async function deletePlaylist(playlistId: string, userId: string) {
 }
 
 // Add track to playlist
+/** Adds a track to a playlist at the next position, enforcing ownership. */
 export async function addTrackToPlaylist(playlistId: string, trackId: string, userId: string) {
   // Check authorization (owner or collaborative)
   const playlistCheck = await pool.query(
@@ -180,6 +183,7 @@ export async function addTrackToPlaylist(playlistId: string, trackId: string, us
 }
 
 // Remove track from playlist
+/** Removes a track from a playlist and reorders remaining positions. */
 export async function removeTrackFromPlaylist(playlistId: string, trackId: string, userId: string) {
   const playlistCheck = await pool.query(
     'SELECT owner_id, is_collaborative FROM playlists WHERE id = $1',
@@ -231,6 +235,7 @@ export async function removeTrackFromPlaylist(playlistId: string, trackId: strin
 }
 
 // Reorder tracks in playlist
+/** Moves a track to a new position within a playlist, shifting other tracks accordingly. */
 export async function reorderPlaylistTracks(playlistId: string, userId: string, { trackId, newPosition }: { trackId: string; newPosition: number }) {
   const playlistCheck = await pool.query(
     'SELECT owner_id, is_collaborative FROM playlists WHERE id = $1',
@@ -303,6 +308,7 @@ export async function reorderPlaylistTracks(playlistId: string, userId: string, 
 }
 
 // Get public playlists for browse
+/** Returns public playlists ordered by follower count for the browse page. */
 export async function getPublicPlaylists({ limit = 20, offset = 0 }) {
   const result = await pool.query(
     `SELECT p.*,

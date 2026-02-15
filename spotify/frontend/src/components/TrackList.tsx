@@ -138,6 +138,7 @@ interface AlbumCardProps {
   album: Album;
 }
 
+/** Renders an album cover card with title and artist name. */
 export function AlbumCard({ album }: AlbumCardProps) {
   return (
     <Link

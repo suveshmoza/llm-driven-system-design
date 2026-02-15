@@ -1,0 +1,64 @@
+{
+  "name": "kindle-highlights",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "highlights",
+  "dbUser": "postgres",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "email": "alice@example.com",
+      "password": "password123"
+    },
+    "usernameSelector": "input[id='email'], input[type='email']",
+    "passwordSelector": "input[id='password'], input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main"
+  },
+  "screens": [
+    {
+      "name": "01-login",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-register",
+      "path": "/register",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "03-home",
+      "path": "/",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "04-library",
+      "path": "/library",
+      "waitFor": "main",
+      "delay": 1500
+    },
+    {
+      "name": "05-trending",
+      "path": "/trending",
+      "waitFor": "main",
+      "delay": 1500
+    },
+    {
+      "name": "06-export",
+      "path": "/export",
+      "waitFor": "main",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

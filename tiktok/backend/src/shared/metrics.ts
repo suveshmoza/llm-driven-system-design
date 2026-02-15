@@ -128,7 +128,7 @@ export const storageOperationDurationHistogram: Histogram = new Histogram({
   registers: [register],
 });
 
-// Middleware to track HTTP request duration
+/** Express middleware that records HTTP request duration per route and status code. */
 export const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const start = process.hrtime.bigint();
 
@@ -148,17 +148,17 @@ export const metricsMiddleware = (req: Request, res: Response, next: NextFunctio
   next();
 };
 
-// Get metrics for /metrics endpoint
+/** Returns all collected Prometheus metrics as a formatted string. */
 export const getMetrics = async (): Promise<string> => {
   return await register.metrics();
 };
 
-// Get content type for /metrics endpoint
+/** Returns the content type string for the Prometheus metrics endpoint. */
 export const getContentType = (): string => {
   return register.contentType;
 };
 
-// Helper to time async operations
+/** Wraps an async operation and records its duration in a Prometheus histogram. */
 export const timeAsync = async <T>(
   histogram: Histogram,
   labels: Record<string, string>,

@@ -36,6 +36,7 @@ export async function isInLibrary(userId: string, itemType: LibraryItemType, ite
 }
 
 // Check multiple items at once
+/** Batch-checks which items from a list are saved in the user's library. */
 export async function checkMultipleInLibrary(userId: string, itemType: LibraryItemType, itemIds: string[]) {
   if (!itemIds || itemIds.length === 0) return {};
 
@@ -85,6 +86,7 @@ export async function getLikedSongs(userId: string, { limit = 50, offset = 0 }: 
 }
 
 // Get saved albums
+/** Returns albums saved to the user's library with artist details and pagination. */
 export async function getSavedAlbums(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT a.*, ar.name as artist_name, ul.saved_at
@@ -112,6 +114,7 @@ export async function getSavedAlbums(userId: string, { limit = 50, offset = 0 }:
 }
 
 // Get followed artists
+/** Returns artists the user follows with pagination. */
 export async function getFollowedArtists(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT ar.*, ul.saved_at as followed_at
@@ -138,6 +141,7 @@ export async function getFollowedArtists(userId: string, { limit = 50, offset = 
 }
 
 // Get followed/saved playlists
+/** Returns playlists saved to the user's library with owner info and track counts. */
 export async function getSavedPlaylists(userId: string, { limit = 50, offset = 0 }: { limit?: number; offset?: number }) {
   const result = await pool.query(
     `SELECT p.*, u.username as owner_username, ul.saved_at

@@ -98,6 +98,7 @@ interface ExtendedRequest extends Omit<Request, 'route'> {
   route?: { path?: string };
 }
 
+/** Express middleware that records HTTP request duration and count per route. */
 export const metricsMiddleware = (req: ExtendedRequest, res: Response, next: NextFunction): void => {
   const startTime = process.hrtime.bigint();
 
@@ -113,6 +114,7 @@ export const metricsMiddleware = (req: ExtendedRequest, res: Response, next: Nex
   next();
 };
 
+/** Wraps an async operation to record its duration in a Prometheus histogram. */
 export const timedOperation = async <T>(
   histogram: Histogram<string>,
   labels: Record<string, string> | string,

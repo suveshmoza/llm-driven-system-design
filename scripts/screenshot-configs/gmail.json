@@ -1,0 +1,70 @@
+{
+  "name": "gmail",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "gmail",
+  "dbUser": "gmail",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[name='username'], input[type='text']",
+    "passwordSelector": "input[name='password'], input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main"
+  },
+  "screens": [
+    {
+      "name": "01-login",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-register",
+      "path": "/register",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "03-inbox",
+      "path": "/label/INBOX",
+      "waitFor": "main",
+      "delay": 1500
+    },
+    {
+      "name": "04-sent",
+      "path": "/label/SENT",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "05-starred",
+      "path": "/label/STARRED",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "06-drafts",
+      "path": "/label/DRAFTS",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "07-trash",
+      "path": "/label/TRASH",
+      "waitFor": "main",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

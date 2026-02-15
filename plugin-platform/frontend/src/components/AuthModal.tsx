@@ -6,6 +6,7 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
+/** Renders a modal dialog with login and registration forms. */
 export function AuthModal({ isOpen, onClose }: AuthModalProps): React.ReactElement | null {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');

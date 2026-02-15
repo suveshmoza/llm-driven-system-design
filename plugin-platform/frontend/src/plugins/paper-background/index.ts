@@ -9,6 +9,7 @@ import { PaperSelector } from './PaperSelector';
 
 export { manifest, PaperBackground, PaperSelector };
 
+/** Activates the paper background plugin, restoring saved background preference. */
 export function activate(context: PluginContext): void {
   // Set default paper from storage or use plain
   const savedPaper = context.storage.get<string>('selectedPaper');

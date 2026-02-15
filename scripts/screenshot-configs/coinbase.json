@@ -1,0 +1,70 @@
+{
+  "name": "coinbase",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "coinbase",
+  "dbUser": "coinbase",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[type='text']",
+    "passwordSelector": "input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main"
+  },
+  "screens": [
+    {
+      "name": "01-login",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-register",
+      "path": "/register",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "03-home-market-overview",
+      "path": "/",
+      "waitFor": "main",
+      "delay": 2000
+    },
+    {
+      "name": "04-trade-btc",
+      "path": "/trade/BTC-USD",
+      "waitFor": "main",
+      "delay": 2500
+    },
+    {
+      "name": "05-trade-eth",
+      "path": "/trade/ETH-USD",
+      "waitFor": "main",
+      "delay": 2500
+    },
+    {
+      "name": "06-portfolio",
+      "path": "/portfolio",
+      "waitFor": "main",
+      "delay": 1500
+    },
+    {
+      "name": "07-orders",
+      "path": "/orders",
+      "waitFor": "main",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

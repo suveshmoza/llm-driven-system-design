@@ -1,0 +1,39 @@
+{
+  "name": "r-place",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "rplace",
+  "dbUser": "rplace",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[type='text']",
+    "passwordSelector": "input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "canvas, .flex-1"
+  },
+  "screens": [
+    {
+      "name": "01-canvas-unauthenticated",
+      "path": "/",
+      "waitFor": "canvas, .bg-gray-900",
+      "skipAuth": true,
+      "delay": 1500
+    },
+    {
+      "name": "02-canvas-authenticated",
+      "path": "/",
+      "waitFor": "canvas, .bg-gray-900",
+      "delay": 2000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

@@ -9,6 +9,7 @@ declare module '@tanstack/react-router' {
   }
 }
 
+/** Renders the root application component with TanStack Router. */
 export function App() {
   return <RouterProvider router={router} />;
 }

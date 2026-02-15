@@ -95,7 +95,7 @@ async function fetchApi<T>(
   }
 }
 
-// Auth API
+/** Authentication API client for register, login, logout, and session checks. */
 export const authApi = {
   async register(username: string, email: string, password: string) {
     return fetchApi<{ message: string; userId: string }>('/api/v1/auth/register', {
@@ -122,7 +122,7 @@ export const authApi = {
   },
 };
 
-// Plugins API
+/** Plugin marketplace API client for listing, searching, and viewing plugin details. */
 export const pluginsApi = {
   async list(params: {
     search?: string;
@@ -160,7 +160,7 @@ export const pluginsApi = {
   },
 };
 
-// User Plugins API
+/** User plugin management API for installing, uninstalling, and configuring plugins. */
 export const userPluginsApi = {
   async getInstalled() {
     return fetchApi<{ plugins: InstalledPlugin[] }>('/api/v1/user/plugins');

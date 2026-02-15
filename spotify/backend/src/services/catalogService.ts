@@ -196,6 +196,7 @@ export async function getAlbumById(albumId: string) {
 }
 
 // Get track by ID
+/** Returns a single track with album and artist details. */
 export async function getTrackById(trackId: string) {
   const result = await pool.query(
     `SELECT t.*,
@@ -212,6 +213,7 @@ export async function getTrackById(trackId: string) {
 }
 
 // Get tracks by IDs
+/** Returns multiple tracks by their IDs with album and artist details. */
 export async function getTracksByIds(trackIds: string[]) {
   if (!trackIds || trackIds.length === 0) return [];
 
@@ -280,6 +282,7 @@ export async function search(query: string, { limit = 20, types = ['artists', 'a
 }
 
 // Get new releases
+/** Returns recently released albums ordered by release date descending. */
 export async function getNewReleases({ limit = 20 }) {
   const result = await pool.query(
     `SELECT a.*, ar.name as artist_name
@@ -294,6 +297,7 @@ export async function getNewReleases({ limit = 20 }) {
 }
 
 // Get featured/popular tracks
+/** Returns the most-streamed tracks across the platform. */
 export async function getFeaturedTracks({ limit = 20 }) {
   const result = await pool.query(
     `SELECT t.*,

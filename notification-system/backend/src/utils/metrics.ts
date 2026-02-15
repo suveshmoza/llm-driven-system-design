@@ -108,7 +108,7 @@ export const activeConnections: Gauge<string> = new client.Gauge({
   registers: [register],
 });
 
-// Express middleware for HTTP request metrics
+/** Express middleware that records HTTP request duration per route and status code. */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const start = Date.now();
 
@@ -124,7 +124,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
   next();
 }
 
-// Get metrics endpoint handler
+/** Serves Prometheus metrics as a response handler. */
 export async function getMetrics(_req: Request, res: Response): Promise<void> {
   try {
     res.set('Content-Type', register.contentType);

@@ -99,6 +99,7 @@ export async function getRecommendations(userId: string, { limit = 30 }: { limit
 }
 
 // Get popular tracks (for cold start or browse)
+/** Returns globally popular tracks for cold-start users or the browse page. */
 export async function getPopularTracks({ limit = 30 }) {
   const result = await pool.query(
     `SELECT t.*,
@@ -202,6 +203,7 @@ export async function getArtistRadio(artistId: string, { limit = 50 }: { limit?:
 }
 
 // Get Discover Weekly-style playlist
+/** Generates a Discover Weekly-style curated playlist from the user's listening history. */
 export async function getDiscoverWeekly(userId: string) {
   const cacheKey = `discover_weekly:${userId}`;
 

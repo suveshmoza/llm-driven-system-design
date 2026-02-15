@@ -42,6 +42,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   timezone: 'UTC',
 };
 
+/** Manages user notification preferences with Redis caching and quiet-hours support. */
 export class PreferencesService {
   async getPreferences(userId: string): Promise<UserPreferences> {
     // Check cache first

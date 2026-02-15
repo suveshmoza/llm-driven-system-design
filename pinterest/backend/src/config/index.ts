@@ -1,5 +1,6 @@
 import 'dotenv/config';
 
+/** Application configuration loaded from environment variables with development defaults. */
 const config = {
   port: parseInt(process.env.PORT || '3001'),
   nodeEnv: process.env.NODE_ENV || 'development',

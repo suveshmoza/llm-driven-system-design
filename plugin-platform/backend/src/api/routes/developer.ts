@@ -5,6 +5,7 @@ import { query } from '../../shared/db.js';
 import { cacheDelete, cacheDeletePattern } from '../../shared/cache.js';
 import { uploadPluginBundle, uploadPluginSourceMap, deletePluginFiles } from '../../shared/storage.js';
 
+/** Router for developer plugin management (create, publish versions, update, delete). */
 export const developerRouter = Router();
 
 // Configure multer for plugin bundle uploads

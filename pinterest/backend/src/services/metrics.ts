@@ -6,7 +6,7 @@ export const register = new promClient.Registry();
 // Collect default metrics
 promClient.collectDefaultMetrics({ register });
 
-// HTTP request metrics
+/** HTTP request duration histogram (latency percentiles). */
 export const httpRequestDuration = new promClient.Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
@@ -15,6 +15,7 @@ export const httpRequestDuration = new promClient.Histogram({
   registers: [register],
 });
 
+/** HTTP request counter for rate calculation. */
 export const httpRequestsTotal = new promClient.Counter({
   name: 'http_requests_total',
   help: 'Total number of HTTP requests',
@@ -22,20 +23,21 @@ export const httpRequestsTotal = new promClient.Counter({
   registers: [register],
 });
 
-// Pin metrics
+/** Counter tracking total pins created. */
 export const pinsCreatedTotal = new promClient.Counter({
   name: 'pins_created_total',
   help: 'Total number of pins created',
   registers: [register],
 });
 
+/** Counter tracking total pin saves to boards. */
 export const pinSavesTotal = new promClient.Counter({
   name: 'pin_saves_total',
   help: 'Total number of pin saves',
   registers: [register],
 });
 
-// Image processing metrics
+/** Histogram tracking image processing duration in seconds. */
 export const imageProcessingDuration = new promClient.Histogram({
   name: 'image_processing_duration_seconds',
   help: 'Duration of image processing in seconds',
@@ -43,13 +45,14 @@ export const imageProcessingDuration = new promClient.Histogram({
   registers: [register],
 });
 
+/** Counter tracking image processing failures. */
 export const imageProcessingErrors = new promClient.Counter({
   name: 'image_processing_errors_total',
   help: 'Total number of image processing errors',
   registers: [register],
 });
 
-// Feed metrics
+/** Histogram tracking feed generation latency. */
 export const feedGenerationDuration = new promClient.Histogram({
   name: 'feed_generation_duration_seconds',
   help: 'Duration of feed generation in seconds',
@@ -57,19 +60,21 @@ export const feedGenerationDuration = new promClient.Histogram({
   registers: [register],
 });
 
+/** Counter tracking feed cache hits. */
 export const feedCacheHits = new promClient.Counter({
   name: 'feed_cache_hits_total',
   help: 'Total feed cache hits',
   registers: [register],
 });
 
+/** Counter tracking feed cache misses. */
 export const feedCacheMisses = new promClient.Counter({
   name: 'feed_cache_misses_total',
   help: 'Total feed cache misses',
   registers: [register],
 });
 
-// Auth metrics
+/** Counter tracking authentication attempts by type and result. */
 export const authAttempts = new promClient.Counter({
   name: 'auth_attempts_total',
   help: 'Total authentication attempts',

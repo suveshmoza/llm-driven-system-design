@@ -100,6 +100,7 @@ export function rateLimitMiddleware(
 }
 
 // Pre-configured rate limiters for different endpoint categories
+/** Pre-configured rate limit middleware for auth, search, playback, library, and admin endpoints. */
 export const rateLimiters = {
   // Auth endpoints - strict limits to prevent brute force
   auth: rateLimitMiddleware(

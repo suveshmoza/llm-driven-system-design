@@ -4,6 +4,7 @@ import { logger } from './logger.js';
 
 const Redis = IORedis.default || IORedis;
 
+/** Redis client instance for session storage and caching. */
 export const redis = new Redis(config.redis.url, {
   maxRetriesPerRequest: 3,
   retryStrategy(times: number) {
@@ -21,6 +22,7 @@ redis.on('connect', () => {
   logger.info('Redis connected');
 });
 
+/** Establishes the lazy Redis connection, logging any failures. */
 export async function connectRedis(): Promise<void> {
   try {
     await redis.connect();

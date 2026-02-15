@@ -8,6 +8,7 @@ import { FontSelector } from './FontSelector';
 
 export { manifest, FontSelector };
 
+/** Activates the font selector plugin, restoring saved font and size preferences. */
 export function activate(context: PluginContext): void {
   // Set defaults from storage or use system font
   const savedFont = context.storage.get<string>('selectedFont');

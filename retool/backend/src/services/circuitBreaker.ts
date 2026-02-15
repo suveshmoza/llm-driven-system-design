@@ -2,6 +2,7 @@
 import CircuitBreaker from 'opossum';
 import { logger } from './logger.js';
 
+/** Creates an Opossum circuit breaker that logs state transitions for the given async function. */
 export function createCircuitBreaker<T>(
   fn: (...args: unknown[]) => Promise<T>,
   name: string,

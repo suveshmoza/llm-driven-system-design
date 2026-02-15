@@ -7,6 +7,7 @@ const register = new client.Registry();
 client.collectDefaultMetrics({ register });
 
 // HTTP Request duration histogram
+/** Histogram tracking HTTP request latency by method, route, and status code. */
 export const httpRequestDuration = new client.Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds',
@@ -16,6 +17,7 @@ export const httpRequestDuration = new client.Histogram({
 });
 
 // HTTP Request counter
+/** Counter tracking total HTTP requests by method, route, and status code. */
 export const httpRequestsTotal = new client.Counter({
   name: 'http_requests_total',
   help: 'Total number of HTTP requests',
@@ -24,6 +26,7 @@ export const httpRequestsTotal = new client.Counter({
 });
 
 // Playback events counter
+/** Counter tracking total playback events by event type and device. */
 export const playbackEventsTotal = new client.Counter({
   name: 'playback_events_total',
   help: 'Total playback events',
@@ -32,6 +35,7 @@ export const playbackEventsTotal = new client.Counter({
 });
 
 // Stream count counter
+/** Counter tracking total stream counts for royalty calculation. */
 export const streamCountsTotal = new client.Counter({
   name: 'stream_counts_total',
   help: 'Total stream counts (for royalty tracking)',
@@ -39,6 +43,7 @@ export const streamCountsTotal = new client.Counter({
 });
 
 // Active streams gauge
+/** Gauge tracking the number of currently active audio streams. */
 export const activeStreams = new client.Gauge({
   name: 'active_streams',
   help: 'Number of currently active streams',
@@ -46,6 +51,7 @@ export const activeStreams = new client.Gauge({
 });
 
 // Search operations counter
+/** Counter tracking total search operations by result type. */
 export const searchOperationsTotal = new client.Counter({
   name: 'search_operations_total',
   help: 'Total search operations',
@@ -54,6 +60,7 @@ export const searchOperationsTotal = new client.Counter({
 });
 
 // Playlist operations counter
+/** Counter tracking playlist mutations (create, update, add/remove track). */
 export const playlistOperationsTotal = new client.Counter({
   name: 'playlist_operations_total',
   help: 'Total playlist operations',
@@ -62,6 +69,7 @@ export const playlistOperationsTotal = new client.Counter({
 });
 
 // Recommendation latency histogram
+/** Histogram tracking recommendation generation time by algorithm type. */
 export const recommendationLatency = new client.Histogram({
   name: 'recommendation_generation_seconds',
   help: 'Time to generate recommendations',
@@ -71,6 +79,7 @@ export const recommendationLatency = new client.Histogram({
 });
 
 // Cache hit/miss counters
+/** Counter tracking cache hits by cache type (playback state, catalog, etc.). */
 export const cacheHitsTotal = new client.Counter({
   name: 'cache_hits_total',
   help: 'Total cache hits',
@@ -78,6 +87,7 @@ export const cacheHitsTotal = new client.Counter({
   registers: [register],
 });
 
+/** Counter tracking cache misses by cache type. */
 export const cacheMissesTotal = new client.Counter({
   name: 'cache_misses_total',
   help: 'Total cache misses',
@@ -86,6 +96,7 @@ export const cacheMissesTotal = new client.Counter({
 });
 
 // Rate limit counter
+/** Counter tracking rate limit enforcement events by endpoint and scope. */
 export const rateLimitHitsTotal = new client.Counter({
   name: 'rate_limit_hits_total',
   help: 'Total rate limit hits',
@@ -94,6 +105,7 @@ export const rateLimitHitsTotal = new client.Counter({
 });
 
 // Auth events counter
+/** Counter tracking authentication events (login, register) by success/failure. */
 export const authEventsTotal = new client.Counter({
   name: 'auth_events_total',
   help: 'Total authentication events',
@@ -102,6 +114,7 @@ export const authEventsTotal = new client.Counter({
 });
 
 // Idempotency deduplication counter
+/** Counter tracking requests deduplicated by idempotency key. */
 export const idempotencyDeduplicationsTotal = new client.Counter({
   name: 'idempotency_deduplications_total',
   help: 'Total requests deduplicated by idempotency key',
@@ -110,6 +123,7 @@ export const idempotencyDeduplicationsTotal = new client.Counter({
 });
 
 // Database connection pool metrics
+/** Gauge tracking database connection pool size by state (total, idle, waiting). */
 export const dbPoolConnections = new client.Gauge({
   name: 'db_pool_connections',
   help: 'Database connection pool metrics',
@@ -120,6 +134,7 @@ export const dbPoolConnections = new client.Gauge({
 import { Request, Response, NextFunction } from 'express';
 
 // Express middleware for metrics collection
+/** Middleware that records HTTP request duration and count for each response. */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   const start = Date.now();
 
@@ -147,6 +162,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
 }
 
 // Metrics endpoint handler
+/** Serves Prometheus-formatted metrics from the registry. */
 export async function metricsHandler(_req: Request, res: Response): Promise<void> {
   res.set('Content-Type', register.contentType);
   res.send(await register.metrics());

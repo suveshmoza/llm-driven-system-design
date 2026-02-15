@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/** Redis client instance for caching timelines, sessions, and trend tracking. */
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 redis.on('error', (err: Error) => {

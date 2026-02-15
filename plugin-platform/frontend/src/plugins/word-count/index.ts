@@ -6,6 +6,7 @@ import { WordCount } from './WordCount';
 
 export { manifest, WordCount };
 
+/** Activates the word count plugin (no initialization needed). */
 export function activate(): void {
   console.log('[word-count] Plugin activated');
 }

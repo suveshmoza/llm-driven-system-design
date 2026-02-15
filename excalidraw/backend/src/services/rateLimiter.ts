@@ -23,6 +23,7 @@ interface RateLimiterOptions {
   actionName?: string;
 }
 
+/** Creates a Redis-backed rate limiter with per-user keys and custom limits. */
 const createRateLimiter = (options: RateLimiterOptions): RateLimitRequestHandler => {
   const {
     keyPrefix,
@@ -75,6 +76,7 @@ const createRateLimiter = (options: RateLimiterOptions): RateLimitRequestHandler
   });
 };
 
+/** Rate limiter for drawing creation operations, 30 per hour. */
 export const drawingRateLimiter: RateLimitRequestHandler = createRateLimiter({
   keyPrefix: 'drawings',
   max: 30,
@@ -83,6 +85,7 @@ export const drawingRateLimiter: RateLimitRequestHandler = createRateLimiter({
   actionName: 'drawing_create',
 });
 
+/** Rate limiter for login attempts, 5 per minute with successful request skipping. */
 export const loginRateLimiter: RateLimitRequestHandler = createRateLimiter({
   keyPrefix: 'login',
   max: 5,
@@ -92,6 +95,7 @@ export const loginRateLimiter: RateLimitRequestHandler = createRateLimiter({
   actionName: 'login',
 });
 
+/** General API rate limiter, 1000 requests per minute. */
 export const generalRateLimiter: RateLimitRequestHandler = createRateLimiter({
   keyPrefix: 'general',
   max: 1000,

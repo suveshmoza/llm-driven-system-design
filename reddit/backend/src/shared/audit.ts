@@ -111,6 +111,7 @@ export function createAuditContext(req: AuthenticatedRequest): AuditContext {
 // Convenience functions for common audit events
 // ============================================================================
 
+/** Records a login or failed-login audit event with the client's IP and user agent. */
 export async function auditLogin(req: AuthenticatedRequest, userId: number | null, success: boolean): Promise<void> {
   await audit({
     actorId: userId,
@@ -125,6 +126,7 @@ export async function auditLogin(req: AuthenticatedRequest, userId: number | nul
   });
 }
 
+/** Records a post deletion audit event, noting whether the author or a moderator performed it. */
 export async function auditPostDelete(
   req: AuthenticatedRequest,
   postId: number,
@@ -146,6 +148,7 @@ export async function auditPostDelete(
   });
 }
 
+/** Records a comment deletion audit event with the parent post and subreddit context. */
 export async function auditCommentDelete(
   req: AuthenticatedRequest,
   commentId: number,
@@ -169,6 +172,7 @@ export async function auditCommentDelete(
   });
 }
 
+/** Records a user ban audit event including duration and reason for the subreddit. */
 export async function auditUserBan(
   req: AuthenticatedRequest,
   targetUserId: number,
@@ -190,6 +194,7 @@ export async function auditUserBan(
   });
 }
 
+/** Records a suspicious voting pattern (e.g. rapid voting, coordinated upvotes) for investigation. */
 export async function auditSuspiciousVoting(
   userId: number,
   ip: string,

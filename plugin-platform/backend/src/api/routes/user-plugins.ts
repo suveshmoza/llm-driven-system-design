@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query } from '../../shared/db.js';
 import { cacheDelete } from '../../shared/cache.js';
 
+/** Router for user plugin management (install, uninstall, enable/disable, settings). */
 export const userPluginsRouter = Router();
 
 // Get user's installed plugins

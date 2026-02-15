@@ -10,6 +10,7 @@ import { pluginsRouter } from './routes/plugins.js';
 import { userPluginsRouter } from './routes/user-plugins.js';
 import { developerRouter } from './routes/developer.js';
 
+/** Express application with session auth, plugin marketplace, and developer API routes. */
 export const app = express();
 
 // Middleware

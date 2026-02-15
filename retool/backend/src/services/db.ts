@@ -2,6 +2,7 @@ import pg from 'pg';
 import { config } from '../config/index.js';
 import { logger } from './logger.js';
 
+/** PostgreSQL connection pool for the Retool metadata database. */
 export const pool = new pg.Pool({
   connectionString: config.database.url,
   max: 20,

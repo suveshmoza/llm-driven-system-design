@@ -1,0 +1,24 @@
+{
+  "name": "facetime",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "facetime",
+  "dbUser": "facetime",
+  "auth": {
+    "enabled": false
+  },
+  "screens": [
+    {
+      "name": "01-login-screen",
+      "path": "/",
+      "waitFor": ".rounded-2xl, .max-w-md",
+      "skipAuth": true,
+      "delay": 1500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

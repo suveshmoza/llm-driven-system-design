@@ -4,6 +4,7 @@ import { createClient } from 'redis';
 const { Pool } = pg;
 
 // PostgreSQL connection pool
+/** PostgreSQL connection pool for the Spotify metadata database. */
 export const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -16,6 +17,7 @@ export const pool = new Pool({
 });
 
 // Redis client
+/** Redis client for session storage, playback state caching, and rate limiting. */
 export const redisClient = createClient({
   url: process.env.REDIS_URL || 'redis://localhost:6379',
 });

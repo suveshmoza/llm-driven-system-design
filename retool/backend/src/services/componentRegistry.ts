@@ -176,6 +176,7 @@ export const componentRegistry: ComponentDefinition[] = [
   },
 ];
 
+/** Returns the component definition for a given widget type, or undefined if not found. */
 export function getComponentDefinition(type: string): ComponentDefinition | undefined {
   return componentRegistry.find((c) => c.type === type);
 }

@@ -21,6 +21,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // Auth
+/** API methods for user authentication (login, register, logout, session check). */
 export const authApi = {
   login: (username: string, password: string) =>
     request<{ user: User }>('/auth/login', {
@@ -42,6 +43,7 @@ export const authApi = {
 };
 
 // Apps
+/** API methods for CRUD operations on low-code applications. */
 export const appsApi = {
   list: () =>
     request<{ apps: App[] }>('/apps'),
@@ -81,6 +83,7 @@ export const appsApi = {
 };
 
 // Components
+/** API methods for fetching widget type definitions from the component registry. */
 export const componentsApi = {
   list: () =>
     request<{ components: ComponentDefinition[] }>('/components'),
@@ -90,6 +93,7 @@ export const componentsApi = {
 };
 
 // Data Sources
+/** API methods for managing external database connections. */
 export const dataSourcesApi = {
   list: () =>
     request<{ dataSources: DataSource[] }>('/datasources'),
@@ -117,6 +121,7 @@ export const dataSourcesApi = {
 };
 
 // Queries
+/** API methods for executing and managing saved data source queries. */
 export const queriesApi = {
   execute: (dataSourceId: string, queryText: string, context?: Record<string, unknown>, allowWrite?: boolean) =>
     request<QueryResult>('/queries/execute', {

@@ -1,0 +1,39 @@
+{
+  "name": "airtag",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "findmy",
+  "dbUser": "findmy",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/",
+    "credentials": {
+      "email": "admin@findmy.local",
+      "password": "admin123"
+    },
+    "usernameSelector": "input[type='email']",
+    "passwordSelector": "input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main, header"
+  },
+  "screens": [
+    {
+      "name": "01-login",
+      "path": "/",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-home-devices",
+      "path": "/",
+      "waitFor": "main, header",
+      "delay": 1500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

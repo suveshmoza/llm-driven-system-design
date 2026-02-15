@@ -12,6 +12,7 @@
 
 const BINDING_REGEX = /\{\{\s*(.*?)\s*\}\}/g;
 
+/** Extracts all {{ expression }} binding strings from a template. */
 export function parseBindings(text: string): string[] {
   const bindings: string[] = [];
   let match: RegExpExecArray | null;

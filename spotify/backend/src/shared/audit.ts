@@ -8,6 +8,7 @@ import type { AuthenticatedRequest, AuditLogFilters } from '../types.js';
  */
 
 // SQL to create audit_logs table (should be added to migrations)
+/** SQL DDL for creating the audit_logs table and its indexes. */
 export const AUDIT_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

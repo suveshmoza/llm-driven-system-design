@@ -1,0 +1,64 @@
+{
+  "name": "leetcode",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "leetcode",
+  "dbUser": "leetcode",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "demo",
+      "password": "user123"
+    },
+    "usernameSelector": "input#username, input[type='text']",
+    "passwordSelector": "input#password, input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main, .min-h-screen"
+  },
+  "screens": [
+    {
+      "name": "01-login",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-home",
+      "path": "/",
+      "waitFor": ".min-h-screen, main",
+      "delay": 1000
+    },
+    {
+      "name": "03-problems-list",
+      "path": "/problems",
+      "waitFor": "table, .bg-dark-300, [class*='Problem']",
+      "delay": 1500
+    },
+    {
+      "name": "04-problem-detail",
+      "path": "/problems/two-sum",
+      "waitFor": ".cm-editor, [class*='CodeMirror'], [class*='editor']",
+      "delay": 2000
+    },
+    {
+      "name": "05-progress",
+      "path": "/progress",
+      "waitFor": ".min-h-screen, main",
+      "delay": 1000
+    },
+    {
+      "name": "06-register",
+      "path": "/register",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

@@ -20,6 +20,7 @@ const defaultOptions: CircuitBreakerOptions = {
   rollingCountBuckets: 10,
 };
 
+/** Creates a named circuit breaker with Prometheus metrics and state-change logging. */
 export const createCircuitBreaker = <T extends unknown[], R>(
   name: string,
   fn: (...args: T) => Promise<R>,
@@ -77,6 +78,7 @@ export const createCircuitBreaker = <T extends unknown[], R>(
   return breaker;
 };
 
+/** Returns a fallback function that provides a default value when the circuit is open. */
 export const fallbackWithDefault = <T>(defaultValue: T): (() => T) => {
   return (): T => {
     logger.warn({ fallback: 'default_value' }, 'Using fallback default value');
@@ -84,6 +86,7 @@ export const fallbackWithDefault = <T>(defaultValue: T): (() => T) => {
   };
 };
 
+/** Returns a fallback function that throws a 503 error when the circuit is open. */
 export const fallbackWithError = (message: string): (() => never) => {
   return (): never => {
     const error = new Error(message);

@@ -20,7 +20,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json();
 }
 
-// Auth API
+/** Authentication API client with login, register, logout, and session check. */
 export const authApi = {
   register: (data: { username: string; email: string; password: string; displayName?: string }) =>
     request<{ user: User }>('/auth/register', {
@@ -41,7 +41,7 @@ export const authApi = {
     request<{ user: User }>('/auth/me'),
 };
 
-// Drawing API
+/** Drawing API client with CRUD operations and collaborator management. */
 export const drawingApi = {
   list: () =>
     request<{ drawings: Drawing[] }>('/drawings'),

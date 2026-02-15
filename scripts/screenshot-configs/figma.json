@@ -1,0 +1,24 @@
+{
+  "name": "figma",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "figma_db",
+  "dbUser": "figma",
+  "auth": {
+    "enabled": false
+  },
+  "screens": [
+    {
+      "name": "01-file-browser",
+      "path": "/",
+      "waitFor": ".grid, h1, h2, button",
+      "skipAuth": true,
+      "delay": 1500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

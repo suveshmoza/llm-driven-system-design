@@ -1,0 +1,53 @@
+{
+  "name": "twitch",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "twitch_db",
+  "dbUser": "twitch",
+  "auth": {
+    "enabled": false
+  },
+  "screens": [
+    {
+      "name": "01-home",
+      "path": "/",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "02-browse",
+      "path": "/browse",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "03-category-just-chatting",
+      "path": "/category/just-chatting",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "04-channel-shroud",
+      "path": "/shroud",
+      "waitFor": "main",
+      "delay": 1500
+    },
+    {
+      "name": "05-following",
+      "path": "/following",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "06-dashboard",
+      "path": "/dashboard",
+      "waitFor": "main",
+      "delay": 1000
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

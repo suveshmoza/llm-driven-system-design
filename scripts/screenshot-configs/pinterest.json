@@ -1,0 +1,58 @@
+{
+  "name": "pinterest",
+  "frontendPort": 5173,
+  "backendPort": 3000,
+  "backendRequired": true,
+  "dbName": "pinterest",
+  "dbUser": "pinterest",
+  "auth": {
+    "enabled": true,
+    "loginUrl": "/login",
+    "credentials": {
+      "username": "alice",
+      "password": "password123"
+    },
+    "usernameSelector": "input[type='text']",
+    "passwordSelector": "input[type='password']",
+    "submitSelector": "button[type='submit']",
+    "successIndicator": "main"
+  },
+  "screens": [
+    {
+      "name": "01-login",
+      "path": "/login",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "02-register",
+      "path": "/register",
+      "waitFor": "form",
+      "skipAuth": true,
+      "delay": 500
+    },
+    {
+      "name": "03-home-feed",
+      "path": "/",
+      "waitFor": "main",
+      "delay": 2000
+    },
+    {
+      "name": "04-create-pin",
+      "path": "/create",
+      "waitFor": "main",
+      "delay": 1000
+    },
+    {
+      "name": "05-profile-alice",
+      "path": "/profile/alice",
+      "waitFor": "main",
+      "delay": 1500
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  }
+}

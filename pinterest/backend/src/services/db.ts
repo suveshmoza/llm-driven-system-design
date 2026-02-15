@@ -4,6 +4,7 @@ import { logger } from './logger.js';
 
 const { Pool } = pg;
 
+/** PostgreSQL connection pool for the Pinterest database. */
 export const pool = new Pool({
   host: config.database.host,
   port: config.database.port,

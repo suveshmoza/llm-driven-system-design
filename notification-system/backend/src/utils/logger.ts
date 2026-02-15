@@ -56,12 +56,12 @@ export const logger: Logger = pino({
   },
 });
 
-// Create child loggers for specific components
+/** Creates a child logger scoped to a named component. */
 export function createLogger(component: string): Logger {
   return logger.child({ component });
 }
 
-// Express request logging middleware
+/** Returns Express middleware that logs each request with a unique ID and duration. */
 export function requestLogger(): (req: Request, res: Response, next: NextFunction) => void {
   return (req: Request, res: Response, next: NextFunction): void => {
     const start = Date.now();
@@ -87,7 +87,7 @@ export function requestLogger(): (req: Request, res: Response, next: NextFunctio
   };
 }
 
-// Structured error logging helper
+/** Logs an error with stack trace and optional context metadata. */
 export function logError(log: Logger, error: Error, context: Record<string, unknown> = {}): void {
   log.error({
     err: error,
@@ -95,7 +95,7 @@ export function logError(log: Logger, error: Error, context: Record<string, unkn
   }, error.message);
 }
 
-// Performance logging helper for async operations
+/** Wraps an async operation with timing instrumentation, logging duration and success/failure. */
 export async function withTiming<T>(
   log: Logger,
   operationName: string,

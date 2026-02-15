@@ -22,6 +22,7 @@ async function request<T>(
 }
 
 // Auth API
+/** API methods for user authentication (login, register, logout, session check). */
 export const authApi = {
   login: (email: string, password: string) =>
     request<{ user: import('../types').User }>('/auth/login', {
@@ -43,6 +44,7 @@ export const authApi = {
 };
 
 // Catalog API
+/** API methods for browsing artists, albums, tracks, and search. */
 export const catalogApi = {
   getArtists: (params: { limit?: number; offset?: number; search?: string } = {}) => {
     const searchParams = new URLSearchParams();
@@ -85,6 +87,7 @@ export const catalogApi = {
 };
 
 // Library API
+/** API methods for managing liked songs, saved albums, and followed artists. */
 export const libraryApi = {
   getLikedSongs: (params: { limit?: number; offset?: number } = {}) => {
     const searchParams = new URLSearchParams();
@@ -130,6 +133,7 @@ export const libraryApi = {
 };
 
 // Playlist API
+/** API methods for playlist CRUD, track management, and public discovery. */
 export const playlistApi = {
   getMyPlaylists: (params: { limit?: number; offset?: number } = {}) => {
     const searchParams = new URLSearchParams();
@@ -174,6 +178,7 @@ export const playlistApi = {
 };
 
 // Playback API
+/** API methods for audio streaming, playback events, and state persistence. */
 export const playbackApi = {
   getStreamUrl: (trackId: string) =>
     request<{ url: string; expiresAt: number }>(`/playback/stream/${trackId}`),
@@ -198,6 +203,7 @@ export const playbackApi = {
 };
 
 // Recommendations API
+/** API methods for personalized track recommendations and discovery playlists. */
 export const recommendationsApi = {
   getForYou: (limit = 30) =>
     request<{ tracks: import('../types').Track[] }>(`/recommendations/for-you?limit=${limit}`),

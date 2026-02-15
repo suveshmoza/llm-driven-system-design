@@ -47,7 +47,6 @@ function resolvePropertyPath(path: string, context: Record<string, unknown>): un
 /**
  * Resolve all {{ }} bindings in text, replacing them with context values.
  */
-/** Resolves template binding expressions in component properties against available data. */
 export function resolveBindings(
   text: string,
   context: Record<string, unknown>,

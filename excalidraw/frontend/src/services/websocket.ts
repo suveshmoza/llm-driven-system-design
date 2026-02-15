@@ -16,6 +16,7 @@ export interface WsMessage {
   message?: string;
 }
 
+/** WebSocket client for real-time drawing collaboration with auto-reconnect. */
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private handlers: Map<string, WsMessageHandler[]> = new Map();

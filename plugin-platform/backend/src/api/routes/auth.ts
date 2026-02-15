@@ -2,9 +2,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { query } from '../../shared/db.js';
 
+/** Router for authentication endpoints (register, login, logout, me). */
 export const authRouter = Router();
 
-// Middleware to require authentication
+/** Rejects unauthenticated requests with 401 if no session user exists. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.session.userId) {
     res.status(401).json({ error: 'Authentication required' });
@@ -13,7 +14,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
-// Middleware to optionally attach user info
+/** Passes through all requests, attaching user context if session exists. */
 export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
   // Just pass through - user info will be available via session if logged in
   next();

@@ -31,6 +31,7 @@ const logger: Logger = pino({
       : undefined,
 });
 
+/** Creates a child logger scoped to a specific request with trace and user context. */
 export const createRequestLogger = (req: ExtendedRequest): Logger => {
   return logger.child({
     requestId: req.traceId,
@@ -41,6 +42,7 @@ export const createRequestLogger = (req: ExtendedRequest): Logger => {
   });
 };
 
+/** Logs an HTTP request with method, path, status, and duration at the appropriate level. */
 export const logRequest = (req: ExtendedRequest, res: Response, duration: number): void => {
   const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
 
@@ -58,6 +60,7 @@ export const logRequest = (req: ExtendedRequest, res: Response, duration: number
   );
 };
 
+/** Logs an error with stack trace and optional context metadata. */
 export const logError = (error: Error, context: Record<string, unknown> = {}): void => {
   logger.error(
     {
@@ -70,6 +73,7 @@ export const logError = (error: Error, context: Record<string, unknown> = {}): v
   );
 };
 
+/** Logs a database query with duration, warning for queries over 1 second. */
 export const logQuery = (queryName: string, duration: number, context: Record<string, unknown> = {}): void => {
   const level = duration > 1000 ? 'warn' : 'debug';
   logger[level](
@@ -83,6 +87,7 @@ export const logQuery = (queryName: string, duration: number, context: Record<st
   );
 };
 
+/** Logs a cache operation (get, set, delete) with hit/miss status. */
 export const logCache = (operation: string, key: string, hit: boolean | null = null): void => {
   logger.debug(
     {

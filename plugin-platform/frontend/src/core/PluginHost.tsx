@@ -82,6 +82,7 @@ interface PluginHostContextValue {
 
 const PluginHostContext = createContext<PluginHostContextValue | null>(null);
 
+/** Returns the plugin host context containing loaded plugins and slot contributions. */
 export function usePluginHost(): PluginHostContextValue {
   const context = useContext(PluginHostContext);
   if (!context) {
@@ -90,7 +91,7 @@ export function usePluginHost(): PluginHostContextValue {
   return context;
 }
 
-// Hook to get contributions for a specific slot
+/** Returns the list of plugin contributions registered for a specific slot. */
 export function useSlotContributions(slot: SlotId): SlotContributionEntry[] {
   const { getSlotContributions } = usePluginHost();
   const [contributions, setContributions] = useState<SlotContributionEntry[]>([]);
@@ -102,7 +103,7 @@ export function useSlotContributions(slot: SlotId): SlotContributionEntry[] {
   return contributions;
 }
 
-// Hook to subscribe to state in plugins
+/** Subscribes to shared state changes and returns the current value for a key. */
 export function useStateValue<T>(context: PluginContext, key: string): T | undefined {
   const [value, setValue] = useState<T | undefined>(() => context.state.get<T>(key));
 
@@ -120,6 +121,7 @@ interface PluginHostProviderProps {
   children: ReactNode;
 }
 
+/** Provides the plugin host context, loading and activating all registered plugins. */
 export function PluginHostProvider({ plugins, children }: PluginHostProviderProps): React.ReactElement {
   const [loadedPlugins] = useState<Map<string, LoadedPlugin>>(() => new Map());
   const [isLoading, setIsLoading] = useState(true);

@@ -8,6 +8,7 @@ import { TextEditor } from './TextEditor';
 
 export { manifest, TextEditor };
 
+/** Activates the text editor plugin, initializing content from storage. */
 export function activate(context: PluginContext): void {
   // Initialize content state
   const savedContent = context.storage.get<string>('content');

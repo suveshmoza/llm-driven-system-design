@@ -1,6 +1,7 @@
 import { query } from '../utils/database.js';
 import { redis } from '../utils/redis.js';
 
+/** Prevents duplicate notifications within a configurable time window using Redis. */
 export class DeduplicationService {
   // Generate a hash key for deduplication
   generateKey(userId: string, templateId: string | undefined, channelData: Record<string, unknown>): string {
@@ -70,6 +71,7 @@ export interface NotificationWithDeliveryStatus {
 
 export type DeliveryStats = Record<string, Record<string, number>>;
 
+/** Tracks per-channel delivery status, aggregates notification state, and records events. */
 export class DeliveryTracker {
   async updateStatus(
     notificationId: string,

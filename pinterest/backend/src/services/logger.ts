@@ -1,6 +1,7 @@
 import pino from 'pino';
 import config from '../config/index.js';
 
+/** Pino logger instance configured for the Pinterest API service. */
 export const logger = pino({
   level: config.nodeEnv === 'production' ? 'info' : 'debug',
   transport:

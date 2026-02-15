@@ -8,6 +8,7 @@ import { ThemeToggle } from './ThemeToggle';
 
 export { manifest, ThemeToggle };
 
+/** Activates the theme plugin, initializing dark mode from system preference or storage. */
 export function activate(context: PluginContext): void {
   // Set default theme from storage or system preference
   const savedTheme = context.storage.get<string>('theme');

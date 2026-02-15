@@ -214,5 +214,6 @@ const errorHandler: ErrorRequestHandler = (err: HttpError, req: Request, res: Re
 
 app.use(errorHandler);
 
+/** Express application configured with session auth, rate limiting, and drawing/export routes. */
 export { app };
 export default app;

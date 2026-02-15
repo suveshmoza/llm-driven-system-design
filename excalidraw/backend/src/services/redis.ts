@@ -17,15 +17,18 @@ redis.on('connect', () => {
 });
 
 // Cache helpers
+/** Retrieves and deserializes a cached JSON value from Redis. */
 export const cacheGet = async <T = unknown>(key: string): Promise<T | null> => {
   const data = await redis.get(key);
   return data ? (JSON.parse(data) as T) : null;
 };
 
+/** Serializes and stores a value in Redis with an expiration in seconds. */
 export const cacheSet = async (key: string, value: unknown, ttlSeconds: number = 3600): Promise<void> => {
   await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
 };
 
+/** Removes a cached value from Redis by key. */
 export const cacheDel = async (key: string): Promise<void> => {
   await redis.del(key);
 };

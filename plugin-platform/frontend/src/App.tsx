@@ -129,6 +129,7 @@ function PluginIcon(): React.ReactElement {
   );
 }
 
+/** Renders the top-level pluggable editor application with plugin host context. */
 export default function App(): React.ReactElement {
   return (
     <PluginHostProvider plugins={PLUGINS}>

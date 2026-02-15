@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query } from '../../shared/db.js';
 import { cacheGet, cacheSet } from '../../shared/cache.js';
 
+/** Router for the public plugin marketplace (list, search, details, reviews). */
 export const pluginsRouter = Router();
 
 interface PluginRow {

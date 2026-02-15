@@ -19,6 +19,7 @@ import datasourceRoutes from './routes/datasources.js';
 import queryRoutes from './routes/queries.js';
 import deploymentRoutes from './routes/deployments.js';
 
+/** Express application for the Retool clone API with session auth, rate limiting, and metrics. */
 export const app = express();
 
 // Middleware

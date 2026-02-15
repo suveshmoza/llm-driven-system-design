@@ -1,5 +1,6 @@
 import { Client as MinioClient } from 'minio';
 
+/** MinIO client for S3-compatible audio and cover art object storage. */
 export const minio = new MinioClient({
   endPoint: process.env.MINIO_ENDPOINT || 'localhost',
   port: parseInt(process.env.MINIO_PORT || '9000'),
@@ -8,7 +9,9 @@ export const minio = new MinioClient({
   secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
 });
 
+/** MinIO bucket name for audio track files. */
 export const AUDIO_BUCKET = 'audio';
+/** MinIO bucket name for album and artist cover images. */
 export const COVERS_BUCKET = 'covers';
 
 /** Constructs a public URL for an object in MinIO storage. */

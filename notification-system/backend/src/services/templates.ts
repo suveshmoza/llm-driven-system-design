@@ -35,6 +35,7 @@ export interface UpdateTemplateData {
   variables?: string[];
 }
 
+/** Manages notification templates with per-channel rendering and variable interpolation. */
 export class TemplateService {
   async getTemplate(templateId: string): Promise<NotificationTemplate | null> {
     // Check cache first

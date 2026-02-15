@@ -46,12 +46,12 @@ const logger: Logger = pino({
   redact: ['req.headers.authorization', 'req.headers.cookie', 'password', 'passwordHash'],
 });
 
-// Create child logger for specific components
+/** Creates a child logger scoped to a named component. */
 export const createLogger = (component: string): Logger => {
   return logger.child({ component });
 };
 
-// Request logging middleware
+/** Express middleware that attaches a request ID and logs request start/completion with duration. */
 export const requestLogger = (req: Request, res: Response, next: NextFunction): void => {
   const startTime = Date.now();
   const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
@@ -94,7 +94,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction): 
   next();
 };
 
-// Error logging helper
+/** Logs an error with stack trace, error code, and optional context metadata. */
 export const logError = (error: ExtendedError, context: Record<string, unknown> = {}): void => {
   logger.error({
     err: {
@@ -107,7 +107,7 @@ export const logError = (error: ExtendedError, context: Record<string, unknown> 
   }, 'Error occurred');
 };
 
-// Audit log for sensitive operations
+/** Logs a security-relevant action with user ID and timestamp for audit trail. */
 export const auditLog = (
   action: string,
   userId: string | number | null,

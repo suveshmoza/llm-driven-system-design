@@ -42,6 +42,7 @@ const LIMITS: RateLimits = {
   },
 };
 
+/** Enforces per-user and global rate limits across push, email, and SMS channels. */
 export class RateLimiter {
   async checkLimit(userId: string, channels: string[]): Promise<RateLimitResult> {
     for (const channel of channels) {

@@ -2,6 +2,7 @@ import pino from 'pino';
 import crypto from 'crypto';
 
 // Create base logger with structured JSON output
+/** Structured Pino logger with pretty-printing in development. */
 export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   formatters: {
@@ -28,6 +29,7 @@ export const logger = pino({
 import { Request, Response, NextFunction } from 'express';
 
 // Request logging middleware
+/** Attaches a child logger with request ID to each request and logs start/finish timing. */
 export function requestLogger(
   req: Request & { requestId?: string; log?: ReturnType<typeof logger.child> },
   res: Response,

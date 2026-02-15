@@ -65,6 +65,7 @@ interface LogContext {
   notificationId?: string;
 }
 
+/** Orchestrates notification creation, validation, deduplication, rate limiting, and channel routing. */
 export class NotificationService {
   /**
    * Send a notification to a user with idempotency support.

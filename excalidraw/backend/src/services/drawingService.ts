@@ -56,6 +56,7 @@ export const createDrawing = async (input: CreateDrawingInput): Promise<DrawingR
   return result.rows[0];
 };
 
+/** Retrieves a drawing by ID, checking Redis cache before querying PostgreSQL. */
 export const getDrawing = async (drawingId: string): Promise<DrawingRow | null> => {
   // Check cache first
   const cached = await cacheGet<DrawingRow>(`drawing:${drawingId}`);
@@ -80,6 +81,7 @@ export const getDrawing = async (drawingId: string): Promise<DrawingRow | null> 
   return drawing;
 };
 
+/** Updates drawing fields dynamically and invalidates the cache. */
 export const updateDrawing = async (
   drawingId: string,
   input: UpdateDrawingInput
@@ -127,12 +129,14 @@ export const updateDrawing = async (
   return result.rows[0];
 };
 
+/** Deletes a drawing and removes it from the cache. */
 export const deleteDrawing = async (drawingId: string): Promise<boolean> => {
   const result = await query('DELETE FROM drawings WHERE id = $1', [drawingId]);
   await cacheDel(`drawing:${drawingId}`);
   return (result.rowCount ?? 0) > 0;
 };
 
+/** Returns all drawings owned by or shared with a user. */
 export const listUserDrawings = async (userId: string): Promise<DrawingRow[]> => {
   const result = await query<DrawingRow>(
     `SELECT d.*, u.username as owner_username, u.display_name as owner_display_name, 'owner' as permission
@@ -152,6 +156,7 @@ export const listUserDrawings = async (userId: string): Promise<DrawingRow[]> =>
   return result.rows;
 };
 
+/** Adds or updates a collaborator's permission on a drawing. */
 export const addCollaborator = async (
   drawingId: string,
   userId: string,
@@ -200,6 +205,7 @@ export const addCollaborator = async (
   }
 };
 
+/** Removes a collaborator from a drawing. */
 export const removeCollaborator = async (drawingId: string, userId: string): Promise<boolean> => {
   const result = await query(
     'DELETE FROM drawing_collaborators WHERE drawing_id = $1 AND user_id = $2',
@@ -208,6 +214,7 @@ export const removeCollaborator = async (drawingId: string, userId: string): Pro
   return (result.rowCount ?? 0) > 0;
 };
 
+/** Returns all collaborators for a drawing with their usernames and permissions. */
 export const getCollaborators = async (drawingId: string): Promise<CollaboratorRow[]> => {
   const result = await query<CollaboratorRow>(
     `SELECT dc.*, u.username, u.display_name
@@ -220,6 +227,7 @@ export const getCollaborators = async (drawingId: string): Promise<CollaboratorR
   return result.rows;
 };
 
+/** Checks whether a user can view, edit, or owns a drawing. */
 export const hasAccess = async (
   drawingId: string,
   userId: string
@@ -260,6 +268,7 @@ export const hasAccess = async (
   return { canView: false, canEdit: false, isOwner: false };
 };
 
+/** Saves a versioned snapshot of drawing elements, retaining only the last 50 versions. */
 export const saveVersion = async (
   drawingId: string,
   elements: unknown[],
