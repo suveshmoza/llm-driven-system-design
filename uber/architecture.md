@@ -118,7 +118,7 @@ For production scale (reference):
 - Supports GEORADIUS queries for nearby drivers
 - Updates locations in real-time
 
-## Data Model
+## Database Schema
 
 ### PostgreSQL Schema
 
@@ -309,7 +309,7 @@ function calculateSurge(availableDrivers, pendingRequests) {
 3. **Redis Cluster**: For geo data at scale
 4. **CDN for static assets**: Map tiles, images
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Alternative | Why We Chose This |
 |----------|-------------|-------------------|
@@ -318,7 +318,7 @@ function calculateSurge(availableDrivers, pendingRequests) {
 | Session auth | JWT | Simpler, Redis-based |
 | WebSocket | SSE, Polling | Lower latency |
 
-## Monitoring and Observability
+## Observability
 
 Key metrics to track:
 - Request-to-match time: Target < 5 seconds

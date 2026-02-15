@@ -151,7 +151,7 @@ A meeting scheduling platform that allows users to share their availability and 
    - Send reminders (scheduled jobs)
    - Handle cancellation/rescheduling notifications
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Diagram
 
@@ -1070,7 +1070,7 @@ frontend/src/
 - **Query optimization**: Avoid N+1 queries, use batching
 - **API rate limiting**: Prevent abuse and ensure fair usage
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### PostgreSQL vs. NoSQL
 **Decision**: PostgreSQL
@@ -1092,7 +1092,7 @@ frontend/src/
 **Trade-off**: API quota usage vs. real-time accuracy
 **Mitigation**: On-demand sync when user requests availability
 
-## Monitoring and Observability
+## Observability
 
 **Metrics** (using Prometheus + Grafana):
 - Booking creation latency (p50, p95, p99)

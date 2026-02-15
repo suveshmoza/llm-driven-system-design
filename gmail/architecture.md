@@ -200,7 +200,7 @@ updateDraft(userId, draftId, data, expectedVersion)
 
 ---
 
-## Data Model
+## Database Schema
 
 ### Entity Relationship
 
@@ -465,6 +465,36 @@ CREATE INDEX idx_threads_last_message ON threads(last_message_at DESC);
 
 ---
 
+## Consistency and Idempotency
+
+Email systems face several consistency challenges because a single send operation touches multiple tables, multiple users' states, and an external search index. Without careful design, failures at any point in this pipeline can result in duplicate emails, missing inbox entries, or orphaned search results.
+
+### Idempotency Keys for Email Sending
+
+Every email send request includes a client-generated idempotency key (a UUID generated when the compose modal opens). The server stores this key in a dedicated idempotency table alongside the resulting message ID. Before processing a send request, the server checks whether the idempotency key already exists. If it does, the server returns the previously created message without re-executing the send flow. This prevents the most damaging user-facing bug in an email system: duplicate sends caused by network retries, double-clicks, or browser refresh during submission.
+
+The idempotency key has a TTL of 24 hours. After that window, the key is purged. This is sufficient because email composition is ephemeral -- users do not retry sends days later. The key is scoped to the sending user, so two different users composing simultaneously never collide.
+
+### Retry Semantics for Failed Deliveries
+
+When the send transaction commits successfully in PostgreSQL, the email is considered delivered within the system. However, several downstream operations can fail independently: cache invalidation for recipients, search index updates, and contact frequency tracking.
+
+For cache invalidation, we use a fire-and-forget pattern. If Redis is temporarily unavailable, the recipient's cached thread list simply expires naturally after its 30-second TTL. No retry is necessary because stale cache entries are self-correcting.
+
+For search indexing, the background indexer worker handles retries implicitly. It polls for messages newer than its last-indexed timestamp. If the indexer crashes or Elasticsearch is temporarily down, the next poll cycle picks up all missed messages. No message is ever skipped because the indexer advances its checkpoint only after successful indexing. If a message fails to index, the checkpoint does not advance and the message is retried on the next cycle.
+
+For contact frequency updates, these are best-effort. A missed frequency increment does not affect correctness -- it only slightly degrades autocomplete ranking. We accept this trade-off rather than adding retry complexity.
+
+### Exactly-Once Processing for Inbox Updates
+
+The send transaction uses a database transaction to ensure that either all recipients receive the message in their inbox or none do. The critical invariant is: if a message row exists, every intended recipient has a corresponding thread_user_state row and INBOX label assignment. Partial failures (message created but some recipients missing) are prevented by the transaction boundary.
+
+For the search indexer, exactly-once semantics are approximated through idempotent upserts. The indexer uses the message ID as the Elasticsearch document ID. If the same message is indexed twice (due to a checkpoint replay after a crash), the second index operation simply overwrites the identical document. This makes the indexer safe to restart at any time without producing duplicate search results.
+
+Draft auto-save achieves consistency through the optimistic locking mechanism described in the Key Design Decisions section. The version column ensures that concurrent saves from multiple tabs never silently overwrite each other. Combined with the idempotency key on draft creation, we prevent duplicate drafts from being created by rapid auto-save retries.
+
+---
+
 ## Security and Auth
 
 - **Session-based authentication** with Redis-backed store (express-session + connect-redis)
@@ -477,7 +507,7 @@ CREATE INDEX idx_threads_last_message ON threads(last_message_at DESC);
 
 ---
 
-## Monitoring and Observability
+## Observability
 
 ### Prometheus Metrics
 
@@ -551,7 +581,7 @@ Applied to external service calls (Elasticsearch):
 
 ---
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

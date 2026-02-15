@@ -90,7 +90,7 @@ A fitness tracking and social platform for athletes that records GPS-based activ
 4. **Feed Generator** - Fan-out on write for personalized feeds
 5. **Achievement Service** - Checks and awards achievements after activities
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Overview
 
@@ -602,7 +602,7 @@ for (const follower of followers.rows) {
 5. **Read replicas**: PostgreSQL read replicas for queries
 6. **Caching**: Application-level caching for hot data
 
-## Monitoring and Observability
+## Observability
 
 ### Recommended Stack (Future)
 - **Metrics**: Prometheus + Grafana

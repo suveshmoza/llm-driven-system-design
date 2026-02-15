@@ -162,7 +162,7 @@ Client → API Server → Redis ZADD queue:{event} {timestamp} {session}
 
 ---
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -770,7 +770,7 @@ docker exec ticketmaster-redis redis-cli BGSAVE
 
 ---
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Seat Locking: Redis vs. Database-Only
 

@@ -152,7 +152,7 @@ Based on capacity estimates:
    c. Log for analytics
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -588,7 +588,7 @@ app.post('/api/v1/auth/login', loginLimiter, loginHandler);
 - Database connections use SSL in production
 - No PII in logs (mask emails, redact card numbers)
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics (Prometheus)
 
@@ -790,7 +790,7 @@ For local development: Rely on Docker volumes and `docker-compose down -v` aware
 | DB CPU > 70% sustained | Add read replica | +$50/mo |
 | Search latency > 200ms | Add ES node | +$100/mo |
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Considered Alternatives
 

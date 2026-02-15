@@ -681,7 +681,7 @@ function rateLimit(limit: number, windowSeconds: number = 60) {
 
 ---
 
-## 18. Trade-offs and Alternatives
+## 18. Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

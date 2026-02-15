@@ -119,7 +119,7 @@ The `system-design-answer-{frontend,backend,fullstack}.md` files simulate a real
 
 #### Absolutely No Code
 
-This is the most frequently violated rule. **~30 backend variant files** currently contain SQL schemas, TypeScript class implementations, JavaScript functions, and other code blocks. This is wrong.
+This is the most frequently violated rule.
 
 **Do NOT include:**
 - Language-tagged code blocks (` ```typescript `, ` ```sql `, ` ```javascript `, ` ```json `, ` ```tsx `, etc.)
@@ -297,6 +297,9 @@ npm run test:smoke:all              # Run smoke tests for all projects
 
 # ESLint/Prettier maintenance (batch operations across projects)
 node scripts/add-eslint-configs.mjs # Add ESLint configs to all backends
+node scripts/add-eslint-deps.mjs    # Add ESLint/Prettier dependencies to all backends
+node scripts/add-eslint-prettier.mjs # Add ESLint + Prettier setup to projects
+node scripts/update-eslint-configs.mjs # Update existing ESLint configs across projects
 node scripts/fix-eslint-errors.mjs  # Auto-fix ESLint errors across projects
 node scripts/fix-unused-vars.mjs    # Prefix unused variables with underscore
 ```

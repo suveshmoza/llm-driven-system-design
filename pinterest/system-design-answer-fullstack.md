@@ -310,6 +310,32 @@ Hover Pin ──▶ Show Overlay ──▶ Click "Save" ──▶ Open Modal
 | 4 | Elasticsearch | Autocomplete with debounced search |
 | 5 | Shard by user_id | Micro-frontend for pin detail |
 
+### Scaling the Image Pipeline
+
+> "The image processing pipeline is the first bottleneck at scale. At 2M pins/day (23 pins/sec), a single worker processing each image in 3 seconds can handle about 0.33 pins/sec. I need roughly 70 worker instances to keep up. The beauty of the queue-based architecture is that adding workers requires zero changes to the API layer -- I simply deploy more consumer instances. RabbitMQ distributes jobs round-robin across connected consumers."
+
+If processing volume becomes bursty (marketing campaigns, viral content waves), I use autoscaling based on queue depth. When the RabbitMQ queue exceeds 1,000 pending messages, I scale up workers. When it drops below 100, I scale down. This keeps costs proportional to actual load rather than peak capacity.
+
+### Frontend Performance at Scale
+
+> "As the pin catalog grows, the frontend faces different scaling challenges. The masonry grid itself scales well because virtualization keeps DOM node count constant regardless of total pins. The real challenge is state management for infinite scroll -- after loading 500 pins, the Zustand store holds significant data in memory. I mitigate this by evicting pins that are far from the current scroll position, keeping only the visible window plus 200 pins in each direction. Evicted pins are refetched on scroll-back, but this is rare because users typically scroll forward."
+
+Image loading at scale requires a content-aware strategy. Not all images in the viewport need to load simultaneously. I prioritize images in columns that are currently visible and defer images in columns that are partially off-screen. Combined with the CDN serving images from the nearest edge location, this keeps the perceived load time under 500ms for most pins.
+
+---
+
+## 🔄 Failure Handling (Full Stack)
+
+### Backend Failures
+
+> "The most common failure mode is the image worker failing mid-processing. Since each step is idempotent (uploading to the same MinIO key overwrites cleanly, database UPDATEs set absolute values), retries are safe. After three failed attempts, the message routes to a dead letter queue, the pin status becomes 'failed', and the user sees a failed upload notification in the UI."
+
+Circuit breakers wrap external service calls (MinIO, RabbitMQ, Redis). When the error rate exceeds 50% over 10 requests, the circuit opens and requests fail fast for 30 seconds before testing again. This prevents cascade failures where one degraded service causes all API requests to time out.
+
+### Frontend Error Recovery
+
+When the backend returns an error during a save operation, the frontend rolls back the optimistic update -- the save count decrements and the saved state reverts. For image uploads, the frontend shows a retry button if the initial upload fails, preserving the user's selected image and form data so they do not need to start over. Network disconnections during feed loading show a non-intrusive banner with a "Retry" action rather than clearing the existing feed content.
+
 ---
 
 ## ⚖️ Trade-offs Summary

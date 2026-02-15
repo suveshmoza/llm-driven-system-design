@@ -96,7 +96,7 @@ A real-time analytics system for tracking video views and computing trending vid
    - Historical snapshots (optional)
    - View event log (optional)
 
-## Data Model
+## Database Schema
 
 ### PostgreSQL Schema
 
@@ -305,7 +305,7 @@ ss.increment(videoId);
 const topK = ss.getTopK(10); // Guaranteed to include true top 10
 ```
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Trade-off | Alternative |
 |----------|-----------|-------------|
@@ -314,7 +314,7 @@ const topK = ss.getTopK(10); // Guaranteed to include true top 10
 | SSE | Simple, unidirectional | WebSocket for bidirectional |
 | Single Redis | Simple, potential bottleneck | Redis Cluster for scale |
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics to Track
 

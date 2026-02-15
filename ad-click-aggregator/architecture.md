@@ -103,7 +103,7 @@ For production scale targeting 10,000 clicks/second:
    - Campaign analytics
    - Test click generator
 
-## Data Model
+## Database Schema
 
 ### Raw Click Event
 
@@ -477,7 +477,7 @@ Response:
 2. ~~**ClickHouse**: Migrate aggregations for better analytics performance~~ ✅ Implemented
 3. **Flink/Spark**: Stream processing for complex aggregations
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Why |
 |----------|--------|-------------|-----|
@@ -487,7 +487,7 @@ Response:
 | Processing | Sync | Kafka+Flink | Simpler for learning |
 | Frontend | React | Vue | Ecosystem, TanStack Router |
 
-## Monitoring and Observability
+## Observability
 
 **Metrics to track:**
 - Ingestion rate (clicks/sec)

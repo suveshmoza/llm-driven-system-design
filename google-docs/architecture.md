@@ -161,7 +161,7 @@ API Server                    PostgreSQL
 
 ---
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL)
 
@@ -837,7 +837,7 @@ Trace context propagated through:
 
 ---
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Alternative | Why Not |
 |----------|-------------|---------|

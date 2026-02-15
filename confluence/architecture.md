@@ -198,7 +198,7 @@ Macros are structured content blocks embedded in pages:
 
 Macros can be stored in `content_json.macros[]` and expanded server-side by `macroService.ts` or rendered client-side by `MacroRenderer.tsx`.
 
-## Data Model / Database Schema
+## Database Schema
 
 Full schema in `backend/src/db/init.sql`. Key design decisions:
 
@@ -254,7 +254,7 @@ Elasticsearch was chosen for its superior relevance scoring and highlighting cap
 - **Space membership**: Role-based (admin, member, viewer) per space
 - **CORS**: Configured for frontend origin only
 
-## Monitoring and Observability
+## Observability
 
 - **Metrics**: Prometheus metrics via prom-client (HTTP request duration/count, page operations, search latency)
 - **Structured logging**: Pino logger with request correlation via pino-http
@@ -282,7 +282,7 @@ At extreme scale (100M+ pages):
 - Add CDN for static page content
 - Implement collaborative editing with CRDTs/OT
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

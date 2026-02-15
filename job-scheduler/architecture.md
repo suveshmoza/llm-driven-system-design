@@ -109,7 +109,7 @@ A distributed task scheduling system that provides reliable job execution with c
    - Execution history and logs
    - Source of truth for job state
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -272,7 +272,7 @@ GET    /api/v1/dead-letter             - Dead letter queue
 - Redis Cluster for high throughput
 - Separate queues per priority level if needed
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Trade-off | Alternative |
 |----------|-----------|-------------|
@@ -281,7 +281,7 @@ GET    /api/v1/dead-letter             - Dead letter queue
 | Visibility timeout | At-least-once, possible duplicates | Distributed transactions (overhead) |
 | PostgreSQL | ACID, scaling limits | Cassandra (better scale, less consistency) |
 
-## Monitoring and Observability
+## Observability
 
 ### Key Metrics
 

@@ -188,7 +188,7 @@ Defines the available component types with their default props and property sche
 
 The registry serves two purposes: populating the component palette in the editor, and defining the prop editing UI in the property inspector.
 
-## Data Model
+## Database Schema
 
 ### Retool Metadata Database
 
@@ -318,6 +318,28 @@ At scale, if we needed to query component metadata frequently, we could add mate
 
 **Rationale**: `eval("query1.data[0].name")` with a context object would be powerful but creates a massive security surface. Users could execute arbitrary code: `eval("process.exit(1)")` or `eval("require('child_process').exec('rm -rf /')")`. Property path traversal limits expressions to data access only: navigating object properties and array indices. The trade-off is reduced expressiveness -- users cannot write `{{ query1.data.filter(x => x.active).length }}`. In production Retool, this gap is filled by a sandboxed JavaScript runtime (V8 isolate), but that is beyond the scope of this project.
 
+## Consistency and Idempotency
+
+### Idempotent App Saves
+
+App save operations (PUT /api/apps/:id) must be idempotent to handle network retries and duplicate submissions. Each save request includes the full app state (components, queries, layout) rather than incremental patches. This means replaying the same save request produces the same result regardless of how many times it is delivered. The `updated_at` timestamp on the apps table serves as a lightweight version marker. If two save requests arrive in quick succession, the second overwrites the first with the complete state, and the timestamp reflects the most recent write. This last-writer-wins approach is acceptable because the editor always sends the full component tree, so no partial state can be persisted.
+
+### Optimistic Locking for Concurrent Editing
+
+When multiple users edit the same app simultaneously, conflicting saves can silently overwrite each other. To prevent this, the save endpoint accepts an `expected_version` field (the `updated_at` value the client last read). Before writing, the server checks whether the stored `updated_at` matches the expected version. If it does not match, the save is rejected with a 409 Conflict response, prompting the client to reload the latest state before retrying. This optimistic locking approach avoids holding database locks during the editing session while still preventing lost updates. The trade-off is that users occasionally see conflict errors, but for an internal tool builder where simultaneous editing of the same app is uncommon, this is preferable to the complexity of real-time conflict resolution with CRDTs.
+
+### Query Execution Retry Semantics
+
+Query execution against external target databases is inherently non-idempotent for write operations (INSERT, UPDATE, DELETE). Read queries (SELECT) are safe to retry on transient failures such as connection timeouts or pool exhaustion. The query executor retries failed SELECT queries up to two times with exponential backoff before returning an error to the client. Write queries are never automatically retried because replaying an INSERT could create duplicate rows. Instead, write failures return an error immediately, and the user decides whether to re-execute. For critical write operations at production scale, the platform could support client-supplied idempotency keys attached to each query execution request, allowing the server to deduplicate retries within a short time window.
+
+### Exactly-Once Publish Operations
+
+Publishing an app (POST /api/apps/:id/publish) creates an immutable version snapshot in the app_versions table. This operation must not produce duplicate versions if the client retries after a timeout. The server wraps the publish operation in a database transaction that reads the current maximum version number and inserts the next version atomically. The UNIQUE constraint on (app_id, version_number) acts as a safety net -- if a duplicate insert is attempted due to a retry, the constraint violation causes the transaction to fail. The server catches this specific error and returns the existing version rather than an error, making the publish endpoint effectively idempotent from the client's perspective.
+
+### Consistency Guarantees
+
+The metadata database uses PostgreSQL with default READ COMMITTED isolation. Within a single app save or publish operation, all state changes occur in a single transaction, ensuring atomicity. Cross-app consistency is not a concern because apps are independent entities. For the two-database architecture, there is no distributed transaction between the Retool metadata database and target databases. Query results are ephemeral and not persisted, so there is no consistency boundary to maintain between the metadata store and the query execution path.
+
 ## Security
 
 ### Query Execution Safety
@@ -340,7 +362,7 @@ At scale, if we needed to query component metadata frequently, we could add mate
 - Passwords masked in API responses (`********`)
 - In production, credentials should be encrypted at rest with envelope encryption (KMS)
 
-## Monitoring and Observability
+## Observability
 
 ### Prometheus Metrics
 
@@ -392,7 +414,7 @@ Each API instance maintains its own target DB connection pools. At scale, a dedi
 
 Apps are scoped by `owner_id`. At scale, tenant isolation would require row-level security, per-tenant connection limits, and query execution quotas.
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

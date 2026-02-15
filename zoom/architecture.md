@@ -178,9 +178,7 @@ In-meeting chat with persistence:
 - Real-time delivery via WebSocket
 - Support for broadcast (to everyone) and direct messages (to specific participant)
 
-## Data Model
-
-### Database Schema
+## Database Schema
 
 ```sql
 -- Users table with auth credentials
@@ -297,6 +295,32 @@ WebSocket is mandatory for WebRTC signaling. The ICE/DTLS handshake requires sub
 
 Meeting settings (waitingRoom, muteOnEntry, allowScreenShare, maxParticipants) are stored as JSONB. These settings are always read and written as a unit, never queried individually, and may evolve over time. JSONB avoids schema migrations for new settings and reduces join complexity. The trade-off: we lose the ability to query "all meetings with waiting room enabled" efficiently, but that's not a core query pattern.
 
+## Consistency and Idempotency
+
+### Idempotent Meeting Creation
+
+Meeting creation requests include a client-generated idempotency key (UUID) sent in the `Idempotency-Key` header. The server stores completed request outcomes keyed by this value in Redis with a 24-hour TTL. If a duplicate request arrives — due to a network retry or the user double-clicking the "New Meeting" button — the server returns the previously created meeting rather than generating a second one. This prevents orphaned meetings that no one joins, which would pollute the user's meeting history and consume meeting codes unnecessarily.
+
+The meeting code itself provides a secondary uniqueness constraint. Because codes are generated server-side with a UNIQUE database constraint, even without an idempotency key, a duplicate insert would fail at the database level. However, relying on database errors for flow control is fragile — the idempotency key approach catches duplicates before they reach the database.
+
+### WebSocket Message Delivery Semantics
+
+Signaling messages use at-least-once delivery with client-side deduplication. Each WebSocket message includes a monotonically increasing sequence number per connection. When a client reconnects after a brief disconnection, it sends its last received sequence number in the `join-meeting` message, and the server replays any missed state changes from a short-lived buffer stored in Redis (retained for 60 seconds after disconnection).
+
+For participant state updates (mute, video toggle, hand raise), the system uses last-writer-wins semantics. These are inherently idempotent — receiving "user X is muted" twice produces the same state as receiving it once. The server maintains the authoritative participant state in Redis, and any conflicting updates resolve to the most recent timestamp.
+
+### Exactly-Once Chat Message Guarantees
+
+Chat messages require stronger guarantees than signaling messages because users expect every message to appear exactly once in the correct order. Each chat message is assigned a server-side UUID before being persisted to PostgreSQL and broadcast via WebSocket. The client tracks received message IDs in a local Set. If a duplicate arrives during reconnection replay, the client silently drops it.
+
+On the write path, the client includes a client-generated message ID with each chat submission. The server checks for this ID in a Redis set (scoped to the meeting, TTL of 1 hour) before inserting into PostgreSQL. If the ID already exists, the server returns the existing message without creating a duplicate row. This handles the case where the client sends a message, the server persists it, but the acknowledgment is lost — prompting the client to retry.
+
+### Handling Duplicate Join and Leave Events
+
+Join and leave events are idempotent by design. The `meeting_participants` table has a UNIQUE constraint on `(meeting_id, user_id)`, so a duplicate join attempt results in an upsert that updates the `joined_at` timestamp and clears the `left_at` field rather than creating a second row. Similarly, a duplicate leave event sets `left_at` to the current timestamp regardless of whether it was already set.
+
+During network instability, a participant may appear to leave and rejoin rapidly. The server applies a grace period of 5 seconds before broadcasting a `participant-left` event to other participants. If the user reconnects within that window, the departure is never announced, avoiding the disruptive "X left / X joined" notification flicker that degrades the meeting experience. The reconnecting client re-establishes its WebSocket connection, re-registers its producers, and other participants see seamless continuity.
+
 ## Security / Auth
 
 - **Session-based authentication** with Redis session store
@@ -308,7 +332,7 @@ Meeting settings (waitingRoom, muteOnEntry, allowScreenShare, maxParticipants) a
 
 In production: OAuth 2.0 (Google, SSO), JWT with refresh tokens, end-to-end encryption for media streams.
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics (Prometheus via prom-client)
 - `active_meetings_total` — Gauge: current active meeting count
@@ -382,7 +406,7 @@ Server handles SIGTERM/SIGINT:
 - **Adaptive bitrate**: SFU adjusts forwarded quality based on receiver's bandwidth estimation.
 - **Audio-only mode**: For large meetings, only active speakers transmit video.
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

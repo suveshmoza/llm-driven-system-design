@@ -57,7 +57,7 @@ A collaborative spreadsheet application with real-time multi-user editing, formu
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Diagram
 

@@ -113,7 +113,7 @@ Based on these estimates:
 7. Analytics worker consumes event, writes to click_events table
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -401,7 +401,7 @@ Strict-Transport-Security: max-age=31536000 (production only)
 Content-Security-Policy: default-src 'self'
 ```
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics (Prometheus)
 
@@ -576,7 +576,7 @@ server {
 }
 ```
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

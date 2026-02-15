@@ -70,7 +70,7 @@ A real-time collaborative whiteboard enabling multiple users to simultaneously c
     └──────────┘                                     └─────────────┘
 ```
 
-## Data Model
+## Database Schema
 
 ### Users
 
@@ -315,6 +315,28 @@ Real-time cursor updates flow directly through WebSocket broadcast (not through 
 
 **Trade-off:** We lose operations that occur in the 2-second window if the server crashes. The debounced approach is a pragmatic choice: we get near-real-time persistence with manageable write amplification. Version snapshots provide periodic recovery points.
 
+## Consistency and Idempotency
+
+### Idempotent Drawing Operations
+
+Every shape operation (add, update, delete, move) carries a client-generated element ID and a monotonically increasing version number. The server uses these two fields as a natural idempotency key. If a WebSocket message is retried due to a transient network failure or client reconnection, the CRDT merge logic ensures that processing the same operation twice produces the same result. An add operation for an element ID that already exists is treated as an update, and the version comparison determines whether the incoming data supersedes the current state. An update with a version equal to or lower than the existing element version is silently discarded. This means duplicate deliveries never create phantom shapes or corrupt the element array.
+
+For REST API mutations such as creating a drawing or adding a collaborator, the server enforces idempotency through database constraints. The `drawing_collaborators` table has a unique constraint on `(drawing_id, user_id)`, so a retried collaborator-add request returns the existing record rather than creating a duplicate. Drawing creation uses client-provided UUIDs when available, allowing the client to safely retry a failed create without producing duplicate drawings.
+
+### CRDT Convergence Guarantees
+
+The shape-level Last-Writer-Wins register guarantees convergence across all participants in a collaboration session. Every element carries a version counter and a high-resolution timestamp. The merge function is commutative (the order in which updates arrive does not affect the final state), associative (merging pairwise or all at once yields the same result), and idempotent (applying the same update multiple times has no additional effect). These three properties ensure that even when network delays cause operations to arrive out of order or be delivered more than once, all clients converge to the same element state once all messages are processed.
+
+Soft deletes are essential to convergence. If a delete operation physically removed an element from the array, a concurrent update arriving after the delete would re-insert the element, violating the user's intent. By marking elements as `isDeleted: true` with an incremented version, the delete participates in the same LWW comparison as any other update. A concurrent update with a lower version cannot override the delete, and a concurrent update with a higher version intentionally "wins," which is the correct behavior when the updater has not yet seen the delete.
+
+### Retry Semantics for Persistence
+
+The debounced auto-save mechanism writes the full element array to PostgreSQL as a single atomic transaction. If the write fails due to a transient database error, the debounce timer resets and retries after the next idle period. Because the write is a full-state snapshot rather than a delta, retrying is inherently safe. There is no risk of applying a partial update twice or missing intermediate operations. The version snapshot table uses a composite unique constraint on `(drawing_id, version_number)` to prevent duplicate snapshots from concurrent save attempts.
+
+### Exactly-Once Delivery of Collaborative Edits
+
+WebSocket transport provides at-most-once delivery by default. The system achieves effective exactly-once semantics through the idempotent CRDT merge on the receiving side. If a message is lost (connection drop before delivery), the client detects the gap during reconnection by comparing its local element versions against the server's authoritative state. Any elements where the server has a higher version are updated locally, and any local elements with higher versions are re-sent to the server. This reconciliation step closes the gap without requiring message acknowledgment tracking or sequence numbers, keeping the protocol simple while ensuring no edits are permanently lost.
+
 ## Security & Auth
 
 - **Session-based authentication** using Redis-backed express-session
@@ -323,7 +345,7 @@ Real-time cursor updates flow directly through WebSocket broadcast (not through 
 - **Access control**: Drawings are private by default; only owner and explicit collaborators can view/edit
 - **WebSocket auth**: Currently relies on the session cookie set during HTTP login. In production, WebSocket connections should validate a short-lived token.
 
-## Monitoring and Observability
+## Observability
 
 ### Prometheus Metrics
 

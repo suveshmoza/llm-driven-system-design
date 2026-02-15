@@ -150,7 +150,7 @@ A photo and video sharing social platform supporting photo uploads, personalized
 | RabbitMQ | Async job queue for image processing | RabbitMQ 3.12 |
 | Load Balancer | Request distribution, health checks | nginx |
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -733,7 +733,7 @@ async function rateLimit(userId, action, limit, windowSeconds) {
 - **Usernames**: 3-30 alphanumeric + underscore, lowercase
 - **UUIDs**: Validate format before database queries
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics (Prometheus)
 
@@ -931,7 +931,7 @@ Phase 3: Shard follows table by follower_id (range or hash)
 Phase 4: Cassandra cluster for messages (already using Cassandra)
 ```
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Why |
 |----------|--------|-------------|-----|

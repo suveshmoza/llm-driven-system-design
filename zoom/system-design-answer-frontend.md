@@ -1,6 +1,6 @@
 # System Design: Video Conferencing (Frontend Focus)
 
-## 1. Requirements Clarification
+## 🎯 1. Requirements Clarification
 
 > "I'll design the frontend for a Zoom-like video conferencing application. The key frontend challenges are: dynamic video grid layout, WebRTC media management, device selection UX, real-time state synchronization, and screen sharing."
 
@@ -21,7 +21,7 @@
 
 ---
 
-## 2. Component Architecture
+## 🧩 2. Component Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -50,7 +50,7 @@
 
 ---
 
-## 3. Video Grid Layout Deep Dive
+## 🔧 3. Video Grid Layout Deep Dive
 
 > "The video grid is the most performance-critical component. It must dynamically resize and reorganize as participants join, leave, toggle video, or share screens."
 
@@ -105,7 +105,7 @@
 
 ---
 
-## 4. Meeting Lobby
+## 🚪 4. Meeting Lobby
 
 > "The lobby is where users configure their media devices before joining. This is crucial UX — a bad first impression (wrong camera, no mic) ruins the meeting experience."
 
@@ -166,7 +166,7 @@ Request getUserMedia({video: true, audio: true})
 
 ---
 
-## 5. State Management
+## 🗂️ 5. State Management
 
 > "Video conferencing has three distinct state domains that update at different frequencies."
 
@@ -189,7 +189,7 @@ Request getUserMedia({video: true, audio: true})
 
 ---
 
-## 6. WebSocket Signaling Client
+## 🔌 6. WebSocket Signaling Client
 
 ### Connection Lifecycle
 
@@ -226,7 +226,7 @@ wsClient.on('producer-closed', handler)
 
 ---
 
-## 7. Control Bar
+## 🎛️ 7. Control Bar
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -253,7 +253,7 @@ wsClient.on('producer-closed', handler)
 
 ---
 
-## 8. Video Tile Component
+## 🎥 8. Video Tile Component
 
 ### Tile Anatomy
 
@@ -288,7 +288,7 @@ wsClient.on('producer-closed', handler)
 
 ---
 
-## 9. Chat Panel
+## 💬 9. Chat Panel
 
 ### Chat UX Decisions
 
@@ -327,7 +327,7 @@ wsClient.on('producer-closed', handler)
 
 ---
 
-## 10. Responsive Design Strategy
+## 📱 10. Responsive Design Strategy
 
 | Viewport | Grid Max | Side Panel | Control Bar |
 |----------|----------|------------|-------------|
@@ -339,7 +339,7 @@ wsClient.on('producer-closed', handler)
 
 ---
 
-## 11. Trade-offs Summary
+## ⚖️ 11. Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
@@ -353,7 +353,7 @@ wsClient.on('producer-closed', handler)
 
 ---
 
-## 12. Accessibility Considerations
+## ♿ 12. Accessibility Considerations
 
 - **Keyboard navigation**: Tab through control bar, Enter to toggle
 - **ARIA labels**: All icon-only buttons have descriptive labels

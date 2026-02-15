@@ -114,7 +114,7 @@ A last-mile delivery platform for local goods and services, similar to DoorDash,
    - ETA calculations based on Haversine distance
    - Redis Pub/Sub for message distribution
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Diagram
 
@@ -749,7 +749,7 @@ The driver dashboard demonstrates real-time patterns:
 - Single Redis instance
 - Multiple API server instances on different ports
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Trade-off |
 |----------|-----------|
@@ -775,7 +775,7 @@ The driver dashboard demonstrates real-time patterns:
    - Higher overhead
    - Native WebSocket sufficient for our needs
 
-## Monitoring and Observability
+## Observability
 
 ### Metrics to Track
 - Order placement rate

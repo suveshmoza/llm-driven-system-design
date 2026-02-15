@@ -1,6 +1,6 @@
 # System Design: Video Conferencing (Backend Focus)
 
-## 1. Requirements Clarification
+## 🎯 1. Requirements Clarification
 
 > "Before diving in, let me clarify the scope. We're building a Zoom-like video conferencing system. Key backend concerns are: media routing architecture, signaling protocol, meeting lifecycle, and scaling beyond thousands of concurrent meetings."
 
@@ -20,7 +20,7 @@
 
 ---
 
-## 2. Capacity Estimation
+## 📊 2. Capacity Estimation
 
 > "Let me size the system to understand where the bottlenecks will appear."
 
@@ -34,7 +34,7 @@
 
 ---
 
-## 3. High-Level Architecture
+## 🏗️ 3. High-Level Architecture
 
 ```
 ┌──────────┐    ┌───────────┐    ┌────────────────┐
@@ -67,7 +67,7 @@
 
 ---
 
-## 4. SFU Architecture Deep Dive
+## 🔧 4. SFU Architecture Deep Dive
 
 > "The SFU is the most critical backend component. Let me explain why we chose it over P2P mesh and MCU."
 
@@ -75,9 +75,9 @@
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| **SFU** | O(N) server connections, preserves individual streams, moderate server CPU | Server handles SRTP encryption, still O(N) client download bandwidth |
-| **P2P Mesh** | No server infrastructure, lowest latency for 2 users | O(N^2) connections, impractical beyond 4-5 participants |
-| **MCU** | Lowest client bandwidth (single mixed stream) | Highest server CPU (real-time transcoding), loses individual stream control |
+| ✅ **SFU** | O(N) server connections, preserves individual streams, moderate server CPU | Server handles SRTP encryption, still O(N) client download bandwidth |
+| ❌ **P2P Mesh** | No server infrastructure, lowest latency for 2 users | O(N^2) connections, impractical beyond 4-5 participants |
+| ❌ **MCU** | Lowest client bandwidth (single mixed stream) | Highest server CPU (real-time transcoding), loses individual stream control |
 
 > "We chose SFU because P2P mesh breaks at 5+ participants. With 8 participants in a mesh, each client maintains 7 WebRTC connections, sending 7 copies of their video — that's 14 Mbps upload for a single user at 2 Mbps per stream. Most home connections can't sustain that. SFU reduces this to a single upload stream, with the server forwarding to all recipients. The trade-off is server CPU for SRTP encryption/decryption, but that's linear and predictable. MCU would reduce client bandwidth further by sending a single mixed stream, but it requires real-time transcoding at ~$0.50/participant/hour in compute cost, and users lose the ability to individually pin or spotlight speakers."
 
@@ -111,7 +111,7 @@
 
 ---
 
-## 5. Signaling Protocol Deep Dive
+## 🔌 5. Signaling Protocol Deep Dive
 
 > "The signaling protocol is the control plane for WebRTC. Every media stream setup requires a multi-step negotiation."
 
@@ -161,34 +161,28 @@ Client                  Signaling Server              SFU
 
 ---
 
-## 6. Data Model
+## 💾 6. Data Model
 
-### Core Schema
+### Core Tables
 
-```
-┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│    users     │     │    meetings      │     │meeting_participants│
-│──────────────│     │──────────────────│     │──────────────────│
-│ id (UUID PK) │◀────│ host_id (FK)     │     │ meeting_id (FK)  │
-│ username     │     │ meeting_code     │◀────│ user_id (FK)     │
-│ email        │     │ title            │     │ display_name     │
-│ password_hash│     │ status           │     │ role             │
-│ display_name │     │ settings (JSONB) │     │ is_muted         │
-└──────────────┘     │ scheduled_start  │     │ is_video_on      │
-                     │ actual_start     │     │ is_screen_sharing│
-                     │ actual_end       │     │ is_hand_raised   │
-                     └──────────────────┘     │ joined_at        │
-                                              │ left_at          │
-                                              └──────────────────┘
-```
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| users | id (UUID PK), username (unique), email (unique), password_hash, display_name | username, email | Standard auth table, passwords hashed with bcrypt |
+| meetings | id (UUID PK), meeting_code (unique), title, host_id (FK→users), status, settings (JSONB), scheduled_start, actual_start, actual_end | meeting_code, (host_id, created_at DESC) | Status lifecycle: scheduled → active → ended |
+| meeting_participants | id (UUID PK), meeting_id (FK), user_id (FK), display_name, role, is_muted, is_video_on, is_screen_sharing, is_hand_raised, joined_at, left_at | meeting_id, (meeting_id, user_id) UNIQUE | Role values: host, co-host, participant |
+| breakout_rooms | id (UUID PK), meeting_id (FK→meetings), name, is_active | meeting_id | Created by host, activated/deactivated as a group |
+| breakout_assignments | breakout_room_id (FK), participant_id (FK) | (breakout_room_id, participant_id) UNIQUE | Temporary assignments, deleted when rooms close |
+| meeting_chat_messages | id (UUID PK), meeting_id (FK), sender_id (FK→users), content, recipient_id (FK→users, nullable), created_at | (meeting_id, created_at) | recipient_id NULL means broadcast to everyone |
 
 **Meeting codes** use format `abc-defg-hij` (3-4-3 lowercase letters) — human-readable and verbally communicable. Stored with a UNIQUE constraint and indexed for fast lookup.
 
 **Settings as JSONB** instead of normalized columns because settings are always read/written as a unit, the schema evolves frequently (new features like waiting room, E2EE toggle), and we never query across meetings by individual settings.
 
+> "I chose JSONB for meeting settings over a normalized settings table because these settings have two important characteristics: they are always read and written atomically as a group, and they evolve frequently as new features are added. A normalized table would require a schema migration every time we add a toggle for a new feature — waiting room, E2EE, allow reactions, recording consent. With JSONB, the application code handles schema evolution through default values. The trade-off is that we lose the ability to query 'all meetings with waiting room enabled' efficiently, but that is an analytics query better served by a data warehouse, not the transactional database."
+
 ---
 
-## 7. Breakout Rooms
+## 🏠 7. Breakout Rooms
 
 > "Breakout rooms are architecturally interesting because they require dynamic Router allocation and participant migration."
 
@@ -200,17 +194,17 @@ Client                  Signaling Server              SFU
 5. Assigned participants' transports are migrated from main Router to breakout Router
 6. When host closes breakout rooms, participants migrate back to main Router
 
-**Key challenge**: Transport migration. In mediasoup, you can't move a Transport between Routers. Instead:
+**Key challenge**: Transport migration. In mediasoup, you cannot move a Transport between Routers. Instead:
 1. Close participant's existing consumers on the main Router
 2. Create new Transports on the breakout Router
 3. Re-negotiate ICE/DTLS (client performs new WebRTC handshake)
 4. Recreate Producers and Consumers on the new Router
 
-This causes a ~1-2 second interruption during the switch, which is acceptable UX.
+This causes a 1-2 second interruption during the switch, which is acceptable UX.
 
 ---
 
-## 8. Scaling Strategy
+## 📈 8. Scaling Strategy
 
 ### Horizontal SFU Scaling
 
@@ -236,6 +230,23 @@ This causes a ~1-2 second interruption during the switch, which is acceptable UX
 
 **Large meetings** (100+ participants): Span multiple Workers on the same server using **pipe transports** — internal connections between Workers that forward Producer streams without client involvement.
 
+### SFU Cascading for Large Meetings
+
+> "When a single server cannot host an entire meeting — say a 1,000-person all-hands — we need SFU cascading. This means multiple SFU servers cooperate to serve the same meeting, forwarding media between themselves."
+
+In a cascaded setup, one server is designated the "origin" for a meeting, and additional servers act as "edge" nodes. The origin receives all producer streams and forwards them to edge servers via server-to-server pipe transports. Each edge server then distributes streams to its local participants. This introduces an additional hop of latency (typically 10-30ms for intra-region) but enables meetings to scale beyond single-server capacity.
+
+The trade-off is operational complexity: the SFU Controller must track which servers participate in each meeting, handle edge server failures by reassigning participants to healthy edges, and manage the pipe transport lifecycle. For most meetings (2-20 participants), this complexity is unnecessary — cascading only activates for meetings exceeding a configurable threshold (default: 200 participants).
+
+### What Breaks First at Scale
+
+The bottlenecks emerge in this order as concurrency grows:
+
+1. **SFU CPU** — SRTP encryption is CPU-bound. Each Worker saturates a core at ~500 participants. This is the first limit hit and is solved by adding more machines.
+2. **Signaling server memory** — Each WebSocket connection holds participant state in memory. At 800K connections with ~2KB per connection, a single server needs ~1.6GB just for connection state. Horizontal scaling with sticky sessions addresses this.
+3. **Redis pub/sub fan-out** — For cross-server participant state synchronization, Redis pub/sub must deliver updates to all signaling servers. At 40M messages/minute, Redis becomes a throughput bottleneck. Sharding pub/sub channels by meeting_code distributes the load.
+4. **PostgreSQL write throughput** — Chat message inserts and participant join/leave updates create write pressure. Batching chat inserts (flush every 500ms instead of per-message) and using Redis as the primary store for transient participant state reduces database writes by 90%.
+
 ### Bandwidth Optimization
 
 | Technique | How it works | Impact |
@@ -248,7 +259,86 @@ This causes a ~1-2 second interruption during the switch, which is acceptable UX
 
 ---
 
-## 9. Trade-offs Summary
+## 🔧 9. Failure Handling Deep Dive
+
+### Failure Scenarios
+
+| Scenario | Impact | Mitigation |
+|----------|--------|------------|
+| SFU Worker crash | Meeting participants disconnected | Auto-reconnect, reassign to healthy Worker |
+| Signaling server down | New joins fail, existing calls continue | Multiple signaling servers behind LB |
+| Redis outage | Sessions lost, pub/sub breaks | Redis Sentinel for HA, session re-auth |
+| PostgreSQL down | Meeting creation fails, history unavailable | Circuit breaker, cached meeting state in Redis |
+| Network partition | Split-brain in distributed SFU | TURN fallback, server-side health monitoring |
+
+> "The most important insight: once a WebRTC media connection is established between client and SFU, it survives signaling server failures. Participants already in a call continue talking even if the signaling server goes down. Only new joins and state changes (mute/unmute) are affected. This is a fundamental advantage of the SFU architecture — the media plane and control plane are decoupled."
+
+### Reconnection Strategy
+
+When a participant's WebSocket connection drops, the server does not immediately broadcast a leave event. Instead, a 5-second grace period allows the client to reconnect. The reconnection flow works as follows:
+
+1. The client detects the WebSocket close event and begins exponential backoff reconnection (1s, 2s, 4s, 8s, 16s — maximum 5 attempts).
+2. Upon reconnecting, the client sends a `join-meeting` message with its last known sequence number.
+3. The server replays any missed state changes from a Redis buffer (retained 60 seconds after disconnection).
+4. The client's existing media transports may still be alive (ICE connections survive brief network blips). If they are, the client simply re-registers its producers. If transports have timed out, the client performs a full re-negotiation.
+5. Other participants see seamless continuity — no "X left / X joined" notification unless the disconnect exceeds the grace period.
+
+This approach prioritizes perceived stability. Users on flaky Wi-Fi connections should not see their own meeting state reset every time the network hiccups for 2 seconds.
+
+---
+
+## 📡 10. Observability
+
+### Metrics
+
+Key metrics to track at the backend level, exposed via a Prometheus-compatible endpoint:
+
+- **active_meetings_total** (Gauge) — Number of currently active meetings. Alerts if it drops suddenly (possible infrastructure issue) or exceeds capacity planning thresholds.
+- **active_participants_total** (Gauge) — Total connected participants across all meetings. Primary capacity indicator.
+- **websocket_connections_total** (Gauge) — Active WebSocket connections. Should correlate closely with participant count; divergence indicates connection leaks.
+- **sfu_worker_cpu_percent** (Gauge per worker) — CPU utilization of each SFU Worker process. Alerts at 80% to trigger auto-scaling before quality degrades.
+- **http_request_duration_seconds** (Histogram) — REST API latency by route and status code. p99 target: 200ms for meeting CRUD, 50ms for health checks.
+- **media_quality_score** (Histogram) — Server-side estimation of media quality based on packet loss and jitter reports from RTCP feedback. Degradation triggers simulcast layer downgrades.
+
+### Structured Logging
+
+All logs are JSON-formatted with correlation fields: meeting_id, user_id, and a request trace_id. This enables tracing a single participant's journey from WebSocket connect through producer creation to eventual disconnect. Critical log events include meeting lifecycle transitions (created, started, ended), SFU resource allocation (Router/Transport/Producer/Consumer creation and teardown), and authentication failures.
+
+### Alerting Priorities
+
+| Priority | Condition | Response |
+|----------|-----------|----------|
+| P0 (page) | active_meetings drops > 20% in 5 min | Likely infrastructure failure, investigate immediately |
+| P0 (page) | SFU worker CPU > 95% for 2 min | Auto-scale, then investigate why scaling policy missed it |
+| P1 (ticket) | WebSocket reconnect rate > 10% | Network instability or signaling server issue |
+| P2 (review) | p99 API latency > 500ms | Database slow queries or connection pool exhaustion |
+
+---
+
+## 🔒 11. Security
+
+### Authentication and Authorization
+
+Session-based authentication with Redis as the session store. Passwords are hashed with bcrypt (cost factor 10). Rate limiting is applied to auth endpoints (20 requests per 15 minutes per IP) and general API endpoints (100 requests per 15 minutes per IP).
+
+Meeting-level authorization is enforced by role: only hosts and co-hosts can start/end meetings, create breakout rooms, or mute other participants. Participants can only control their own media state.
+
+### End-to-End Encryption Trade-off
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ **SRTP (SFU-terminated)** | SFU can inspect streams for quality adaptation, simulcast layer selection, active speaker detection | Media is decrypted at SFU, requires trusting the server |
+| ❌ **E2EE (Insertable Streams)** | True zero-knowledge privacy, even server operator cannot see/hear content | SFU cannot adapt quality, no server-side recording, limited browser support |
+
+> "We chose SFU-terminated SRTP over full E2EE because the SFU needs to inspect media packets for core functionality: selecting which simulcast layer to forward, detecting the active speaker to prioritize their stream, and measuring packet loss for quality adaptation. With E2EE via Insertable Streams, the SFU forwards opaque encrypted blobs — it cannot distinguish a 720p keyframe from a 180p delta frame, making simulcast impossible. For enterprise customers who require E2EE (healthcare, legal), we would offer it as an opt-in mode that disables simulcast, active speaker detection, and server-side recording, with clear UX messaging about the quality trade-offs."
+
+### WebSocket Security
+
+In production, WebSocket connections should be authenticated using a short-lived token obtained during the REST login flow, rather than passing userId and username as query parameters. The token is verified on connection upgrade and bound to a session. CORS restrictions ensure only the authorized frontend origin can establish WebSocket connections.
+
+---
+
+## ⚖️ 12. Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
@@ -260,17 +350,5 @@ This causes a ~1-2 second interruption during the switch, which is acceptable UX
 | Breakout implementation | New Router per room | Single Router with filtering | True isolation, independent quality control |
 | Chat delivery | WebSocket (in-band) | Separate service | Already connected for signaling |
 | Session management | Redis + cookie | JWT | Immediate revocation, simpler implementation |
-
----
-
-## 10. Failure Scenarios
-
-| Scenario | Impact | Mitigation |
-|----------|--------|------------|
-| SFU Worker crash | Meeting participants disconnected | Auto-reconnect, reassign to healthy Worker |
-| Signaling server down | New joins fail, existing calls continue | Multiple signaling servers behind LB |
-| Redis outage | Sessions lost, pub/sub breaks | Redis Sentinel for HA, session re-auth |
-| PostgreSQL down | Meeting creation fails, history unavailable | Circuit breaker, cached meeting state in Redis |
-| Network partition | Split-brain in distributed SFU | TURN fallback, server-side health monitoring |
-
-> "The most important insight: once a WebRTC media connection is established between client and SFU, it survives signaling server failures. Participants already in a call continue talking even if the signaling server goes down. Only new joins and state changes (mute/unmute) are affected. This is a fundamental advantage of the SFU architecture — the media plane and control plane are decoupled."
+| Encryption | SRTP (SFU-terminated) | E2EE (Insertable Streams) | Enables simulcast, active speaker, quality adaptation |
+| Participant state store | Redis (primary) + PostgreSQL (persist) | PostgreSQL only | Reduces write pressure for transient state changes |

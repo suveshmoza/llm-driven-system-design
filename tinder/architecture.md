@@ -75,7 +75,7 @@ A location-based matching and recommendation system that enables users to discov
 4. **Message Service** - Real-time chat between matches
 5. **WebSocket Gateway** - Real-time notifications for matches and messages
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Diagram
 
@@ -753,7 +753,7 @@ user:{user_id}:location   -> JSON { latitude, longitude }
 - Cap swipes per hour for free users
 - Queue popular users for batch processing
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Trade-off | Alternative |
 |----------|-----------|-------------|
@@ -762,7 +762,7 @@ user:{user_id}:location   -> JSON { latitude, longitude }
 | Real-time match check | More lookups per swipe | Batch matching (delayed) |
 | WebSocket for messaging | Connection management | Long polling (simpler) |
 
-## Monitoring and Observability
+## Observability
 
 - **Metrics:** API response times, swipe rates, match rates
 - **Logs:** Structured logging with correlation IDs

@@ -111,6 +111,10 @@
 | board_pins(board_id, position) | Ordered board contents |
 | follows(follower_id) | Outgoing follows for feed generation |
 | follows(following_id) | Incoming follows for follower lists |
+| pin_saves(pin_id) | Check if a pin has been saved |
+| pin_saves(user_id) | List all saves by a user |
+
+> "The index on `pins(status, save_count DESC)` is particularly important for the discover feed. It allows me to query published pins ordered by popularity without a full table scan. At 5B pins, an unindexed sort on save_count would be catastrophic."
 
 ---
 
@@ -258,6 +262,16 @@ Feed Request ──▶ Cache Check ──▶ Cache Hit ──▶ Return
 
 > "The migration path is clean: search queries go through a Search Service that abstracts the backend. Switch from PostgreSQL to Elasticsearch by changing the service implementation without touching the API contract."
 
+### Search Ranking Considerations
+
+> "Pinterest search is unique because visual content does not have the same textual density as web pages. A pin might have a 10-word title and a 30-word description -- not much for text-based relevance scoring. At production scale, I would combine text relevance (BM25 on title and description) with engagement signals (save_count, recency) and visual similarity (image embeddings from a CNN). The weighted score would look like: 0.3 * text_relevance + 0.4 * engagement_score + 0.3 * visual_similarity."
+
+Search results must also respect privacy -- private boards and their pins should never appear in search results for other users. This filtering happens at query time using a visibility field indexed on the pins table, ensuring that the search index only contains publicly visible content.
+
+### Search Index Updates
+
+> "When a pin is created or updated, I publish a search index update event to a dedicated queue. A search indexer worker consumes these events and updates the Elasticsearch index. This decouples the write path from the search path -- a slow Elasticsearch cluster does not block pin creation. The trade-off is that newly created pins may not appear in search results for 5-10 seconds until the indexer processes the event. For Pinterest's use case, this delay is imperceptible."
+
 ---
 
 ## 🔒 Security
@@ -282,6 +296,46 @@ Feed Request ──▶ Cache Check ──▶ Cache Hit ──▶ Return
 | 4 | Elasticsearch for search | Full-text search with relevance scoring |
 | 5 | Hybrid push/pull feed | Instant delivery for celebrity follows |
 | 6 | Shard by user_id | Horizontal write scaling |
+
+### Caching Strategy in Detail
+
+> "Caching is layered. The first layer is the feed cache in Redis -- each user's personalized feed is serialized and stored with a 60-second TTL. This converts 11,500 QPS of database UNION queries into roughly 3,800 cache-miss queries. The second layer is per-pin metadata caching. When a pin appears in multiple feeds, its metadata (title, aspect_ratio, dominant_color, save_count) is fetched once from PostgreSQL and cached individually for 5 minutes. This reduces redundant row reads because popular pins appear in thousands of feeds simultaneously."
+
+Board pin lists are also cached because users frequently revisit their own boards. The cache key includes the board ID and a version counter that increments on every add or remove operation. This avoids time-based staleness -- the board cache is always consistent with the database because any mutation explicitly invalidates it.
+
+For image URLs, the CDN acts as a third cache layer. Thumbnail URLs include a content hash so they are cacheable indefinitely. When a user re-processes a pin (changing the thumbnail), the new thumbnail gets a new hash and a new URL, sidestepping cache invalidation entirely.
+
+### Database Read Replica Topology
+
+> "At production scale, I would deploy read replicas in each geographic region. Feed queries, search queries, and profile page reads hit the nearest replica. Only writes (pin creation, saves, follows, comments) go to the primary. Replication lag of 1-2 seconds is acceptable for feeds because users tolerate 60-second cache staleness anyway. The risk is a user creating a pin and not seeing it immediately on their own profile. To handle this, I apply a 'read-your-own-writes' guarantee by routing authenticated profile page requests to the primary for 5 seconds after any write operation."
+
+---
+
+## 🔍 Failure Handling and Resilience
+
+> "Pinterest's backend must handle several failure modes gracefully. The image processing pipeline is the most failure-prone component because it depends on three external services: object storage, the message queue, and the database."
+
+**Image worker failures**: If a worker crashes mid-processing, the RabbitMQ message is not acknowledged and redelivers to another worker. Each processing step is idempotent -- uploading a thumbnail to the same MinIO key overwrites cleanly, and the database UPDATE sets absolute values rather than increments. After three delivery attempts, the message moves to a dead letter queue, the pin status is set to 'failed', and an alert fires.
+
+**Object storage outages**: The circuit breaker around MinIO opens after three consecutive failures within 30 seconds. While open, upload requests fail fast with a 503 instead of hanging. The pin is created with `status='processing'` and the upload job is queued. If MinIO recovers before the queue message expires, the worker picks it up and completes processing normally.
+
+**Redis outages**: If Redis goes down, session creation fails (new logins are blocked), but existing sessions that have been validated within the last request still work because the application caches session data in memory for the duration of a request. Feed requests fall back to direct database queries without caching, increasing PostgreSQL load but maintaining availability. Rate limiting also degrades gracefully -- without Redis, rate limits are not enforced, which is acceptable for short outages but requires monitoring to prevent abuse.
+
+**Database connection exhaustion**: The connection pool is configured with a maximum of 20 connections per API server instance. If all connections are in use, new requests queue for up to 5 seconds before returning a 503. This prevents cascade failures where one slow query starves all other requests.
+
+---
+
+## 📊 Observability
+
+> "Observability for Pinterest's backend centers on three signals: latency distributions, error rates, and business metrics."
+
+**Request latency**: Every API endpoint records a histogram of response times. The critical SLO is feed generation p99 under 200ms. If the p99 breaches 200ms, I investigate whether the cause is cache miss rate increase, database query plan regression, or network latency to Redis.
+
+**Image processing metrics**: The worker records processing duration per step (download, metadata extraction, thumbnail generation, upload, database update). This breakdown identifies which step is slow. A spike in download duration points to MinIO issues; a spike in thumbnail generation points to a batch of unusually large images.
+
+**Business metrics**: Counters for pins created, saves performed, follows established, and comments posted. These are not just for dashboards -- a sudden drop in pin creation rate could indicate an upload bug, not a traffic change. Correlating business metrics with error rates enables faster root-cause analysis.
+
+**Structured logging**: All log entries are JSON with request ID, user ID, endpoint, duration, and status code. The request ID propagates from the API server through RabbitMQ messages to the worker, enabling end-to-end tracing of a pin from upload through processing to publication.
 
 ---
 

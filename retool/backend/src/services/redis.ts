@@ -1,6 +1,8 @@
-import Redis from 'ioredis';
+import IORedis from 'ioredis';
 import { config } from '../config/index.js';
 import { logger } from './logger.js';
+
+const Redis = IORedis.default || IORedis;
 
 export const redis = new Redis(config.redis.url, {
   maxRetriesPerRequest: 3,
@@ -11,7 +13,7 @@ export const redis = new Redis(config.redis.url, {
   lazyConnect: true,
 });
 
-redis.on('error', (err) => {
+redis.on('error', (err: Error) => {
   logger.error({ err }, 'Redis connection error');
 });
 

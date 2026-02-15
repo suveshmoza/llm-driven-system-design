@@ -1,6 +1,6 @@
 # System Design: No-Code Internal Tool Builder (Full-Stack)
 
-## 1. Requirements Clarification
+## 🎯 1. Requirements Clarification
 
 > "We are designing a platform where non-technical users build internal tools visually. Think Retool -- users drag components onto a canvas, connect to databases, write queries, and bind data to UI widgets. This is a meta-problem: we are building a tool that builds tools. The system spans a visual editor frontend, a query execution backend, and a component model that bridges both."
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 2. High-Level Architecture
+## 🏗️ 2. High-Level Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -60,7 +60,7 @@
 
 ---
 
-## 3. The Component Model (The Central Abstraction)
+## 🧩 3. The Component Model (The Central Abstraction)
 
 > "Everything flows from the component model. A component is a JSON object with a type, properties, a grid position, and bindings. This single abstraction drives the palette, canvas, property inspector, widget rendering, and preview."
 
@@ -90,7 +90,7 @@ AppComponent
 
 ---
 
-## 4. Data Model
+## 💾 4. Data Model
 
 ### JSONB Storage Strategy
 
@@ -127,7 +127,7 @@ Draft (mutable)                    Published Versions (immutable)
 
 ---
 
-## 5. Frontend Architecture
+## 🖥️ 5. Frontend Architecture
 
 ### Store Architecture
 
@@ -174,7 +174,7 @@ WidgetRenderer({ component })
 
 ---
 
-## 6. Backend Architecture
+## ⚙️ 6. Backend Architecture
 
 ### Query Execution Pipeline
 
@@ -201,7 +201,7 @@ Client Request                          Server
 
 ---
 
-## 7. Deep Dive: The Binding Engine
+## 🔧 7. Deep Dive: The Binding Engine
 
 > "The binding engine is the nervous system of the platform -- it connects data to UI. Let me walk through the full-stack data flow."
 
@@ -229,7 +229,7 @@ Client Request                          Server
 
 ---
 
-## 8. Deep Dive: Two-Database Architecture
+## 🔧 8. Deep Dive: Two-Database Architecture
 
 > "The two-database separation is not just a local simplification -- it mirrors production reality. Retool's metadata database is internal infrastructure. Target databases are customer-owned systems in their own VPCs."
 
@@ -254,7 +254,7 @@ Client Request                          Server
 
 ---
 
-## 9. Deep Dive: Grid Layout System
+## 🔧 9. Deep Dive: Grid Layout System
 
 > "The grid system converts a logical position (column/row) into pixel coordinates. Every component stores `{ x, y, w, h }` in grid units."
 
@@ -286,7 +286,7 @@ This provides visual alignment guides without any JavaScript rendering overhead.
 
 ---
 
-## 10. Publish/Preview Workflow
+## 🚀 10. Publish/Preview Workflow
 
 ### Full-Stack Flow
 
@@ -315,7 +315,7 @@ Preview Mode                   API                        Database
 
 ---
 
-## 11. Authentication
+## 🔐 11. Authentication
 
 Session-based with Redis:
 
@@ -329,7 +329,7 @@ Logout ──▶ Destroy session ──▶ Clear cookie
 
 ---
 
-## 12. Monitoring and Observability
+## 📊 12. Monitoring and Observability
 
 ### Backend Metrics (Prometheus)
 
@@ -347,7 +347,7 @@ Pino JSON logs with request context for log aggregation and search.
 
 ---
 
-## 13. Scalability Path
+## 📈 13. Scalability Path
 
 ### Current (Local)
 
@@ -370,7 +370,7 @@ Single Express server, single PostgreSQL, single Redis. Handles 2-5 concurrent u
 
 ---
 
-## 14. Trade-offs Summary
+## ⚖️ 14. Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

@@ -1,6 +1,6 @@
 # System Design: No-Code Internal Tool Builder (Frontend Focus)
 
-## 1. Requirements Clarification
+## 🎯 1. Requirements Clarification
 
 > "We are designing the frontend for a visual tool builder -- think Retool or Appsmith. Users compose internal applications by dragging components from a palette onto a grid canvas, configuring properties through an inspector panel, writing SQL queries, and binding query results to component props. The core frontend challenges are the drag-and-drop system, grid layout engine, binding UI, and widget rendering."
 
@@ -20,7 +20,7 @@
 
 ---
 
-## 2. Frontend Architecture
+## 🏗️ 2. Frontend Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -47,7 +47,7 @@
 
 ---
 
-## 3. State Management
+## 🧠 3. State Management
 
 > "I chose Zustand over Redux for three reasons: less boilerplate, simpler async handling, and easier TypeScript integration. The state is split into three stores."
 
@@ -73,9 +73,15 @@
 
 **Why separate stores?** The editor state changes on every user interaction (drag, select, type). The data state changes on query execution. Keeping them separate prevents unnecessary re-renders -- the canvas does not re-render when a query completes unless a component is bound to that query's data.
 
+### Dirty State and Auto-Save
+
+> "The isDirty flag is the trigger for auto-save. When any mutation occurs -- adding a component, changing a prop, moving a widget -- the editor store sets isDirty to true. A debounced save function watches this flag and sends the full app state to the server after 500ms of inactivity. This ensures frequent saves without flooding the API during rapid editing sessions like dragging components around the canvas."
+
+The auto-save callback sends the entire component tree, queries, and layout in one PUT request. If the save fails, isDirty remains true and the save retries on the next debounce cycle. A visual indicator in the toolbar shows "Saving..." during the API call and "Saved" on success, giving users confidence that their work is persisted.
+
 ---
 
-## 4. Drag-and-Drop System
+## 🖱️ 4. Drag-and-Drop System
 
 > "I chose @dnd-kit/core over react-beautiful-dnd for two reasons: it is actively maintained (react-beautiful-dnd is deprecated), and it supports freeform positioning alongside sortable lists."
 
@@ -102,6 +108,10 @@ Palette (Draggable)          Canvas (Droppable)
    - `gridRow = Math.floor((pointerY - canvasTop) / 40)`
 
 3. **Component creation**: Call `editorStore.addComponent(definition, { x: gridCol, y: gridRow })` which creates an `AppComponent` with default props, the calculated position, and auto-generated width/height based on component type.
+
+### Collision Detection and Overlap Handling
+
+> "Unlike a typical list-based drag-and-drop, a no-code builder canvas permits overlapping components. A button can sit on top of a container, or a text label can overlay a chart. This means we do not implement collision detection to prevent overlap -- instead, the canvas uses z-index ordering based on component creation time. Later components render on top of earlier ones. If we needed strict no-overlap enforcement, we would maintain a grid occupancy matrix and reject placements that collide with existing components."
 
 ### Grid Layout
 
@@ -130,14 +140,14 @@ height: component.position.h * 40px;
 
 ---
 
-## 5. Widget Rendering
+## 🧩 5. Widget Rendering
 
 > "The widget renderer dynamically maps a component's `type` string to a React component. This is the core of the component model -- adding a new widget type requires only a new React component and an entry in the registry."
 
 ### Renderer Architecture
 
 ```
-WidgetRenderer
+ WidgetRenderer
   ├── component.type === 'table'    ──▶ TableWidget
   ├── component.type === 'button'   ──▶ ButtonWidget
   ├── component.type === 'textInput'──▶ TextInputWidget
@@ -163,9 +173,15 @@ Widgets that display data (Table, Chart, Text) read from the data store's bindin
 
 Widgets that capture input (TextInput, NumberInput, Select) write to the data store's `componentValues` map, making their values available in the binding context as `{{ textInput1.value }}`.
 
+### Component Binding in the Property Inspector
+
+> "The property inspector is where users connect data to components. Each prop in the component's schema gets a corresponding input control in the inspector. String props get text inputs, boolean props get toggle switches, number props get number inputs. But the critical feature is that any prop marked as `bindable` in the registry gets a BindingInput instead of a plain input."
+
+When a user types `{{ query1.data }}` into a bindable prop field, the inspector stores both the raw expression text (in the component's bindings map) and the expression as the prop value. At render time, the widget renderer resolves the binding expression against the current data context and passes the resolved value to the widget. This two-layer approach -- expression storage plus runtime resolution -- means the inspector always shows the expression the user wrote, while the widget always shows the resolved data.
+
 ---
 
-## 6. Deep Dive: Binding Input UI
+## 🔧 6. Deep Dive: Binding Input UI
 
 > "The binding input is the most nuanced UI component. It must serve as a regular text input for static values AND highlight `{{ }}` expressions to indicate data bindings."
 
@@ -181,22 +197,22 @@ Parsed segments:
   ]
 ```
 
-The `getBindingSegments()` utility splits the input text using a regex and returns segments tagged as binding or plain text. Binding segments are rendered with a purple color (`#4B48EC`) and a light purple background, visually distinguishing them from static text.
+The `getBindingSegments()` utility splits the input text using a regex and returns segments tagged as binding or plain text. Binding segments are rendered with a purple color and a light purple background, visually distinguishing them from static text.
 
-**Implementation challenge**: HTML inputs cannot have mixed styling within their value. The approach uses a transparent input layered over a styled `<div>` that renders the highlighted segments. The user types in the input; the overlay provides visual feedback.
+**Implementation challenge**: HTML inputs cannot have mixed styling within their value. The approach uses a transparent input layered over a styled div that renders the highlighted segments. The user types in the input; the overlay provides visual feedback.
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Overlay div + transparent input | Simple, standard input behavior | Scroll sync issues on long text |
-| ContentEditable div | Full styling control | Complex cursor management, XSS risk |
-| Monaco Editor | Full syntax highlighting | Heavy dependency, overkill for single props |
-| Color the entire input | Trivial | Cannot distinguish bound vs unbound text |
+| ✅ Overlay div + transparent input | Simple, standard input behavior | Scroll sync issues on long text |
+| ❌ ContentEditable div | Full styling control | Complex cursor management, XSS risk |
+| ❌ Monaco Editor | Full syntax highlighting | Heavy dependency, overkill for single props |
+| ❌ Color the entire input | Trivial | Cannot distinguish bound vs unbound text |
 
 > "I chose the overlay approach for its simplicity. The input remains a standard HTML input with full keyboard support (selection, copy/paste, undo). The overlay div provides visual feedback. The trade-off is that very long binding expressions may not scroll in sync with the input, but for typical prop values (under 100 characters) this is not an issue."
 
 ---
 
-## 7. Deep Dive: Canvas Interaction Design
+## 🔧 7. Deep Dive: Canvas Interaction Design
 
 > "The canvas needs to support selecting, moving, resizing, and deleting components. Each interaction must feel immediate and predictable."
 
@@ -212,9 +228,9 @@ When a component is selected, arrow buttons appear below it for movement, and +W
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Button controls | Simple, precise, no DnD conflict | Less intuitive, more clicks |
-| Drag handles | Natural, mouse-driven | Complex DnD nesting, grid snapping math |
-| CSS resize property | Zero JS for resize | Limited styling, no grid snapping |
+| ✅ Button controls | Simple, precise, no DnD conflict | Less intuitive, more clicks |
+| ❌ Drag handles | Natural, mouse-driven | Complex DnD nesting, grid snapping math |
+| ❌ CSS resize property | Zero JS for resize | Limited styling, no grid snapping |
 
 > "For a learning project, button controls demonstrate the concept clearly. In production Retool, drag handles with throttled grid snapping provide a better UX, but the underlying state management is identical -- both update `component.position` in the store."
 
@@ -222,9 +238,13 @@ When a component is selected, arrow buttons appear below it for movement, and +W
 
 A red "x" button appears at the top-right corner of selected components. Clicking it calls `removeComponent(id)`, which filters the component from the app's component array.
 
+### Keyboard Shortcuts
+
+> "Beyond mouse-driven interactions, the editor supports keyboard shortcuts for common operations. Arrow keys move the selected component by one grid unit, Delete/Backspace removes the selected component, and Escape deselects. These shortcuts are registered as global key event listeners that check for a selected component before acting. Keyboard support is especially important for accessibility and for power users who prefer keyboard-driven workflows."
+
 ---
 
-## 8. Deep Dive: Query Panel Design
+## 🔧 8. Deep Dive: Query Panel Design
 
 > "The query panel is a mini-IDE at the bottom of the editor. It must support writing SQL, selecting a data source, running queries, and viewing results."
 
@@ -242,16 +262,22 @@ A red "x" button appears at the top-right corner of selected components. Clickin
 └──────────────────────┴──────────────────────────────────────────┘
 ```
 
-The left sidebar lists app queries. The center has a `<textarea>` for SQL. The right shows results as a scrollable table.
+The left sidebar lists app queries. The center has a textarea for SQL. The right shows results as a scrollable table.
 
 **Query triggers**: Each query has a trigger mode:
 - `manual`: Runs only when the user clicks "Run" or a button triggers it
 - `on_load`: Runs automatically when the app loads (preview mode)
 - `on_change`: Runs when a bound input value changes
 
+### Live Data Feedback Loop
+
+> "The query panel creates a tight feedback loop for building data-driven apps. A user writes a SELECT query, clicks Run, sees the results in the table, then drags a Table widget onto the canvas and binds its data prop to `{{ query1.data }}`. The table immediately renders the query results. If the user modifies the query and re-runs it, the table updates in real time because the data store's query results change, triggering a re-render of all bound widgets."
+
+This live feedback loop is what makes the no-code builder feel interactive rather than a static form editor. The data store acts as the reactive bridge -- query results flow into it, binding context is derived from it, and widgets subscribe to the slices they need. The entire cycle from query execution to widget re-render happens within a single React render pass after the data store update.
+
 ---
 
-## 9. Preview Mode
+## 👁️ 9. Preview Mode
 
 > "Preview mode renders the published app with live data. It differs from the editor in three ways: no selection UI, no property inspector, and input widgets are interactive."
 
@@ -279,7 +305,7 @@ Table (bound to query2.data) ── re-renders with new data
 
 ---
 
-## 10. Routing
+## 🗺️ 10. Routing
 
 ```
 /                      ── App dashboard (list of apps)
@@ -293,7 +319,7 @@ TanStack Router with file-based routing. The editor and preview routes use `$app
 
 ---
 
-## 11. Performance Considerations
+## ⚡ 11. Performance Considerations
 
 **Re-render optimization**: Zustand's selector pattern ensures components only re-render when their slice of state changes. The TableWidget subscribes to `getBindingContext()` and only re-renders when query results change.
 
@@ -301,9 +327,17 @@ TanStack Router with file-based routing. The editor and preview routes use `$app
 
 **Query results**: Large result sets (1000+ rows) are paginated client-side. The TableWidget renders only the current page (default 10 rows).
 
+**Bundle size management**: The component widget map uses static imports rather than dynamic imports because all widget types are loaded in the editor. In a production deployment with hundreds of widget types, code-splitting by widget category (data display, input, layout) would reduce initial bundle size. For the current nine widget types, static imports keep the loading waterfall simple.
+
+**Rendering large JSONB documents**: When an app has hundreds of components, parsing and diffing the entire component array on every state update can become expensive. Zustand's immutable update pattern means React only diffs the virtual DOM for components whose props actually changed. The key optimization is that each WidgetRenderer instance reads its own component from the store using a selector keyed by component ID, so adding or modifying one component does not trigger re-renders for unrelated components.
+
+**Drag-and-drop performance**: During a drag operation, the DragOverlay component renders a lightweight preview (icon and label only, not the full widget). This avoids the cost of rendering a complete TableWidget or ChartWidget during every mouse move event. The canvas droppable area uses pointer events for hit detection, which is more performant than tracking mousemove on every child component.
+
+**Memory management for query results**: Query results can be large (thousands of rows with many columns). The data store holds results in memory for all executed queries. To prevent memory bloat when users run many queries during a session, old query results are evicted when a query is re-executed -- only the most recent result per query name is retained. For preview mode, results are cleared when the user navigates away from the app.
+
 ---
 
-## 12. Trade-offs Summary
+## ⚖️ 12. Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
@@ -314,3 +348,4 @@ TanStack Router with file-based routing. The editor and preview routes use `$app
 | Binding highlight | Overlay div | ContentEditable, Monaco | Simple, standard input behavior |
 | Chart rendering | SVG in React | Chart.js, D3 | Zero dependencies, sufficient for demo |
 | Routing | TanStack Router | React Router | File-based, type-safe, integrated devtools |
+| Auto-save | Debounced full-state PUT | Incremental patches | Simpler, no merge logic, idempotent |

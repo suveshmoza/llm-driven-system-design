@@ -2,7 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import RedisStore from 'connect-redis';
-import pinoHttp from 'pino-http';
+import pinoHttpModule from 'pino-http';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const pinoHttp = (pinoHttpModule as any).pinoHttp || (pinoHttpModule as any).default || pinoHttpModule;
 import { config } from './config/index.js';
 import { redis } from './services/redis.js';
 import { logger } from './services/logger.js';

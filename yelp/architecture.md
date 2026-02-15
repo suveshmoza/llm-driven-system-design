@@ -148,7 +148,7 @@ Based on 50 peak RPS target:
 | Message Queue | Async indexing, notifications | 5672 | RabbitMQ |
 | Object Storage | Review photos, business images | 9000 | MinIO |
 
-## Data Model
+## Database Schema
 
 ### Database Schema (PostgreSQL + PostGIS)
 
@@ -841,7 +841,7 @@ When single PostgreSQL instance is insufficient:
 
 Replication lag: < 100ms acceptable for this use case (eventual consistency for reads).
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### PostgreSQL + PostGIS vs. MongoDB + GeoJSON
 
@@ -917,7 +917,7 @@ Replication lag: < 100ms acceptable for this use case (eventual consistency for 
 - [ ] Multi-language support with translation API
 - [ ] Real-time bidding for featured placements
 
-## Monitoring and Observability Dashboard
+## Observability
 
 ### Grafana Dashboard Panels
 

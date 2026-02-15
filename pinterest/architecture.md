@@ -92,7 +92,7 @@ Pinterest is a visual discovery platform where users save images (Pins) to organ
                           └────────────────────────┘
 ```
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -366,6 +366,30 @@ Server-side extraction ensures:
 
 WebP provides 25-35% better compression at equivalent visual quality. Since thumbnails are the most-loaded assets (grid view), this directly reduces bandwidth and loading time.
 
+## Consistency and Idempotency
+
+### Idempotent Pin Saves
+
+Pin saves must be idempotent to prevent duplicate entries when users double-tap the save button or when network retries send the same request multiple times. The `pin_saves` table enforces a UNIQUE constraint on `(pin_id, user_id, board_id)`, and all save operations use `INSERT ... ON CONFLICT DO NOTHING`. This means the database itself guarantees that no matter how many times the same save request arrives, only one record is created. The `save_count` and `pin_count` counters are incremented conditionally, only when the insert actually succeeds (i.e., the row did not already exist). This prevents over-counting even under concurrent duplicate requests.
+
+For unsave operations, the same principle applies in reverse. The DELETE operation is naturally idempotent since deleting a non-existent row is a no-op. Counter decrements are tied to the number of rows actually deleted (checking the row count returned by the DELETE statement), so repeated unsave requests do not drive counts negative.
+
+### Retry Semantics for Image Processing
+
+The image processing pipeline handles retries at the message queue level. When a worker picks up a job from RabbitMQ and fails during processing (network timeout downloading from MinIO, Sharp library error, database connection loss), the message is not acknowledged. RabbitMQ redelivers it to another worker after a visibility timeout. To prevent infinite retry loops, each message includes a retry counter in its headers. After three failed attempts, the message is routed to a dead letter queue for manual inspection.
+
+Each step within the worker is designed to be safe for re-execution. Uploading the thumbnail to MinIO is inherently idempotent because it overwrites the same object key. The final database UPDATE sets fields to computed values rather than incrementing them, so running it twice produces the same result. The pin's status transitions from `processing` to `published` (or `failed` after exhausting retries), and these transitions are guarded by checking the current status before updating to prevent stale workers from overwriting a later state.
+
+### Exactly-Once Feed Updates
+
+Feed generation uses a pull model where feeds are computed on demand and cached for 60 seconds. Because the feed is derived from the current state of the database at read time rather than maintained as a separate materialized view, there is no risk of duplicate or missing entries from concurrent writes. Each feed request either hits the cache (returning a consistent snapshot) or queries the database directly (returning the latest state).
+
+Cache invalidation follows a simple TTL-based strategy rather than event-driven invalidation. When a user follows or unfollows someone, the cached feed for that user is explicitly deleted so the next request fetches fresh results. This avoids the complexity of distributed cache invalidation while ensuring that high-impact actions (changing who you follow) are reflected immediately. Low-impact events (a followed user creating a new pin) are naturally absorbed within the 60-second TTL window, which is acceptable given Pinterest's browsing-oriented usage pattern where users do not expect real-time pin delivery.
+
+### Pin Creation Idempotency
+
+Pin creation uses a client-generated idempotency key (a UUID) sent in the `X-Idempotency-Key` header. The server stores this key in Redis with a 24-hour TTL alongside the created pin ID. If a duplicate request arrives with the same idempotency key, the server returns the original pin ID and a 200 status instead of creating a duplicate pin. This protects against browser retries, network timeouts, and load balancer re-dispatches without requiring the client to check for duplicates.
+
 ## Security / Auth
 
 - **Session-based auth** with Valkey-backed sessions (cookie: `connect.sid`)
@@ -376,7 +400,7 @@ WebP provides 25-35% better compression at equivalent visual quality. Since thum
 - **Input sanitization**: parameterized SQL queries prevent injection
 - **CSRF protection**: SameSite=Lax cookies
 
-## Monitoring and Observability
+## Observability
 
 ### Prometheus Metrics
 - `http_request_duration_seconds` - Request latency histogram
@@ -422,7 +446,7 @@ Pino logger with JSON output, including service name and environment context.
 - **Board_pins**: Shard by `board_id` (board contents are co-located)
 - **Follows**: Shard by `follower_id` (outgoing follows are co-located for feed generation)
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|

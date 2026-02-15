@@ -216,7 +216,7 @@ Move to production architecture when:
 
 ---
 
-## Data Model
+## Database Schema
 
 ### PostgreSQL Schema
 
@@ -1372,7 +1372,7 @@ Phase 4: Global Scale
 
 ---
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Current Design Decisions
 

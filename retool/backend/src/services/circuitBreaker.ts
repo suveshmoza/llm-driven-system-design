@@ -1,3 +1,4 @@
+// @ts-expect-error - opossum lacks type declarations
 import CircuitBreaker from 'opossum';
 import { logger } from './logger.js';
 

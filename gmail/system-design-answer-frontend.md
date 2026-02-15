@@ -1,16 +1,16 @@
 # Gmail (Email Client) - Frontend System Design Answer
 
-## 1. Requirements Clarification
+## 🎯 1. Requirements Clarification
 
-"For the frontend, I want to focus on three key challenges: the Gmail-style layout with virtualized thread lists, the compose experience with contact autocomplete and CC/BCC, and the search UX with advanced operator support. I will also cover how we handle optimistic updates for actions like star/archive."
+"For the frontend, I want to focus on three key challenges: the Gmail-style layout with virtualized thread lists, the compose experience with contact autocomplete and CC/BCC, and the search UX with advanced operator support. I will also cover how we handle optimistic updates for actions like star/archive, and accessibility concerns for a keyboard-driven email workflow."
 
 **Core Screens:** Login, Inbox (thread list), Thread view, Compose modal, Search results
 
-**Key Interactions:** Star/archive with instant feedback, compose with autocomplete, inline reply, label management
+**Key Interactions:** Star/archive with instant feedback, compose with autocomplete, inline reply, label management, keyboard navigation
 
 ---
 
-## 2. Component Architecture
+## 🏗️ 2. Component Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -58,7 +58,7 @@
 
 ---
 
-## 3. State Management
+## 🧠 3. State Management
 
 "I use Zustand for global state with two stores:"
 
@@ -95,11 +95,20 @@ mailStore
 └── setComposeOpen(boolean)
 ```
 
+### Trade-off: Zustand vs. React Context
+
 "I chose Zustand over Context because it avoids re-rendering the entire tree when one piece of state changes. The mail store has many frequently-updated properties (unread counts, thread read state), and Zustand's selector-based subscriptions keep renders minimal."
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Zustand | Selector subscriptions, minimal re-renders, small API | Another dependency |
+| ❌ React Context | Built-in, no dependencies | Re-renders entire subtree on any state change |
+
+> "With 8 system labels plus custom labels, each with unread counts that update on every message, Context would trigger re-renders across the entire sidebar, thread list, and header on every inbox check. Zustand's selectors ensure only the specific component showing that count re-renders."
 
 ---
 
-## 4. Deep Dive: Thread List Virtualization
+## 🔧 4. Deep Dive: Thread List Virtualization
 
 "The inbox can have thousands of threads. Rendering all of them as DOM nodes would cause jank on scroll and high memory usage."
 
@@ -124,13 +133,22 @@ mailStore
 
 "I use `@tanstack/react-virtual` with `estimateSize: () => 40` (Gmail's compact row height). The virtualizer only renders items in the viewport plus 5 overscan items above and below. For 1000 threads, this means ~20 DOM nodes instead of 1000."
 
+### Dynamic Height Handling
+
+"Thread list items have a fixed height in compact mode (40px), but can vary in comfortable mode when showing snippet previews. The virtualizer's `measureElement` callback dynamically measures rendered items and adjusts scroll position. This avoids the jumpiness that occurs when estimated sizes differ from actual sizes."
+
 ### Why Not Infinite Scroll?
 
-"Gmail uses pagination, not infinite scroll. With email, users often know approximately when they received something ('it was last week') and use page navigation to jump there. Infinite scroll would force sequential loading, which is frustrating for this use case."
+"Gmail uses pagination, not infinite scroll. With email, users often know approximately when they received something ('it was last week') and use page navigation to jump there. Infinite scroll would force sequential loading, which is frustrating for this use case. Pagination also bounds memory usage -- we never hold more than one page of threads in state."
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Virtualized pagination | Bounded memory, random access to pages | Page transitions not seamless |
+| ❌ Infinite scroll | Smooth scrolling feel | Unbounded memory, no random access |
 
 ---
 
-## 5. Deep Dive: Compose Modal
+## 🔧 5. Deep Dive: Compose Modal
 
 ### Floating Compose Window
 
@@ -178,14 +196,14 @@ GET /api/v1/contacts?q=bo
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Chip input | Clear visual, easy remove | Complex implementation |
-| ❌ Plain text | Simple | Hard to parse, ambiguous |
+| ✅ Chip input | Clear visual, easy remove, unambiguous | Complex implementation |
+| ❌ Plain text | Simple | Hard to parse, ambiguous delimiters |
 
-"Chips make it unambiguous which addresses are included. The implementation complexity is worth it because email address parsing from free-text is error-prone."
+"Chips make it unambiguous which addresses are included. The implementation complexity is worth it because email address parsing from free-text is error-prone -- commas, semicolons, and spaces all behave differently across email clients."
 
 ---
 
-## 6. Deep Dive: Search UX
+## 🔧 6. Deep Dive: Search UX
 
 ### Search Bar with Advanced Operators
 
@@ -193,7 +211,7 @@ GET /api/v1/contacts?q=bo
 
 ```
 ┌───────────────────────────────────────────┐
-│ 🔍 from:alice has:attachment project      │
+│ from:alice has:attachment project          │
 └───────────────────────────────────────────┘
                     │
                     ▼ (on submit)
@@ -212,20 +230,20 @@ GET /api/v1/contacts?q=bo
 └───────────────────────────────────────────┘
 ```
 
-"Results appear as a dropdown overlay. Clicking a result navigates to the thread view. The search response includes highlighted snippets from Elasticsearch, which I render with `dangerouslySetInnerHTML` for the `<em>` tags."
+"Results appear as a dropdown overlay. Clicking a result navigates to the thread view. The search response includes highlighted snippets from Elasticsearch, which I render with `dangerouslySetInnerHTML` for the `<em>` tags. I sanitize the response server-side to prevent XSS -- only `<em>` tags are allowed in highlight fragments."
 
 ### Trade-off: Dropdown vs. Full Page Search
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Dropdown overlay | Quick glance, no navigation | Limited space |
+| ✅ Dropdown overlay | Quick glance, no navigation | Limited space for results |
 | ❌ Full page | More room for results | Loses inbox context |
 
 "I chose dropdown because most email searches are quick lookups -- the user knows what they are looking for and just needs to find the thread. A full-page search feels heavyweight for this use case."
 
 ---
 
-## 7. Optimistic Updates
+## ⚡ 7. Optimistic Updates
 
 "For star, archive, and trash actions, I update the UI immediately before the API responds:"
 
@@ -237,14 +255,14 @@ User clicks star
      └──▶ PATCH /api/v1/threads/:id/state {isStarred: true}
               │
               ├── Success: keep UI state
-              └── Failure: revert to unfilled star
+              └── Failure: revert to unfilled star, show toast error
 ```
 
-"This makes the UI feel instant. The revert-on-failure pattern means we never show incorrect state for more than the API round-trip time (typically <200ms). For archive and trash, we also optimistically remove the thread from the list."
+"This makes the UI feel instant. The revert-on-failure pattern means we never show incorrect state for more than the API round-trip time (typically <200ms). For archive and trash, we also optimistically remove the thread from the list and show a brief undo toast -- if the user clicks undo within 5 seconds, we revert the action before it commits."
 
 ---
 
-## 8. Routing Strategy
+## 🗺️ 8. Routing Strategy
 
 "I use TanStack Router with file-based routing:"
 
@@ -262,7 +280,25 @@ routes/
 
 ---
 
-## 9. Performance Considerations
+## ♿ 9. Accessibility
+
+"Email is a productivity tool that power users navigate entirely by keyboard. Accessibility is not optional."
+
+### Keyboard Navigation
+
+"The thread list supports arrow-key navigation: up/down moves focus between threads, Enter opens the focused thread, 's' toggles star, 'e' archives, '#' trashes. These shortcuts mirror Gmail's actual keyboard shortcuts and are documented in a help modal accessible via '?'."
+
+### Screen Reader Support
+
+"Thread list items use ARIA roles: each item has role='row' within a role='grid' container. Unread threads include aria-label='unread' so screen readers announce the read state. Star and archive buttons have descriptive aria-labels like 'Star this conversation' rather than just 'Star'. The compose modal traps focus when open, returning focus to the trigger button when closed."
+
+### Color and Contrast
+
+"Unread threads use font-weight bold rather than color alone to indicate status. Label colors always have sufficient contrast against the white background (WCAG AA 4.5:1 minimum). The star icon uses both color (yellow) and shape (filled vs. outline) to convey state."
+
+---
+
+## 📊 10. Performance Considerations
 
 | Technique | Where | Impact |
 |-----------|-------|--------|
@@ -272,18 +308,54 @@ routes/
 | Zustand selectors | All components | Minimal re-renders |
 | Conditional expansion | MessageCard in ThreadView | Only last message expanded |
 | Short cache TTL | Thread list, unread counts | 30s freshness balance |
+| Code splitting | Route-level lazy loading | Smaller initial bundle |
+
+"Route-level code splitting ensures the login page bundle does not include thread list or compose modal code. The initial load is just the auth check and whatever route the user navigates to. Compose modal is lazily loaded on first open since most page loads do not involve composing."
 
 ---
 
-## 10. Trade-offs Summary
+## 🛡️ 11. Error Handling and Resilience
+
+### Network Error Recovery
+
+"Every API call wraps in a try/catch with user-facing feedback. Failed thread list fetches show a 'Could not load inbox -- Retry' banner above the thread list. Failed sends show a toast error and preserve the compose modal with all content intact so the user can retry without retyping."
+
+### Draft Auto-Save with Conflict Detection
+
+"The compose modal auto-saves drafts every 5 seconds using a debounced timer. Each save includes the draft's current version number. If the server returns 409 Conflict (another tab modified the draft), we show a notification and reload the latest draft content. The auto-save timer resets after each successful save to avoid unnecessary requests during idle periods."
+
+```
+User starts typing
+     │
+     ├──▶ 5s debounce timer starts
+     │
+     ├──▶ Timer fires: PUT /api/v1/drafts/:id {version: N}
+     │         │
+     │         ├── 200 OK: update local version to N+1, reset timer
+     │         └── 409 Conflict: show notification, load latest draft
+     │
+     └──▶ User continues typing: timer resets
+```
+
+### Stale Data Handling
+
+"When a user returns to a background tab after several minutes, the thread list may be stale. We detect tab visibility changes via the Page Visibility API and refetch the current label's threads when the tab becomes visible again. This prevents the confusing experience of seeing outdated unread counts or missing new threads."
+
+---
+
+## ⚖️ 12. Trade-offs Summary
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| Zustand | Selector subscriptions, minimal re-renders | Another library to learn |
+| ✅ Zustand | Selector subscriptions, minimal re-renders | Another library to learn |
 | ❌ React Context | Built-in, no dependencies | Re-renders entire tree |
-| TanStack Virtual | Efficient DOM, smooth scroll | Complexity for fixed-height |
+| ✅ TanStack Virtual | Efficient DOM, smooth scroll | Complexity for fixed-height |
 | ❌ Render all | Simple implementation | Jank at 500+ threads |
-| Floating compose | Persistent across navigation | Z-index management |
+| ✅ Floating compose | Persistent across navigation | Z-index management |
 | ❌ Full-page compose | Simpler layout | Loses inbox context |
-| Chip input for recipients | Unambiguous addresses | More complex to implement |
+| ✅ Chip input for recipients | Unambiguous addresses | More complex to implement |
 | ❌ Free text input | Simple | Parsing errors, ambiguity |
+| ✅ Dropdown search | Quick lookup, preserves context | Limited result space |
+| ❌ Full-page search | More room for results | Navigation overhead |
+| ✅ Keyboard shortcuts | Power user productivity | Discoverable only via help |
+| ❌ Mouse-only interaction | Simpler event handling | Accessibility gap |

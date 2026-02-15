@@ -181,7 +181,7 @@ For learning and testing, target these baseline metrics:
    Body: { type: 'like' | 'dislike' }
 ```
 
-## Data Model
+## Database Schema
 
 ### Entity-Relationship Diagram
 

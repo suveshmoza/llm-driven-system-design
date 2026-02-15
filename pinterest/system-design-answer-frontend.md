@@ -331,6 +331,14 @@ Mount ──▶ Check auth ──▶ Load feed (API call)
 | Feed state in Zustand | Preserve scroll position on navigation |
 | ResizeObserver (not resize event) | Efficient container width tracking |
 
+### Image Decode Optimization
+
+> "Beyond lazy loading, I use the browser's `decode()` API on Image objects before inserting them into the DOM. This moves JPEG/WebP decoding off the main thread, preventing frame drops during scroll. Without this, a burst of 6-8 images decoding simultaneously can cause a 50-100ms jank spike, dropping scroll FPS from 60 to below 30. With async decode, the image is ready to paint immediately when its opacity transitions to 1."
+
+### Memory Management for Long Sessions
+
+Pinterest users often browse for extended periods, scrolling through hundreds of pins. Without memory management, the Zustand store accumulates pin data indefinitely, and off-screen image elements retain decoded bitmap data. I address this by setting a maximum pin retention window -- only pins within 200 items of the current scroll position are kept in state. Pins outside this window are evicted from the store and their corresponding DOM nodes are removed by the virtualizer. If the user scrolls back, the evicted pins are re-fetched from the API using cursor-based pagination. This caps memory usage at approximately 15-20MB regardless of session length.
+
 ---
 
 ## ⚖️ Trade-offs Summary

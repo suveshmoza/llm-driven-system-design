@@ -1,6 +1,6 @@
 # System Design: Video Conferencing (Full-Stack)
 
-## 1. Requirements Clarification
+## 🎯 1. Requirements Clarification
 
 > "We're building a Zoom-like video conferencing platform. Let me cover the full stack: SFU media routing, WebSocket signaling, meeting management, and the frontend video grid with device management."
 
@@ -20,7 +20,7 @@
 
 ---
 
-## 2. Architecture Overview
+## 🏗️ 2. Architecture Overview
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -63,7 +63,7 @@
 
 ---
 
-## 3. SFU Architecture (Backend Core)
+## 🔧 3. SFU Architecture (Backend Core)
 
 > "The SFU is the heart of the system. Let me explain why SFU over P2P or MCU."
 
@@ -97,7 +97,7 @@ Node.js Process
 
 ---
 
-## 4. Signaling Protocol (Full-Stack)
+## 🔌 4. Signaling Protocol (Full-Stack)
 
 ### WebRTC Connection Flow
 
@@ -143,7 +143,7 @@ Client                    Server                      SFU
 
 ---
 
-## 5. Data Model
+## 💾 5. Data Model
 
 ```
 ┌──────────┐     ┌──────────────┐     ┌────────────────┐
@@ -176,7 +176,7 @@ Client                    Server                      SFU
 
 ---
 
-## 6. Frontend: Video Grid
+## 🎥 6. Frontend: Video Grid
 
 > "The video grid is the most performance-sensitive frontend component."
 
@@ -222,7 +222,7 @@ Screen share:   ┌──────────────┬────┐
 
 ---
 
-## 7. Frontend: Meeting Lobby
+## 🚪 7. Frontend: Meeting Lobby
 
 ```
 ┌─────────────────────────────────────┐
@@ -263,7 +263,7 @@ Screen share:   ┌──────────────┬────┐
 
 ---
 
-## 8. State Architecture
+## 🗂️ 8. State Architecture
 
 ### Three Zustand Stores
 
@@ -292,7 +292,7 @@ MediaStore (changes per local toggle)
 
 ---
 
-## 9. API Design
+## 🌐 9. API Design
 
 ### REST Endpoints
 
@@ -317,7 +317,7 @@ All real-time communication (signaling, participant state, chat) flows through t
 
 ---
 
-## 10. Breakout Rooms (Full-Stack)
+## 🏠 10. Breakout Rooms (Full-Stack)
 
 ### Backend Flow
 
@@ -363,7 +363,7 @@ Host: POST /api/rooms/:meetingId/breakout-rooms/close
 
 ---
 
-## 11. Scaling Strategy
+## 📈 11. Scaling Strategy
 
 ### SFU Horizontal Scaling
 
@@ -393,7 +393,7 @@ Host: POST /api/rooms/:meetingId/breakout-rooms/close
 
 ---
 
-## 12. Trade-offs Summary
+## ⚖️ 12. Trade-offs Summary
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
@@ -410,7 +410,7 @@ Host: POST /api/rooms/:meetingId/breakout-rooms/close
 
 ---
 
-## 13. Monitoring and Reliability
+## 📡 13. Monitoring and Reliability
 
 ### Backend Observability
 - **Metrics**: Active meetings, participants, WebSocket connections, HTTP latency

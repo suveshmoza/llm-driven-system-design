@@ -129,7 +129,7 @@ An online coding practice and evaluation platform that allows users to solve pro
 | **Code Executor** | Docker + dockerode | Secure code execution in isolated containers |
 | **Frontend** | React + TypeScript | User interface, code editor, results display |
 
-## Data Model
+## Database Schema
 
 ### Database Schema
 
@@ -595,7 +595,7 @@ Benefits:
 - Retry semantics for failed executions
 - Priority queues for premium users
 
-## Trade-offs and Alternatives
+## Trade-offs Summary
 
 ### Code Execution Approaches
 
