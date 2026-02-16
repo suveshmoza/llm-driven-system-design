@@ -2,662 +2,418 @@
 
 *45-minute system design interview format - Backend Engineer Position*
 
-## Introduction (2 minutes)
+---
 
-"Thank you for having me. Today I'll design a real-time messaging platform like WhatsApp. This is a fascinating backend challenge because it requires:
+## 📋 Introduction (2 minutes)
 
-1. **WebSocket connection management** for millions of concurrent connections
-2. **Cross-server message routing** using Redis pub/sub for distributed delivery
-3. **Offline message handling** with reliable delivery guarantees
-4. **Group message fan-out** efficiently delivering to 256 members
+"I'll design the backend for a real-time messaging platform like WhatsApp. This is one of the most demanding backend problems because it combines several hard challenges:
 
-The core backend challenge is achieving sub-100ms message delivery while guaranteeing at-least-once semantics. Let me clarify the requirements."
+1. **WebSocket connection management** across a distributed server fleet — routing a message from one server to the right recipient on a different server
+2. **At-least-once delivery guarantees** — every message must arrive, even if the recipient is offline for days
+3. **Idempotent message processing** — network retries and reconnections mean the server will see the same message multiple times and must handle it safely
+4. **Group fan-out** — delivering a single message to up to 256 members efficiently without overwhelming any single server
+
+The core tension is achieving sub-100ms delivery for online users while guaranteeing zero message loss for offline users. Let me clarify the requirements."
 
 ---
 
-## Requirements Clarification (5 minutes)
+## 🎯 Requirements Clarification (5 minutes)
 
 ### Functional Requirements
 
-"For our messaging platform:
+| Feature | Description |
+|---------|-------------|
+| One-on-one messaging | Send text messages with delivery receipts (sent, delivered, read) |
+| Group chats | Up to 256 members with efficient fan-out |
+| Presence and typing | Online/offline status, typing indicators |
+| Offline delivery | Queue messages for offline recipients, deliver on reconnect |
+| Media sharing | Images, videos, documents with thumbnail generation |
 
-1. **One-on-One Messaging**: Send text messages with delivery receipts
-2. **Group Chats**: Up to 256 members with efficient fan-out
-3. **Presence & Typing**: Online status and typing indicators
-4. **Offline Delivery**: Queue messages and deliver on reconnect
-5. **Media Sharing**: Images, videos, and documents
-
-I'll focus on real-time message routing, cross-server coordination, and offline delivery since those are the most challenging backend problems."
+> "I'll focus on three areas: cross-server message routing, the delivery pipeline with idempotency, and group fan-out — these are the hardest backend problems and where most designs fail."
 
 ### Non-Functional Requirements
 
-"Key constraints:
-
-- **Latency**: < 100ms message delivery when both users online
-- **Scale**: 500 million concurrent connections, 1 million messages/second
-- **Durability**: At-least-once delivery, no message loss
-- **Ordering**: Messages within a conversation maintain order
-
-The durability requirement is critical - users expect every message to arrive."
-
----
-
-## High-Level Design (8 minutes)
-
-### Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          Client Devices                                  │
-│                    Mobile Apps / Web Clients                             │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │ WebSocket
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Load Balancer (L4)                               │
-│                     (Sticky sessions for WebSocket)                      │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              ▼                     ▼                     ▼
-      ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-      │  Chat Server  │     │  Chat Server  │     │  Chat Server  │
-      │     :3001     │     │     :3002     │     │     :3003     │
-      │               │     │               │     │               │
-      │ ┌───────────┐ │     │ ┌───────────┐ │     │ ┌───────────┐ │
-      │ │ Express   │ │     │ │ Express   │ │     │ │ Express   │ │
-      │ │ WebSocket │ │     │ │ WebSocket │ │     │ │ WebSocket │ │
-      │ └───────────┘ │     │ └───────────┘ │     │ └───────────┘ │
-      └───────┬───────┘     └───────┬───────┘     └───────┬───────┘
-              │                     │                     │
-              └─────────────────────┼─────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-            ┌───────────┐   ┌───────────┐   ┌───────────┐
-            │   Redis   │   │ PostgreSQL│   │   MinIO   │
-            │           │   │           │   │           │
-            │ - Session │   │ - Users   │   │ - Media   │
-            │ - Presence│   │ - Messages│   │ - Files   │
-            │ - Pub/Sub │   │ - Status  │   │           │
-            └───────────┘   └───────────┘   └───────────┘
-```
-
-### Key Backend Components
-
-**Chat Servers**: Stateless WebSocket handlers managing 100K+ connections each. Route messages based on Redis session mapping.
-
-**Redis**: Session registry (user -> server mapping), presence state, pub/sub for cross-server routing, typing indicators with TTL.
-
-**PostgreSQL/Cassandra**: Message persistence, conversation metadata, delivery status tracking.
+| Requirement | Target | Rationale |
+|-------------|--------|-----------|
+| Latency | < 100ms message delivery (both online) | Users perceive messaging delays above 200ms as sluggish |
+| Scale | 500M concurrent connections, 1M messages/sec | WhatsApp-scale concurrency |
+| Durability | At-least-once delivery, zero message loss | Users trust that every message arrives |
+| Ordering | Per-conversation ordering | Messages within a chat must appear in send order |
+| Availability | 99.99% uptime | Messaging is a utility — downtime is unacceptable |
 
 ---
 
-## Deep Dive: WebSocket Connection Management (8 minutes)
+## 🏗️ High-Level Architecture (8 minutes)
 
-### Connection Registration
-
-```typescript
-// backend/src/websocket/connectionManager.ts
-interface Connection {
-  userId: string;
-  socket: WebSocket;
-  serverId: string;
-}
-
-const localConnections = new Map<string, WebSocket>();
-
-async function registerConnection(userId: string, ws: WebSocket): Promise<void> {
-  const serverId = process.env.SERVER_ID!;
-
-  // Store locally for direct delivery
-  localConnections.set(userId, ws);
-
-  // Register in Redis for cross-server discovery
-  await redis.hset(`session:${userId}`, {
-    serverId,
-    connectedAt: Date.now().toString(),
-    lastSeen: Date.now().toString()
-  });
-
-  // Subscribe to personal channel for cross-server messages
-  await redis.sadd('connected_users', userId);
-
-  // Update presence
-  await updatePresence(userId, 'online');
-
-  // Deliver pending messages
-  await deliverPendingMessages(userId, ws);
-}
-
-async function unregisterConnection(userId: string): Promise<void> {
-  localConnections.delete(userId);
-
-  await redis.del(`session:${userId}`);
-  await redis.srem('connected_users', userId);
-
-  // Update presence with last seen
-  await updatePresence(userId, 'offline');
-}
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          Client Devices                              │
+│                     Mobile / Web / Desktop                           │
+└─────────────────────────────────────────────────────────────────────┘
+                                │ WebSocket (persistent)
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      L4 Load Balancer                                │
+│               (Sticky sessions by user ID hash)                      │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+      ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+      │  Chat Server  │ │  Chat Server  │ │  Chat Server  │
+      │    (WS +      │ │    (WS +      │ │    (WS +      │
+      │   REST API)   │ │   REST API)   │ │   REST API)   │
+      └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
+              │                 │                 │
+              └─────────────────┼─────────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+      ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+      │     Redis     │ │  PostgreSQL   │ │  Object Store │
+      │               │ │               │ │   (S3/MinIO)  │
+      │ - Sessions    │ │ - Users       │ │               │
+      │ - Presence    │ │ - Messages    │ │ - Media files │
+      │ - Pub/Sub     │ │ - Delivery    │ │ - Thumbnails  │
+      │ - Typing TTL  │ │   status      │ │               │
+      └───────────────┘ └───────────────┘ └───────────────┘
 ```
 
-### Cross-Server Message Routing
+### Component Responsibilities
 
-```typescript
-// backend/src/websocket/messageRouter.ts
-interface Message {
-  id: string;
-  conversationId: string;
-  senderId: string;
-  recipientId: string;
-  content: string;
-  contentType: 'text' | 'image' | 'video';
-  clientMessageId: string;
-  createdAt: Date;
-}
+**Chat Servers** are stateless WebSocket handlers. Each server maintains an in-memory map of its local connections (user ID to socket) but stores no durable state. Any server can handle any user. At production scale, each server manages roughly 100K concurrent connections.
 
-async function routeMessage(message: Message): Promise<void> {
-  const recipientId = message.recipientId;
+**Redis** serves four distinct roles. First, it is the session registry — a hash mapping each online user to the server they are connected to. Second, it provides pub/sub channels for cross-server message routing. Third, it stores presence state (online/offline with last-seen timestamps). Fourth, it holds typing indicators as keys with 3-second TTL that auto-expire, so no cleanup is needed.
 
-  // Look up recipient's server
-  const session = await redis.hgetall(`session:${recipientId}`);
+**PostgreSQL** is the source of truth for all persistent data: users, conversations, messages, participants, and per-recipient delivery status. Messages are written synchronously before any routing attempt, ensuring durability even if the routing layer fails.
 
-  if (!session || !session.serverId) {
-    // Recipient offline - message already persisted
-    await incrementPendingCount(recipientId);
-    return;
-  }
+**Object Store** holds uploaded media. The chat server generates a presigned upload URL, the client uploads directly, and the resulting media URL is embedded in the message.
 
-  const recipientServerId = session.serverId;
-  const myServerId = process.env.SERVER_ID!;
-
-  if (recipientServerId === myServerId) {
-    // Local delivery
-    const ws = localConnections.get(recipientId);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'message', payload: message }));
-    }
-  } else {
-    // Cross-server delivery via Redis pub/sub
-    await redis.publish(`server:${recipientServerId}`, JSON.stringify({
-      type: 'message',
-      payload: message
-    }));
-  }
-}
-
-// Subscribe to server channel on startup
-async function setupServerSubscription(): Promise<void> {
-  const serverId = process.env.SERVER_ID!;
-  const subscriber = redis.duplicate();
-
-  await subscriber.subscribe(`server:${serverId}`);
-
-  subscriber.on('message', (channel, data) => {
-    const { type, payload } = JSON.parse(data);
-
-    if (type === 'message') {
-      deliverToLocalSocket(payload.recipientId, payload);
-    } else if (type === 'typing') {
-      broadcastTypingIndicator(payload);
-    } else if (type === 'presence') {
-      broadcastPresenceUpdate(payload);
-    }
-  });
-}
-```
+> "The key architectural insight is that Redis is ephemeral routing state and PostgreSQL is durable truth. If Redis dies, we lose presence and cross-server routing temporarily, but no messages are lost. If PostgreSQL dies, we stop accepting new messages entirely — we never sacrifice durability."
 
 ---
 
-## Deep Dive: Message Persistence and Delivery Status (8 minutes)
+## 🔧 Deep Dive 1: WebSocket Connection Management & Cross-Server Routing (8 minutes)
 
-### Database Schema
+### The Problem
 
-```sql
--- Conversations (1:1 or group)
-CREATE TABLE conversations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type VARCHAR(10) NOT NULL CHECK (type IN ('direct', 'group')),
-    name VARCHAR(100),
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+With hundreds of chat servers, the sender and recipient are almost never on the same server. When Alice on Server A sends a message to Bob on Server C, the system must discover where Bob is connected and route the message there — all in under 100ms.
 
--- Participants with read position
-CREATE TABLE conversation_participants (
-    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    role VARCHAR(10) DEFAULT 'member',
-    last_read_at TIMESTAMP WITH TIME ZONE,
-    PRIMARY KEY (conversation_id, user_id)
-);
+### Session Registry
 
--- Messages with efficient indexing
-CREATE TABLE messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-    sender_id UUID REFERENCES users(id),
-    content TEXT,
-    content_type VARCHAR(20) DEFAULT 'text',
-    media_url TEXT,
-    client_message_id UUID UNIQUE,  -- For deduplication
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+When a user connects via WebSocket, the server registers the mapping in Redis as a hash: the key is the user ID, the values include the server ID, connection timestamp, and last-seen time. This hash has a 24-hour TTL refreshed on every heartbeat. When the user disconnects, the server deletes the key immediately.
 
-CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at DESC);
+The session registry answers one question: "Which server is this user connected to right now?" The answer is either a server ID (user is online) or null (user is offline).
 
--- Delivery status per recipient
-CREATE TABLE message_status (
-    message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
-    recipient_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    status VARCHAR(20) DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'read')),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (message_id, recipient_id)
-);
+### Routing Algorithm
 
-CREATE INDEX idx_status_recipient_pending ON message_status(recipient_id)
-    WHERE status = 'sent';
-```
+When a message arrives, the chat server executes this sequence:
 
-### Idempotent Message Handling
+1. **Persist the message** to PostgreSQL with a "sent" delivery status — this guarantees durability before any routing attempt
+2. **Look up the recipient's session** in Redis to find their server ID
+3. **If the recipient is on the same server**, deliver directly from the local in-memory connection map
+4. **If the recipient is on a different server**, publish the message to that server's Redis pub/sub channel — the target server receives it and delivers to its local socket
+5. **If the recipient is offline** (no session exists), increment their pending count in Redis and stop — the message is already persisted and will be delivered on reconnect
 
-```typescript
-// Prevent duplicate message processing
-async function processIncomingMessage(
-  senderId: string,
-  payload: MessagePayload
-): Promise<Message> {
-  const { clientMessageId, conversationId, content, contentType } = payload;
+### Cross-Server Pub/Sub
 
-  // Check for duplicate using client-generated ID
-  const dedupKey = `dedup:${clientMessageId}`;
-  const isNew = await redis.setnx(dedupKey, '1');
+Each chat server subscribes to its own Redis channel on startup (for example, channel "server:A"). When Server A needs to deliver a message to a user on Server C, it publishes to the "server:C" channel. Server C receives the event through its subscription, looks up the recipient in its local connection map, and pushes the message through the WebSocket.
 
-  if (!isNew) {
-    // Already processed - return existing message
-    const existing = await pool.query(
-      'SELECT * FROM messages WHERE client_message_id = $1',
-      [clientMessageId]
-    );
-    return existing.rows[0];
-  }
+This pattern avoids direct server-to-server communication, which would require service discovery and O(N^2) connections between servers. Redis pub/sub acts as an intermediary — each server maintains exactly one subscriber connection regardless of fleet size.
 
-  // Set TTL on dedup key (24 hours)
-  await redis.expire(dedupKey, 86400);
+### Heartbeat and Stale Session Detection
 
-  // Persist message
-  const result = await pool.query(`
-    INSERT INTO messages (conversation_id, sender_id, content, content_type, client_message_id)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING *
-  `, [conversationId, senderId, content, contentType, clientMessageId]);
+Clients send heartbeat pings every 30 seconds. The server updates the last-seen timestamp in the Redis session hash on each heartbeat. If a client silently disconnects (network failure, app crash), the 24-hour TTL eventually cleans up the stale session. For faster detection, a background sweep can check sessions with last-seen older than 90 seconds and proactively remove them.
 
-  const message = result.rows[0];
+> "The critical design choice here is persisting to PostgreSQL *before* attempting delivery. Many designs route first and persist later — but if the routing layer or Redis fails mid-delivery, the message is lost. Write-first, route-second means the worst case is a delayed delivery, never a lost message."
 
-  // Create status entries for all recipients
-  const recipients = await getConversationParticipants(conversationId);
+### Trade-off: Redis Pub/Sub vs Kafka for Cross-Server Routing
 
-  for (const recipientId of recipients) {
-    if (recipientId !== senderId) {
-      await pool.query(`
-        INSERT INTO message_status (message_id, recipient_id, status)
-        VALUES ($1, $2, 'sent')
-      `, [message.id, recipientId]);
-    }
-  }
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Redis Pub/Sub | Sub-millisecond latency, simple to operate, no consumer group management | Fire-and-forget — if target server is down, message is dropped from pub/sub |
+| ❌ Kafka | Durable, replayable, ordered per partition | 5-50ms added latency per hop, requires Zookeeper/KRaft, significant operational overhead |
 
-  return message;
-}
-```
-
-### Idempotent Status Updates
-
-```typescript
-// Status can only progress forward: sent -> delivered -> read
-async function updateMessageStatus(
-  messageId: string,
-  recipientId: string,
-  newStatus: 'delivered' | 'read'
-): Promise<boolean> {
-  // Use status ordering to prevent backward transitions
-  const result = await pool.query(`
-    UPDATE message_status
-    SET status = $3, updated_at = NOW()
-    WHERE message_id = $1 AND recipient_id = $2
-      AND CASE status
-        WHEN 'sent' THEN 0
-        WHEN 'delivered' THEN 1
-        WHEN 'read' THEN 2
-      END < CASE $3
-        WHEN 'sent' THEN 0
-        WHEN 'delivered' THEN 1
-        WHEN 'read' THEN 2
-      END
-    RETURNING *
-  `, [messageId, recipientId, newStatus]);
-
-  if (result.rowCount > 0) {
-    // Notify sender of status change
-    await notifySenderOfStatusChange(messageId, recipientId, newStatus);
-    return true;
-  }
-
-  return false; // Already at this status or higher
-}
-```
+> "Redis pub/sub is fire-and-forget, which sounds dangerous. But it works here because we persist every message to PostgreSQL before routing. If Redis pub/sub drops the message, the recipient will pick it up from the pending messages table on their next connect. We get the latency benefit of Redis for the happy path (both users online) without sacrificing durability. Kafka would add 10-50ms of latency to every single message for a durability guarantee we already have from PostgreSQL. The only scenario where Kafka wins is if we need message replay for analytics or audit — and that is a separate concern from real-time delivery."
 
 ---
 
-## Deep Dive: Offline Message Delivery (6 minutes)
+## 🔧 Deep Dive 2: Message Delivery Pipeline & Idempotency (8 minutes)
 
-### Pending Message Queue
+### The Problem
 
-```typescript
-// Deliver pending messages on reconnect
-async function deliverPendingMessages(userId: string, ws: WebSocket): Promise<void> {
-  // Get all undelivered messages for this user
-  const result = await pool.query(`
-    SELECT m.*, ms.status
-    FROM messages m
-    JOIN message_status ms ON m.id = ms.message_id
-    WHERE ms.recipient_id = $1 AND ms.status = 'sent'
-    ORDER BY m.created_at ASC
-  `, [userId]);
+Network instability means the client might send the same message twice, the server might attempt delivery twice, and acknowledgments might be lost. Without idempotency, users see duplicate messages — a terrible experience in a messaging app.
 
-  const pendingMessages = result.rows;
+### Client-Generated Idempotency Keys
 
-  if (pendingMessages.length === 0) return;
+The client generates a UUID for every message before sending it. This UUID (the client message ID) is the idempotency key. The server uses it to detect and safely handle duplicates.
 
-  // Send messages in batches to avoid overwhelming the client
-  const batchSize = 50;
-  for (let i = 0; i < pendingMessages.length; i += batchSize) {
-    const batch = pendingMessages.slice(i, i + batchSize);
+The deduplication flow works as follows:
 
-    ws.send(JSON.stringify({
-      type: 'pending_messages',
-      payload: { messages: batch }
-    }));
+1. The server receives a message with a client message ID
+2. It attempts a Redis SETNX on the key "dedup:{clientMessageId}" — this atomically sets the key only if it does not already exist
+3. If SETNX returns success (key was new), this is the first attempt — proceed to insert the message into PostgreSQL and route it
+4. If SETNX returns failure (key already existed), this is a duplicate — query the existing message by client message ID and return it without re-inserting or re-routing
+5. The dedup key has a 24-hour TTL, which covers any reasonable retry window
 
-    // Wait for batch acknowledgment before sending next
-    await waitForBatchAck(ws, batch[batch.length - 1].id);
-  }
-}
+### Data Model
 
-// Client sends ACK for each message
-async function handleMessageAck(userId: string, messageId: string): Promise<void> {
-  await updateMessageStatus(messageId, userId, 'delivered');
-}
+The core tables are described below. Note that schema descriptions use prose tables per the interview format — no DDL.
 
-// Batch ACK for efficiency
-async function handleBatchAck(userId: string, messageIds: string[]): Promise<void> {
-  await pool.query(`
-    UPDATE message_status
-    SET status = 'delivered', updated_at = NOW()
-    WHERE message_id = ANY($1) AND recipient_id = $2 AND status = 'sent'
-  `, [messageIds, userId]);
+**conversations**
 
-  // Notify senders
-  for (const messageId of messageIds) {
-    await notifySenderOfStatusChange(messageId, userId, 'delivered');
-  }
-}
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID, PK | Auto-generated |
+| type | enum: direct, group | Determines fan-out behavior |
+| name | varchar(100) | Null for direct chats, set for groups |
+| created_by | UUID, FK to users | Group creator |
+| created_at | timestamptz | |
+
+**conversation_participants**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| conversation_id | UUID, FK, part of composite PK | |
+| user_id | UUID, FK, part of composite PK | |
+| role | enum: admin, member | Used for group permission checks |
+| last_read_at | timestamptz | Tracks read position for unread counts |
+
+**messages**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | UUID, PK | Server-generated |
+| conversation_id | UUID, FK | Indexed with created_at DESC for pagination |
+| sender_id | UUID, FK | |
+| content | text | Encrypted in production (E2E) |
+| content_type | enum: text, image, video, file | |
+| media_url | text | Presigned URL reference |
+| client_message_id | UUID, unique | The idempotency key — unique constraint prevents duplicates even if Redis dedup fails |
+| created_at | timestamptz | Composite index on (conversation_id, created_at DESC) for efficient history queries |
+
+**message_status**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| message_id | UUID, FK, part of composite PK | |
+| recipient_id | UUID, FK, part of composite PK | One row per recipient per message |
+| status | enum: sent, delivered, read | Can only progress forward |
+| updated_at | timestamptz | |
+
+Index on (recipient_id) WHERE status = 'sent' enables fast pending message queries on reconnect.
+
+### Status Progression and Idempotent Updates
+
+Message status follows a strict forward-only progression: sent, then delivered, then read. The database enforces this by using a conditional update: assign a numeric rank to each status (sent=0, delivered=1, read=2) and only update if the new rank is strictly greater than the current rank. This means:
+
+- Duplicate "delivered" acknowledgments are silently ignored
+- A "read" receipt correctly skips over "delivered" if the delivered ACK was lost
+- Status can never move backwards
+- No distributed locks are needed — the conditional update is atomic within PostgreSQL
+
+When a status update succeeds, the server notifies the original sender via WebSocket (or queues the notification if the sender is offline) so the UI can update the check marks.
+
+### Offline Delivery on Reconnect
+
+When a user connects, the server queries the message_status table for all rows where the recipient matches the connecting user and the status is "sent." These are the pending messages. The server delivers them in batches of 50 to avoid overwhelming the client. After each batch, the client sends a batch acknowledgment, and the server updates all those messages to "delivered" status in a single database operation.
+
+> "The two-layer deduplication — Redis SETNX for speed and PostgreSQL unique constraint on client_message_id for safety — is deliberate. Redis handles 99.9% of duplicates at sub-millisecond cost. The unique constraint is the safety net for the rare case where Redis is unavailable or the dedup key has expired. Belt and suspenders."
+
+### Trade-off: At-Least-Once vs Exactly-Once Delivery
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ At-least-once | Simple server implementation, guaranteed delivery, idempotent clients handle duplicates | Clients must track seen message IDs to suppress duplicates |
+| ❌ Exactly-once | No client dedup logic needed | Requires distributed transactions or consensus protocols, adds 10-100x latency, impossible to guarantee across unreliable networks |
+
+> "Exactly-once delivery across a network is a theoretical impossibility without expensive consensus protocols. At-least-once with client-side deduplication is the standard approach for every production messaging system — WhatsApp, Signal, Telegram all do this. The client maintains a set of recently seen message IDs (the last 10,000) and silently drops duplicates. This is a trivial amount of client-side logic compared to the distributed transaction complexity of attempting exactly-once."
+
+---
+
+## 🔧 Deep Dive 3: Group Message Fan-Out (6 minutes)
+
+### The Problem
+
+When a user sends a message to a group of 256 members, the server must deliver it to up to 255 recipients (everyone except the sender). Naively, this means 255 Redis session lookups, 255 pub/sub publishes, and 255 message_status inserts. At scale, groups generate massive write amplification.
+
+### Server-Batched Routing
+
+The key optimization is grouping recipients by their connected server and sending one pub/sub message per server rather than one per recipient:
+
+1. **Persist the message once** — a single insert into the messages table
+2. **Fetch all group members** — from a Redis cache of the participant list (cached for 5 minutes with invalidation on membership changes), falling back to PostgreSQL
+3. **Look up sessions in bulk** — use Redis MGET or pipeline to fetch all member sessions in a single round-trip rather than 255 sequential lookups
+4. **Partition members by server** — group the online members by which server they are connected to, and collect offline members separately
+5. **Publish once per server** — instead of 255 individual publishes, send one message per server containing the message payload and the list of recipient user IDs on that server. If 100 members are spread across 5 servers, this is 5 publishes instead of 100
+6. **Insert status rows in bulk** — use a single batch insert to create all 255 message_status rows with status "sent"
+7. **Offline members need no action** — their messages are already persisted and will be delivered when they reconnect
+
+### Optimizing the Member List Lookup
+
+Group membership changes infrequently compared to message volume. The participant list is cached in Redis as a set with a 5-minute TTL. When a member is added or removed, the cache is invalidated immediately. This means the typical group message requires zero PostgreSQL queries for membership — just a Redis SMEMBERS call.
+
+### Write Amplification Concerns
+
+For a 256-member group, each message generates:
+- 1 message row
+- 255 message_status rows
+- 5-10 pub/sub publishes (assuming members distributed across servers)
+
+At 1,000 group messages per second, this creates 255,000 status inserts per second. To handle this, message_status inserts are batched — the server collects status rows for 100ms or until 100 rows accumulate, then flushes in a single multi-row insert. This reduces the number of database round-trips by 10-50x.
+
+> "The server-batching optimization is where most group chat designs fail. Publishing 255 individual messages to Redis creates 255x the pub/sub traffic. By grouping recipients by server and sending one payload per server, we reduce pub/sub traffic from O(members) to O(servers) — typically a 20-50x reduction."
+
+---
+
+## 📡 API Design (4 minutes)
+
+### REST Endpoints
+
+```
+Authentication
+POST   /api/v1/auth/register              Create account
+POST   /api/v1/auth/login                 Create session
+POST   /api/v1/auth/logout                Destroy session
+GET    /api/v1/auth/me                    Current user profile
+
+Users
+GET    /api/v1/users                      Search by username
+GET    /api/v1/users/:id                  Get user profile
+
+Conversations
+GET    /api/v1/conversations              List user's conversations (with unread counts)
+POST   /api/v1/conversations              Create direct or group conversation
+GET    /api/v1/conversations/:id          Conversation details
+PUT    /api/v1/conversations/:id          Update name (groups)
+GET    /api/v1/conversations/:id/messages Paginated history (cursor-based, newest first)
+PUT    /api/v1/conversations/:id/read     Mark as read up to a message ID
+
+Group Management
+POST   /api/v1/conversations/:id/participants      Add member
+DELETE /api/v1/conversations/:id/participants/:uid  Remove member
+
+Media
+POST   /api/v1/media/upload               Upload file, returns media URL
+GET    /api/v1/media/:id                  Download via presigned URL
 ```
 
----
+### WebSocket Events
 
-## Deep Dive: Group Message Fan-Out (6 minutes)
+The WebSocket connection handles all real-time communication. Events flow in both directions:
 
-### Efficient Group Delivery
+**Client to Server:** message (send), typing (indicator), ack (delivery confirmation), read (read receipt with conversation ID and up-to message ID)
 
-```typescript
-interface GroupMessage extends Message {
-  groupId: string;
-  memberCount: number;
-}
+**Server to Client:** message (new incoming), message_status (delivery/read receipt for sender), typing (indicator from other user), presence (online/offline change), error (rate limit, validation failure)
 
-async function handleGroupMessage(
-  senderId: string,
-  groupId: string,
-  content: string
-): Promise<void> {
-  // 1. Persist message once
-  const message = await persistMessage(groupId, senderId, content);
-
-  // 2. Get group members
-  const members = await getGroupMembers(groupId);
-
-  // 3. Partition members by connection status
-  const onlineMembers: Array<{ userId: string; serverId: string }> = [];
-  const offlineMembers: string[] = [];
-
-  for (const memberId of members) {
-    if (memberId === senderId) continue; // Skip sender
-
-    const session = await redis.hgetall(`session:${memberId}`);
-    if (session && session.serverId) {
-      onlineMembers.push({ userId: memberId, serverId: session.serverId });
-    } else {
-      offlineMembers.push(memberId);
-    }
-  }
-
-  // 4. Create status entries for all recipients
-  await createStatusEntries(message.id, members.filter(m => m !== senderId));
-
-  // 5. Group online members by server for batched delivery
-  const serverGroups = groupBy(onlineMembers, 'serverId');
-
-  for (const [serverId, users] of Object.entries(serverGroups)) {
-    if (serverId === process.env.SERVER_ID) {
-      // Local delivery
-      for (const { userId } of users) {
-        deliverToLocalSocket(userId, message);
-      }
-    } else {
-      // Cross-server batch delivery
-      await redis.publish(`server:${serverId}`, JSON.stringify({
-        type: 'group_message',
-        payload: {
-          message,
-          recipients: users.map(u => u.userId)
-        }
-      }));
-    }
-  }
-
-  // 6. Offline members get message on reconnect (already in DB)
-}
-
-// Optimized member lookup with caching
-async function getGroupMembers(groupId: string): Promise<string[]> {
-  const cacheKey = `group:${groupId}:members`;
-
-  // Check Redis cache
-  const cached = await redis.smembers(cacheKey);
-  if (cached.length > 0) {
-    return cached;
-  }
-
-  // Query database
-  const result = await pool.query(
-    'SELECT user_id FROM conversation_participants WHERE conversation_id = $1',
-    [groupId]
-  );
-
-  const members = result.rows.map(r => r.user_id);
-
-  // Cache for 5 minutes
-  await redis.sadd(cacheKey, ...members);
-  await redis.expire(cacheKey, 300);
-
-  return members;
-}
-```
+> "REST is used for CRUD operations and initial data loading. WebSocket handles everything real-time: message sending, delivery receipts, typing, and presence. The REST fallback for message sending exists for reliability — if the WebSocket reconnects mid-send, the client can retry via REST with the same client message ID."
 
 ---
 
-## Deep Dive: Presence and Typing Indicators (4 minutes)
+## ⚖️ Scalability & Trade-offs (5 minutes)
 
-### Presence Management
+### What Breaks First
 
-```typescript
-async function updatePresence(userId: string, status: 'online' | 'offline'): Promise<void> {
-  await redis.hset(`presence:${userId}`, {
-    status,
-    lastSeen: Date.now().toString()
-  });
+| Scale Threshold | Bottleneck | Mitigation |
+|----------------|------------|------------|
+| 100K concurrent connections per server | OS file descriptor limits, memory | Tune kernel params, horizontal scale to more servers |
+| 10M messages/day | PostgreSQL write throughput | Partition messages table by conversation_id hash, add write replicas |
+| 100M messages/day | Single PostgreSQL instance | Migrate message storage to Cassandra — optimized for high-write, partition-per-conversation access pattern |
+| 1B messages/day | Redis pub/sub fan-out | Shard Redis by server-ID prefix, or replace with dedicated message broker |
+| 500M users | Session registry size | Redis Cluster with consistent hashing on user ID |
 
-  // Notify interested parties (users who have this user in recent chats)
-  await broadcastPresenceToWatchers(userId, status);
-}
+### Sharding Strategy
 
-// Lazy presence subscription - only track when viewing chat
-async function subscribeToPresence(watcherId: string, targetUserId: string): Promise<void> {
-  const key = `presence_watchers:${targetUserId}`;
+| Data | Shard Key | Rationale |
+|------|-----------|-----------|
+| Messages | conversation_id | Co-locates all messages in a conversation for efficient pagination queries |
+| Users | user_id | Even distribution, no hot partitions |
+| Sessions | user_id modulo N | Consistent hashing for predictable routing |
+| Message status | (conversation_id, message_id) | Co-locates with the message for join-free status queries |
 
-  await redis.sadd(key, watcherId);
-  await redis.expire(key, 300); // 5 minute interest window
+### Key Trade-off Decisions
 
-  // Send current presence
-  const presence = await redis.hgetall(`presence:${targetUserId}`);
-  return presence;
-}
+**Message storage: PostgreSQL vs Cassandra**
 
-// Heartbeat to detect silent disconnects
-async function handleHeartbeat(userId: string): Promise<void> {
-  await redis.hset(`presence:${userId}`, 'lastSeen', Date.now().toString());
-}
-```
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ PostgreSQL (initial) | ACID transactions, rich query support, simpler operations, strong consistency for status updates | Write throughput ceiling around 50K inserts/sec on a single instance |
+| ❌ Cassandra (at scale) | Near-linear write scaling, natural partition-per-conversation model, built-in TTL for message expiry | Eventually consistent, no multi-row transactions, operational complexity with compaction tuning |
 
-### Typing Indicators
+> "Starting with PostgreSQL is the right call because it handles the first 100M messages/day without issue and gives us transactional guarantees for message status updates. The migration path to Cassandra is clean — messages are already accessed by conversation_id, which maps directly to a Cassandra partition key. We would migrate message storage to Cassandra while keeping users, conversations, and participants in PostgreSQL where we need relational integrity. This is a hybrid approach — use each database for what it does best."
 
-```typescript
-async function handleTypingStart(userId: string, conversationId: string): Promise<void> {
-  // Set typing flag with 3-second TTL
-  const key = `typing:${conversationId}:${userId}`;
-  await redis.setex(key, 3, '1');
+**Connection model: WebSocket vs HTTP long polling**
 
-  // Broadcast to other participants
-  const participants = await getConversationParticipants(conversationId);
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ WebSocket | Full duplex, sub-10ms push latency, single persistent connection | Stateful connections complicate load balancing, requires sticky sessions |
+| ❌ HTTP long polling | Stateless, works through any proxy, simpler load balancing | 200-500ms average latency, one outstanding request per client, higher server resource usage from constant connection cycling |
 
-  for (const participantId of participants) {
-    if (participantId === userId) continue;
+> "For a messaging app where users expect instant delivery, 200-500ms of polling latency is disqualifying. Users perceive that delay as the app being broken. WebSocket's full-duplex connection means the server pushes messages the instant they arrive — no waiting for the next poll cycle. The operational cost of sticky sessions and stateful connections is real, but it is a well-understood problem solved by L4 load balancers with connection-aware routing. Every production messaging system uses persistent connections."
 
-    const session = await redis.hgetall(`session:${participantId}`);
-    if (session && session.serverId) {
-      await redis.publish(`server:${session.serverId}`, JSON.stringify({
-        type: 'typing',
-        payload: { conversationId, userId, isTyping: true }
-      }));
-    }
-  }
-}
-```
+**Delivery guarantee: At-least-once with client dedup vs server-side exactly-once**
 
----
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ At-least-once + client dedup | Simple server logic, robust against network failures, proven pattern | Clients must maintain a seen-message set |
+| ❌ Server-side exactly-once | No client-side dedup needed | Requires distributed transactions or consensus, 10-100x latency overhead, still not truly exactly-once across unreliable networks |
 
-## Rate Limiting and Protection (3 minutes)
+> "The engineering community has broadly concluded that exactly-once delivery over unreliable networks is impractical at messaging scale. The Two Generals Problem makes this a theoretical impossibility without acknowledgment loops that add latency. At-least-once with idempotent processing and client-side deduplication is how WhatsApp, iMessage, Signal, and every major messaging platform works. The client tracks recent message IDs in a bounded set and drops duplicates — this is a few lines of client code versus months of distributed systems complexity."
 
-```typescript
-// Sliding window rate limiter
-async function checkRateLimit(userId: string, action: string): Promise<boolean> {
-  const limits: Record<string, { window: number; max: number }> = {
-    'message': { window: 60, max: 60 },      // 60 msgs/minute
-    'typing': { window: 10, max: 10 },       // 10 typing events/10s
-    'connect': { window: 60, max: 5 }        // 5 connects/minute
-  };
+### Rate Limiting
 
-  const { window, max } = limits[action] || { window: 60, max: 100 };
-  const key = `ratelimit:${userId}:${action}`;
-  const now = Date.now();
+Rate limiting uses a sliding window counter in Redis. Each action type has its own limit:
 
-  // Use Redis sorted set for sliding window
-  const pipeline = redis.pipeline();
-  pipeline.zremrangebyscore(key, 0, now - window * 1000);
-  pipeline.zadd(key, now.toString(), now.toString());
-  pipeline.zcard(key);
-  pipeline.expire(key, window);
+| Action | Window | Max | Rationale |
+|--------|--------|-----|-----------|
+| Messages | 1 minute | 60 | Prevents spam, allows burst typing |
+| Typing indicators | 10 seconds | 10 | Prevents indicator flicker |
+| WebSocket connects | 1 minute | 5 | Prevents reconnection storms |
+| Login attempts | 15 minutes | 5 | Brute-force protection |
+| Media uploads | 1 hour | 100 | Storage abuse prevention |
 
-  const results = await pipeline.exec();
-  const count = results?.[2]?.[1] as number;
+The sliding window is implemented with a Redis sorted set per user per action. Each request adds a timestamped entry, entries outside the window are removed, and the remaining count is checked against the limit — all in a single Redis pipeline for atomicity.
 
-  return count <= max;
-}
+### Circuit Breakers
 
-// Circuit breaker for external dependencies
-class CircuitBreaker {
-  private state: 'closed' | 'open' | 'half-open' = 'closed';
-  private failures = 0;
-  private threshold = 5;
-  private resetTimeout = 30000;
+Circuit breakers wrap every external dependency (PostgreSQL, Redis, object store). The circuit has three states: closed (normal), open (failing fast), and half-open (testing recovery). Configuration is tuned for messaging workloads:
 
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.state === 'open') {
-      throw new Error('Circuit breaker is open');
-    }
+- **Failure threshold**: 50% of requests in the last 10 seconds
+- **Open duration**: 30 seconds before attempting recovery
+- **Timeout**: 3 seconds per request (messages should be fast)
 
-    try {
-      const result = await fn();
-      this.onSuccess();
-      return result;
-    } catch (error) {
-      this.onFailure();
-      throw error;
-    }
-  }
+When the PostgreSQL circuit opens, the server rejects new message sends with a retryable error. When the Redis circuit opens, the server falls back to local-only delivery (no cross-server routing) and disables presence/typing features. This graceful degradation keeps the core messaging flow working even during partial outages.
 
-  private onSuccess(): void {
-    this.failures = 0;
-    this.state = 'closed';
-  }
+### Graceful Degradation Matrix
 
-  private onFailure(): void {
-    this.failures++;
-    if (this.failures >= this.threshold) {
-      this.state = 'open';
-      setTimeout(() => {
-        this.state = 'half-open';
-      }, this.resetTimeout);
-    }
-  }
-}
-```
+| Component Down | Impact | Degraded Behavior |
+|---------------|--------|-------------------|
+| Redis | No cross-server routing, no presence/typing | Local-only delivery, messages queue in PostgreSQL for later |
+| PostgreSQL | Cannot persist new messages | Reject sends with retryable error, existing WebSocket connections remain open |
+| Object Store | Media uploads fail | Text messaging continues normally, media sends fail with clear error |
+| One chat server | Connections on that server drop | Clients reconnect to healthy server via load balancer, pending messages delivered |
+
+### Session-Based Authentication
+
+> "I chose session-based auth with Redis over JWT for two reasons specific to messaging. First, WebSocket connections are inherently stateful — we already have a Redis session registry for routing, so adding session auth adds no new infrastructure. Second, messaging requires immediate session revocation (account compromise, device theft). With JWT, a stolen token is valid until expiry — potentially hours. With Redis sessions, we delete the key and the user is immediately disconnected on the next heartbeat."
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Session-based (Redis) | Instant revocation, no token expiry window, reuses existing Redis infrastructure | Stateful, requires Redis availability for auth |
+| ❌ JWT | Stateless, no server-side storage per session | Cannot revoke instantly, token size grows with claims, requires refresh token rotation |
 
 ---
 
-## Trade-offs and Alternatives (2 minutes)
+## 📝 Summary
 
-| Decision | Chosen | Alternative | Rationale |
-|----------|--------|-------------|-----------|
-| Message Storage | PostgreSQL | Cassandra | Simpler ops; Cassandra at billion-message scale |
-| Cross-Server Routing | Redis Pub/Sub | Kafka | Lower latency; Kafka for durability needs |
-| Session Storage | Redis hashes | Redis cluster | Simple; cluster for HA at scale |
-| Connection Model | WebSocket | Long polling | Full duplex, lower latency |
-| Delivery Guarantee | At-least-once | Exactly-once | Simpler; client deduplicates |
+"I've designed a real-time messaging backend built on three core principles:
 
----
+1. **Write-first, route-second** — every message hits PostgreSQL before any delivery attempt, guaranteeing zero message loss regardless of routing failures
+2. **Two-layer idempotency** — Redis SETNX for fast dedup on the hot path, PostgreSQL unique constraints as the safety net, and forward-only status progression to prevent state corruption
+3. **Server-batched fan-out** — group messages are routed per-server rather than per-recipient, reducing pub/sub traffic from O(members) to O(servers)
 
-## Future Enhancements
+The architecture scales horizontally by adding chat servers behind the L4 load balancer. The first bottleneck will be PostgreSQL write throughput for messages, which we address by partitioning by conversation_id and eventually migrating to Cassandra for the message storage layer while keeping relational data in PostgreSQL.
 
-With more time, I would add:
+The system achieves sub-100ms delivery for online users through Redis pub/sub routing, while offline delivery is guaranteed by the pending message query on reconnect — both paths are idempotent and safe to retry.
 
-1. **Cassandra for messages** at production scale for write throughput
-2. **Kafka** for durable message queue and replay capability
-3. **End-to-end encryption** with Signal Protocol
-4. **Read replicas** for PostgreSQL scaling
-5. **Connection multiplexing** for efficiency
-
----
-
-## Summary
-
-"I've designed a real-time messaging backend with:
-
-1. **WebSocket connection management** with Redis session registry
-2. **Cross-server message routing** via Redis pub/sub
-3. **Idempotent message handling** with client-generated IDs
-4. **Efficient group fan-out** batched by server
-5. **Offline delivery** with pending message queue
-6. **Rate limiting and circuit breakers** for protection
-
-The architecture achieves sub-100ms delivery for online users while guaranteeing at-least-once semantics for all messages."
+With more time, I would explore end-to-end encryption using the Signal Protocol (where the server never sees plaintext), push notifications via FCM/APNs for mobile offline delivery, and multi-device support where a single user has concurrent sessions on phone, tablet, and desktop — each requiring independent message delivery and read-state synchronization."

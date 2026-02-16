@@ -2,568 +2,422 @@
 
 *45-minute system design interview format - Full-Stack Engineer Position*
 
-## Opening Statement
+## 🎯 Opening Statement
 
-"I'll design a real-time messaging platform like WhatsApp, covering both the frontend and backend with emphasis on how they integrate. The key full-stack challenges are establishing a robust WebSocket communication protocol, implementing end-to-end message delivery with status tracking across the stack, handling offline scenarios with both client-side caching and server-side queuing, and ensuring type safety across the API boundary. Let me start by clarifying requirements."
+"I'll design a real-time messaging platform like WhatsApp, covering the full stack from the React frontend through the Node.js backend and into the data layer. The core full-stack challenges are: building a typed WebSocket protocol that both sides share, implementing optimistic UI with server-side persistence and cross-server routing, designing an offline-first architecture with IndexedDB on the client and pending-message delivery on the server, and making delivery receipts flow reliably from recipient back to sender across multiple servers. Let me start with requirements."
 
 ---
 
-## 1. Requirements Clarification (3-4 minutes)
+## 📋 Requirements Clarification (3 minutes)
 
 ### Functional Requirements
 
-1. **Real-Time Messaging**
-   - Send/receive messages with < 100ms latency when both users online
-   - Cross-server message routing when users connect to different servers
-   - Delivery receipts (sent, delivered, read) synchronized across clients
-
-2. **Offline Support**
-   - Server queues messages for offline recipients
-   - Client caches conversations and messages in IndexedDB
-   - Client queues outgoing messages when disconnected
-   - Full synchronization on reconnect
-
-3. **Presence System**
-   - Real-time online/offline status
-   - Typing indicators with debouncing
-   - Last seen timestamps
-
-4. **Group Messaging**
-   - Fan-out message delivery to multiple recipients
-   - Group membership management
-   - Efficient batch notifications
+1. **Real-time 1:1 and group messaging** with sub-100ms delivery when both parties are online
+2. **Delivery receipts** — sent, delivered, read — synchronized back to the sender's UI
+3. **Typing indicators** with debounced emission and auto-expiry
+4. **Offline support** — client queues outbound messages, server queues inbound; full sync on reconnect
+5. **Presence** — online/offline status and last-seen timestamps
 
 ### Non-Functional Requirements
 
 | Requirement | Target | Stack Responsibility |
 |-------------|--------|----------------------|
-| **Message Latency** | < 100ms (online-to-online) | Backend: Redis routing, Frontend: WebSocket |
-| **Offline Capability** | Full read, queued writes | Backend: PostgreSQL queue, Frontend: IndexedDB |
-| **Consistency** | At-least-once delivery | Backend: ACKs + DB, Frontend: Deduplication |
-| **Scale** | 500 concurrent connections/server | Backend: Multiple instances, Frontend: Virtualization |
+| Message latency | < 100ms online-to-online | Backend: Redis pub/sub routing. Frontend: WebSocket + optimistic UI |
+| Offline capability | Full read access, queued writes | Backend: PostgreSQL pending queue. Frontend: IndexedDB cache + send queue |
+| Delivery guarantee | At-least-once, idempotent | Backend: persist-before-route + ACK protocol. Frontend: client-generated UUIDs for dedup |
+| Concurrent connections | 500 per server instance | Backend: multiple Express+WS instances. Frontend: virtualized message lists |
+| Type safety | Shared contract | Shared TypeScript types used by both frontend and backend |
 
 ---
 
-## 2. Full-Stack Architecture Overview (5-6 minutes)
-
-### System Integration Diagram
+## 🏗️ Full-Stack Architecture (5 minutes)
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              Frontend (React)                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ WebSocket   │  │   Zustand   │  │  IndexedDB  │  │   Service   │          │
-│  │  Provider   │◄─┤    Store    │◄─┤   (Dexie)   │  │   Worker    │          │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
-│         │                │                │                │                  │
-└─────────┼────────────────┼────────────────┼────────────────┼──────────────────┘
-          │ WebSocket      │ HTTP/REST      │                │
-          │                │                │                │
-          ▼                ▼                │                │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Load Balancer (nginx)                              │
-│                        Sticky Sessions for WebSocket                         │
-└────────────────────────────────┬─────────────────────────────────────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   API Server 1  │    │   API Server 2  │    │   API Server 3  │
-│   (Express+WS)  │◄───┤  Redis Pub/Sub  ├───►│   (Express+WS)  │
-└────────┬────────┘    └────────┬────────┘    └────────┬────────┘
-         │                      │                      │
-         └──────────────────────┼──────────────────────┘
-                                │
-              ┌─────────────────┼─────────────────┐
-              │                 │                 │
-              ▼                 ▼                 ▼
-     ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-     │   PostgreSQL    │ │   Redis/Valkey  │ │     MinIO       │
-     │                 │ │                 │ │                 │
-     │ - Users         │ │ - Sessions      │ │ - Images        │
-     │ - Conversations │ │ - Presence      │ │ - Videos        │
-     │ - Messages      │ │ - User→Server   │ │ - Documents     │
-     │ - Status        │ │ - Pub/Sub       │ │                 │
-     └─────────────────┘ └─────────────────┘ └─────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                         Frontend (React + Zustand)                      │
+│                                                                         │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐       │
+│  │ WebSocket  │  │  Zustand   │  │ IndexedDB  │  │ Virtualized│       │
+│  │  Provider  │◄─┤   Store    │◄─┤  (Dexie)   │  │  Lists     │       │
+│  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └────────────┘       │
+│        │               │               │                                │
+└────────┼───────────────┼───────────────┼────────────────────────────────┘
+         │ ws://          │ HTTP/REST     │
+         │               │               │
+         ▼               ▼               │
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Load Balancer (nginx, sticky sessions)               │
+└───────────────────────────┬────────────────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  Server 1    │   │  Server 2    │   │  Server 3    │
+│  Express+WS  │◄──┤ Redis Pub/Sub├──►│  Express+WS  │
+└──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          │
+           ┌──────────────┼──────────────┐
+           ▼              ▼              ▼
+   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+   │  PostgreSQL  │ │ Redis/Valkey │ │    MinIO      │
+   │              │ │              │ │              │
+   │ users        │ │ sessions     │ │ images       │
+   │ conversations│ │ presence     │ │ videos       │
+   │ messages     │ │ user→server  │ │ documents    │
+   │ msg_status   │ │ typing TTLs  │ │              │
+   └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-### Shared TypeScript Types (API Contract)
-
-The shared types directory contains interfaces used by both frontend and backend:
-
-**Message**: id, conversationId, senderId, content, contentType (text | image | video | file), mediaUrl, replyToId, createdAt. Client-side adds: clientMessageId, status (sending | sent | delivered | read | failed).
-
-**Conversation**: id, type (direct | group), name, participants array, lastMessage, unreadCount, updatedAt.
-
-**Participant**: userId, username, displayName, avatarUrl, role (admin | member).
-
-**WebSocket Message Types**:
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                   WebSocket Protocol                            │
-├────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Client → Server (WSClientMessage)                             │
-│  ├── message: { conversationId, content, contentType,         │
-│  │              clientMessageId, mediaUrl?, replyToId? }       │
-│  ├── typing: { conversationId }                                │
-│  ├── ack: { messageId }                                        │
-│  └── read: { conversationId, upToMessageId }                   │
-│                                                                 │
-│  Server → Client (WSServerMessage)                             │
-│  ├── message: Message payload                                  │
-│  ├── message_status: { messageId, status, userId }             │
-│  ├── typing: { conversationId, userId, username, isTyping }    │
-│  ├── presence: { userId, status, lastSeen }                    │
-│  └── error: { code, message }                                  │
-│                                                                 │
-└────────────────────────────────────────────────────────────────┘
-```
+> "The frontend owns the user experience — optimistic updates, offline queueing, virtualized rendering. The backend owns durability — persist before routing, cross-server pub/sub, idempotent status updates. Shared TypeScript types act as the contract between the two layers."
 
 ---
 
-## 3. Deep Dive: Message Flow (8-10 minutes)
+## 🔌 WebSocket Protocol Design (3 minutes)
 
-### End-to-End Message Delivery (Online-to-Online)
+Rather than ad-hoc JSON, we define a typed message protocol shared by both client and server. Every event has a discriminated `type` field that both sides switch on.
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                         Complete Message Flow                                 │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
-│  Frontend (Sender)              Backend                 Frontend (Recipient) │
-│        │                          │                            │             │
-│  ┌─────┴─────┐                    │                            │             │
-│  │ 1. User   │                    │                            │             │
-│  │    types  │                    │                            │             │
-│  │    message│                    │                            │             │
-│  └─────┬─────┘                    │                            │             │
-│        │                          │                            │             │
-│  ┌─────┴─────┐                    │                            │             │
-│  │ 2. Create │                    │                            │             │
-│  │ clientId, │                    │                            │             │
-│  │ optimistic│                    │                            │             │
-│  │ add to UI │                    │                            │             │
-│  └─────┬─────┘                    │                            │             │
-│        │───WS: message───────────►│                            │             │
-│        │                          │                            │             │
-│        │                    ┌─────┴─────┐                      │             │
-│        │                    │ 3. Persist│                      │             │
-│        │                    │ to DB     │                      │             │
-│        │                    │ status=   │                      │             │
-│        │                    │ 'sent'    │                      │             │
-│        │                    └─────┬─────┘                      │             │
-│        │                          │                            │             │
-│        │                    ┌─────┴─────┐                      │             │
-│        │                    │ 4. Lookup │                      │             │
-│        │                    │ recipient │                      │             │
-│        │                    │ server in │                      │             │
-│        │                    │ Redis     │                      │             │
-│        │                    └─────┬─────┘                      │             │
-│        │                          │                            │             │
-│        │                          │ (Redis Pub/Sub if          │             │
-│        │                          │  different server)         │             │
-│        │                          │───WS: message─────────────►│             │
-│        │                          │                            │             │
-│        │                          │                      ┌─────┴─────┐       │
-│        │                          │                      │ 5. Display│       │
-│        │                          │                      │ dedupe by │       │
-│        │                          │                      │ messageId │       │
-│        │                          │                      └─────┬─────┘       │
-│        │                          │◄────WS: ack────────────────│             │
-│        │                          │                            │             │
-│        │                    ┌─────┴─────┐                      │             │
-│        │                    │ 6. Update │                      │             │
-│        │                    │ status=   │                      │             │
-│        │                    │ delivered │                      │             │
-│        │                    └─────┬─────┘                      │             │
-│        │◄───WS: message_status────│                            │             │
-│        │     (delivered)          │                            │             │
-│  ┌─────┴─────┐                    │                            │             │
-│  │ 7. Update │                    │                            │             │
-│  │ UI: double│                    │                            │             │
-│  │ checkmark │                    │                            │             │
-│  └───────────┘                    │                            │             │
-│                                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+### Client to Server Events
 
-### Frontend: Sending a Message
+| Type | Payload Fields | Purpose |
+|------|---------------|---------|
+| `message` | conversationId, content, contentType, clientMessageId, mediaUrl?, replyToId? | Send a new message with client-generated UUID |
+| `typing` | conversationId | Signal that user is composing |
+| `ack` | messageId | Confirm receipt of a delivered message |
+| `read` | conversationId, upToMessageId | Mark all messages up to this one as read |
 
-The `useSendMessage` hook implements the send flow:
+### Server to Client Events
 
-1. Generate clientMessageId with crypto.randomUUID()
-2. Create optimistic message with status='sending', add to store
-3. If socket disconnected: queue to IndexedDB pending messages with retryCount=0
-4. If connected: send via WebSocket with type='message'
+| Type | Payload Fields | Purpose |
+|------|---------------|---------|
+| `message` | Full message object with server-assigned id and createdAt | Deliver incoming message |
+| `message_status` | messageId, status (sent/delivered/read), userId | Notify sender of status progression |
+| `typing` | conversationId, userId, username, isTyping | Broadcast typing state to conversation |
+| `presence` | userId, status (online/offline), lastSeen | Presence change notification |
+| `error` | code, message | Validation or authorization errors |
 
-### Backend: Processing the Message
-
-The message handler performs these steps:
-
-1. **Validate Participation**: Query conversation_participants to verify sender is member
-2. **Idempotency Check**: SETNX on `dedup:{clientMessageId}` key with 24h TTL; if exists, return cached message
-3. **Persist to Database**: INSERT into messages table, RETURNING the new row
-4. **Get Recipients**: Query other participants from conversation_participants
-5. **Create Status Records**: INSERT message_status for each recipient with status='sent'
-6. **Route to Recipients**: For each recipient, call routeToRecipient()
-7. **Confirm to Sender**: Send message event back with status='sent'
-
-### Cross-Server Message Routing
-
-The routeToRecipient function handles delivery:
-
-1. Lookup `session:{userId}` in Redis to get recipient's server ID
-2. If no session: user offline, message stays in DB with 'sent' status
-3. If same server: deliver directly via local WebSocket map
-4. If different server: publish to `server:{serverId}` Redis channel with targetUserId and message
-
-### Frontend: Receiving and Acknowledging
-
-The WebSocket provider's message handler:
-
-1. On 'message' event: Add to store (handles deduplication by messageId), send 'ack' event back, cache to IndexedDB
-2. On 'message_status' event: Update message status in store (sent → delivered → read with checkmark icons)
-
-### Backend: Processing Delivery ACK
-
-The ack handler performs idempotent status update:
-
-1. UPDATE message_status SET status='delivered' WHERE message_id=$1 AND recipient_id=$2 AND status='sent'
-2. If no rows updated: already delivered or read, skip
-3. Query sender_id from messages table
-4. Route message_status notification to sender
+> "Both sides validate against the same schema. The frontend uses discriminated unions to narrow the type in its message handler; the backend validates with Zod before routing to the appropriate handler. This eliminates an entire class of protocol mismatch bugs."
 
 ---
 
-## 4. Deep Dive: Offline Sync (6-7 minutes)
+## 🔍 Deep Dive 1: End-to-End Message Flow (10 minutes)
 
-### Offline Architecture
+This is the most important flow — tracing a single message from the sender's keystroke to the recipient seeing it and the sender seeing blue checkmarks.
+
+### Sequence Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Offline Sync Architecture                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  User Goes Offline                              User Comes Online            │
-│        │                                              │                      │
-│        ▼                                              ▼                      │
-│  ┌───────────┐                                  ┌───────────┐                │
-│  │ WebSocket │                                  │ WebSocket │                │
-│  │  Closes   │                                  │ Reconnects│                │
-│  └─────┬─────┘                                  └─────┬─────┘                │
-│        │                                              │                      │
-│        ▼                                              ▼                      │
-│  ┌───────────┐                                  ┌───────────┐                │
-│  │ Queue new │                                  │ Sync from │                │
-│  │ messages  │                                  │ IndexedDB │                │
-│  │ to        │                                  │ pending   │                │
-│  │ IndexedDB │                                  │ queue     │                │
-│  └─────┬─────┘                                  └─────┬─────┘                │
-│        │                                              │                      │
-│        ▼                                              ▼                      │
-│  ┌───────────┐                               ┌───────────────────┐           │
-│  │ Show from │                               │ Backend: Fetch    │           │
-│  │ cached    │                               │ messages since    │           │
-│  │ messages  │                               │ last sync         │           │
-│  └───────────┘                               └─────────┬─────────┘           │
-│                                                        │                     │
-│                                                        ▼                     │
-│                                              ┌───────────────────┐           │
-│                                              │ Merge server      │           │
-│                                              │ messages with     │           │
-│                                              │ local cache       │           │
-│                                              └───────────────────┘           │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+  Sender Frontend         Server A            Redis           Server B         Recipient Frontend
+       │                     │                  │                 │                    │
+       │─── 1. Generate ────►│                  │                 │                    │
+       │    clientMessageId  │                  │                 │                    │
+       │    optimistic add   │                  │                 │                    │
+       │    to Zustand store │                  │                 │                    │
+       │                     │                  │                 │                    │
+       │── 2. WS: message ──►│                  │                 │                    │
+       │                     │                  │                 │                    │
+       │                     │── 3. SETNX ─────►│                 │                    │
+       │                     │   dedup:clientId  │                 │                    │
+       │                     │◄── OK (new) ─────│                 │                    │
+       │                     │                  │                 │                    │
+       │                     │── 4. INSERT ─────────────────────────────►              │
+       │                     │   message + status rows           (PostgreSQL)          │
+       │                     │                  │                 │                    │
+       │                     │── 5. GET ───────►│                 │                    │
+       │                     │   session:recipientId              │                    │
+       │                     │◄── server_b ────│                 │                    │
+       │                     │                  │                 │                    │
+       │                     │── 6. PUBLISH ───►│                 │                    │
+       │                     │   server:B       │── deliver ─────►│                    │
+       │                     │                  │                 │                    │
+       │                     │                  │                 │── 7. WS: message ─►│
+       │                     │                  │                 │                    │
+       │                     │                  │                 │                    │── 8. Dedup by
+       │                     │                  │                 │                    │   messageId,
+       │                     │                  │                 │                    │   add to store
+       │                     │                  │                 │                    │
+       │                     │                  │                 │◄─ 9. WS: ack ─────│
+       │                     │                  │                 │                    │
+       │                     │                  │                 │── 10. UPDATE ──────────────►
+       │                     │                  │                 │   status='delivered'  (PostgreSQL)
+       │                     │                  │                 │                    │
+       │                     │◄─ 11. PUBLISH ──│◄── server:A ───│                    │
+       │                     │   message_status │                 │                    │
+       │                     │                  │                 │                    │
+       │◄ 12. WS: status ───│                  │                 │                    │
+       │   (delivered)       │                  │                 │                    │
+       │                     │                  │                 │                    │
+       │── 13. Update UI ───►│                  │                 │                    │
+       │   double grey       │                  │                 │                    │
+       │   checkmarks        │                  │                 │                    │
 ```
 
-### Frontend: Offline Queue and Sync (OfflineSyncService)
+### Frontend: Sending Side
 
-**queueMessage(message)**: Add to IndexedDB pendingMessages table with status='pending'.
+1. User presses send. The hook generates a `clientMessageId` via `crypto.randomUUID()` — this is the idempotency key.
+2. An optimistic message is added to the Zustand store with `status: 'sending'` and rendered immediately. The UI feels instant.
+3. If the WebSocket is disconnected, the message is queued to IndexedDB's `pendingMessages` table with `status: 'pending'` and `retryCount: 0`. It will be sent when the socket reconnects.
+4. If connected, the message is sent as a `type: 'message'` WebSocket event.
 
-**syncPendingMessages(socket)**:
-1. Query pendingMessages where status='pending'
-2. For each message: update status to 'sending', send via WebSocket, delete on success
-3. On error: increment retryCount; if >= 3, mark as 'failed', else reset to 'pending'
+### Backend: Processing
 
-**fetchMissedMessages(conversationId)**:
-1. Get lastSyncAt from syncMetadata table
-2. Fetch `/api/v1/conversations/{id}/messages?since={lastSyncAt}`
-3. Bulk cache returned messages
-4. Update syncMetadata with current timestamp
+1. **Validate participation** — query `conversation_participants` to confirm the sender belongs to this conversation. Reject otherwise.
+2. **Idempotency check** — `SETNX dedup:{clientMessageId}` with 24h TTL. If the key already exists, return the cached server message. This handles retries from the client or network duplication.
+3. **Persist** — INSERT into `messages` table, then INSERT `message_status` rows for every other participant with `status: 'sent'`.
+4. **Route** — for each recipient, look up `session:{userId}` in Redis. If the recipient is on the same server, deliver directly via the in-memory WebSocket map. If on a different server, PUBLISH to `server:{serverId}` Redis channel. If no session exists, the message stays in PostgreSQL with 'sent' status until the user reconnects.
 
-**getCachedMessages(conversationId)**: Query messages table by conversationId, sorted by createdAt descending.
+### Frontend: Receiving Side
 
-### Backend: Pending Message Delivery on Connect
+1. The WebSocket provider's message handler receives a `type: 'message'` event. It checks whether `messageId` already exists in the Zustand store (deduplication). If new, it adds the message and caches it to IndexedDB.
+2. It immediately sends a `type: 'ack'` event back, which triggers the backend to update `message_status` to 'delivered' and notify the original sender.
+3. The sender's UI updates from a single grey checkmark to double grey checkmarks.
 
-The handleUserConnect function:
-
-1. Register session: SET `session:{userId}` to SERVER_ID
-2. Update presence: HSET `presence:{userId}` with status='online', server, lastSeen
-3. Store WebSocket in connections map
-4. Query pending messages: SELECT from messages JOIN message_status WHERE recipient_id=$1 AND status='sent' ORDER BY created_at
-5. Send each pending message via WebSocket
-6. Broadcast presence change to interested users
-
-The handleUserDisconnect function:
-
-1. DEL `session:{userId}`
-2. HSET `presence:{userId}` with status='offline', lastSeen
-3. Delete from connections map
-4. Broadcast presence change
-
-### Backend: Messages Since Timestamp API
-
-The GET /conversations/:id/messages endpoint:
-
-- **since** parameter: Fetch messages after timestamp (for offline sync), ORDER BY created_at ASC
-- **before** parameter: Pagination for infinite scroll, ORDER BY created_at DESC
-- Default: Latest messages, ORDER BY created_at DESC
-- All queries join message_status for delivery_status per recipient
-- Returns { messages, hasMore } where hasMore indicates if limit was reached
+> "The critical insight is persist-before-route. We never send a message via Redis pub/sub until it exists in PostgreSQL. If the pub/sub publish fails, the message is still durable and will be delivered when the recipient reconnects. This gives us at-least-once delivery without a dedicated message queue."
 
 ---
 
-## 5. Deep Dive: Typing Indicators (4-5 minutes)
+## 🔍 Deep Dive 2: Offline Sync Architecture (8 minutes)
 
-### End-to-End Typing Flow
+Offline support must work on both sides of the stack — the client must queue outbound messages and cache inbound ones, while the server must deliver pending messages on reconnect.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Typing Indicator Flow                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  Frontend (Typer)              Backend                 Frontend (Viewer)    │
-│        │                          │                          │              │
-│        │──user types──            │                          │              │
-│        │              │           │                          │              │
-│        │──debounce 2s─┤           │                          │              │
-│        │              │           │                          │              │
-│        │◄─────────────┘           │                          │              │
-│        │                          │                          │              │
-│        │───WS: typing────────────►│                          │              │
-│        │                          │                          │              │
-│        │                    ┌─────┴─────┐                    │              │
-│        │                    │ SETEX     │                    │              │
-│        │                    │ typing:   │                    │              │
-│        │                    │ conv:user │                    │              │
-│        │                    │ TTL=3s    │                    │              │
-│        │                    └─────┬─────┘                    │              │
-│        │                          │                          │              │
-│        │                          │───WS: typing────────────►│              │
-│        │                          │                          │              │
-│        │                          │                    ┌─────┴─────┐        │
-│        │                          │                    │ Show      │        │
-│        │                          │                    │ "typing"  │        │
-│        │                          │                    │ indicator │        │
-│        │                          │                    └─────┬─────┘        │
-│        │                          │                          │              │
-│        │──stops typing──          │                          │              │
-│        │                          │                          │              │
-│        │                    ┌─────┴─────┐                    │              │
-│        │                    │ TTL       │                    │              │
-│        │                    │ expires   │                    │              │
-│        │                    │ (3s)      │                    │              │
-│        │                    └─────┬─────┘                    │              │
-│        │                          │                          │              │
-│        │                          │───WS: typing=false──────►│              │
-│        │                          │                          │              │
-│        │                          │                    ┌─────┴─────┐        │
-│        │                          │                    │ Hide      │        │
-│        │                          │                    │ indicator │        │
-│        │                          │                    └───────────┘        │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Frontend: Debounced Typing Events
-
-The `useTypingIndicator` hook:
-
-- Maintains lastTypingSent ref with TYPING_INTERVAL=2000ms
-- On input change: if elapsed >= 2s, send 'typing' event and update timestamp
-- This prevents spamming typing events on every keystroke
-
-### Backend: Typing Handler with Redis TTL
-
-The handleTyping function:
-
-1. SETEX `typing:{conversationId}:{userId}` with 3s TTL
-2. Query username from users table
-3. Broadcast 'typing' event to all other participants with isTyping=true
-4. If this was a new typing session (key didn't exist), schedule stop notification in 3.5s
-5. When timeout fires: check if key still exists; if not, broadcast isTyping=false
-
-### Frontend: Displaying Typing Indicators
-
-The Zustand store maintains `typingUsers: Record<conversationId, Map<userId, { username, timestamp }>>`.
-
-The setTypingUser action:
-- If isTyping=true: add to Map with current timestamp
-- If isTyping=false: delete from Map
-
-The TypingIndicator component:
-- Renders nothing if Map is empty
-- Shows "Alice is typing..." or "Alice, Bob are typing..." with bouncing dots
-
----
-
-## 6. Deep Dive: Read Receipts (4-5 minutes)
-
-### Read Receipt Flow
+### Reconnection Sync Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Read Receipt Flow                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  Recipient opens chat                                                        │
-│        │                                                                     │
-│        ▼                                                                     │
-│  ┌───────────────┐                                                          │
-│  │ Frontend:     │                                                          │
-│  │ Mark messages │                                                          │
-│  │ as read up to │                                                          │
-│  │ last visible  │                                                          │
-│  └───────┬───────┘                                                          │
-│          │                                                                   │
-│          │───WS: read (conversationId, upToMessageId)────►                  │
-│          │                                               │                   │
-│          │                                         ┌─────┴─────┐            │
-│          │                                         │ Backend:  │            │
-│          │                                         │ UPDATE    │            │
-│          │                                         │ all status│            │
-│          │                                         │ <= msgId  │            │
-│          │                                         │ to 'read' │            │
-│          │                                         └─────┬─────┘            │
-│          │                                               │                   │
-│          │                                               │───WS: status───► │
-│          │                                               │   (to sender)    │
-│          │                                               │                   │
-│          │                                         ┌─────┴─────┐            │
-│          │                                         │ Sender UI:│            │
-│          │                                         │ Blue ticks│            │
-│          │                                         └───────────┘            │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+  Reconnecting Client              Server                     PostgreSQL
+       │                              │                            │
+       │── 1. WS: connect ──────────►│                            │
+       │   (session cookie)           │                            │
+       │                              │                            │
+       │                              │── 2. SET session:userId ──►│
+       │                              │   to this server's ID     (Redis)
+       │                              │                            │
+       │                              │── 3. SET presence:userId ─►│
+       │                              │   status='online'         (Redis)
+       │                              │                            │
+       │                              │── 4. SELECT messages ─────►│
+       │                              │   JOIN message_status      │
+       │                              │   WHERE recipient_id = ?   │
+       │                              │   AND status = 'sent'      │
+       │                              │◄── pending messages ───────│
+       │                              │                            │
+       │◄── 5. WS: message[] ────────│                            │
+       │   (batch of pending msgs)    │                            │
+       │                              │                            │
+       │── 6. WS: ack (per msg) ────►│                            │
+       │                              │── 7. UPDATE status ───────►│
+       │                              │   = 'delivered'            │
+       │                              │                            │
+       │── 8. Flush IndexedDB ───────►│                            │
+       │   pending queue              │                            │
+       │                              │                            │
+       │── 9. WS: message ──────────►│                            │
+       │   (queued while offline)     │── 10. Normal flow ────────►│
 ```
 
-### Frontend: Sending Read Receipts
+### Frontend: Offline Queue (IndexedDB via Dexie)
 
-The `useReadReceipts` hook uses IntersectionObserver:
+The IndexedDB schema stores four tables: `pendingMessages` (outbound queue), `messages` (cached received messages), `conversations` (cached metadata), and `syncMetadata` (per-conversation sync timestamps).
 
-1. Create observer with threshold=0.5
-2. On intersection: collect visible message IDs, find latest
-3. Debounce 500ms to avoid spamming
-4. Send 'read' event with conversationId and upToMessageId
-5. Track lastSentReadReceipt to avoid duplicate sends
+**When the socket disconnects:**
+- The WebSocket provider sets a `connected: false` flag in the Zustand store.
+- Any new outbound message goes to IndexedDB's `pendingMessages` table with `status: 'pending'` instead of the socket.
+- The UI renders from the cached `messages` table. The user can read all previously loaded conversations without any network.
 
-### Backend: Batch Read Status Update
+**When the socket reconnects:**
+1. Query `pendingMessages` where `status = 'pending'`, ordered by `createdAt`.
+2. For each message: set `status` to `'sending'`, send via WebSocket, delete from IndexedDB on success.
+3. If a send fails and `retryCount >= 3`, mark as `'failed'` so the UI shows a retry button.
+4. For each conversation, fetch from the server: `GET /api/v1/conversations/{id}/messages?since={lastSyncAt}`.
+5. Merge server messages with the local cache, update `syncMetadata` with the current timestamp.
 
-The handleRead function:
+### Backend: Pending Delivery on Connect
 
-1. Get created_at timestamp for upToMessageId
-2. Batch UPDATE message_status SET status='read' for all messages in conversation where created_at <= upToTimestamp AND status != 'read' AND recipient_id = userId
-3. UPDATE conversation_participants SET last_read_at = upToTimestamp
-4. Group updated messages by sender_id
-5. Route message_status notifications to each sender
+When a user's WebSocket connection is established:
 
----
+1. Register the session in Redis: `SET session:{userId}` to this server's ID.
+2. Update presence: `HSET presence:{userId}` with `status=online`, `server=SERVER_ID`, `lastSeen=now`.
+3. Store the WebSocket reference in the in-memory connections map.
+4. Query PostgreSQL for all messages where `message_status.recipient_id = userId AND status = 'sent'`, ordered by `created_at ASC`.
+5. Send each pending message over the new WebSocket connection.
+6. Broadcast a presence change to users who share conversations with this user.
 
-## 7. API Design and Validation (4-5 minutes)
+When a user disconnects, the mirror operation: delete session from Redis, set presence to offline with `lastSeen`, remove from connections map, broadcast presence change.
 
-### Zod Schemas for Validation
+### Trade-off: IndexedDB vs LocalStorage
 
-The shared schemas define validation for all WebSocket messages:
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ IndexedDB (Dexie) | Async, structured queries, 50MB+ capacity, indexes | More complex API, browser differences |
+| ❌ LocalStorage | Simpler API, synchronous | 5MB limit, blocks main thread, no indexing |
 
-**SendMessageSchema**: conversationId (uuid), content (1-10000 chars), contentType (enum), clientMessageId (uuid), mediaUrl (optional url), replyToId (optional uuid).
-
-**WSClientMessageSchema**: Discriminated union on 'type' field covering message, typing, read, and ack payloads.
-
-### Backend WebSocket Message Router
-
-The router parses incoming JSON, validates against WSClientMessageSchema:
-- On parse error: send error with code='INVALID_JSON'
-- On validation error: send error with code='VALIDATION_ERROR' and first issue message
-- On success: route to appropriate handler (handleMessage, handleTyping, handleRead, handleAck)
-
-### Frontend API Client
-
-The ApiClient class provides type-safe HTTP methods:
-
-**Core request() method**: Adds credentials='include' for session cookies, sets Content-Type, throws ApiError on non-ok response.
-
-**Methods**:
-- getConversations() → Conversation[]
-- createConversation(participantIds, type, name?) → Conversation
-- getMessages(conversationId, { before?, since?, limit? }) → { messages, hasMore }
-- addReaction(conversationId, messageId, emoji) → void
+> "LocalStorage's 5MB limit means we could store roughly 10,000 messages before hitting the wall — one active group chat could exhaust that in a week. IndexedDB gives us structured queries with indexes on conversationId and createdAt, so fetching cached messages for a specific conversation is an indexed lookup rather than scanning all stored messages. The async API also avoids blocking the main thread during writes, which matters when we're bulk-caching 50 messages on reconnect."
 
 ---
 
-## 8. Trade-offs and Alternatives (3-4 minutes)
+## 🔍 Deep Dive 3: Delivery Receipts and Read Status (6 minutes)
 
-### Architecture Decisions
+Status progression is the most visible full-stack feature — users watch their checkmarks change in real time. The flow must be idempotent, forward-only, and efficient for batch reads.
 
-| Decision | Trade-off | Alternative |
-|----------|-----------|-------------|
-| **WebSocket for all real-time** | Stateful connections, need sticky LB | Socket.IO (auto-fallback but larger) |
-| **Redis Pub/Sub for cross-server** | No persistence, fire-and-forget | Kafka (durable but more complex) |
-| **PostgreSQL for messages** | Simpler, limited write scale | Cassandra (better writes, more ops) |
-| **IndexedDB for offline** | Browser-specific, 50MB limit | LocalStorage (simpler but 5MB) |
-| **Zod for validation** | Runtime cost, bundle size | io-ts (FP style), ajv (faster) |
+### Status Progression
 
-### Scaling Considerations
+```
+  sending ──► sent ──► delivered ──► read
+  (client)    (server    (recipient    (recipient
+   only)      persisted)  ACKed)       scrolled
+                                       to message)
+```
 
-| Component | Current | Scaling Path |
-|-----------|---------|--------------|
-| WebSocket servers | 3 instances | Auto-scale based on connection count |
-| PostgreSQL | Single node | Read replicas, then shard by conversation |
-| Redis | Single node | Redis Cluster for HA |
-| Offline storage | IndexedDB | Consider reducing TTL as DB grows |
+Each transition is forward-only. The backend enforces this with a conditional UPDATE: only change status if the current status has a lower ordinal than the new one. This means duplicate ACKs, retried read receipts, or out-of-order pub/sub messages are safely ignored.
 
-### When to Reconsider
+### Read Receipt: Full-Stack Flow
 
-- **Add Kafka**: When message durability is critical or need replay
-- **Add Cassandra**: When write throughput exceeds 1K messages/sec
-- **Add CDN**: When serving media to distributed users
-- **Add push notifications**: When mobile app requires background delivery
+**Frontend — detecting reads with IntersectionObserver:**
+
+1. Each message element in the virtualized list registers with an IntersectionObserver (threshold 0.5 — at least half visible).
+2. When a message enters the viewport, its ID is collected into a buffer.
+3. A 500ms debounce timer fires, finding the latest message ID in the buffer.
+4. A `type: 'read'` event is sent with `conversationId` and `upToMessageId`.
+5. A `lastSentReadReceipt` ref prevents sending the same read position twice.
+
+**Backend — batch status update:**
+
+1. Look up the `created_at` timestamp of the `upToMessageId`.
+2. Batch UPDATE: set `status = 'read'` on all rows in `message_status` where `conversation_id` matches, `recipient_id` matches, `created_at <= upToTimestamp`, and current status is not already 'read'.
+3. Update `conversation_participants.last_read_at` for this user.
+4. Group the updated message IDs by `sender_id`.
+5. Route a `message_status` notification to each distinct sender via the same Redis pub/sub routing logic.
+
+**Frontend — displaying status on sender side:**
+
+The Zustand store updates the message's status field. The UI renders:
+- Single grey checkmark for 'sent'
+- Double grey checkmarks for 'delivered'
+- Double blue checkmarks for 'read'
+
+For group messages, status reflects the *minimum* across all recipients — 'delivered' only when all members have ACKed, 'read' only when all have read.
+
+### Batching Matters
+
+> "Without batch reads, opening a conversation with 200 unread messages would fire 200 individual status updates. By using `upToMessageId`, a single WebSocket event and a single UPDATE query marks all 200 messages as read. The IntersectionObserver debounce ensures we send at most 2 read events per second regardless of scroll speed."
 
 ---
 
-## 9. Testing Strategy (2-3 minutes)
+## 💾 Data Model (3 minutes)
 
-### Integration Test Approach
+| Table | Key Columns | Indexes | Notes |
+|-------|-------------|---------|-------|
+| **users** | id (UUID PK), username (unique), email (unique), password_hash, display_name, avatar_url | username, email | Standard user table |
+| **conversations** | id (UUID PK), type (direct/group), name, created_by (FK users) | type | Name is null for direct chats |
+| **conversation_participants** | conversation_id + user_id (composite PK), role (admin/member), last_read_at | (conversation_id, user_id) | Tracks read position per user |
+| **messages** | id (UUID PK), conversation_id (FK), sender_id (FK), content, content_type, media_url, reply_to_id, created_at | (conversation_id, created_at DESC), (sender_id, created_at DESC) | Paginated by conversation + time |
+| **message_status** | message_id + recipient_id (composite PK), status (sent/delivered/read), updated_at | (recipient_id, status) | One row per recipient per message |
 
-Tests use WebSocket connections with test users and conversations:
+### Redis Keys
 
-**Setup**: setupTestDb(), createTestUser() for sender and recipient, createConversation(), connectAsUser() for WebSocket connections.
-
-**Key Test Cases**:
-
-1. **Message delivery flow**: Sender sends message via WebSocket, verify recipient receives it, recipient sends ACK, verify sender receives 'delivered' status.
-
-2. **Offline message delivery**: Disconnect recipient, send message, reconnect recipient, verify pending message is delivered on connect.
-
-3. **Read receipt batch update**: Open conversation, send read event, verify all older messages marked as read, verify sender receives status updates.
+| Key Pattern | Type | TTL | Purpose |
+|-------------|------|-----|---------|
+| `session:{userId}` | String (server ID) | 24h | Which server holds this user's WebSocket |
+| `presence:{userId}` | Hash (status, server, lastSeen) | None (manual delete) | Online/offline tracking |
+| `typing:{convId}:{userId}` | String | 3s | Auto-expiring typing indicator |
+| `dedup:{clientMessageId}` | String | 24h | Idempotency guard for message sends |
+| `server:{serverId}` | Pub/Sub channel | N/A | Cross-server message routing |
 
 ---
 
-## Summary
+## 📡 API Design (2 minutes)
 
-The full-stack WhatsApp design integrates:
+### REST Endpoints
 
-1. **Shared Type System**: TypeScript types and Zod schemas ensure consistency between frontend and backend
+```
+POST   /api/v1/auth/register              Create account
+POST   /api/v1/auth/login                 Create session
+POST   /api/v1/auth/logout                Destroy session
+GET    /api/v1/auth/me                    Current user profile
 
-2. **WebSocket Protocol**: Bidirectional real-time communication with message, typing, presence, and ACK events
+GET    /api/v1/conversations              List user's conversations
+POST   /api/v1/conversations              Create conversation (1:1 or group)
+GET    /api/v1/conversations/:id/messages Get messages (paginated, ?before=, ?since=)
+PUT    /api/v1/conversations/:id/read     Mark conversation read up to timestamp
 
-3. **Message Delivery Pipeline**: Optimistic UI updates, server persistence, cross-server routing, delivery receipts
+POST   /api/v1/conversations/:id/participants     Add member (groups)
+DELETE /api/v1/conversations/:id/participants/:uid Remove member
 
-4. **Offline Architecture**: Frontend IndexedDB queue + cache, backend pending message delivery on reconnect
+POST   /api/v1/media/upload              Upload file, returns media_url
+```
 
-5. **Status Synchronization**: Idempotent status transitions (sent → delivered → read) with batched updates
+Pagination uses cursor-based approach: `?before={messageId}&limit=50` for scrolling back, `?since={timestamp}` for offline sync. Response includes `{ messages, hasMore }`.
 
-The architecture supports reliable message delivery with seamless offline capability while maintaining type safety across the stack.
+---
+
+## ⚖️ Trade-offs (5 minutes)
+
+### 1. WebSocket vs HTTP Polling for Real-Time Delivery
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Raw WebSocket (ws library) | Sub-100ms delivery, bidirectional, minimal overhead per message | Stateful — requires sticky sessions at the load balancer, reconnection logic on the client |
+| ❌ HTTP long-polling | Stateless servers, trivial load balancing | Average 500ms latency at 1s intervals. At 100K users polling every second, the API layer handles 100K req/s of pure overhead — orders of magnitude more expensive than 100K idle WebSocket connections |
+
+> "Messaging is the textbook case for WebSockets. Users expect instant delivery — a 500ms delay makes conversations feel asynchronous rather than real-time. The operational cost of sticky sessions is a one-time nginx configuration. The alternative costs us 100x the server capacity for a worse experience. The trade-off is reconnection complexity: we need heartbeat detection, exponential backoff reconnection, and offline queue flushing — but this complexity lives in a single WebSocket provider component, not scattered across the app."
+
+### 2. Redis Pub/Sub vs Kafka for Cross-Server Routing
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Redis Pub/Sub | ~1ms latency, zero configuration beyond existing Redis, no consumer groups to manage | Fire-and-forget — if the subscribing server is down, the message is lost from the pub/sub channel |
+| ❌ Kafka | Durable, replayable, ordered partitions | 5-15ms latency per message, requires ZooKeeper/KRaft cluster, consumer group coordination |
+
+> "The 'lost message' concern with Redis pub/sub sounds alarming, but it's not a real problem here. We persist every message to PostgreSQL *before* publishing to Redis. If the pub/sub delivery fails — target server crashed, network blip, anything — the message is already durable. When the recipient reconnects, the pending-message query picks it up from PostgreSQL. Redis pub/sub is just an optimization for instant delivery to already-connected users. Kafka's durability guarantee is redundant with our persist-before-route pattern, and its 5-15ms overhead on every message is a real cost we'd be paying for no benefit. If we needed event replay for analytics or audit, Kafka would be the right choice — but for routing, Redis is sufficient."
+
+### 3. PostgreSQL vs Cassandra for Message Storage
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ PostgreSQL | ACID transactions, complex queries (JOINs for unread counts, status aggregation), familiar tooling | Write throughput ceiling around 10K-50K inserts/sec on a single node |
+| ❌ Cassandra | Linear write scaling, natural partitioning by conversation_id, built-in TTL | No JOINs — computing unread counts requires denormalized counters, eventual consistency complicates status transitions |
+
+> "The unread count query joins messages, message_status, and conversation_participants in a single SQL statement. In Cassandra, this requires maintaining a separate counter table that we increment on every message send and decrement on every read — with all the consistency pitfalls of distributed counters. At WhatsApp's actual scale (billions of messages/day), Cassandra is the right answer. At our target scale and for demonstrating the full delivery-receipt flow with transactional guarantees, PostgreSQL keeps the code honest. The migration path is clear: when write throughput exceeds what a PostgreSQL primary with connection pooling can handle, move message storage to Cassandra while keeping user and conversation metadata in PostgreSQL."
+
+### 4. Optimistic UI vs Wait-for-Server
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Optimistic update with client UUID | Instant feedback, message appears in chat within 1 frame | Must handle the failure case (revert or show retry) |
+| ❌ Wait for server round-trip | Simpler — no reconciliation needed | 100-300ms delay before message appears; feels sluggish |
+
+> "Users send messages dozens of times per minute in active conversations. Even 100ms of perceived lag on every send creates a noticeable 'heaviness' to the app. The client-generated UUID makes reconciliation straightforward: when the server confirms, we match by clientMessageId and update the status from 'sending' to 'sent'. If the server rejects (validation error, not a participant), we mark the message as 'failed' and show a retry button. The 1% failure path is worth optimizing the 99% success path."
+
+### 5. Forward-Only Status vs Unrestricted Updates
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| ✅ Forward-only (sent < delivered < read) | Idempotent, no race conditions, no distributed locks | Cannot "unread" a message |
+| ❌ Arbitrary status updates | Supports "mark as unread" feature | Race conditions between ACK and read events, requires distributed coordination |
+
+> "In a multi-server system with Redis pub/sub, messages arrive out of order. A 'delivered' event might arrive after a 'read' event if pub/sub channels have different latencies. Forward-only status means we never regress — the conditional UPDATE simply returns 0 rows affected when the message is already at a higher status. No locks, no retries, deterministic resolution."
+
+---
+
+## 📊 Scaling Path
+
+| Component | Current | First Bottleneck | Scaling Step |
+|-----------|---------|------------------|--------------|
+| WebSocket servers | 3 instances | Connection count per process (~10K) | Auto-scale instances based on connection gauge |
+| PostgreSQL | Single node | Write throughput on messages table | Read replicas for conversation queries, then shard messages by conversation_id |
+| Redis | Single node | Memory for sessions + presence | Redis Cluster (3 shards) for HA |
+| Frontend bundle | Single SPA | Initial load time | Code-split by route, lazy-load chat view |
+
+---
+
+## 🎯 Summary
+
+This design balances three concerns across the stack:
+
+1. **Instant feel** — optimistic UI with client UUIDs, WebSocket delivery, virtualized message lists. The user never waits for the server.
+
+2. **Reliable delivery** — persist-before-route ensures no message is lost. Pending-message queries on reconnect catch anything Redis pub/sub missed. Forward-only status transitions eliminate race conditions.
+
+3. **Offline resilience** — IndexedDB caches received messages and queues unsent ones. The reconnection flow flushes the outbound queue and fetches missed inbound messages with a single `?since=` timestamp.
+
+The shared TypeScript types between frontend and backend eliminate protocol mismatch errors, and the WebSocket event protocol gives us a clean, typed contract for all real-time communication. The architecture scales horizontally by adding more Express+WS instances behind the sticky-session load balancer, with Redis pub/sub handling cross-server routing at negligible latency cost.
