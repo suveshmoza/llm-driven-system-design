@@ -30,7 +30,7 @@ interface CrmState {
   opportunities: Opportunity[];
   opportunitiesTotal: number;
   opportunitiesLoading: boolean;
-  fetchOpportunities: (params?: { search?: string; stage?: string; accountId?: string; page?: number }) => Promise<void>;
+  fetchOpportunities: (params?: { search?: string; stage?: string; accountId?: string; page?: number; limit?: number }) => Promise<void>;
   updateOpportunityStage: (id: string, stage: string) => Promise<void>;
 
   // Leads
