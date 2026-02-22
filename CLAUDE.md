@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - [Explaining Trade-offs in Depth](#explaining-trade-offs-in-depth)
 - [Common Commands](#common-commands)
 - [Repository Scripts](#repository-scripts)
+- [CI/CD](#cicd)
 - [Technology Stack Defaults](#technology-stack-defaults)
 - [Key Design Principles](#key-design-principles)
 - [Port Conventions](#port-conventions)
@@ -295,6 +296,11 @@ npm run generate-tests bitly        # Generate for specific project
 npm run test:smoke instagram        # Run smoke tests for specific project
 npm run test:smoke:all              # Run smoke tests for all projects
 
+# Project health checks (triage)
+npm run triage instagram           # Triage a specific project (Docker, migrate, seed, test)
+npm run triage:all                  # Triage all projects
+npm run triage:report               # Generate triage report
+
 # ESLint/Prettier maintenance (batch operations across projects)
 node scripts/add-eslint-configs.mjs # Add ESLint configs to all backends
 node scripts/add-eslint-deps.mjs    # Add ESLint/Prettier dependencies to all backends
@@ -387,6 +393,16 @@ node scripts/screenshots.mjs --list
 ```
 
 Screenshots are saved to `<project>/screenshots/` at 2x resolution (retina).
+
+## CI/CD
+
+GitHub Actions (`.github/workflows/smoke-tests.yml`) runs Playwright smoke tests:
+
+- **On PRs**: Tests only projects with changed files (compared to `origin/main`)
+- **Nightly (3:00 AM UTC)**: Tests all projects with screenshot configs
+- **Manual dispatch**: Tests all projects
+
+Tests run sequentially (`max-parallel: 1`) to avoid port conflicts. Each project generates smoke tests from its screenshot config, then runs them. Playwright reports are uploaded as artifacts (14-day retention).
 
 ## Technology Stack Defaults
 
